@@ -1,0 +1,1230 @@
+<title>Control centre</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Mockup 7. Dark-first: a violet-to-magenta-to-blue sky that runs edge to edge, frosted glass panels on it,
+   white rounded type. Status colours (mint, amber, sky, red) were checked against the dark dial wells
+   and the light wells; every state also carries an icon and a word, never colour alone. */
+:root{
+  color-scheme:dark;
+  --bg:#1e0f48;
+  --sky:radial-gradient(70% 55% at 12% 0%,#c63fd8 0%,rgba(198,63,216,0) 62%),radial-gradient(60% 50% at 92% 18%,#3a4fe8 0%,rgba(58,79,232,0) 62%),radial-gradient(55% 45% at 75% 100%,#9a3bd6 0%,rgba(154,59,214,0) 60%),linear-gradient(180deg,#6d31da 0%,#5130c2 55%,#2a1766 100%);
+  --topbar:rgba(28,10,70,.42);
+  --glass:rgba(255,255,255,.10); --glass-2:rgba(255,255,255,.16); --glass-3:rgba(255,255,255,.26);
+  --line:rgba(255,255,255,.16); --line-2:rgba(255,255,255,.30);
+  --well:rgba(16,6,46,.52); --pointer-ring:rgba(16,6,46,.7);
+  --ink:#fff; --ink-2:rgba(255,255,255,.84); --muted:rgba(255,255,255,.64); --faint:rgba(255,255,255,.42);
+  --accent:#ff8a5b; --accent-ink:#2a1030; --spark:var(--accent);
+  --solid:#fff; --solid-ink:#24124a;
+  --good:#4cf0a0; --warn:#ffc43d; --decide:#7fd8ff; --alarm:#ff5a6e; --info:rgba(255,255,255,.55);
+  --chip-ink:#20103f;
+  --sheet:rgba(34,16,78,.94); --shadow:0 24px 60px rgba(10,0,40,.38);
+  --font:'Plus Jakarta Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --disp:'Outfit','Plus Jakarta Sans',system-ui,sans-serif;
+  --r:28px; --r2:20px; --r3:14px;
+}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]){
+  color-scheme:light; --bg:#ece8ff;
+  --sky:radial-gradient(70% 55% at 12% 0%,#f1c3ee 0%,rgba(241,195,238,0) 62%),radial-gradient(60% 50% at 92% 18%,#c3ccff 0%,rgba(195,204,255,0) 62%),linear-gradient(180deg,#dfd3ff 0%,#eae5ff 55%,#f4f1ff 100%);
+  --topbar:rgba(255,255,255,.55);
+  --glass:rgba(255,255,255,.58); --glass-2:rgba(255,255,255,.76); --glass-3:rgba(255,255,255,.92);
+  --line:rgba(40,20,110,.12); --line-2:rgba(40,20,110,.24);
+  --well:rgba(255,255,255,.82); --pointer-ring:#fff;
+  --ink:#1c1142; --ink-2:rgba(28,17,66,.82); --muted:rgba(28,17,66,.62); --faint:rgba(28,17,66,.4);
+  --accent:#ff6a45; --accent-ink:#fff; --solid:#2a1a66; --solid-ink:#fff;
+  --good:#0d9b5a; --warn:#b4760a; --decide:#1e78cc; --alarm:#d62f45; --info:rgba(28,17,66,.45);
+  --chip-ink:#fff; --sheet:rgba(255,255,255,.97); --shadow:0 24px 60px rgba(60,30,140,.18);
+}}
+:root[data-theme="light"]{
+  color-scheme:light; --bg:#ece8ff;
+  --sky:radial-gradient(70% 55% at 12% 0%,#f1c3ee 0%,rgba(241,195,238,0) 62%),radial-gradient(60% 50% at 92% 18%,#c3ccff 0%,rgba(195,204,255,0) 62%),linear-gradient(180deg,#dfd3ff 0%,#eae5ff 55%,#f4f1ff 100%);
+  --topbar:rgba(255,255,255,.55);
+  --glass:rgba(255,255,255,.58); --glass-2:rgba(255,255,255,.76); --glass-3:rgba(255,255,255,.92);
+  --line:rgba(40,20,110,.12); --line-2:rgba(40,20,110,.24);
+  --well:rgba(255,255,255,.82); --pointer-ring:#fff;
+  --ink:#1c1142; --ink-2:rgba(28,17,66,.82); --muted:rgba(28,17,66,.62); --faint:rgba(28,17,66,.4);
+  --accent:#ff6a45; --accent-ink:#fff; --solid:#2a1a66; --solid-ink:#fff;
+  --good:#0d9b5a; --warn:#b4760a; --decide:#1e78cc; --alarm:#d62f45; --info:rgba(28,17,66,.45);
+  --chip-ink:#fff; --sheet:rgba(255,255,255,.97); --shadow:0 24px 60px rgba(60,30,140,.18);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 var(--font);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+.sky{position:fixed;inset:0;z-index:-1;background:var(--sky);pointer-events:none}
+h1,h2,h3{font-family:var(--disp);margin:0;text-wrap:balance;letter-spacing:-.01em}
+p{margin:0}
+button{font:inherit;color:inherit}
+a{color:inherit}
+.sym{position:absolute;width:0;height:0;overflow:hidden}
+svg.ic{width:1.1em;height:1.1em;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+
+/* ---- header -------------------------------------------------------------- */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:6;background:var(--topbar);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-bottom:1px solid var(--line)}
+.hin{max-width:1240px;margin:0 auto;padding-inline:16px;padding-block:10px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px}
+.logo{display:inline-flex;align-items:center;color:var(--ink);text-decoration:none}
+.logo img{height:34px;width:auto;display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,.25))}
+.pills{display:flex;gap:6px;justify-self:center;background:var(--glass);border:1px solid var(--line);border-radius:999px;padding:4px}
+.pill{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;border-radius:999px;text-decoration:none;color:var(--ink-2);font-weight:600;font-size:13.5px;white-space:nowrap;border:0;background:transparent;cursor:pointer}
+.pill svg{width:17px;height:17px}
+.pill:hover{background:var(--glass)}
+.pill[aria-current="true"]{background:var(--solid);color:var(--solid-ink)}
+.right{display:flex;align-items:center;gap:10px}
+.search{display:flex;align-items:center;gap:8px;background:var(--glass);border:1px solid var(--line);border-radius:999px;padding:7px 12px;color:var(--muted);min-width:0}
+.search input{border:0;background:transparent;color:var(--ink);font:inherit;font-size:13.5px;width:190px;outline:0}
+.search input::placeholder{color:var(--faint)}
+.search:focus-within{background:var(--glass-2);border-color:var(--line-2)}
+.clock{font-family:var(--disp);font-size:13px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.avatar{width:36px;height:36px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:inline-grid;place-items:center;font-family:var(--disp);font-weight:800;font-size:15px;flex:none;box-shadow:0 0 0 3px rgba(255,255,255,.18)}
+@media (max-width:860px){
+  .hin{gap:8px;padding-block:8px}
+  .pill{padding:8px 10px}
+  .pill .t{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  .pill[aria-current="true"] .t{position:static;width:auto;height:auto;overflow:visible;clip:auto}
+  .pill[aria-current="true"]{padding:8px 12px}
+  .logo img{height:28px}
+  .search{display:none}
+  .clock{display:none}
+}
+@media (max-width:400px){.pill[aria-current="true"] .t{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}.pill[aria-current="true"]{padding:8px 10px}.pills{gap:3px}}
+
+/* ---- page -------------------------------------------------------------- */
+.wrap{max-width:1240px;margin:0 auto;padding-inline:16px;padding-block:18px 48px;display:grid;gap:18px}
+.wrap>*{scroll-margin-top:84px}
+[hidden]{display:none!important}
+.glass{background:var(--glass);border:1px solid var(--line);border-radius:var(--r);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);box-shadow:var(--shadow)}
+.sh{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.sh h2{font-size:20px;font-weight:700}
+.shm{font-size:13px;color:var(--muted)}
+.btn{border:1px solid var(--line-2);background:var(--glass);border-radius:999px;padding:7px 14px;font-weight:600;font-size:13px;cursor:pointer}
+.btn:hover{background:var(--glass-2)}
+
+/* hero: greeting + radar, four, quad | score column */
+.hero{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:18px;align-items:start}
+.left{display:grid;gap:14px;min-width:0}
+.greet{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;padding:22px 24px;align-items:center;min-width:0;overflow:hidden}
+.eyebrow{font-family:var(--disp);font-size:13px;color:var(--muted);letter-spacing:.04em;text-transform:uppercase;font-weight:600}
+.seg{display:flex;width:max-content;max-width:100%;gap:4px;background:var(--well);border-radius:999px;padding:4px;margin-bottom:12px}
+.seg button{border:0;background:transparent;border-radius:999px;padding:7px 14px;font-family:var(--disp);font-weight:600;font-size:13.5px;color:var(--muted);cursor:pointer;white-space:nowrap}
+.seg button[aria-selected="true"]{background:var(--solid);color:var(--solid-ink)}
+.greet h1{font-size:38px;font-weight:800;line-height:1.05;margin-top:6px}
+.sub{color:var(--ink-2);margin-top:10px;max-width:46ch;font-size:15.5px}
+.counts{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.pk{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:999px;background:var(--glass-2);border:1px solid var(--line);font-family:var(--disp);font-size:13px;font-weight:600;color:var(--ink-2)}
+.pk b{font-size:15px;color:var(--ink)}
+.pk i{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:50%;background:var(--c);color:var(--chip-ink);font-style:normal;font-size:10px;font-weight:800}
+.pk.health{background:var(--solid);color:var(--solid-ink)} .pk.health b{color:inherit}
+.radar{width:100%;max-width:300px;justify-self:center}
+.radar svg{width:100%;height:auto;display:block;overflow:visible}
+
+.four{display:grid;grid-template-columns:1.35fr 1fr 1fr 1fr;gap:12px} .four .sv.big{font-size:clamp(30px,2.6vw,40px)}
+.quad{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.tile{position:relative;overflow:hidden;background:var(--glass);border:1px solid var(--line);border-radius:var(--r2);padding:14px 16px;display:flex;flex-direction:column;gap:3px;align-items:flex-start;text-align:left;cursor:pointer;min-width:0;color:var(--ink);transition:transform .15s ease,background .15s ease}
+.tile:hover{background:var(--glass-2);transform:translateY(-1px)}
+.tile.coral{--ink:var(--accent-ink);--ink-2:var(--accent-ink);--muted:rgba(42,16,48,.72);--line-2:rgba(42,16,48,.22);--spark:var(--accent-ink);background:var(--accent);border-color:transparent}
+.tile.solid{--ink:var(--solid-ink);--ink-2:var(--solid-ink);--muted:rgba(36,18,74,.66);--line-2:rgba(36,18,74,.18);--spark:var(--solid-ink);background:var(--solid);border-color:transparent}
+.tile.coral:hover,.tile.solid:hover{filter:brightness(1.04)}
+:root[data-theme="light"] .tile.coral,:root[data-theme="light"] .tile.solid{--muted:rgba(255,255,255,.78);--line-2:rgba(255,255,255,.3)}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .tile.coral,:root:not([data-theme="dark"]) .tile.solid{--muted:rgba(255,255,255,.78);--line-2:rgba(255,255,255,.3)}}
+.sl{font-size:12.5px;font-weight:600;color:var(--muted);letter-spacing:.02em}
+.sv{font-family:var(--disp);font-size:26px;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums;color:var(--ink)}
+.sv.big{font-size:40px;font-weight:800}
+.ss{font-size:12px;color:var(--muted)}
+.spark{display:block;width:100%;height:34px;margin:6px 0 2px}
+.spark svg{width:100%;height:100%;display:block}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-family:var(--disp);font-size:11.5px;font-weight:700;letter-spacing:.02em;background:var(--c,var(--glass-3));color:var(--chip-ink);white-space:nowrap}
+.chip.good{--c:var(--good)} .chip.warn{--c:var(--warn)} .chip.decide{--c:var(--decide)} .chip.alarm{--c:var(--alarm)}
+.chip.info,.chip.sofar,.chip.est{background:var(--glass-3);color:var(--ink)}
+.tile.solid .chip.info,.tile.coral .chip.info,.tile.solid .chip.sofar,.tile.coral .chip.sofar,.tile.solid .chip.est,.tile.coral .chip.est{background:color-mix(in srgb,currentColor 14%,transparent);color:inherit}
+.tile .chip{margin-top:6px}
+.wm{position:absolute;right:-22px;bottom:-26px;width:170px;height:170px;opacity:.3;stroke-width:3;stroke-linecap:round;pointer-events:none;z-index:0}
+.tile.dial .wm,.tile.ring .wm{width:200px;height:200px;right:-34px;bottom:-30px}
+.tile.dial .well,.tile.ring .well{background:color-mix(in srgb,var(--well) 45%,transparent)}
+.tile>*:not(.wm){position:relative;z-index:1}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .wm{opacity:.16}}
+:root[data-theme="light"] .wm{opacity:.16}
+.well{display:block;width:100%;background:var(--well);border-radius:var(--r3);padding:6px 8px 2px;margin-bottom:6px}
+.well svg{width:100%;height:auto;display:block}
+.tile.ring .well{padding:8px 26px 2px}
+.dl{font-family:var(--disp);font-weight:600;font-size:14px;line-height:1.2;color:var(--ink)}
+.ds{font-size:12px;color:var(--muted)}
+.abbar{display:grid;gap:6px;width:100%;margin:6px 0}
+.abbar .r{display:grid;grid-template-columns:16px 1fr auto;gap:8px;align-items:center;font-size:12px;color:var(--muted)}
+.abbar .bar{height:8px;border-radius:4px;background:var(--well);overflow:hidden}
+.abbar .bar i{display:block;height:100%;border-radius:4px;background:var(--decide)}
+.abbar b{font-family:var(--disp);color:var(--ink);font-variant-numeric:tabular-nums}
+.pd{font-size:12px;color:var(--muted)} .pd.up{color:var(--good)}
+.tile.coral .pd.up,.tile.solid .pd.up{color:var(--ink)}
+@media (max-width:1040px){.hero{grid-template-columns:1fr}}
+@media (max-width:760px){
+  .greet{grid-template-columns:1fr;padding:18px}
+  .greet h1{font-size:32px}
+  .radar{max-width:260px}
+  .four{grid-template-columns:1fr 1fr}
+  .quad{grid-template-columns:1fr 1fr}
+  .tile{padding:12px 13px}
+  .sv.big{font-size:34px}
+}
+
+/* score column */
+.score{padding:16px;display:grid;gap:10px;align-content:start;min-width:0}
+.stabs{display:flex;gap:4px;background:var(--well);border-radius:999px;padding:4px}
+.stabs button{flex:1;border:0;background:transparent;border-radius:999px;padding:8px 10px;font-family:var(--disp);font-weight:600;font-size:13.5px;color:var(--muted);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.stabs button[aria-selected="true"]{background:var(--solid);color:var(--solid-ink)}
+.livedot{width:8px;height:8px;border-radius:50%;background:var(--good);box-shadow:0 0 0 0 var(--good);animation:ping 2s infinite}
+.stabs button[aria-selected="true"] .livedot{box-shadow:none;animation:none}
+@keyframes ping{0%{box-shadow:0 0 0 0 rgba(76,240,160,.6)}70%{box-shadow:0 0 0 7px rgba(76,240,160,0)}100%{box-shadow:0 0 0 0 rgba(76,240,160,0)}}
+.srows{display:grid;gap:4px}
+.srow{display:grid;grid-template-columns:minmax(84px,auto) 1fr auto;gap:12px;align-items:center;padding:11px 14px;border-radius:16px;background:var(--glass)}
+.srow:nth-child(even){background:transparent}
+.srow .v{font-family:var(--disp);font-size:22px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.srow .l{font-size:13.5px;font-weight:600;color:var(--ink-2);line-height:1.25}
+.srow .l small{display:block;font-weight:500;color:var(--muted);font-size:12px;margin-top:2px}
+.srow .d{font-size:12px;color:var(--muted);text-align:right;max-width:120px;line-height:1.25}
+.srow .d.up{color:var(--good);font-weight:600}
+.srow.win .v{color:var(--warn)}
+.srow .star{width:20px;height:20px;fill:var(--warn);stroke:none;justify-self:center}
+.srow.soon .v{color:var(--accent)}
+.srow .td{font-family:var(--disp);font-weight:700;font-size:14px;white-space:nowrap}
+.sfoot{display:flex;justify-content:flex-end;padding-top:4px}
+
+/* ---- on the table: glass rows ---------------------------------------------------- */
+.tbl{padding:18px 20px;display:grid;gap:12px;min-width:0}
+.deck{display:grid;gap:6px}
+.dcard{display:grid;gap:10px;padding:12px 14px;border-radius:18px;background:var(--glass);border:1px solid transparent;min-width:0}
+.deck .dcard:nth-child(even){background:transparent}
+.dcard[data-state="alarm"]{border-color:var(--alarm);box-shadow:inset 4px 0 0 var(--alarm)}
+.dcard.done{opacity:.72}
+.rhead{display:grid;grid-template-columns:104px 44px minmax(0,1fr) auto auto;gap:14px;align-items:center}
+.rhead .chip{justify-self:start}
+.src{width:44px;height:44px;border-radius:50%;background:var(--glass-2);border:1px solid var(--line);display:grid;place-items:center;color:var(--ink)}
+.src svg{width:24px;height:24px}
+.rt{border:0;background:transparent;text-align:left;padding:0;cursor:pointer;display:grid;gap:2px;min-width:0}
+.rt h3{font-size:16.5px;font-weight:700}
+.rt .rec{font-size:13px;color:var(--muted)}
+.rt .rec::after{content:' · why';color:var(--faint)}
+.rt[aria-expanded="true"] .rec::after{content:' · hide'}
+.nums{display:flex;gap:16px;white-space:nowrap}
+.nums div{display:grid;line-height:1.1}
+.nums b{font-family:var(--disp);font-size:17px;font-weight:700;font-variant-numeric:tabular-nums}
+.nums span{font-size:11px;color:var(--muted)}
+.acts{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.act{border:1px solid var(--line-2);background:var(--glass);border-radius:999px;padding:8px 14px;font-weight:600;font-size:13px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.act:hover{background:var(--glass-2)}
+.act.primary{background:var(--solid);color:var(--solid-ink);border-color:transparent}
+.act.wa{background:var(--good);color:var(--chip-ink);border-color:transparent}
+.why{color:var(--ink-2);font-size:14px;max-width:72ch;padding:0 0 2px 0}
+.confirm{display:grid;gap:10px;background:var(--well);border-radius:14px;padding:12px 14px}
+.confirm p{font-size:14px;color:var(--ink);max-width:70ch}
+.confirm .row{display:flex;gap:8px;flex-wrap:wrap}
+.doneline{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--well);border-radius:14px;padding:10px 14px;font-size:13.5px;font-weight:600}
+.doneline.left{font-weight:500;color:var(--muted)}
+.undo{border:1px solid var(--line-2);background:transparent;border-radius:999px;padding:5px 12px;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--ink)}
+.ta{width:100%;height:60px;margin-top:6px;font:inherit;border-radius:10px;border:1px solid var(--line-2);background:var(--glass);color:var(--ink);padding:8px}
+@media (max-width:980px){
+  .rhead{grid-template-columns:auto 40px minmax(0,1fr);gap:10px 12px}
+  .src{width:40px;height:40px} .src svg{width:22px;height:22px}
+  .rhead .nums,.rhead .acts{grid-column:1/-1}
+  .rhead .acts{justify-content:flex-start}
+  .nums{flex-wrap:wrap;gap:10px 18px}
+}
+@media (max-width:760px){.tbl{padding:14px}.rhead{grid-template-columns:auto 36px minmax(0,1fr)}.src{width:36px;height:36px}}
+
+/* ---- tests ------------------------------------------------------------------ */
+.tests{padding:18px 20px;display:grid;gap:12px;min-width:0}
+.tcard{display:grid;gap:12px;padding:14px 16px;border-radius:18px;background:var(--glass);border:1px solid var(--line);min-width:0}
+.tcard[data-state="decide"]{border-color:var(--decide)}
+.tcard.done{opacity:.72}
+.thead{display:grid;grid-template-columns:auto 44px minmax(0,1fr) auto;gap:14px;align-items:center}
+.tlane{font-family:var(--disp);font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+.trow .chip,.thead .chip{white-space:nowrap}
+.tbody{display:grid;grid-template-columns:minmax(0,1fr) 150px;gap:14px;align-items:stretch}
+.tbars{display:grid;gap:10px;background:var(--well);border-radius:var(--r3);padding:12px 14px;align-content:center}
+.tbar{display:grid;gap:5px}
+.tbar .tl2{display:flex;justify-content:space-between;gap:10px;font-size:13px;color:var(--ink-2)}
+.tbar .tl2 b{font-family:var(--disp);font-size:18px;color:var(--ink);font-variant-numeric:tabular-nums}
+.tbar .tl2 b small{font-size:12px;font-weight:500;color:var(--muted);margin-left:6px}
+.trk{position:relative;height:14px;border-radius:7px;background:color-mix(in srgb,var(--ink) 12%,transparent);overflow:hidden}
+.trk i{display:block;position:absolute}
+.trk .fill{top:0;bottom:0;left:0;border-radius:7px;background:var(--solid);opacity:.5;transition:width .5s ease}
+.tbar.lead .trk .fill{background:var(--accent);opacity:1}
+.trk .band{top:2px;bottom:2px;border-left:2px solid var(--ink);border-right:2px solid var(--ink);opacity:.45}
+.tsure{display:grid;gap:6px;background:var(--well);border-radius:var(--r3);padding:10px 12px 8px;text-align:center;align-content:center}
+.tsure svg{width:100%;max-width:170px;margin:0 auto;height:auto;display:block}
+.tsure .dl{font-size:12.5px;color:var(--muted);font-weight:600}
+.tstrip{display:flex;gap:4px;justify-content:center}
+.tstrip i{width:14px;height:14px;border-radius:50%;background:color-mix(in srgb,var(--ink) 14%,transparent);color:var(--ink);display:inline-grid;place-items:center;font-size:9px;font-weight:800;font-style:normal}
+.tstrip i.a{background:var(--accent);color:var(--accent-ink)} .tstrip i.b{background:var(--solid);color:var(--solid-ink)}
+.tcap{font-size:11px;color:var(--faint)}
+.tsay{font-size:14.5px;color:var(--ink);max-width:72ch}
+.tsay small{display:block;font-size:12.5px;color:var(--muted);margin-top:3px}
+.tfoot{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.tprog{font-size:12.5px;color:var(--muted)}
+.act[disabled]{opacity:.5;cursor:default}
+.tsub{font-family:var(--disp);font-size:13px;font-weight:700;color:var(--muted);margin-top:4px}
+.trows{display:grid;gap:4px}
+.trow{display:grid;grid-template-columns:auto 36px minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px 14px;border-radius:16px;background:var(--glass)}
+.trow:nth-child(even){background:transparent}
+.trow.wait{opacity:.65}
+.trow .src{width:36px;height:36px} .trow .src svg{width:20px;height:20px}
+.trow .d{font-size:12px;color:var(--muted);text-align:right;max-width:140px;line-height:1.25}
+.trow .rt h3{font-size:15px}
+.tcard .rt .rec::after,.trow .rt .rec::after{content:' · details'}
+.dcard.flash{box-shadow:0 0 0 3px var(--decide)}
+.xdl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin-top:14px;font-size:14px} .xdl dt{font-family:var(--disp);font-weight:700;color:var(--muted);font-size:12.5px;text-transform:uppercase;letter-spacing:.04em;padding-top:2px} .xdl dd{margin:0;color:var(--ink-2)}
+@media (max-width:760px){.tests{padding:14px} .thead{grid-template-columns:36px minmax(0,1fr) auto} .thead .tlane{grid-column:1/-1;order:-1} .thead .src{width:36px;height:36px} .tbody{grid-template-columns:1fr} .trow{grid-template-columns:auto 32px minmax(0,1fr)} .trow .src{width:32px;height:32px} .trow .d{grid-column:1/-1;text-align:left} .trow>.act{grid-column:1/-1;justify-self:start}}
+
+/* ---- dials -------------------------------------------------------------------- */
+.dials{padding:18px 20px;display:grid;gap:14px;min-width:0}
+.tabs{display:flex;gap:4px;background:var(--well);border-radius:999px;padding:4px;overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;background:transparent;border-radius:999px;padding:9px 14px;font-family:var(--disp);font-weight:600;font-size:14px;color:var(--muted);cursor:pointer;white-space:nowrap}
+.tab svg{width:17px;height:17px}
+.tab[aria-selected="true"]{background:var(--solid);color:var(--solid-ink)}
+.dot{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:50%;background:var(--c,var(--glass-3));color:var(--chip-ink);font-size:10px;font-weight:800;font-style:normal;flex:none}
+.dot.good{--c:var(--good)} .dot.warn{--c:var(--warn)} .dot.decide{--c:var(--decide)} .dot.alarm{--c:var(--alarm)} .dot.info,.dot.sofar,.dot.est{--c:var(--glass-3);color:var(--ink)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.pn{font-size:13px;color:var(--muted)}
+.tabs-foot{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+@media (max-width:760px){.dials{padding:14px}.grid{grid-template-columns:1fr 1fr;gap:10px}.tab{padding:9px 10px;font-size:13px}.tab span.t{display:none}}
+
+/* ---- footer -------------------------------------------------------------------- */
+.foot{padding:16px 20px;display:grid;gap:12px;font-size:13px;color:var(--muted)}
+.feeds{display:flex;flex-wrap:wrap;gap:6px 14px}
+.feeds i{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--good);margin-right:6px}
+.log strong{color:var(--ink);font-family:var(--disp)}
+.log ul{margin:6px 0 0;padding:0;list-style:none;display:grid;gap:4px}
+.log li{font-variant-numeric:tabular-nums;color:var(--ink-2)}
+.log li.mut{color:var(--muted)}
+.note{max-width:90ch}
+
+/* ---- sheet ----------------------------------------------------------------------- */
+dialog#sheet{border:0;padding:0;background:transparent;max-width:none;width:100%;margin:auto 0 0;max-height:92vh;color:var(--ink)}
+dialog#sheet::backdrop{background:rgba(10,0,40,.55);backdrop-filter:blur(4px)}
+.sheet{background:var(--sheet);border:1px solid var(--line);border-radius:28px 28px 0 0;padding:12px 20px calc(20px + env(safe-area-inset-bottom,0px));max-width:720px;margin:0 auto;max-height:92vh;overflow:auto;box-shadow:var(--shadow);backdrop-filter:blur(20px)}
+.grab{width:44px;height:5px;border-radius:3px;background:var(--line-2);margin:0 auto 12px}
+.ttl{display:flex;align-items:center;gap:10px}
+.ttl h3{flex:1;font-size:18px;font-weight:700}
+.x{border:0;background:var(--glass-2);border-radius:50%;width:32px;height:32px;font-size:20px;line-height:1;cursor:pointer;color:var(--ink)}
+dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:14px 0 0;font-size:14px}
+dt{font-family:var(--disp);font-weight:600;color:var(--muted)} dd{margin:0;color:var(--ink-2)}
+#sh-chart{margin-top:14px} #sh-chart svg{width:100%;height:auto;display:block}
+.tblwrap{overflow-x:auto;margin-top:12px}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th{text-align:left;font-family:var(--disp);font-weight:600;color:var(--muted);padding:6px 10px;border-bottom:1px solid var(--line-2)}
+td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
+.mut{color:var(--muted)}
+.flow{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12.5px}
+.flow .act{padding:5px 11px;font-size:12.5px}
+.timeline{display:grid;gap:4px}
+.tl{display:grid;grid-template-columns:96px 1fr auto;gap:10px;align-items:center;padding:9px 12px;border-radius:14px;background:var(--glass)}
+.tl:nth-child(even){background:transparent}
+.tl .td{font-family:var(--disp);font-weight:700;font-size:13.5px}
+.tl .tin{font-size:12px;color:var(--muted)}
+.tl.soon .td{color:var(--accent)}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+/* new reviews (Judge.me): above Tests (Will, 1 Oct); the greeting pill and line flag them at the top */
+.revs{padding:18px 20px;display:grid;gap:10px;min-width:0}
+.rvhead{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:12px;align-items:center}
+.rvhead .src{width:40px;height:40px} .rvhead .src svg{width:22px;height:22px}
+.rvhead h2{font-size:18px;font-weight:700;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.rvhead .shm{display:block;margin-top:2px}
+.rvlist{display:grid;gap:8px}
+.rv{display:grid;gap:8px;padding:10px 12px;border-radius:16px;background:var(--glass);border:1px solid transparent;min-width:0}
+.rv[data-state="warn"]{border-color:var(--warn)}
+.rv.done{opacity:.72}
+.rvr{display:grid;grid-template-columns:104px minmax(0,1fr) auto;gap:12px;align-items:center}
+.rvs{display:grid;gap:5px;justify-items:start}
+.stars{display:inline-flex;gap:1px;color:var(--ink)} .stars svg{width:15px;height:15px;fill:currentColor;stroke:none} .stars svg.off{opacity:.22}
+.rv .rt h3{font-size:14.5px}
+.rv .rt .rec{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.rvm{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.rvm .age{font-size:12px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+button.pk{cursor:pointer;font:inherit;font-family:var(--disp);font-size:13px;font-weight:600}
+@media (max-width:760px){.revs{padding:14px} .rvhead{grid-template-columns:36px minmax(0,1fr)} .rvhead .src{width:36px;height:36px} .rvhead>.act{grid-column:1/-1;justify-self:start}
+  .rvr{grid-template-columns:minmax(0,1fr)} .rvs{grid-auto-flow:column;justify-content:start;align-items:center;gap:10px}
+  .rvm{flex-direction:row;align-items:center;justify-content:space-between;flex-wrap:wrap} .rvm .acts{margin-left:auto}}
+</style>
+
+<div class="sky" aria-hidden="true"></div>
+
+<svg class="sym" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-meta" viewBox="0 0 24 24"><path d="M12 12c-2-4-4-6-6.5-6S2 8.5 2 12s1 6 3.5 6 4.5-2 6.5-6 4-6 6.5-6S22 8.5 22 12s-1 6-3.5 6-4.5-2-6.5-6z"/></symbol>
+  <symbol id="i-google" viewBox="0 0 24 24"><path d="M19.8 7.5A9 9 0 1 0 21 12H12" stroke-width="3"/></symbol>
+  <symbol id="i-bag" viewBox="0 0 24 24"><path d="M6 7h12l1 14H5z M9 7a3 3 0 0 1 6 0"/></symbol>
+  <symbol id="i-growth" viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8 M15 7h6v6"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M3 7l9-4 9 4v10l-9 4-9-4z M3 7l9 4 9-4 M12 11v10"/></symbol>
+  <symbol id="i-cal" viewBox="0 0 24 24"><path d="M4 5h16v15H4z M4 10h16 M8 3v4 M16 3v4"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><path d="M11 4a7 7 0 1 1 0 14 7 7 0 0 1 0-14z M20 20l-4-4"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24"><path d="M3 6h18v12H3z M3 7l9 6 9-6"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8v9a2 2 0 0 1-2 2h-4v-6h-6v6H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M4 6h16 M4 12h16 M4 18h10"/></symbol>
+  <symbol id="i-dial" viewBox="0 0 24 24"><path d="M4 17a8 8 0 0 1 16 0 M12 17l4-5"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4 6.1 20.5l1.2-6.5L2.5 9.4l6.6-.9z"/></symbol>
+  <symbol id="i-review" viewBox="0 0 24 24"><path d="M4 4h16v12H9l-5 4z M12 6.6l1.3 2.6 2.8.4-2 2 .5 2.8-2.6-1.4-2.6 1.4.5-2.8-2-2 2.8-.4z"/></symbol>
+  <symbol id="i-flask" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-5.5 9.5A2 2 0 0 0 6.2 21h11.6a2 2 0 0 0 1.7-2.5L14 9V3M7.5 15h9"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="hin">
+    <a class="logo" href="#hero" aria-label="One of One, control centre"><img src="data:image/png;base64,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" alt="One of One" width="500" height="312" decoding="async"></a>
+    <nav class="pills" aria-label="Sections">
+      <button class="pill" type="button" aria-current="true" data-go="hero"><svg class="ic" aria-hidden="true"><use href="#i-home"/></svg><span class="t">Home</span></button>
+      <button class="pill" type="button" data-go="table"><svg class="ic" aria-hidden="true"><use href="#i-list"/></svg><span class="t">On the table</span></button>
+      <button class="pill" type="button" data-go="tests"><svg class="ic" aria-hidden="true"><use href="#i-flask"/></svg><span class="t">Tests</span></button>
+      <button class="pill" type="button" data-go="dials"><svg class="ic" aria-hidden="true"><use href="#i-dial"/></svg><span class="t">Dials</span></button>
+      <button class="pill" type="button" data-go="foot"><svg class="ic" aria-hidden="true"><use href="#i-cal"/></svg><span class="t">Log</span></button>
+    </nav>
+    <div class="right">
+      <label class="search"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg><input id="q" type="search" placeholder="Find a dial" autocomplete="off" aria-label="Find a dial"></label>
+      <span class="clock">Wed 30 Sep · 07:41 UK · 02:41 ET</span>
+      <span class="avatar" aria-label="Will">W</span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+<section class="hero" id="hero">
+  <div class="left">
+    <div class="glass greet">
+      <div>
+        <div class="seg" role="tablist" id="period" aria-label="Period"><button role="tab" type="button" aria-selected="true" data-period="today">Today</button><button role="tab" type="button" aria-selected="false" data-period="yday">Yesterday</button><button role="tab" type="button" aria-selected="false" data-period="7d">Last 7 days</button></div>
+        <span class="eyebrow" id="eyebrow">Wed 30 Sep · today so far</span>
+        <h1>Morning, Will.</h1>
+        <p class="sub" id="sub"><span id="sub1">6 orders so far, 4 by this time yesterday.</span> One alarm and five decisions are on the table.<span id="subrv"></span></p>
+        <div class="counts" id="counts"></div>
+      </div>
+      <div class="radar" id="radar" role="img"></div>
+    </div>
+
+    <div class="four">
+      <button class="tile coral stat" data-k="net" data-state="sofar" data-g="hero" data-src="shopify">
+        <span class="sl">Net sales · <span class="per">today so far</span></span>
+        <span class="sv big" data-n="296" data-pre="£">£296</span>
+        <span class="spark" data-spark="1640,1710,1980,1820,2310,1760,2099" aria-hidden="true"></span>
+        <span class="ss">6 orders · 7-day avg £1,903 a day</span>
+      </button>
+      <button class="tile stat" data-k="orders" data-state="sofar" data-g="hero" data-src="shopify">
+        <span class="sl">Orders · <span class="per">today so far</span></span>
+        <span class="sv big" data-n="6">6</span>
+        <span class="ss">UK 2 · US 4 · 4 by this time yesterday</span>
+      </button>
+      <button class="tile stat" data-k="cr" data-state="sofar" data-g="hero" data-src="shopify">
+        <span class="sl">Conversion rate · <span class="per">today so far</span></span>
+        <span class="sv big" data-n="3.2" data-dp="1" data-suf="%">3.2%</span>
+        <span class="ss">6 of 188 sessions · 7-day avg 3.8%</span>
+      </button>
+      <button class="tile solid stat" data-k="spend" data-state="sofar" data-g="hero">
+        <span class="sl">Ad spend · <span class="per">today so far</span></span>
+        <span class="sv big" data-n="174" data-pre="£">£174</span>
+        <span class="ss">ours £59 · Laszlo £101 · Google £14</span>
+      </button>
+    </div>
+
+    <div class="quad">
+      <button class="tile dial" data-k="ukcpo" data-src="meta" data-g="meta" data-dial='{"v":24.5,"min":12,"max":40,"t":"£24.50","l":"UK Meta cost per order","s":"so far · bar £28","z":[[12,25.2,"good"],[25.2,28,"warn"],[28,40,"decide"]],"d":{"why":"£49 of UK Meta spend so far today (ours plus Laszlo) over 2 UK orders. Too few orders to judge.","rule":"No judgement on a part day. From midnight UK: amber from 90% of the £28 blended bar (£25.20), over £28 is a decision.","src":"Meta spend UK ÷ Shopify UK orders, today so far","hist":[26.6,25.9,29.1,25.6,25.6,28.8,24.96],"hp":"£"},"cap":"sofar"}'></button>
+      <button class="tile dial" data-k="uscpo" data-src="meta" data-g="meta" data-dial='{"v":27.75,"min":12,"max":40,"t":"£27.75","l":"US Meta cost per order","s":"so far · bar £28","z":[[12,25.2,"good"],[25.2,28,"warn"],[28,40,"decide"]],"d":{"why":"£111 of US Meta spend so far today (ours plus Laszlo) over 4 US orders. Too few orders to judge.","rule":"No judgement on a part day. From midnight UK: amber from 90% of the £28 blended bar (£25.20), over £28 is a decision.","src":"Meta spend US ÷ Shopify US orders, today so far","hist":[31.2,36.4,33.0,38.9,30.1,35.7,34.61],"hp":"£"},"cap":"sofar"}'></button>
+      <button class="tile stat" data-k="roas" data-state="info" data-g="hero">
+        <span class="sl">Overall ROAS · <span class="per">today so far</span></span>
+        <span class="sv" data-n="1.70" data-dp="2" data-suf="×">1.70×</span>
+        <span class="ss">net sales ÷ all ad spend · set a bar</span>
+      </button>
+      <button class="tile stat" data-k="margin" data-state="est" data-g="hero">
+        <span class="sl">Net margin · <span class="per">today so far</span></span>
+        <span class="sv" data-n="16" data-suf="%">16%</span>
+        <span class="ss">live estimate · sample until costs.md is filled</span>
+      </button>
+    </div>
+  </div>
+
+  <aside class="glass score" id="score" aria-label="Live, wins and coming up">
+    <div class="stabs" role="tablist">
+      <button role="tab" type="button" aria-selected="true" data-st="live"><span class="livedot" aria-hidden="true"></span>Live</button>
+      <button role="tab" type="button" aria-selected="false" data-st="wins">Wins</button>
+      <button role="tab" type="button" aria-selected="false" data-st="soon">Coming up</button>
+    </div>
+    <div class="srows" data-sp="live">
+      <div class="srow"><span class="v">23 min</span><span class="l">since the last order<small>US, 2 kits</small></span><span class="d up">live</span></div>
+      <div class="srow"><span class="v">4</span><span class="l">carts open<small>0 abandoned checkouts</small></span><span class="d">Shopify 2 min</span></div>
+      <div class="srow"><span class="v">18 · 9</span><span class="l">to dispatch UK · US<small>J&amp;J by 16:00 · Ohio by 15:00 ET</small></span><span class="d">today</span></div>
+      <div class="srow"><span class="v">412 ms</span><span class="l">site up<small>UK and US checkouts tested</small></span><span class="d up">✓ fine</span></div>
+      <div class="srow"><span class="v">0</span><span class="l">junk traffic sources<small>Missouri 4%, watched</small></span><span class="d">1 min</span></div>
+    </div>
+    <div class="srows" data-sp="wins" hidden>
+      <div class="srow win"><span class="v">£24.96</span><span class="l">UK cost per order<small>best of the week</small></span><svg class="star" aria-hidden="true"><use href="#i-star"/></svg></div>
+      <div class="srow win"><span class="v">43</span><span class="l">orders yesterday<small>5 above the 7-day average</small></span><svg class="star" aria-hidden="true"><use href="#i-star"/></svg></div>
+      <div class="srow win"><span class="v">571</span><span class="l">D1 UK flow entries<small>since the country fix</small></span><svg class="star" aria-hidden="true"><use href="#i-star"/></svg></div>
+      <div class="srow win"><span class="v">24</span><span class="l">popup sign-ups<small>day 2 of the gift popup test</small></span><svg class="star" aria-hidden="true"><use href="#i-star"/></svg></div>
+      <div class="srow win"><span class="v">0</span><span class="l">flow leaks<small>abandoned-cart flow since the purchase checks</small></span><svg class="star" aria-hidden="true"><use href="#i-star"/></svg></div>
+    </div>
+    <div class="srows" data-sp="soon" hidden>
+      <div class="srow soon"><span class="td">Thu 1 Oct</span><span class="l">US payday<small>discount tomorrow’s US dials</small></span><span class="d">tomorrow</span></div>
+      <div class="srow"><span class="td">Sat 3 Oct</span><span class="l">Laszlo review<small>UK Card games and Gift sets</small></span><span class="d">3 d</span></div>
+      <div class="srow"><span class="td">Sun 4 Oct</span><span class="l">Judge the UK screen test<small>ads 24 + 33</small></span><span class="d">4 d</span></div>
+      <div class="srow"><span class="td">Tue 6 Oct</span><span class="l">Gift popup: earliest call<small>day 7 of the test</small></span><span class="d">6 d</span></div>
+      <div class="srow"><span class="td">Thu 8 Oct</span><span class="l">Helen back<small>3 items waiting for her</small></span><span class="d">8 d</span></div>
+      <div class="srow"><span class="td">Mon 12 Oct</span><span class="l">Mailchimp bill<small>row 5 on the table</small></span><span class="d">12 d</span></div>
+      <div class="sfoot"><button class="btn" type="button" id="alldates">All dates</button></div>
+    </div>
+  </aside>
+</section>
+
+<section class="glass tbl" id="table">
+  <div class="sh"><h2>On the table</h2><span class="shm" id="deckcount">1 alarm · 5 decisions</span></div>
+  <div class="deck" id="deck">
+
+    <article class="dcard" data-state="alarm" data-id="slabs">
+      <div class="rhead">
+        <span class="chip alarm">✕ Alarm</span>
+        <span class="src" aria-hidden="true"><svg class="ic"><use href="#i-box"/></svg></span>
+        <button class="rt" type="button" aria-expanded="false"><h3>US Slabs &amp; Label pack runs dry 14 Oct</h3><span class="rec">Draft the ask now so it is the first thing Helen reads.</span></button>
+        <div class="nums"><div><b>14 d</b><span>of stock</span></div><div><b>21 d</b><span>floor</span></div><div><b>8 Oct</b><span>Helen back</span></div></div>
+        <div class="acts">
+          <button class="act primary" type="button" data-copy="Hi Helen, hope the holiday was good. US Slabs & Label packs run out around 14 Oct. Can you air 700–1,000 US packs as soon as possible? Please send price and schedule, and confirm the slab address. The 1,000 label numbers follow in the next message. Thanks, Will">Copy message to Helen</button>
+          <button class="act" type="button" data-act="snooze" data-msg="Snooze this row until Thu 8 Oct, when Helen is back? The stock ring keeps counting down and the alarm comes back if the floor is still breached." data-done="Snoozed to 8 Oct" data-log="Snoozed US Slabs & Label alarm to 8 Oct">Snooze to 8 Oct</button>
+        </div>
+      </div>
+      <p class="why" hidden>The only item under its floor. Helen is away until 8 Oct, so the fix is 700–1,000 US packs by air the day she is back.</p>
+      <div class="confirm" hidden><p></p><div class="row"><button class="act primary" type="button" data-confirm>Yes, do it</button><button class="act" type="button" data-back>Back</button></div></div>
+      <div class="doneline" hidden></div>
+    </article>
+
+    <article class="dcard" data-state="decide" data-id="news">
+      <div class="rhead">
+        <span class="chip decide">◆ Decide</span>
+        <span class="src" aria-hidden="true"><svg class="ic"><use href="#i-meta"/></svg></span>
+        <button class="rt" type="button" aria-expanded="false"><h3>News article · US feed</h3><span class="rec">Pause it. Resume later if a new creative is ready.</span></button>
+        <div class="nums"><div><b>£43.52</b><span>7d per purchase</span></div><div><b>£22.70</b><span>US break-even</span></div><div><b>£60</b><span>a day</span></div></div>
+        <div class="acts">
+          <button class="act primary" type="button" data-act="pause" data-msg="Pause News article · US feed now? Meta stops it within a minute and the £60/day goes back into the pot. Undo resumes it." data-done="Paused on Meta" data-log="Paused ad set News article · US feed (£60/day) on Meta">Pause ad set</button>
+          <button class="act" type="button" data-act="leave" data-done="Left running · back tomorrow" data-log="Left News article · US feed running one more day">Leave it a day</button>
+        </div>
+      </div>
+      <p class="why" hidden>Kill rule met: three days over break-even with the full budget spent. It is dragging the US blended number over £28.</p>
+      <div class="confirm" hidden><p></p><div class="row"><button class="act primary" type="button" data-confirm>Yes, pause</button><button class="act" type="button" data-back>Back</button></div></div>
+      <div class="doneline" hidden></div>
+    </article>
+
+    <article class="dcard" data-state="decide" data-id="google">
+      <div class="rhead">
+        <span class="chip decide">◆ Decide</span>
+        <span class="src" aria-hidden="true"><svg class="ic"><use href="#i-google"/></svg></span>
+        <button class="rt" type="button" aria-expanded="false"><h3>Google is at £165 a day, not £90</h3><span class="rec">Ask Laszlo whether this is the plan for the week.</span></button>
+        <div class="nums"><div><b>£165</b><span>budget now</span></div><div><b>£90</b><span>agreed</span></div><div><b>14:00</b><span>switched on 30 Sep</span></div></div>
+        <div class="acts">
+          <a class="act wa" target="_blank" rel="noopener" href="https://wa.me/?text=Hi%20Laszlo%2C%20saw%20PMax%20xLM%20US%20v2%20(%C2%A350)%20and%20Branded%20Search%20US%20V2%20(%C2%A325)%20went%20live%20about%202pm%20yesterday%2C%20so%20Google%20is%20at%20%C2%A3165%2Fday%20against%20the%20%C2%A390%20we%20agreed.%20Is%20that%20the%20plan%20for%20the%20week%3F%20Happy%20to%20run%20it%20if%20the%20US%20pair%20holds%20ROAS%2C%20otherwise%20let%E2%80%99s%20pull%20back%20to%20%C2%A390.%20Will">WhatsApp Laszlo</a>
+          <button class="act" type="button" data-act="accept" data-msg="Accept £165/day as the Google plan for this week? The Google spend dial re-bases to £165 and this row closes." data-done="Accepted £165/day" data-log="Accepted Google budget £165/day for the week">Accept £165</button>
+        </div>
+      </div>
+      <p class="why" hidden>PMax xLM US v2 (£50) and Branded Search US V2 (£25) went live yesterday afternoon. Not by us, not yet confirmed with Laszlo.</p>
+      <div class="confirm" hidden><p></p><div class="row"><button class="act primary" type="button" data-confirm>Yes, accept</button><button class="act" type="button" data-back>Back</button></div></div>
+      <div class="doneline" hidden></div>
+    </article>
+
+    <article class="dcard" data-state="decide" data-id="laszlo-us">
+      <div class="rhead">
+        <span class="chip decide">◆ Decide</span>
+        <span class="src" aria-hidden="true"><svg class="ic"><use href="#i-meta"/></svg></span>
+        <button class="rt" type="button" aria-expanded="false"><h3>Laszlo’s US sets over £30</h3><span class="rec">Message him today. His UK Card games and Gift sets are due a look on 3 Oct anyway.</span></button>
+        <div class="nums"><div><b>2 sets</b><span>birthday, Pokémon</span></div><div><b>3 days</b><span>over £30</span></div><div><b>£22.70</b><span>US break-even</span></div></div>
+        <div class="acts">
+          <a class="act wa" target="_blank" rel="noopener" href="https://wa.me/?text=Hi%20Laszlo%2C%20US%20birthday%20and%20Pok%C3%A9mon%20sets%20have%20been%20over%20%C2%A330%2Fpurchase%20for%203%20days%20against%20the%20%C2%A322.70%20break-even.%20Can%20you%20look%20today%3F%20Cut%20or%20swap%20creative%2C%20your%20call.%20UK%20Card%20games%20and%20Gift%20sets%20on%203%20Oct%20as%20planned.%20Will">WhatsApp Laszlo</a>
+          <button class="act" type="button" data-act="wait" data-msg="Wait until 3 Oct and raise both US sets with the UK review? The dial stays amber meanwhile." data-done="Waiting for 3 Oct" data-log="Parked Laszlo US sets until the 3 Oct review">Wait for 3 Oct</button>
+        </div>
+      </div>
+      <p class="why" hidden>His UK sets are fine (7d £17.90). The US pair has been over £30 per purchase three days running.</p>
+      <div class="confirm" hidden><p></p><div class="row"><button class="act primary" type="button" data-confirm>Yes, wait</button><button class="act" type="button" data-back>Back</button></div></div>
+      <div class="doneline" hidden></div>
+    </article>
+
+    <article class="dcard" data-state="decide" data-id="mailchimp">
+      <div class="rhead">
+        <span class="chip decide">◆ Decide</span>
+        <span class="src" aria-hidden="true"><svg class="ic"><use href="#i-mail"/></svg></span>
+        <button class="rt" type="button" aria-expanded="false"><h3>Mailchimp audience is over plan</h3><span class="rec">Pick one before 12 Oct. Blocks cost less if the audience stays under 5,500.</span></button>
+        <div class="nums"><div><b>5,151</b><span>contacts</span></div><div><b>5,000</b><span>plan</span></div><div><b>12 d</b><span>to the bill</span></div></div>
+        <div class="acts">
+          <button class="act primary" type="button" data-act="block" data-msg="Decide: add contact blocks on the current tier? This is written to HQ as the decision. Mailchimp billing still needs a tap in their app." data-done="Decided: add contact blocks" data-log="Decided Mailchimp: add contact blocks, stay on tier">Add contact blocks</button>
+          <button class="act" type="button" data-act="tier" data-msg="Decide: move up a Mailchimp tier? Written to HQ as the decision." data-done="Decided: move up a tier" data-log="Decided Mailchimp: move up a tier">Move up a tier</button>
+        </div>
+      </div>
+      <p class="why" hidden>103% of the plan. The 595 cold contacts from August stay archived, so the bill on 12 Oct adds contact blocks or moves up a tier.</p>
+      <div class="confirm" hidden><p></p><div class="row"><button class="act primary" type="button" data-confirm>Yes, that one</button><button class="act" type="button" data-back>Back</button></div></div>
+      <div class="doneline" hidden></div>
+    </article>
+
+    <article class="dcard" data-state="decide" data-id="dates">
+      <div class="rhead">
+        <span class="chip decide">◆ Decide</span>
+        <span class="src" aria-hidden="true"><svg class="ic"><use href="#i-bag"/></svg></span>
+        <button class="rt" type="button" aria-expanded="false"><h3>Keep Automated delivery dates?</h3><span class="rec">Decide after the 16:20 check. Nothing has been over-promised.</span></button>
+        <div class="nums"><div><b>~14:00</b><span>Automated rolls</span></div><div><b>12:00</b><span>Manual rolled</span></div><div><b>16:00</b><span>real cutoff</span></div></div>
+        <div class="acts">
+          <button class="act primary" type="button" data-act="keep" data-msg="Keep Automated dates? Written to HQ. The trial log gets the 15:35 and 16:20 results when they land." data-done="Keeping Automated" data-log="Decided: keep Automated delivery dates">Keep Automated</button>
+          <button class="act" type="button" data-act="revert" data-msg="Revert to Manual dates? This is a Shopify setting change: Settings › Shipping and delivery › Estimated delivery dates › Manual. The dashboard logs it and shows the steps; it does not change Shopify for you yet." data-done="Reverting to Manual (steps shown)" data-log="Decided: revert delivery dates to Manual">Revert to Manual</button>
+        </div>
+      </div>
+      <p class="why" hidden>Automated halved the afternoon gap but did not close it. Two observe-only checks run today at 15:35 and 16:20.</p>
+      <div class="confirm" hidden><p></p><div class="row"><button class="act primary" type="button" data-confirm>Yes</button><button class="act" type="button" data-back>Back</button></div></div>
+      <div class="doneline" hidden></div>
+    </article>
+
+  </div>
+</section>
+
+<section class="glass revs" id="reviews" aria-label="New reviews">
+  <div class="rvhead">
+    <span class="src" aria-hidden="true"><svg class="ic"><use href="#i-review"/></svg></span>
+    <div><h2>New reviews <span class="chip decide" id="rvcount">◆ 3 waiting</span></h2><span class="shm">Judge.me · checked 2 min ago · sample reviews, invented</span></div>
+    <a class="act" href="https://judge.me/" target="_blank" rel="noopener">All in Judge.me</a>
+  </div>
+  <div class="rvlist">
+  <article class="rv" data-state="warn" data-id="rv1">
+    <div class="rvr">
+      <span class="rvs"><span class="stars" data-stars="2"></span><span class="chip warn">! Read first</span></span>
+      <button class="rt" type="button" data-sheet='{"state": "warn", "title": "2★ review · Duo Pack · US", "why": "“One slab in my Duo Pack arrived with a scratch across the front. The labels and the case are great.”", "rule": "A review shows here the moment Judge.me reports it, and stays until it is published or hidden, here or in Judge.me. 1 to 3 stars get ! Read first. Publish needs your confirm tap and undo hides it again. Open takes you to Judge.me to read it in full, reply or hide it.", "src": "Judge.me · posted 07:23 UK · not published yet · sample review, invented for the mockup", "extra": [["Product", "Duo Pack"], ["Market", "US"], ["Buyer", "Verified buyer"], ["Photos", "None"], ["Ids", "review id and order id, never the name"]]}'><h3>Duo Pack · US · verified buyer</h3><span class="rec">“One slab in my Duo Pack arrived with a scratch across the front. The labels and the case are great.”</span></button>
+      <div class="rvm"><span class="age">18 min ago</span><div class="acts"><a class="act primary" href="https://judge.me/" target="_blank" rel="noopener">Read in Judge.me</a><button class="act" type="button" data-act="publish" data-msg="Publish this 2★ review on the Duo Pack page? It goes live on the site within a few minutes. Undo hides it again." data-done="Published on the site" data-log="Published Judge.me review (2★, Duo Pack, US) · id in the log">Publish</button></div></div>
+    </div>
+    <div class="confirm" hidden><p></p><div class="row"><button class="act primary" type="button" data-confirm>Yes, publish</button><button class="act" type="button" data-back>Back</button></div></div>
+    <div class="doneline" hidden></div>
+  </article>
+  <article class="rv" data-state="decide" data-id="rv2">
+    <div class="rvr">
+      <span class="rvs"><span class="stars" data-stars="5"></span><span class="chip decide">◆ New</span></span>
+      <button class="rt" type="button" data-sheet='{"state": "decide", "title": "5★ review · Kit · UK", "why": "“Made my first slab in ten minutes and it looks like a real graded card. Ordering a refill already.”", "rule": "A review shows here the moment Judge.me reports it, and stays until it is published or hidden, here or in Judge.me. 1 to 3 stars get ! Read first. Publish needs your confirm tap and undo hides it again. Open takes you to Judge.me to read it in full, reply or hide it.", "src": "Judge.me · posted 06:38 UK · not published yet · sample review, invented for the mockup", "extra": [["Product", "Kit"], ["Market", "UK"], ["Buyer", "Verified buyer"], ["Photos", "1 photo"], ["Ids", "review id and order id, never the name"]]}'><h3>Kit · UK · verified buyer · 1 photo</h3><span class="rec">“Made my first slab in ten minutes and it looks like a real graded card. Ordering a refill already.”</span></button>
+      <div class="rvm"><span class="age">1 h ago</span><div class="acts"><button class="act primary" type="button" data-act="publish" data-msg="Publish this 5★ review on the Kit page? It goes live on the site within a few minutes. Undo hides it again." data-done="Published on the site" data-log="Published Judge.me review (5★, Kit, UK) · id in the log">Publish</button><a class="act" href="https://judge.me/" target="_blank" rel="noopener">Open</a></div></div>
+    </div>
+    <div class="confirm" hidden><p></p><div class="row"><button class="act primary" type="button" data-confirm>Yes, publish</button><button class="act" type="button" data-back>Back</button></div></div>
+    <div class="doneline" hidden></div>
+  </article>
+  <article class="rv" data-state="decide" data-id="rv3">
+    <div class="rvr">
+      <span class="rvs"><span class="stars" data-stars="4"></span><span class="chip decide">◆ New</span></span>
+      <button class="rt" type="button" data-sheet='{"state": "decide", "title": "4★ review · Refill pack · UK", "why": "“Good value refill. The labels took me a couple of goes to line up, fine after that.”", "rule": "A review shows here the moment Judge.me reports it, and stays until it is published or hidden, here or in Judge.me. 1 to 3 stars get ! Read first. Publish needs your confirm tap and undo hides it again. Open takes you to Judge.me to read it in full, reply or hide it.", "src": "Judge.me · posted 02:10 UK · not published yet · sample review, invented for the mockup", "extra": [["Product", "Refill pack"], ["Market", "UK"], ["Buyer", "Verified buyer"], ["Photos", "None"], ["Ids", "review id and order id, never the name"]]}'><h3>Refill pack · UK · verified buyer</h3><span class="rec">“Good value refill. The labels took me a couple of goes to line up, fine after that.”</span></button>
+      <div class="rvm"><span class="age">5 h ago</span><div class="acts"><button class="act primary" type="button" data-act="publish" data-msg="Publish this 4★ review on the Refill pack page? It goes live on the site within a few minutes. Undo hides it again." data-done="Published on the site" data-log="Published Judge.me review (4★, Refill pack, UK) · id in the log">Publish</button><a class="act" href="https://judge.me/" target="_blank" rel="noopener">Open</a></div></div>
+    </div>
+    <div class="confirm" hidden><p></p><div class="row"><button class="act primary" type="button" data-confirm>Yes, publish</button><button class="act" type="button" data-back>Back</button></div></div>
+    <div class="doneline" hidden></div>
+  </article>
+  </div>
+</section>
+
+<section class="glass tests" id="tests">
+  <div class="sh"><h2>Tests</h2><span class="shm" id="testcount">1 live · 2 more running · 4 queued · 3 called</span></div>
+  <article class="tcard" data-state="info" data-g="growth" data-id="t1" data-kind="coin" data-test='{"metric":"kit orders","unit":"orders","arms":[{"k":"A","l":"Free pack added for you","x":36},{"k":"B","l":"Popup, email unlocks it","x":29}],"day":2,"min":7,"max":28,"minx":30,"prev":58,"denom":"assumed 50/50 split, no visitor count yet","strip":["A","A"],"note":"B also collected 24 sign-ups"}'>
+    <div class="thead"><span class="tlane">This week’s test</span><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-bag"/></svg></span><button class="rt" type="button" data-sheet='{"state":"info","title":"Gift popup: free pack vs email popup","why":"Half of visitors get the free slab pack added to the cart automatically (A). The other half see a popup and give an email to unlock it (B). The question is whether gating the gift behind an email beats giving it away: B banks sign-ups, A should convert better.","rule":"Every test runs at least 7 full days including a weekend, and until each arm has 30 of the counted event. Numbers refresh live; the verdict is recomputed only at the 07:37 morning read. Sure needs 95% (two-sided) on two consecutive mornings, the last not a spike day. Day 28 with no call is a draw: no difference bigger than the smallest gap the test can see, keep the simpler or cheaper arm, and the draw goes in the register as a result.","src":"Shopify orders, __gift_test cart attribute (gift-popup-1:A or :B) on every order since #5354; sign-ups by the slab-popup customer tag in Shopify","extra":[["Smallest gap it can see","About 49% right now (16 orders between the arms). It shrinks as orders arrive: about 27% by day 7, about 13% by day 28 at today’s pace."],["How sure is worked out","Coin-flip test on the order counts: z = (B − A) ÷ √(A + B). 95% sure is z of 1.96 either way. It assumes a 50/50 split of visitors because no per-arm visitor count exists yet; once the theme sends a visitor beacon the test switches to a two-proportion test with a real split check."],["Setup","Theme 205345653070 (main) splits visitors 50/50 in the theme and stamps every order. Mailchimp journey 3354 sends the popup emails. Arm stickiness is one week on one device (Safari caps the cookie at 7 days)."],["What Call does","Writes the result to ops/tests/register.md, a line to log/ and the rule to knowledge/, through a session or the Monday routine (the dashboard’s own token is read-only). 24 hours to undo. Making the winner permanent is a separate confirm. No write path exists until you approve one."],["You decide","End date: proposed 27 Oct, day 28, read at 07:37. Bar: kit orders per arm, 95% two-sided, at least 30 a side. Not yet confirmed."]]}'><h3>Gift popup: free pack vs email popup</h3><span class="rec">Site lane · UK + US · day 2 of at least 7</span></button><span class="chip info" data-tchip>i Too early</span></div>
+    <div class="tbody"><div class="tbars" data-bars></div><div class="tsure" data-sure></div></div>
+    <p class="tsay" data-say></p>
+    <div class="tfoot"><span class="tprog" data-prog></span><div class="acts"><button class="act" type="button" disabled data-call>Ready in about 8 days</button></div></div>
+    <div class="confirm" hidden><p></p><div class="row"><button class="act primary" type="button" data-confirm>Yes</button><button class="act" type="button" data-back>Back</button></div></div>
+    <div class="doneline" hidden></div>
+  </article>
+  <div class="tsub">Also running</div>
+  <div class="trows">
+      <div class="trow"><span class="chip warn">! Day 1</span><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-meta"/></svg></span><button class="rt" type="button" data-sheet='{"state":"warn","title":"UK screen set: back on with ads 24 + 33","why":"The UK screen ad set was switched back on at 07:14 this morning at £40 a day with ads 24 and 33 only. It is judged on Sun 4 Oct on cost per purchase over all spend since it came back, against the £18.56 bar. Daily spend flexing up to 175% of budget is Meta’s doing, not a fault.","rule":"A before/after switch, not a split: the comparison is the set’s own last 7 days before the pause. Capped at Leaning; a switch test can never be called Sure.","src":"Meta Ads Manager, ad set 120249858748230430, spend and purchases since 30 Sep 07:14","extra":[["Day 1 of 5","Too early for any read. The figure on the Growth dial is the pre-pause comparison until purchases arrive."],["Then","Over £18.56: pause again. Under: keep, and consider a step after two more clean days."]]}'><h3>UK screen set: back on with ads 24 + 33</h3><span class="rec">Ads lane · back on this morning · judge Sun 4 Oct on cost per purchase · before/after, capped at Leaning</span></button><span class="d">day 1 of 5</span></div>
+      <div class="trow"><span class="chip decide">◆ Call it</span><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-bag"/></svg></span><button class="rt" type="button" data-sheet='{"state":"decide","title":"Delivery dates: Automated vs Manual","why":"Checkout has been on Automated dates with Same business day fulfilment since 29 Sep 18:10. Automated halves the afternoon gap rather than closing it: DPD was right at 10:31 and 12:21, then a working day late at 14:01 and 14:14. Manual rolled at noon; the real cutoff is 16:00. Nothing was over-promised.","rule":"A before/after switch, capped at Leaning. The call is yours: keep Automated, revert to Manual, or close the last two hours another way.","src":"ops/delivery-trial/trial-log.md and the live checkout","extra":[["Next","Two observe-only checks on Thu 1 Oct at 14:30 and 16:15, then an audit against real deliveries from Tue 6 Oct. The row on the table carries Keep and Revert."]]}'><h3>Delivery dates: Automated vs Manual</h3><span class="rec">Site lane · before/after since 29 Sep · DPD right in the morning, a day late after 14:00</span></button><button class="act" type="button" data-goto="dates">Decide on the table</button></div>
+  </div>
+  <div class="tsub">Next up · one at a time per lane</div>
+  <div class="trows">
+      <div class="trow"><span class="chip decide">◆ Your yes</span><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-meta"/></svg></span><button class="rt" type="button" data-sheet='{"state":"decide","title":"Retargeting: does it add orders or only take credit?","why":"New campaign of our own, RT US and RT UK at £10 a day each, shown only to people who visited in the last 7 days or added to cart in the last 14 and have not bought. Retargeting is where Meta over-credits most, because these people were already coming back.","rule":"Kill early at £40 spent with no add-to-cart, or 7-day frequency above 6. Keep at day 14 only if all three hold: 7-day-click cost per purchase at or under the target (UK £15.78, US £19.30); Shopify orders tagged rt-oct are at least half what Meta claims; spend per order in that market is no worse than the 14 days before.","src":"Meta Ads Manager, the two RT ad sets; Shopify orders by last-visit UTM","extra":[["Needs","Your yes on the creative pair, £10 a day per country, the start date and 7-day click. Brief: ads/2026-10-meta-retargeting-brief.md"],["Dates","Earliest start Mon 5 Oct, after the budget hold. Day 7 is an early look only; day 14, Sun 18 Oct, is the call. The US payday on 15 Oct falls inside it."]]}'><h3>Retargeting: new orders or only credit?</h3><span class="rec">Ads lane · £10 a day per country on visitors who have not bought · call at day 14</span></button><span class="d">earliest Mon 5 Oct · brief written</span></div>
+      <div class="trow"><span class="chip info">i Queued</span><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-meta"/></svg></span><button class="rt" type="button" data-sheet='{"state":"info","title":"Long cut vs short cut of the same ad","why":"Two ad sets at £22.50 a day each, same audience and placements, one cut per set. Never two ads in one ad set: Meta starves one of them and the read is void.","rule":"Read on cost per add-to-cart. 30 add-to-carts a side takes about 9 to 10 days at the live cost per add-to-cart. Click-through rate is the early read, marked early; Shopify orders are the final read. Spend per arm must stay within 10% or the read is void.","src":"Meta Ads Manager, the two ad sets; Shopify orders by UTM","extra":[["Needs","Both cuts rendered and approved. Runs after the retargeting test (day 14 is Sun 18 Oct), or first if Will picks it: one test at a time in the ads lane."],["How sure is worked out","Rate-ratio test on add-to-carts per £: z = ln(rB ÷ rA) ÷ √(1 ÷ kA + 1 ÷ kB), where k is each arm’s add-to-cart count."]]}'><h3>Long cut vs short cut of the same ad</h3><span class="rec">Ads lane · two ad sets at £22.50 each, one cut per set, same audience · read on cost per add-to-cart</span></button><span class="d">after retargeting · needs both cuts</span></div>
+      <div class="trow wait"><span class="chip info">i Waits</span><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-bag"/></svg></span><button class="rt" type="button" data-sheet='{"state":"info","title":"Cart drawer wording","why":"The cart drawer is theme-owned, so it can be split like the gift popup: half of visitors see the current wording, half the candidate. The Shopify checkout page itself cannot be split on this plan, so checkout wording is a before/after switch, capped at Leaning.","rule":"Waits for the popup test to finish: both tests touch the same cart footer file and one page carries one test at a time.","src":"Shopify orders by arm, cart attribute","extra":[["Candidate wording","To be written with you. One change at a time: a line, not a redesign."],["Lane","Site lane, after the gift popup test."]]}'><h3>Cart drawer wording</h3><span class="rec">Site lane · shares the cart with the popup test, so it waits · the checkout page itself cannot be split on this plan</span></button><span class="d">after the popup test</span></div>
+      <div class="trow wait"><span class="chip info">i Waits</span><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-bag"/></svg></span><button class="rt" type="button" data-sheet='{"state":"info","title":"Bundles page vs kit page as the ad landing page","why":"Bundles are 65% of US orders and 33% of UK. The question is whether sending ad traffic to /pages/bundles beats the kit page.","rule":"Two ad sets, same ad and audience, different landing URL, equal budget. Read on orders per visitor, 30 orders a side. No test straddles Black Friday week (23 to 28 Nov).","src":"Shopify orders by landing page and UTM; Meta spend by ad set","extra":[["Lane","Site lane, after cart wording."],["No Black Friday straddle","Starts only if it can finish before 23 Nov, else it waits until December."]]}'><h3>Bundles page vs kit page as the ad landing page</h3><span class="rec">Site lane · bundles are 65% of US orders and 33% of UK · read on orders per visitor</span></button><span class="d">after cart wording</span></div>
+  </div>
+  <div class="tsub">Past tests · 3 called in September · 2 made a rule</div>
+  <div class="trows">
+      <div class="trow"><span class="chip good">✓ Feed wins</span><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-meta"/></svg></span><button class="rt" type="button" data-sheet='{"state":"good","title":"Feed vs Story and Reels placements","why":"Every static concept lost in Story and Reels placements against the same creative in feed.","rule":"New static concepts go feed only.","src":"knowledge/meta-ads.md, log/2026-09.md","extra":[["Verdict","Feed wins. Called in September."]]}'><h3>Feed vs Story and Reels placements</h3><span class="rec">Ads lane · every static concept lost in Story and Reels · rule: new statics go feed only</span></button><span class="d">Sep</span></div>
+      <div class="trow"><span class="chip info">= Mixed</span><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-meta"/></svg></span><button class="rt" type="button" data-sheet='{"state":"info","title":"Were the September kills right?","why":"A post-attribution re-read of the September kills. Only News article US story reached break-even (£23.40 against the £22.70 bar); the rest were right to kill.","rule":"Re-read kills monthly, after attribution has caught up.","src":"knowledge/meta-ads.md, 30 Sep readout","extra":[["Verdict","Mixed. One kill looked wrong in hindsight; the rule is the monthly re-read."]]}'><h3>Were the September kills right?</h3><span class="rec">Ads lane · only News article US story reached break-even (£23.40 v £22.70) · rule: re-read kills monthly</span></button><span class="d">30 Sep</span></div>
+      <div class="trow"><span class="chip good">✓ Fixed</span><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-mail"/></svg></span><button class="rt" type="button" data-sheet='{"state":"good","title":"D1 US flow country condition","why":"The Shopify Flow country condition read the code and matched nothing. Set to the country name “United States”, the D1 US flow got its first 3 entries the same day.","rule":"Use the country name, not the code. A measured before/after, not an A/B.","src":"knowledge/mailchimp-flows.md, 27 Sep","extra":[["Verdict","Fixed, 27 Sep."]]}'><h3>D1 US flow country condition</h3><span class="rec">Email · United States, not the code · 3 entries the same day</span></button><span class="d">27 Sep</span></div>
+  </div>
+</section>
+
+<section class="glass dials" id="dials">
+  <div class="sh"><h2>Dials</h2><span class="shm" id="dialcount">37 dials in four decks. Tap one for why, the rule, the source and 7 days.</span></div>
+  <div class="tabs" id="tabs" role="tablist">
+    <button class="tab" role="tab" data-tab="ads" aria-selected="true"><svg class="ic"><use href="#i-meta"/></svg><span class="t">Ads</span><span class="dot info"></span></button>
+    <button class="tab" role="tab" data-tab="store" aria-selected="false"><svg class="ic"><use href="#i-bag"/></svg><span class="t">Store</span><span class="dot info"></span></button>
+    <button class="tab" role="tab" data-tab="growth" aria-selected="false"><svg class="ic"><use href="#i-growth"/></svg><span class="t">Growth</span><span class="dot info"></span></button>
+    <button class="tab" role="tab" data-tab="stock" aria-selected="false"><svg class="ic"><use href="#i-box"/></svg><span class="t">Stock</span><span class="dot info"></span></button>
+  </div>
+
+  <div class="panel" id="p-ads" data-panel="ads">
+    <div class="grid">
+      <button class="tile dial" data-src="meta" data-dial='{"v":466,"min":300,"max":700,"t":"£466","l":"Our spend vs plan","s":"plan £470","z":[[300,423,"warn"],[423,517,"good"],[517,564,"warn"],[564,700,"alarm"]],"d":{"why":"£466 against a £470 day plan (99%). Green between 90% and 110%, amber to 120%, red above: runaway spend is a real failure.","rule":"Budget band from the day plan. Over 120% of plan is red because it means a set is spending outside its budget.","src":"Meta Ads Manager, our campaigns only, yesterday","hist":[520,498,470,455,448,452,466],"hp":"£"}}'></button>
+      <button class="tile dial" data-src="meta" data-dial='{"v":25,"min":0,"max":40,"t":"25%","l":"Test share","s":"cap 25%","z":[[0,22.5,"good"],[22.5,25.5,"warn"],[25.5,40,"decide"]],"d":{"why":"Test sets took 25% of our spend, right at the cap.","rule":"Amber from 22.5%. Over the cap is a decision: trim a test or promote it to WINNER.","src":"Meta, our test sets ÷ our total","hist":[22,24,25,25,26,24,25]}}'></button>
+      <button class="tile dial" data-src="meta" data-dial='{"v":1.41,"min":0.5,"max":3,"t":"1.41×","l":"Meta over-credit","s":"vs Shopify orders","z":[[0.5,1.5,"good"],[1.5,1.8,"warn"],[1.8,3,"alarm"]],"d":{"why":"Meta claimed 1.41 purchases for every real Shopify order. Normal for a 7-day click window.","rule":"Amber over 1.5×, red over 1.8×: the pixel or CAPI is double-counting and every other Meta number is wrong.","src":"Meta purchases ÷ Shopify orders, 7 days","hist":[1.38,1.44,1.40,1.47,1.39,1.43,1.41]}}'></button>
+      <button class="tile dial" data-src="meta" data-dial='{"v":9.80,"min":0,"max":25,"t":"£9.80","l":"WINNER ATC · UK","s":"bar £16","z":[[0,14.4,"good"],[14.4,25,"warn"]],"d":{"why":"UK WINNER sets cost £9.80 per add-to-cart, well under the £16 bar.","rule":"Amber from 90% of the bar. Over the bar: hold the next step-up.","src":"Meta, 37 Story reply UK feed + 23 Cart free gift UK feed","hist":[11.2,10.4,9.1,12.6,9.9,10.8,9.8],"hp":"£"}}'></button>
+      <button class="tile dial" data-src="meta" data-dial='{"v":13.40,"min":0,"max":25,"t":"£13.40","l":"WINNER ATC · US","s":"bar £11 · step on hold","z":[[0,9.9,"good"],[9.9,25,"warn"]],"d":{"why":"US WINNER set is over the £11 ATC bar and had zero-ATC days on 28 and 29 Sep. The 1-2 Oct step-up is on hold until two clean days.","rule":"Amber over 90% of the bar. This is a hold, not a decision: the rule already says wait.","src":"Meta, 37 Story reply US feed","hist":[9.6,10.8,12.1,11.9,14.2,13.1,13.4],"hp":"£"}}'></button>
+      <button class="tile dial" data-src="meta" data-dial='{"v":17.90,"min":8,"max":36,"t":"£17.90","l":"Laszlo UK cost","s":"bar £18.56","z":[[8,16.7,"good"],[16.7,18.56,"warn"],[18.56,36,"decide"]],"d":{"why":"Laszlo’s UK sets at £17.90 per purchase over 7 days, 96% of the £18.56 break-even.","rule":"Amber from 90% of break-even. Over it for 3 days is a decision: message him.","src":"Meta, Laszlo campaigns UK, 7 days","hist":[16.4,17.1,18.2,17.6,18.9,17.3,17.9],"hp":"£"}}'></button>
+      <button class="tile dial" data-src="meta" data-dial='{"v":27.40,"min":8,"max":36,"t":"£27.40","l":"Laszlo US cost","s":"bar £22.70 · row 4","z":[[8,20.4,"good"],[20.4,22.7,"warn"],[22.7,36,"decide"]],"d":{"why":"Laszlo’s US sets at £27.40 per purchase over 7 days against £22.70 break-even. Two sets are over £30.","rule":"Over break-even for 3 days is a decision, which is row 4 on the table.","src":"Meta, Laszlo campaigns US, 7 days","hist":[23.1,24.8,26.0,28.3,29.1,27.9,27.4],"hp":"£"}}'></button>
+      <button class="tile dial" data-src="google" data-g="google" data-dial='{"v":2.3,"min":0,"max":6,"t":"2.3%","l":"Google junk share","s":"bar 2.5%","z":[[0,2.25,"good"],[2.25,2.5,"warn"],[2.5,6,"decide"]],"d":{"why":"YouTube, Gmail and Discover placements took 2.3% of Google spend. Display 0.0%.","rule":"Amber from 2.25%. Over 2.5% is a decision: add the placement exclusions.","src":"Google Ads, cost by network type, yesterday","hist":[1.9,2.4,2.1,2.6,2.2,2.0,2.3]}}'></button>
+      <button class="tile dial" data-src="google" data-g="google" data-dial='{"v":105,"min":50,"max":160,"t":"105%","l":"Google spend vs plan","s":"£94.52 of £90 · row 3","z":[[50,80,"warn"],[80,110,"good"],[110,125,"warn"],[125,160,"decide"]],"d":{"why":"£94.52 against the £90 agreed. The new £165 budget only applies from today; if Will accepts it on row 3, this dial re-bases.","rule":"Green 80-110% of the agreed budget, amber to 125%, then a decision.","src":"Google Ads spend ÷ agreed daily budget","hist":[101,98,104,97,103,99,105]}}'></button>
+      <button class="tile dial" data-src="google" data-g="google" data-dial='{"v":3.08,"min":0,"max":6,"t":"3.08","l":"Google ROAS 7d","s":"set a bar","z":[[0,6,"info"]],"d":{"why":"Google conversion value ÷ cost, 7 days. No bar yet: Will has not set a Google ROAS target.","rule":"Grey until a bar is set.","src":"Google Ads, 7 days","hist":[2.9,3.1,3.3,2.8,3.0,3.2,3.08]}}'></button>
+      <button class="tile stat" data-state="good" data-src="meta" data-detail='{"why":"Every live set is on feed placements. No story-only set is running.","rule":"Any set serving stories only is a decision: switch it to feed.","src":"Meta, placements per live set"}'>
+        <span class="sl">Placements</span><span class="sv">feed</span><span class="ss">all 9 sets · no story-only</span>
+      </button>
+      <button class="tile stat" data-state="good" data-src="meta" data-detail='{"why":"No changes made to our Meta account by anyone else in the last 24 h. Google: 2 changes by Laszlo (row 3).","rule":"Any change not made by us or logged in HQ is a decision.","src":"Meta activity log, Google change history"}'>
+        <span class="sl">Changes not by us</span><span class="sv">0 · 2</span><span class="ss">Meta · Google</span>
+      </button>
+    </div>
+    <div class="tabs-foot"><span class="pn">9 live sets, ours. Kill and step rules from the Meta note.</span><button class="btn" id="livesets">Live sets</button></div>
+  </div>
+
+  <div class="panel" id="p-store" data-panel="store" hidden>
+    <div class="grid">
+      <button class="tile dial" data-src="shopify" data-dial='{"v":3.23,"min":0,"max":6,"t":"3.23%","l":"Conversion · UK","s":"amber under 2.5%","z":[[0,2,"decide"],[2,2.5,"warn"],[2.5,6,"good"]],"d":{"why":"681 UK sessions, 22 orders from the site. Steady.","rule":"Amber under 2.5%, a decision under 2% (something on the site is broken or the traffic is junk).","src":"Shopify Analytics, UK market, yesterday","hist":[2.9,3.1,3.4,3.0,3.5,2.8,3.23]}}'></button>
+      <button class="tile dial" data-src="shopify" data-dial='{"v":2.68,"min":0,"max":6,"t":"2.68%","l":"Conversion · US","s":"amber under 2.5%","z":[[0,2,"decide"],[2,2.5,"warn"],[2.5,6,"good"]],"d":{"why":"765 US sessions, 16 orders from the site.","rule":"Amber under 2.5%, a decision under 2%.","src":"Shopify Analytics, US market, yesterday","hist":[2.4,2.6,2.9,2.5,3.0,2.3,2.68]}}'></button>
+      <button class="tile dial" data-src="shopify" data-dial='{"v":1.2,"min":0,"max":8,"t":"1.2%","l":"Refunds 7d","s":"bar 3%","z":[[0,2,"good"],[2,3,"warn"],[3,8,"decide"]],"d":{"why":"Refunds were 1.2% of net sales over 7 days: one lost DPD parcel.","rule":"Amber from 2%, a decision over 3%.","src":"Shopify refunds ÷ net sales, 7 days","hist":[0.8,0.8,1.1,1.1,1.4,1.2,1.2]}}'></button>
+      <button class="tile dial" data-dial='{"v":412,"min":0,"max":3000,"t":"412 ms","l":"Site response","s":"both checkouts ✓","z":[[0,800,"good"],[800,1500,"warn"],[1500,3000,"alarm"]],"d":{"why":"Homepage answered 200 in 412 ms. UK and US checkouts both completed the test to the payment step.","rule":"Amber over 800 ms. Red over 1.5 s or any non-200: the shop is down, which is one of the few true alarms.","src":"Uptime check every minute","hist":[398,405,420,610,402,399,412]}}'></button>
+      <button class="tile dial" data-src="shopify" data-dial='{"v":4,"min":0,"max":20,"t":"4%","l":"Missouri share","s":"watch bot traffic","z":[[0,3,"good"],[3,5,"warn"],[5,20,"decide"]],"d":{"why":"4% of US sessions from Missouri, a known bot source. No junk referrers or odd countries today.","rule":"Amber from 3%, a decision over 5%: exclude the region in Meta and Google.","src":"Shopify sessions by region, US, yesterday","hist":[2,3,6,4,3,5,4]}}'></button>
+      <button class="tile dial" data-src="shopify" data-dial='{"v":31,"min":0,"max":60,"t":"31%","l":"Upgrade rate","s":"tier or duo on PDP","z":[[0,60,"info"]],"d":{"why":"31% of kit orders took a higher tier or the duo. No bar set.","rule":"Grey until Will sets a bar.","src":"Shopify orders by variant","hist":[28,30,33,29,34,27,31]}}'></button>
+      <button class="tile stat" data-state="info" data-src="shopify" data-detail='{"why":"Direct and branded traffic share rose 2.1 points week on week.","rule":"Trend only. A rising direct share with flat ad spend is the brand working.","src":"Shopify sessions by channel","hist":[22.1,22.4,22.0,23.0,23.5,24.1,24.2]}'>
+        <span class="sl">Direct share</span><span class="sv">+2.1 pts</span><span class="ss">week on week</span>
+      </button>
+      <button class="tile stat" data-state="good" data-src="shopify" data-detail='{"why":"Last Shopify webhook 23 min ago, matching the last order. Delivery promise at checkout reads Thu 1 Oct, same as the product page.","rule":"Amber if no webhook for 90 min in daytime. Red if the checkout date and the page date differ.","src":"Shopify webhooks, live checkout read"}'>
+        <span class="sl">Checkout promise</span><span class="sv">Thu 1 Oct</span><span class="ss">matches the product page</span>
+      </button>
+      <button class="tile stat" data-state="warn" data-src="shopify" data-detail='{"why":"Refill pack: 0 orders since 11 Sep. The refill flow has sent 19 emails and REFILLSHIP has 0 uses.","rule":"Amber while a live product with a live flow has 0 orders for 14 days. A decision at 28 days.","src":"Shopify orders by product, discount code uses"}'>
+        <span class="sl">Refill pack</span><span class="sv">0</span><span class="ss">orders since 11 Sep · 19 emails sent</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="panel" id="p-growth" data-panel="growth" hidden>
+    <div class="grid">
+      <button class="tile dial" data-src="mail" data-g="email" data-dial='{"v":103,"min":60,"max":130,"t":"103%","l":"Email audience","s":"5,151 of 5,000 · row 5","z":[[60,90,"good"],[90,100,"warn"],[100,130,"decide"]],"d":{"why":"5,151 contacts on a 5,000 plan. The bill on 12 Oct charges for the overage.","rule":"Amber from 90% of plan. Over plan is a decision: contact blocks or a tier.","src":"Mailchimp audience count","hist":[99,100,100,101,102,103,103]}}'></button>
+      <button class="tile stat" data-state="good" data-src="mail" data-g="email" data-detail='{"why":"11 orders in 7 days carried a flow UTM: abandoned cart 6, welcome 3, D1 2.","rule":"Trend only. Amber if flow orders fall under half the 4-week average.","src":"Shopify orders with utm_medium=flow","hist":[8,9,12,10,13,9,11]}'>
+        <span class="sl">Flow orders 7d</span><span class="sv">11</span><span class="ss">cart 6 · welcome 3 · D1 2</span>
+      </button>
+      <button class="tile ring" data-src="shopify" data-ring='{"v":2,"max":28,"t":"2/28","l":"Popup test · days","s":"earliest call day 7 · draw day 28","state":"info","d":{"why":"Day 2 of the gift popup test. A (free pack added automatically) 36 kit orders, B (email popup) 29. No visitor count per arm yet, so the split is assumed 50/50.","rule":"At least 7 days and 30 orders a side before any call; 95% sure on two mornings to call it; day 28 with no call is a draw.","src":"Shopify orders, __gift_test cart attribute"}}'></button>
+      <button class="tile stat" data-state="info" data-src="shopify" data-detail='{"why":"A 36 kit orders, B 29, day 2. Too early to call: a gap this size happens by chance about 4 times in 10.","rule":"Read in the Tests section.","src":"Shopify orders by __gift_test arm"}'>
+        <span class="sl">Popup A vs B</span>
+        <span class="abbar" aria-hidden="true"><span class="r uk"><span>A</span><span class="bar"><i style="width:100%"></i></span><b>36</b></span><span class="r us"><span>B</span><span class="bar"><i style="width:81%"></i></span><b>29</b></span></span>
+        <span class="ss">kit orders · day 2 · see Tests</span>
+      </button>
+      <button class="tile dial" data-src="meta" data-g="meta" data-dial='{"v":19.70,"min":8,"max":36,"t":"£19.70","l":"UK screen test","s":"bar £18.56 · judge 4 Oct","z":[[8,16.7,"good"],[16.7,36,"warn"]],"d":{"why":"UK screen set switched back on this morning with ads 24 and 33. The figure is the set’s last 7 days before the pause, as the comparison; the live cost per purchase since 07:14 replaces it as purchases arrive. Judge on Sun 4 Oct on cost per purchase over all spend since 30 Sep.","rule":"Judged on 4 Oct. Amber over 90% of break-even until then; no decision before the date.","src":"Meta, UK screen set, 7 days","hist":[24.1,22.0,20.5,21.2,19.9,20.3,19.7],"hp":"£"}}'></button>
+      <button class="tile stat" data-state="good" data-src="mail" data-g="email" data-detail='{"why":"Abandoned-cart flow 3327 has emailed 0 buyers since the purchase checks went in on 30 Sep. Before: about 1 kit buyer in 5.","rule":"Any buyer emailed by a flow after buying is a decision.","src":"Mailchimp flow report cross-checked with Shopify orders"}'>
+        <span class="sl">Flow leaks</span><span class="sv">0</span><span class="ss">cart flow since the fix</span>
+      </button>
+      <button class="tile stat" data-state="good" data-src="mail" data-g="email" data-detail='{"why":"D1 UK-ROW flow 3350: 571 entries. D1 US flow 3349: 3 entries since the country fix on 27 Sep.","rule":"Trend only.","src":"Mailchimp flows 3350 and 3349"}'>
+        <span class="sl">D1 flows</span><span class="sv">571 · 3</span><span class="ss">UK-ROW · US entries</span>
+      </button>
+      <button class="tile stat" data-state="good" data-src="mail" data-g="email" data-detail='{"why":"Gift popup flow 3354: 10 contacts in flow, 3 buyers removed by hand on 30 Sep. Shopify Flow trigger for existing customers still to build.","rule":"Trend only until the trigger is built.","src":"Mailchimp flow 3354"}'>
+        <span class="sl">Popup flow</span><span class="sv">10</span><span class="ss">in flow · trigger to build</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="panel" id="p-stock" data-panel="stock" hidden>
+    <div class="grid">
+      <button class="tile ring" data-src="stock" data-ring='{"v":74,"max":120,"t":"74 d","l":"US kits","s":"3,095 in Ohio","z":[[0,21,"alarm"],[21,45,"warn"],[45,120,"good"]],"d":{"why":"3,095 kits at the US rate of about 42 a day, with the Q4 ceiling at 2× September.","rule":"Amber under 45 days, red under 21: nothing can be shipped in time.","src":"Shopify inventory, Ohio, ÷ 7-day sales rate"}}'></button>
+      <button class="tile ring" data-src="stock" data-ring='{"v":66,"max":120,"t":"66 d","l":"UK kits","s":"3,007 at J&amp;J","z":[[0,21,"alarm"],[21,45,"warn"],[45,120,"good"]],"d":{"why":"3,007 kits at the UK rate, Q4 ceiling 3× September.","rule":"Amber under 45 days, red under 21.","src":"Shopify inventory, J&J, ÷ 7-day sales rate"}}'></button>
+      <button class="tile ring" data-src="stock" data-ring='{"v":14,"max":120,"t":"14 d","l":"US Slabs &amp; Label","s":"row 1","z":[[0,21,"alarm"],[21,45,"warn"],[45,120,"good"]],"d":{"why":"US Slabs & Label pack runs dry about 14 Oct. Helen is away until 8 Oct.","rule":"Red under 21 days. This is the only alarm on the page today.","src":"Shopify inventory, Ohio"}}'></button>
+      <button class="tile ring" data-ring='{"v":47,"max":60,"t":"47 d","l":"Black Label lands","s":"16 Nov · 333 sets","state":"info","d":{"why":"H-26013 raised to 333 sets (US 233 / UK 100), by air, due 16 Nov.","rule":"Countdown. Amber if Helen’s schedule slips past 20 Nov.","src":"Supplier order H-26013"}}'></button>
+      <button class="tile ring" data-ring='{"v":54,"max":90,"t":"54 d","l":"Black Friday","s":"window opens 23 Nov","state":"info","d":{"why":"23-28 Nov window, dedicated Black Label tier. Copy deck written, nothing rendered.","rule":"Countdown.","src":"knowledge/black-friday-2026.md"}}'></button>
+      <button class="tile ring" data-ring='{"v":8,"max":30,"t":"8 d","l":"Helen back","s":"8 Oct · 3 items waiting","state":"info","d":{"why":"Helen is away 1-7 Oct. Waiting: price and schedule for the Black Label air, slab address, the 1,000 label numbers.","rule":"Countdown.","src":"Supplier notes"}}'></button>
+      <button class="tile stat" data-state="good" data-src="stock" data-detail='{"why":"Penny colour order rerouted to the US: 300 by air.","rule":"Trend only.","src":"Supplier notes"}'>
+        <span class="sl">Penny colour</span><span class="sv">300</span><span class="ss">by air to the US</span>
+      </button>
+      <button class="tile stat" data-state="info" data-src="stock" data-detail='{"why":"Hedy dispatch before the 1-7 Oct holiday not yet confirmed.","rule":"Grey until confirmed.","src":"Supplier notes"}'>
+        <span class="sl">Hedy</span><span class="sv">?</span><span class="ss">dispatched before the holiday?</span>
+      </button>
+    </div>
+  </div>
+</section>
+
+<footer class="glass foot" id="foot">
+  <div class="feeds" id="feeds">
+    <span><i></i>Shopify 2 min</span><span><i></i>Meta 12 min</span><span><i></i>Google 58 min</span><span><i></i>Mailchimp 15 min</span><span><i></i>Uptime 1 min</span><span><i></i>HQ repo 07:39</span><span>· Daily ads check still runs: parallel day 1 of 7</span>
+  </div>
+  <div class="log" id="log"><strong>Today’s log</strong><ul id="loglist"><li class="mut">Nothing yet. Every button on this page writes a line here and to HQ.</li></ul></div>
+  <p class="note">Mockup 7 with sample data from the 29 Sep readout. The three reviews are invented samples. Buttons act on this page only. In the real dashboard, Pause and Step go to Meta after the confirm tap, Publish goes to Judge.me only if you allow that one write (otherwise reviews show Open only), every action is logged to HQ with an undo, and WhatsApp opens with the message ready to send. The Meta, Google, Shopify and email marks are drawn placeholders until the real files are embedded. The net margin tile is a sample until knowledge/costs.md is filled.</p>
+</footer>
+
+</main>
+
+<dialog id="sheet" aria-labelledby="sh-title">
+  <div class="sheet">
+    <div class="grab" aria-hidden="true"></div>
+    <div class="ttl"><span class="dot info" id="sh-dot">i</span><h3 id="sh-title"></h3><button class="x" id="sh-x" aria-label="Close">×</button></div>
+    <dl id="sh-dl"><dt>Why</dt><dd id="sh-why"></dd><dt>Rule</dt><dd id="sh-rule"></dd><dt>Source</dt><dd id="sh-src"></dd></dl>
+    <div id="sh-chart"></div>
+    <div id="sh-extra"></div>
+  </div>
+</dialog>
+
+<template id="t-livesets">
+  <div class="tblwrap"><table>
+    <thead><tr><th>Set</th><th>Budget</th><th>Per purchase</th><th>State</th><th></th></tr></thead>
+    <tbody>
+      <tr><td>News article · US feed</td><td class="n">£60</td><td class="n">7d £43.52</td><td><span class="chip decide">◆ Decide</span></td><td><span class="flow"><button class="act primary" data-act="pause" data-msg="Pause?" data-done="Paused" data-log="Paused ad set News article · US feed (£60/day) on Meta">Pause</button></span></td></tr>
+      <tr><td>37 Story reply · US feed <span class="mut">WINNER</span></td><td class="n">£7.50</td><td class="n">7d £24.80</td><td><span class="chip warn">! Watch</span></td><td><span class="flow"><span class="mut">hold</span></span></td></tr>
+      <tr><td>BREAKING · US</td><td class="n">£35</td><td class="n">3d £31.20</td><td><span class="chip warn">! Watch</span></td><td><span class="flow"><span class="mut">slipping</span></span></td></tr>
+      <tr><td>captiontest v3 · UK</td><td class="n">£30</td><td class="n">3d £29.10</td><td><span class="chip warn">! Watch</span></td><td><span class="flow"><span class="mut">slipping</span></span></td></tr>
+      <tr><td>BULLETED · US</td><td class="n">£50</td><td class="n">7d £21.40</td><td><span class="chip good">✓ Good</span></td><td></td></tr>
+      <tr><td>UK screen · ads 24 + 33</td><td class="n">£40</td><td class="n">7d £19.70</td><td><span class="chip warn">! Watch</span></td><td><span class="flow"><span class="mut">judge 4 Oct</span></span></td></tr>
+      <tr><td>37 Story reply · UK feed <span class="mut">WINNER</span></td><td class="n">£7.50</td><td class="n">7d £16.10</td><td><span class="chip good">✓ Good</span></td><td></td></tr>
+      <tr><td>23 Cart free gift · UK feed <span class="mut">WINNER</span></td><td class="n">£7.50</td><td class="n">7d £15.30</td><td><span class="chip good">✓ Good</span></td><td><span class="flow"><button class="act" data-act="step" data-msg="Step +25%?" data-done="Stepped to £9.40" data-log="Stepped 23 Cart free gift · UK feed to £9.40/day on Meta">Step +25% on 3 Oct</button></span></td></tr>
+      <tr><td>thatgrlmaja · UK</td><td class="n">£25</td><td class="n">7d £17.80</td><td><span class="chip good">✓ Good</span></td><td></td></tr>
+    </tbody>
+  </table></div>
+  <p class="note" style="margin-top:10px">Pause and Step act on Meta after a confirm tap and write a line to today’s log with an undo (resume, or the old budget). Kill and step rules: break-even UK £18.56, US £22.70; step a WINNER +20–30% after two clean days.</p>
+</template>
+
+<template id="t-dates">
+  <div class="timeline">
+    <div class="tl"><span class="td">Wed 30 Sep</span><span>Delivery checks 15:35 and 16:20 · month-end</span><span class="tin">today</span></div>
+    <div class="tl"><span class="td">Thu 1 Oct</span><span>US payday</span><span class="tin">1 d</span></div>
+    <div class="tl"><span class="td">Sat 3 Oct</span><span>Laszlo UK Card games and Gift sets</span><span class="tin">3 d</span></div>
+    <div class="tl"><span class="td">Sun 4 Oct</span><span>Judge the UK screen test</span><span class="tin">4 d</span></div>
+    <div class="tl"><span class="td">Tue 6 Oct</span><span>Gift popup test: earliest call (day 7)</span><span class="tin">6 d</span></div>
+    <div class="tl"><span class="td">Thu 8 Oct</span><span>Helen back from holiday</span><span class="tin">8 d</span></div>
+    <div class="tl"><span class="td">Mon 12 Oct</span><span>Mailchimp bill</span><span class="tin">12 d</span></div>
+    <div class="tl"><span class="td">Wed 14 Oct</span><span>US Slabs &amp; Label runs dry (if nothing airs)</span><span class="tin">14 d</span></div>
+    <div class="tl"><span class="td">Sun 25 Oct</span><span>UK clocks go back: check the ET times</span><span class="tin">25 d</span></div>
+    <div class="tl"><span class="td">Tue 27 Oct</span><span>Gift popup test: proposed read (day 28)</span><span class="tin">27 d</span></div>
+    <div class="tl"><span class="td">Mon 16 Nov</span><span>Black Label lands</span><span class="tin">47 d</span></div>
+    <div class="tl"><span class="td">23–28 Nov</span><span>Black Friday window</span><span class="tin">54 d</span></div>
+  </div>
+</template>
+<script>
+(function(){
+  'use strict';
+  const STATE={good:['Good','✓'],warn:['Watch','!'],decide:['Decide','◆'],alarm:['Alarm','✕'],info:['Info','i'],sofar:['So far','·'],est:['Estimate','≈']};
+  const RANK={good:0,info:0,sofar:0,est:0,warn:1,decide:2,alarm:3};
+  const COL={good:'var(--good)',warn:'var(--warn)',decide:'var(--decide)',alarm:'var(--alarm)',info:'var(--info)',sofar:'var(--info)',est:'var(--info)'};
+  const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const $=(s,r)=>(r||document).querySelector(s);
+  const $$=(s,r)=>Array.from((r||document).querySelectorAll(s));
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const f=n=>Math.round(n*100)/100;
+  const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const now=()=>new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+  const chip=s=>`<span class="chip ${s}">${STATE[s][1]} ${STATE[s][0]}</span>`;
+  const worst=list=>list.reduce((w,s)=>RANK[s]>RANK[w]?s:w,'info');
+
+  // zones: [[from,to,state],...] in value order. Half-open except the last.
+  function zoneIndex(v,z){
+    for(let i=0;i<z.length;i++){const [a,b]=z[i]; if(v>=a&&(v<b||(i===z.length-1&&v<=b))) return i;}
+    return v<z[0][0]?0:z.length-1;
+  }
+  const zoneOf=(v,z)=>z[zoneIndex(v,z)][2];
+  // number formatting that borrows the prefix/suffix of the headline text ("£24.96", "2.3%", "1.41×", "412 ms")
+  function fmtLike(t){
+    const pre=(t.match(/^[^\d-]+/)||[''])[0], suf=(t.match(/[^\d.,]+$/)||[''])[0];
+    return n=>pre+(Math.abs(n)>=1000?n.toLocaleString('en-GB'):String(f(n)))+suf;
+  }
+
+  // ---- source marks: a faint logo in the corner of any tile that has data-src ----
+  const ICON={meta:'i-meta',google:'i-google',shopify:'i-bag',mail:'i-mail',growth:'i-growth',stock:'i-box'};
+  function watermark(el){
+    const id=ICON[el.dataset.src];
+    if(id&&!$('.wm',el)) el.insertAdjacentHTML('afterbegin',`<svg class="ic wm" aria-hidden="true"><use href="#${id}"/></svg>`);
+  }
+
+  // ---- semicircle dial on a dark well ----------------------------------------
+  const ang=(v,min,max)=>Math.PI*(1-clamp((v-min)/(max-min),0,1));
+  const pt=(a,r,cx,cy)=>[f((cx||50)+r*Math.cos(a)),f((cy||50)-r*Math.sin(a))];
+  function arc(a0,a1,r){ // a0 > a1, clockwise over the top
+    const [x0,y0]=pt(a0,r),[x1,y1]=pt(a1,r);
+    return `M${x0} ${y0}A${r} ${r} 0 ${(a0-a1)>Math.PI?1:0} 1 ${x1} ${y1}`;
+  }
+  function renderDial(el){
+    const d=JSON.parse(el.dataset.dial);
+    const {v,min,max,z}=d, zi=zoneIndex(v,z), state=d.cap||z[zi][2], fmt=fmtLike(d.t), r=40, gap=0.035;
+    let s=`<span class="well"><svg viewBox="0 0 100 64" aria-hidden="true">`;
+    s+=`<path d="${arc(Math.PI,0,r)}" fill="none" stroke="var(--line)" stroke-width="7"/>`;
+    z.forEach(([a,b,st],i)=>{
+      const a0=ang(a,min,max)-(i?gap:0), a1=ang(b,min,max)+(i<z.length-1?gap:0);
+      if(a0<=a1) return;
+      s+=`<path d="${arc(a0,a1,r)}" fill="none" stroke="${COL[st]}" stroke-width="7" stroke-opacity="${i===zi?1:.28}"/>`;
+    });
+    const [px,py]=pt(ang(v,min,max),r);
+    s+=`<circle cx="${px}" cy="${py}" r="5" fill="var(--ink)" stroke="var(--pointer-ring)" stroke-width="2.5"/>`;
+    s+=`<text x="50" y="52" text-anchor="middle" font-family="var(--disp)" font-size="15" font-weight="700" fill="var(--ink)">${esc(d.t)}</text>`;
+    s+=`<text x="10" y="62" text-anchor="middle" font-size="7.5" fill="var(--muted)">${esc(fmt(min))}</text>`;
+    s+=`<text x="90" y="62" text-anchor="middle" font-size="7.5" fill="var(--muted)">${esc(fmt(max))}</text>`;
+    s+=`</svg></span><span class="dl">${esc(d.l)}</span><span class="ds">${d.s||''}</span>${chip(state)}`;
+    el.innerHTML=s; el.dataset.state=state;
+    el.setAttribute('aria-label',`${d.l}: ${d.t}, ${STATE[state][0]}`);
+    el.onclick=()=>openSheet(state,d.l,d.d,d); watermark(el);
+  }
+
+  // ---- countdown / stock ring ----------------------------------------------
+  function renderRing(el){
+    const d=JSON.parse(el.dataset.ring);
+    const state=d.z?zoneOf(d.v,d.z):(d.state||'info'), r=40, C=2*Math.PI*r, frac=clamp(d.v/d.max,0,1);
+    let s=`<span class="well"><svg viewBox="0 0 100 100" aria-hidden="true">`;
+    s+=`<circle cx="50" cy="50" r="${r}" fill="none" stroke="var(--line)" stroke-width="8"/>`;
+    s+=`<circle cx="50" cy="50" r="${r}" fill="none" stroke="${COL[state]}" stroke-width="8" stroke-linecap="round" transform="rotate(-90 50 50)" stroke-dasharray="${f(frac*C)} ${f(C)}"/>`;
+    s+=`<text x="50" y="56" text-anchor="middle" font-family="var(--disp)" font-size="17" font-weight="700" fill="var(--ink)">${esc(d.t)}</text>`;
+    s+=`</svg></span><span class="dl">${d.l}</span><span class="ds">${d.s||''}</span>${chip(state)}`;
+    el.innerHTML=s; el.dataset.state=state;
+    el.setAttribute('aria-label',`${d.l}: ${d.t}, ${STATE[state][0]}`);
+    el.onclick=()=>openSheet(state,d.l,d.d,d.z?{min:0,max:d.max,z:d.z,t:d.t}:null); watermark(el);
+  }
+
+  // ---- stat tiles -----------------------------------------------------------
+  function renderStat(el){
+    el.insertAdjacentHTML('beforeend',chip(el.dataset.state||'info'));
+    el.addEventListener('click',()=>{
+      let d=null; try{d=JSON.parse(el.dataset.detail||'null')}catch(e){}
+      openSheet(el.dataset.state||'info',$('.sl',el)?$('.sl',el).textContent:'',d,null);
+    });
+  }
+
+  // ---- 7-day sparkbars in the net-sales tile ----------------------------------
+  function sparkBars(el){
+    const v=el.dataset.spark.split(',').map(Number), hi=Math.max(...v), n=v.length, W=220,H=34,g=6, w=(W-g*(n-1))/n;
+    let s=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">`;
+    v.forEach((x,i)=>{const h=Math.max(3,H*x/hi); s+=`<rect x="${f(i*(w+g))}" y="${f(H-h)}" width="${f(w)}" height="${f(h)}" rx="3" fill="${i===n-1?'var(--spark)':'var(--line-2)'}"/>`;});
+    el.innerHTML=s+'</svg>';
+  }
+
+  // ---- count-up on the hero numbers ---------------------------------------
+  function countUp(el){
+    const n=Number(el.dataset.n), pre=el.dataset.pre||'', suf=el.dataset.suf||'', dp=Number(el.dataset.dp||0);
+    const show=x=>{el.textContent=pre+(dp?x.toFixed(dp):Math.round(x).toLocaleString('en-GB'))+suf};
+    el._cu=(el._cu||0)+1; const my=el._cu;
+    if(reduce){show(n);return;}
+    const t0=performance.now(), T=900;
+    (function step(t){if(el._cu!==my) return; const p=clamp((t-t0)/T,0,1), e=1-Math.pow(1-p,3); show(n*e); if(p<1) requestAnimationFrame(step);})(t0);
+  }
+
+  // ---- health: every dial, ring, stat and open row counted by state and by source --
+  const GROUPS=[['meta','Meta'],['google','Google'],['growth','Growth'],['store','Store'],['email','Email'],['stock','Stock']]; // clockwise from the top
+  const PANEL_G={ads:'meta',store:'store',growth:'growth',stock:'stock'};
+  const ICON_G={'i-meta':'meta','i-google':'google','i-bag':'store','i-mail':'email','i-growth':'growth','i-box':'stock'};
+  function groupOf(el){
+    if(el.dataset.g) return el.dataset.g;
+    const p=el.closest('[data-panel]'); if(p) return PANEL_G[p.dataset.panel]||'';
+    const u=$('.src use',el); if(u) return ICON_G[(u.getAttribute('href')||'').replace('#','')]||'';
+    return '';
+  }
+  function tally(){
+    const c={good:0,warn:0,decide:0,alarm:0,info:0}, g={};
+    $$('.tile[data-state],.dcard[data-state]:not(.done),.tcard[data-state]:not(.done)').forEach(el=>{
+      const s=el.dataset.state; if(!(s in c)) return; c[s]++;
+      const k=groupOf(el); if(!k||k==='hero') return;
+      g[k]=g[k]||{good:0,warn:0,alarm:0}; if(s in g[k]) g[k][s]++;
+    });
+    return {c,g};
+  }
+  // decisions and info are neutral: a choice is not a fault
+  const score=o=>{const d=o.good+o.warn+o.alarm; return d?(o.good+0.5*o.warn)/d:1;};
+  const health=c=>Math.round(100*score(c));
+
+  function counts(t){
+    // alarms and decisions are counted from the table (what needs Will), watch and good from the dials
+    const rows=$$('.dcard[data-state]:not(.done)'), c=Object.assign({},t.c,{alarm:rows.filter(r=>r.dataset.state==='alarm').length,decide:rows.filter(r=>r.dataset.state==='decide').length}), h=health(t.c), L={alarm:[ 'alarm','alarms'],decide:['decision','decisions'],warn:['to watch','to watch'],good:['good','good']};
+    let s=`<span class="pk health"><b>${h}</b> health</span>`;
+    ['alarm','decide','warn','good'].forEach(k=>{ s+=`<span class="pk" style="--c:${COL[k]}"><i>${STATE[k][1]}</i><b>${c[k]}</b> ${c[k]===1?L[k][0]:L[k][1]}</span>`; });
+    const nr=$$('#reviews .rv:not(.done)').length;
+    if(nr) s+=`<button class="pk" type="button" data-rv style="--c:var(--decide)"><i>★</i><b>${nr}</b> new review${nr===1?'':'s'}</button>`;
+    $('#counts').innerHTML=s;
+  }
+
+  // six-axis radar: one axis per source, the health number ghosted behind it
+  function radar(t){
+    const n=GROUPS.length, cx=160, cy=150, R=108, h=health(t.c);
+    const P=(i,r)=>{const a=-Math.PI/2+i*2*Math.PI/n; return [f(cx+r*Math.cos(a)),f(cy+r*Math.sin(a))];};
+    const poly=pts=>pts.map(p=>p.join(',')).join(' ');
+    let s=`<svg viewBox="0 0 320 300" aria-hidden="true">`;
+    [.25,.5,.75,1].forEach(k=>{ s+=`<polygon points="${poly(GROUPS.map((_,i)=>P(i,R*k)))}" fill="none" stroke="var(--line)" stroke-width="1"/>`; });
+    GROUPS.forEach((_,i)=>{ const [x,y]=P(i,R); s+=`<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="var(--line)" stroke-width="1"/>`; });
+    s+=`<text x="${cx}" y="${cy+22}" text-anchor="middle" font-family="var(--disp)" font-size="64" font-weight="800" fill="var(--ink)" fill-opacity=".18">${h}</text>`;
+    s+=`<text x="${cx}" y="${cy+40}" text-anchor="middle" font-family="var(--disp)" font-size="11" font-weight="700" letter-spacing="1.5" fill="var(--ink)" fill-opacity=".45">HEALTH</text>`;
+    const sc=GROUPS.map(([k])=>score(t.g[k]||{good:0,warn:0,alarm:0}));
+    const pts=GROUPS.map((_,i)=>P(i,R*sc[i]));
+    s+=`<polygon points="${poly(pts)}" fill="var(--accent)" fill-opacity=".28" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round"/>`;
+    pts.forEach(([x,y])=>{ s+=`<circle cx="${x}" cy="${y}" r="4.5" fill="var(--accent)" stroke="var(--pointer-ring)" stroke-width="2"/>`; });
+    const said=[];
+    GROUPS.forEach(([k,name],i)=>{
+      const [x,y]=P(i,R+24), anchor=Math.abs(x-cx)<2?'middle':x>cx?'start':'end', pc=Math.round(100*sc[i]);
+      s+=`<text x="${x}" y="${y}" text-anchor="${anchor}" font-family="var(--disp)" font-size="13" font-weight="600" fill="var(--ink)">${name}<tspan x="${x}" dy="14" font-size="11" font-weight="500" fill="var(--muted)">${pc}%</tspan></text>`;
+      said.push(`${name} ${pc}%`);
+    });
+    const r=$('#radar'); r.innerHTML=s+'</svg>';
+    r.setAttribute('aria-label',`Health ${h}. ${t.c.alarm} alarm, ${t.c.decide} to decide, ${t.c.warn} to watch, ${t.c.good} good. By source: ${said.join(', ')}.`);
+  }
+  function pulse(){ const t=tally(); counts(t); radar(t); }
+
+  // ---- header: nav pills, clock, search ----------------------------------------
+  $$('.pill[data-go]').forEach(b=>b.addEventListener('click',()=>{
+    const el=$('#'+b.dataset.go); if(!el) return;
+    el.scrollIntoView({behavior:reduce?'auto':'smooth',block:'start'});
+    $$('.pill[data-go]').forEach(p=>{ if(p===b) p.setAttribute('aria-current','true'); else p.removeAttribute('aria-current'); });
+  }));
+  const ck=$('.clock');
+  if(ck){ const tz=z=>new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',timeZone:z}); const tick=()=>{ck.textContent=new Date().toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',timeZone:'Europe/London'})+' · '+tz('Europe/London')+' UK · '+tz('America/New_York')+' ET';}; tick(); setInterval(tick,30000); }
+
+  // ---- tabs (dial decks) ------------------------------------------------------------
+  const TABS=['ads','store','growth','stock'];
+  let cur='ads';
+  function selectTab(id){
+    cur=id;
+    $$('.tab').forEach(t=>t.setAttribute('aria-selected',String(t.dataset.tab===id)));
+    $$('[data-panel]').forEach(p=>p.hidden=p.dataset.panel!==id);
+    try{history.replaceState(null,'','#'+id)}catch(e){}
+  }
+  function tabDots(){
+    $$('.tab').forEach(t=>{
+      const p=$(`[data-panel="${t.dataset.tab}"]`), s=worst($$('.tile[data-state]',p).map(e=>e.dataset.state));
+      const dot=$('.dot',t); dot.className='dot '+s; dot.textContent=STATE[s][1];
+    });
+  }
+  const q=$('#q'), dialcount=$('#dialcount'), dialcountText=dialcount?dialcount.textContent:'';
+  if(q) q.addEventListener('input',()=>{
+    const t=q.value.trim().toLowerCase(), tiles=$$('[data-panel] .tile');
+    if(!t){ tiles.forEach(x=>x.hidden=false); selectTab(cur); if(dialcount) dialcount.textContent=dialcountText; return; }
+    $$('[data-panel]').forEach(p=>p.hidden=false);
+    let n=0; tiles.forEach(x=>{ const hit=x.textContent.toLowerCase().includes(t); x.hidden=!hit; if(hit) n++; });
+    $$('.tab').forEach(x=>x.setAttribute('aria-selected','false'));
+    if(dialcount) dialcount.textContent=`${n} dial${n===1?'':'s'} match “${q.value.trim()}”`;
+  });
+
+  // ---- score column tabs: Live, Wins, Coming up ----------------------------------------
+  const stabs=$('.stabs');
+  if(stabs) stabs.addEventListener('click',e=>{
+    const b=e.target.closest('[data-st]'); if(!b) return;
+    $$('[data-st]',stabs).forEach(x=>x.setAttribute('aria-selected',String(x===b)));
+    $$('[data-sp]').forEach(p=>p.hidden=p.dataset.sp!==b.dataset.st);
+  });
+
+  // ---- the log ---------------------------------------------------------------------
+  function logLine(text){
+    const ul=$('#loglist'); const ph=$('li.mut',ul); if(ph) ph.remove();
+    const li=document.createElement('li'); li.textContent=`${now()}  ${text}`; ul.prepend(li); return li;
+  }
+
+  // ---- the table: decide → confirm → done → undo -----------------------------------
+  function deckCount(){
+    const open=$$('.dcard:not(.done)'), a=open.filter(c=>c.dataset.state==='alarm').length, d=open.filter(c=>c.dataset.state==='decide').length;
+    const parts=[]; if(a) parts.push(`${a} alarm${a>1?'s':''}`); if(d) parts.push(`${d} decision${d>1?'s':''}`);
+    $('#deckcount').textContent=parts.length?parts.join(' · '):'Table clear ✓';
+    pulse();
+  }
+  function markDone(card,btn,left){
+    card.classList.add('done');
+    $('.acts',card).hidden=true; $('.confirm',card).hidden=true;
+    const dl=$('.doneline',card); dl.classList.toggle('left',!!left);
+    dl.innerHTML=`<span>${left?'·':'✓'} ${esc(btn.dataset.done)} · ${now()}${left?'':' · logged to HQ'}</span><button class="undo" type="button">Undo</button>`;
+    dl.hidden=false;
+    card._li=left?null:logLine(btn.dataset.log||btn.dataset.done);
+    deckCount();
+  }
+  function undo(card){
+    card.classList.remove('done'); $('.doneline',card).hidden=true; $('.acts',card).hidden=false;
+    if(card._li){card._li.remove(); card._li=null;}
+    const ul=$('#loglist'); if(!ul.children.length) ul.innerHTML='<li class="mut">Nothing yet today. Actions you confirm here land in log/ with an undo.</li>';
+    deckCount();
+  }
+  $('#deck').addEventListener('click',e=>{
+    const card=e.target.closest('.dcard'); if(!card) return;
+    const rt=e.target.closest('.rt');
+    if(rt){ const open=rt.getAttribute('aria-expanded')==='true'; rt.setAttribute('aria-expanded',String(!open)); const why=$('.why',card); if(why) why.hidden=open; return; }
+    const act=e.target.closest('[data-act]');
+    if(act){
+      if(act.dataset.msg){card._pending=act; $('.confirm p',card).textContent=act.dataset.msg; $('.acts',card).hidden=true; $('.confirm',card).hidden=false;}
+      else markDone(card,act,true);
+      return;
+    }
+    if(e.target.closest('[data-confirm]')){ if(card._pending) markDone(card,card._pending,false); return; }
+    if(e.target.closest('[data-back]')){ $('.confirm',card).hidden=true; $('.acts',card).hidden=false; return; }
+    if(e.target.closest('.undo')){ undo(card); }
+  });
+
+  // ---- copy buttons (clipboard inside the click, textarea fallback) -------------------
+  document.addEventListener('click',e=>{
+    const b=e.target.closest('[data-copy]'); if(!b) return;
+    const text=b.dataset.copy, old=b.textContent;
+    const ok=()=>{b.textContent='Copied ✓'; setTimeout(()=>b.textContent=old,1600);};
+    const fallback=()=>{const ta=document.createElement('textarea'); ta.value=text; ta.className='ta'; b.insertAdjacentElement('afterend',ta); ta.select(); try{document.execCommand('copy'); ok();}catch(err){} setTimeout(()=>ta.remove(),2500);};
+    if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(ok,fallback); else fallback();
+  });
+
+  // ---- live-sets table inside the sheet: inline sure? → done → undo ---------------------
+  $('#sheet').addEventListener('click',e=>{
+    const flow=e.target.closest('.flow'); if(!flow) return;
+    const act=e.target.closest('[data-act]');
+    if(act){ flow._orig=flow.innerHTML; flow._btn=act; flow.innerHTML=`<span>${esc(act.dataset.msg||'Sure?')}</span><button class="act primary" type="button" data-yes>Yes</button><button class="act" type="button" data-no>No</button>`; return; }
+    if(e.target.closest('[data-yes]')){ const b=flow._btn; flow._li=logLine(b.dataset.log||b.dataset.done); flow.innerHTML=`<span class="chip good">✓ ${esc(b.dataset.done)}</span><button class="act" type="button" data-undo>Undo</button>`; return; }
+    if(e.target.closest('[data-no]')){ flow.innerHTML=flow._orig; return; }
+    if(e.target.closest('[data-undo]')){ if(flow._li) flow._li.remove(); flow.innerHTML=flow._orig; }
+  });
+
+  // ---- bottom sheet ---------------------------------------------------------------------
+  const sheet=$('#sheet');
+  function openSheet(state,title,d,dial){
+    const dot=$('#sh-dot'); dot.className='dot '+state; dot.textContent=STATE[state][1];
+    $('#sh-title').textContent=title;
+    $('#sh-dl').hidden=!d;
+    if(d){ $('#sh-why').textContent=d.why||''; $('#sh-rule').textContent=d.rule||''; $('#sh-src').textContent=d.src||''; }
+    $('#sh-chart').innerHTML=d&&d.hist?miniChart(d,dial):'';
+    $('#sh-extra').innerHTML='';
+    sheet.showModal();
+  }
+  function openTemplate(title,id){
+    const dot=$('#sh-dot'); dot.className='dot info'; dot.textContent='i';
+    $('#sh-title').textContent=title; $('#sh-dl').hidden=true; $('#sh-chart').innerHTML='';
+    const x=$('#sh-extra'); x.innerHTML=''; x.appendChild($(id).content.cloneNode(true));
+    sheet.showModal();
+  }
+  $('#sh-x').addEventListener('click',()=>sheet.close());
+  sheet.addEventListener('click',e=>{ if(e.target===sheet) sheet.close(); });
+  $('#livesets').addEventListener('click',()=>openTemplate('Live sets, ours','#t-livesets'));
+  $('#alldates').addEventListener('click',()=>openTemplate('All dates','#t-dates'));
+
+  // 7 rounded bars, a dashed line where a zone turns into Decide or Alarm, labels on the ends only
+  function miniChart(d,dial){
+    const v=d.hist, n=v.length, W=320,H=96,top=16,bot=14,g=6, w=(W-g*(n-1))/n, fmt=fmtLike(d.hp?d.hp+'0':d.hs?'0'+d.hs:(dial&&dial.t)||'');
+    const z=dial&&dial.z?dial.z:null, lines=[];
+    if(z) for(let i=1;i<z.length;i++){ const a=RANK[z[i-1][2]]>=2, b=RANK[z[i][2]]>=2; if(a!==b) lines.push(z[i][0]); }
+    const hi=Math.max(...v,...lines)*1.08, y=x=>top+(H-top-bot)*(1-x/hi);
+    let s=`<svg viewBox="0 0 ${W} ${H}" aria-label="Last 7 days">`;
+    v.forEach((x,i)=>{
+      const st=z?zoneOf(x,z):(i===n-1?'accent':'line');
+      const fill=st==='accent'?'var(--spark)':st==='line'?'var(--line-2)':COL[st];
+      s+=`<rect x="${f(i*(w+g))}" y="${f(y(x))}" width="${f(w)}" height="${f(H-bot-y(x))}" rx="4" fill="${fill}" fill-opacity="${z&&i<n-1?.55:1}"/>`;
+    });
+    lines.forEach(b=>{ s+=`<line x1="0" x2="${W}" y1="${f(y(b))}" y2="${f(y(b))}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="4 4"/><text x="${W}" y="${f(y(b)-3)}" text-anchor="end" font-size="10" fill="var(--muted)">bar ${esc(fmt(b))}</text>`; });
+    s+=`<text x="${f(w/2)}" y="${f(y(v[0])-4)}" text-anchor="middle" font-size="10" fill="var(--ink-2)">${esc(fmt(v[0]))}</text>`;
+    s+=`<text x="${f(W-w/2)}" y="${f(y(v[n-1])-4)}" text-anchor="middle" font-size="10" font-weight="700" fill="var(--ink)">${esc(fmt(v[n-1]))}</text>`;
+    s+=`<text x="0" y="${H}" font-size="9.5" fill="var(--muted)">7 days ago</text><text x="${W}" y="${H}" text-anchor="end" font-size="9.5" fill="var(--muted)">yesterday</text></svg>`;
+    return s;
+  }
+
+  // ---- tests: live bars, how-sure dial, honest states ----------------------------------
+  function erf(x){const sg=x<0?-1:1; x=Math.abs(x); const t=1/(1+0.3275911*x); const y=1-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-x*x); return sg*y;}
+  const Phi=z=>0.5*(1+erf(z/Math.SQRT2));
+  const SURE_Z=1.96;
+  const chance=p=>p>=.5?'more often than not':p>=.3?'about 4 times in 10':p>=.2?'about 1 time in 4':p>=.1?'about 1 time in 7':p>=.05?'about 1 time in 12':'less than 1 time in 20';
+  function sureDial(pc,strip){
+    const r=40, gap=0.035, zones=[[0,80,'info'],[80,95,'warn'],[95,100,'good']], pcc=clamp(pc,0,100);
+    let s=`<svg viewBox="0 0 100 58" aria-hidden="true">`;
+    zones.forEach(([a,b,st],i)=>{ const a0=ang(a,0,100)-(i?gap:0), a1=ang(b,0,100)+(i<zones.length-1?gap:0); s+=`<path d="${arc(a0,a1,r)}" fill="none" stroke="${COL[st]}" stroke-width="7" stroke-linecap="round" opacity="${st==='info'?.45:.9}"/>`; });
+    const a=ang(pcc,0,100), [px,py]=pt(a,r-9), [qx,qy]=pt(a,r-1);
+    s+=`<line x1="${px}" y1="${py}" x2="${qx}" y2="${qy}" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/>`;
+    s+=`<text x="50" y="44" text-anchor="middle" font-size="22" font-weight="700" fill="var(--ink)" font-family="var(--disp)">${pc}%</text>`;
+    s+=`<text x="50" y="55" text-anchor="middle" font-size="7.5" fill="var(--muted)">sure · 95 to call</text></svg>`;
+    s+=`<div class="tstrip" title="Leader at each 07:37 snapshot">${(strip||[]).map(k=>`<i class="${k.toLowerCase()}">${k}</i>`).join('')}<i>·</i><i>·</i></div>`;
+    s+=`<span class="tcap">leader at each 07:37 read · needs 95% twice in a row</span>`;
+    return s;
+  }
+  function renderTest(card){
+    let d; try{d=JSON.parse(card.dataset.test)}catch(e){return;}
+    const [A,B]=d.arms, a=A.x, b=B.x, N=a+b, u=d.unit;
+    const z=N?(b-a)/Math.sqrt(N):0;                       // coin-flip z against the planned 50/50 split
+    const sure=Math.round((2*Phi(Math.abs(z))-1)*100), p=2*(1-Phi(Math.abs(z)));
+    const lead=b>a?B:A, trail=b>a?A:B, lift=trail.x?Math.round((lead.x-trail.x)/trail.x*100):0;
+    const minGapN=Math.ceil(SURE_Z*Math.sqrt(N)), minGap=N?Math.round(100*minGapN/(N/2)):0;
+    const need=Math.abs(z)>0?Math.round(d.day*Math.pow(SURE_Z/Math.abs(z),2)):d.max;
+    const daysTo=Math.max(Math.max(Math.min(need,d.max),d.min)-d.day,1);
+    const short=d.arms.filter(x=>x.x<d.minx), sw=card.dataset.kind==='switch';
+    const top=Math.max(...d.arms.map(x=>x.x+1.28*Math.sqrt(x.x)))*1.08||1;
+    $('[data-bars]',card).innerHTML=d.arms.map(x=>{ const h=1.28*Math.sqrt(x.x), lo=Math.max(x.x-h,0), hi=x.x+h;
+      return `<div class="tbar${x===lead&&x.x!==trail.x?' lead':''}"><div class="tl2"><span>${esc(x.k)} · ${esc(x.l)}</span><b>${x.x}<small>${esc(u)}</small></b></div><div class="trk"><i class="fill" style="width:${f(x.x/top*100)}%"></i><i class="band" style="left:${f(lo/top*100)}%;width:${f((hi-lo)/top*100)}%"></i></div></div>`; }).join('');
+    $('[data-sure]',card).innerHTML=sureDial(sure,d.strip);
+    const gapLine=`Smallest gap this test can see right now: ${minGap}% (${minGapN} ${u}).`;
+    let state,chipTxt,say,btnTxt,on=false,primary=false,msg='',done='',log='';
+    if(d.day>=d.max&&sure<95){
+      state='info'; chipTxt='i Draw';
+      say=`${d.day} days and no difference bigger than ${minGap}%. That is the result: keep the simpler arm.<small>${esc(gapLine)} ${esc(d.note||'')}</small>`;
+      btnTxt='Write it up as a draw'; on=true; primary=true; msg=`Write this up as a draw: no difference bigger than ${minGap}% between A and B? Goes to ops/tests/register.md and log/ through the next session.`; done='Draw written to HQ'; log=`Gift popup test: draw, no difference bigger than ${minGap}%`;
+    } else if(d.day<d.min||short.length){
+      state='info'; chipTxt='i Too early';
+      say=`A ${a} ${u}, B ${b}. ${lead.k} is ahead by ${lift}%, but a gap this size happens by chance ${chance(p)}. Too early to call.<small>${esc(gapLine)} ${esc(d.note||'')}</small>`;
+      btnTxt=`Ready in about ${daysTo} days`;
+    } else if(sure<80){
+      state='info'; chipTxt='i Not yet';
+      say=`A ${a} ${u}, B ${b}. ${lead.k} is ahead by ${lift}%, ${sure}% sure. A gap this size happens by chance ${chance(p)}.<small>${esc(gapLine)} ${esc(d.note||'')}</small>`;
+      btnTxt=`Ready in about ${daysTo} days`;
+    } else if(sure<95||sw||(d.prev||0)<95){
+      state='warn'; chipTxt=`! Leaning ${lead.k}`;
+      say=`${lead.k} ahead by ${lift}%, ${sure}% sure.${sw?' A switch test is capped at Leaning: there is no second arm running at the same time.':sure<95?' Not yet 95.':' First morning at 95: one more clean morning calls it.'}<small>${esc(gapLine)} ${esc(d.note||'')}</small>`;
+      btnTxt=sw?'Capped at Leaning':sure<95?`Ready in about ${daysTo} days`:'Calls tomorrow morning if it holds';
+    } else {
+      state='decide'; chipTxt=`◆ Call ${lead.k}`;
+      say=`${lead.k} wins by ${lift}%, ${sure}% sure on two mornings in a row.<small>${esc(gapLine)} ${esc(d.note||'')}</small>`;
+      btnTxt=`Call it for ${lead.k}`; on=true; primary=true; msg=`Call the test for ${lead.k}? Written to ops/tests/register.md, a line to log/ and the rule to knowledge/ through the next session. Undo here until then.`; done=`Called for ${lead.k}`; log=`Gift popup test called for ${lead.k}, ${lift}% ahead, ${sure}% sure`;
+    }
+    card.dataset.state=state;
+    const ch=$('[data-tchip]',card); ch.className='chip '+state; ch.textContent=chipTxt;
+    $('[data-say]',card).innerHTML=say;
+    $('[data-prog]',card).textContent=`Day ${d.day} · at least ${d.min} days, at most ${d.max} · ${d.minx} a side: ${short.length?short.map(x=>`${x.k} needs ${d.minx-x.x} more`).join(', '):'both there'} · about ${daysTo} days to go at this gap`;
+    const btn=$('[data-call]',card); btn.textContent=btnTxt; btn.disabled=!on; btn.classList.toggle('primary',primary);
+    if(on){ btn.dataset.act='call'; btn.dataset.msg=msg; btn.dataset.done=done; btn.dataset.log=log; } else { delete btn.dataset.act; delete btn.dataset.msg; }
+  }
+  $('#tests').addEventListener('click',e=>{
+    const rt=e.target.closest('.rt[data-sheet]');
+    if(rt){ let d=null; try{d=JSON.parse(rt.dataset.sheet)}catch(err){} if(!d) return;
+      openSheet(d.state,d.title,{why:d.why,rule:d.rule,src:d.src},null);
+      if(d.extra&&d.extra.length) $('#sh-extra').innerHTML='<dl class="xdl">'+d.extra.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')+'</dl>';
+      return; }
+    const go=e.target.closest('[data-goto]');
+    if(go){ const t=$(`.dcard[data-id="${go.dataset.goto}"]`); if(t){ t.scrollIntoView({behavior:reduce?'auto':'smooth',block:'center'}); t.classList.add('flash'); setTimeout(()=>t.classList.remove('flash'),1800);} return; }
+    const card=e.target.closest('.tcard'); if(!card) return;
+    const act=e.target.closest('[data-act]');
+    if(act){ if(act.disabled) return; card._pending=act; $('.confirm p',card).textContent=act.dataset.msg||''; $('.acts',card).hidden=true; $('.confirm',card).hidden=false; return; }
+    if(e.target.closest('[data-confirm]')){ if(card._pending) markDone(card,card._pending,false); return; }
+    if(e.target.closest('[data-back]')){ $('.confirm',card).hidden=true; $('.acts',card).hidden=false; return; }
+    if(e.target.closest('.undo')){ undo(card); }
+  });
+
+  // ---- period: Today / Yesterday / Last 7 days drive every hero number ------------------
+  const HERO={"today":{"eyebrow":"Wed 30 Sep · today so far","sub1":"6 orders so far, 4 by this time yesterday.","per":"today so far","net":{"n":296,"state":"sofar","d":{"why":"£296 net sales so far today from 6 orders, UK 2 and US 4. 4 orders by this time yesterday.","rule":"No judgement on a part day. The tile reads So far until midnight UK, then it is judged against the 7-day average: green at or above it, amber under 85%. Red is never used here: a quiet day is not a failure.","src":"Shopify Analytics, net sales, UK and US markets, 30 Sep 00:00 UK to now","hist":[1640,1710,1980,1820,2310,1760,2099],"hp":"£"},"ss":"6 orders · 7-day avg £1,903 a day","pre":"£"},"orders":{"n":6,"state":"sofar","d":{"why":"6 orders so far today, 4 by this time yesterday. Last order 23 minutes ago: US, 2 kits.","rule":"No judgement on a part day. From midnight UK: green at or above the 7-day average of 38, amber under 85% of it.","src":"Shopify orders, paid, both markets, today so far","hist":[35,36,40,37,46,32,43]},"ss":"UK 2 · US 4 · 4 by this time yesterday"},"cr":{"n":3.2,"state":"sofar","d":{"why":"6 orders from 188 sessions so far today, 3.2%. The 7-day average is 3.8%.","rule":"No judgement on a part day. From midnight UK: green at or above the 7-day average, amber under 85% of it. Sessions count every visit, so a big ad day lowers the rate before it lifts orders.","src":"Shopify Analytics, orders ÷ sessions, both markets, today so far","hist":[3.7,3.8,3.9,3.6,4.1,3.5,3.9],"hs":"%"},"ss":"6 of 188 sessions · 7-day avg 3.8%","suf":"%","dp":1},"spend":{"n":174,"state":"sofar","d":{"why":"£174 so far today: ours £59, Laszlo £101, Google £14. TikTok shows here once the freelancer’s campaign serves.","rule":"Spend has no bar of its own. The budget dial under Ads watches ours against the day plan.","src":"Meta Ads Manager (ours and Laszlo), Google Ads, TikTok once it serves, today so far","hist":[1120,1170,1280,1200,1370,1086,1370],"hp":"£"},"ss":"ours £59 · Laszlo £101 · Google £14","pre":"£"},"roas":{"n":1.7,"state":"info","d":{"why":"£296 net sales ÷ £174 ad spend so far today (Meta ours and Laszlo, Google; TikTok once it serves) = 1.70×.","rule":"No bar yet. Break-even ROAS comes from costs.md: 1 ÷ (1 − non-ad cost share). Grey until then.","src":"Shopify net sales ÷ Meta + Google + TikTok spend","hist":[1.46,1.46,1.55,1.52,1.69,1.62,1.53],"hs":"×"},"ss":"net sales ÷ all ad spend · set a bar","suf":"×","dp":2},"margin":{"n":16,"state":"est","d":{"why":"Sample only. Assumes landed cost, fulfilment, payment fees and discounts at 25% of net sales until knowledge/costs.md is filled: 1 − £174 ÷ £296 − 25% = 16%. Then: (net sales − landed cost − fulfilment per parcel from last month’s shipping invoices − fees − discounts − all ad spend) ÷ net sales.","rule":"No bar until the costs are real. At 1.53× ROAS yesterday the true number may be near zero.","src":"Shopify net sales and orders, knowledge/costs.md, Meta + Google + TikTok spend","hist":[7,7,10,9,16,13,10],"hs":"%"},"ss":"live estimate · sample until costs.md is filled","suf":"%"},"ukcpo":{"v":24.5,"min":12,"max":40,"t":"£24.50","l":"UK Meta cost per order","s":"so far · bar £28","z":[[12,25.2,"good"],[25.2,28,"warn"],[28,40,"decide"]],"d":{"why":"£49 of UK Meta spend so far today (ours plus Laszlo) over 2 UK orders. Too few orders to judge.","rule":"No judgement on a part day. From midnight UK: amber from 90% of the £28 blended bar (£25.20), over £28 is a decision.","src":"Meta spend UK ÷ Shopify UK orders, today so far","hist":[26.6,25.9,29.1,25.6,25.6,28.8,24.96],"hp":"£"},"cap":"sofar"},"uscpo":{"v":27.75,"min":12,"max":40,"t":"£27.75","l":"US Meta cost per order","s":"so far · bar £28","z":[[12,25.2,"good"],[25.2,28,"warn"],[28,40,"decide"]],"d":{"why":"£111 of US Meta spend so far today (ours plus Laszlo) over 4 US orders. Too few orders to judge.","rule":"No judgement on a part day. From midnight UK: amber from 90% of the £28 blended bar (£25.20), over £28 is a decision.","src":"Meta spend US ÷ Shopify US orders, today so far","hist":[31.2,36.4,33.0,38.9,30.1,35.7,34.61],"hp":"£"},"cap":"sofar"}},"yday":{"eyebrow":"Tue 29 Sep · yesterday, a month-end spike day","sub1":"43 orders yesterday, best Tuesday this month.","per":"yesterday","net":{"n":2099,"state":"good","d":{"why":"£2,099 net sales, 10% above the 7-day average of £1,903. Spike-day pattern: strong UK morning, US afternoon.","rule":"Green when at or above the 7-day average. Amber under 85% of it. Red is never used here: a quiet day is not a failure.","src":"Shopify Analytics, net sales, UK and US markets, 29 Sep 00:00–23:59 UK","hist":[1640,1710,1980,1820,2310,1760,2099],"hp":"£"},"ss":"7 days · avg £1,903 · yesterday +10%","pre":"£"},"orders":{"n":43,"state":"good","d":{"why":"43 orders against a 7-day average of 38. UK 27, US 16.","rule":"Green at or above the 7-day average, amber under 85% of it.","src":"Shopify orders, paid, both markets","hist":[35,36,40,37,46,32,43]},"ss":"avg 38 · UK 27 · US 16"},"cr":{"n":3.9,"state":"good","d":{"why":"43 orders from 1,105 sessions, 3.9%, against a 7-day average of 3.8%. UK 27 of 480 (5.6%), US 16 of 625 (2.6%).","rule":"Green at or above the 7-day average, amber under 85% of it.","src":"Shopify Analytics, orders ÷ sessions, both markets, 29 Sep","hist":[3.7,3.8,3.9,3.6,4.1,3.5,3.9],"hs":"%"},"ss":"43 of 1,105 sessions · UK 5.6% · US 2.6%","suf":"%","dp":1},"spend":{"n":1370,"state":"info","d":{"why":"£1,370 across Meta and Google yesterday: ours £466, Laszlo £810, Google £94.52.","rule":"Spend has no bar of its own. The budget dial under Ads watches ours against the day plan.","src":"Meta Ads Manager and Google Ads, yesterday","hist":[1120,1170,1280,1200,1370,1086,1370],"hp":"£"},"ss":"ours £466 · Laszlo £810 · Google £95","pre":"£"},"roas":{"n":1.53,"state":"info","d":{"why":"£2,099 ÷ £1,370 yesterday = 1.53×. Meta ours £466, Laszlo £810, Google £95.","rule":"No bar yet. Break-even ROAS comes from costs.md: 1 ÷ (1 − non-ad cost share). Grey until then.","src":"Shopify net sales ÷ Meta + Google + TikTok spend","hist":[1.46,1.46,1.55,1.52,1.69,1.62,1.53],"hs":"×"},"ss":"net sales ÷ all ad spend · set a bar","suf":"×","dp":2},"margin":{"n":10,"state":"est","d":{"why":"Sample only. Assumes non-ad costs at 25% of net sales until knowledge/costs.md is filled: 1 − £1,370 ÷ £2,099 − 25% = 10%.","rule":"No bar until the costs are real. At 1.53× ROAS the true number may be near zero.","src":"Shopify net sales and orders, knowledge/costs.md, Meta + Google + TikTok spend","hist":[7,7,10,9,16,13,10],"hs":"%"},"ss":"live estimate · sample until costs.md is filled","suf":"%"},"ukcpo":{"v":24.96,"min":12,"max":40,"t":"£24.96","l":"UK Meta cost per order","s":"bar £28 · best this week","z":[[12,25.2,"good"],[25.2,28,"warn"],[28,40,"decide"]],"d":{"why":"All UK Meta spend (ours plus Laszlo) divided by UK Shopify orders. £24.96 is the lowest of the last 7 days.","rule":"Amber from 90% of the £28 blended bar (£25.20). Over £28 is a decision: cut the weakest UK set that day.","src":"Meta spend UK ÷ Shopify UK orders, yesterday","hist":[26.6,25.9,29.1,25.6,25.6,28.8,24.96],"hp":"£"}},"uscpo":{"v":34.61,"min":12,"max":40,"t":"£34.61","l":"US Meta cost per order","s":"bar £28 · see row 2","z":[[12,25.2,"good"],[25.2,28,"warn"],[28,40,"decide"]],"d":{"why":"US blended cost per order has been over the £28 bar on all 7 days. The News article US feed set (7d £43.52 per purchase) is the main cause and has its own row on the table.","rule":"Over £28 is a decision, not an alarm: pick the US set to cut. Red is never used here.","src":"Meta spend US ÷ Shopify US orders, yesterday","hist":[31.2,36.4,33.0,38.9,30.1,35.7,34.61],"hp":"£"}}},"7d":{"eyebrow":"23–29 Sep · last 7 days","sub1":"269 orders in the last 7 days, avg 38 a day.","per":"last 7 days","net":{"n":13319,"state":"good","d":{"why":"£13,319 net sales over 23–29 Sep, £1,903 a day. Up 9% on the previous 7 days (£12,220).","rule":"Green when at or above the previous 7 days, amber under 85% of it.","src":"Shopify Analytics, net sales, UK and US markets, 23–29 Sep","hist":[1640,1710,1980,1820,2310,1760,2099],"hp":"£"},"ss":"avg £1,903 a day · prev 7 days £12,220","pre":"£"},"orders":{"n":269,"state":"good","d":{"why":"269 orders over 23–29 Sep, 38 a day. UK 169, US 100. Best day Sun 27 Sep with 46.","rule":"Green when at or above the previous 7 days (248), amber under 85% of it.","src":"Shopify orders, paid, both markets, 23–29 Sep","hist":[35,36,40,37,46,32,43]},"ss":"UK 169 · US 100 · prev 7 days 248"},"cr":{"n":3.8,"state":"good","d":{"why":"269 orders from 7,120 sessions over 23–29 Sep, 3.8%. UK 169 of 3,440 (4.9%), US 100 of 3,680 (2.7%).","rule":"Green when at or above the previous 7 days, amber under 85% of it.","src":"Shopify Analytics, orders ÷ sessions, both markets, 23–29 Sep","hist":[3.7,3.8,3.9,3.6,4.1,3.5,3.9],"hs":"%"},"ss":"269 of 7,120 sessions · UK 4.9% · US 2.7%","suf":"%","dp":1},"spend":{"n":8596,"state":"info","d":{"why":"£8,596 over 23–29 Sep: Meta £7,931 (ours £3,262, Laszlo £4,669), Google £665.","rule":"Spend has no bar of its own. The budget dial under Ads watches ours against the day plan.","src":"Meta Ads Manager (ours and Laszlo), Google Ads, 23–29 Sep","hist":[1120,1170,1280,1200,1370,1086,1370],"hp":"£"},"ss":"ours £3,262 · Laszlo £4,669 · Google £665","pre":"£"},"roas":{"n":1.55,"state":"info","d":{"why":"£13,319 ÷ £8,596 over 23–29 Sep = 1.55×.","rule":"No bar yet. Break-even ROAS comes from costs.md: 1 ÷ (1 − non-ad cost share). Grey until then.","src":"Shopify net sales ÷ Meta + Google + TikTok spend","hist":[1.46,1.46,1.55,1.52,1.69,1.62,1.53],"hs":"×"},"ss":"net sales ÷ all ad spend · set a bar","suf":"×","dp":2},"margin":{"n":10,"state":"est","d":{"why":"Sample only. Assumes non-ad costs at 25% of net sales until knowledge/costs.md is filled: 1 − £8,596 ÷ £13,319 − 25% = 10%.","rule":"No bar until the costs are real. At 1.53× ROAS the true number may be near zero.","src":"Shopify net sales and orders, knowledge/costs.md, Meta + Google + TikTok spend","hist":[7,7,10,9,16,13,10],"hs":"%"},"ss":"live estimate · sample until costs.md is filled","suf":"%"},"ukcpo":{"v":26.65,"min":12,"max":40,"t":"£26.65","l":"UK Meta cost per order","s":"7-day blend · bar £28","z":[[12,25.2,"good"],[25.2,28,"warn"],[28,40,"decide"]],"d":{"why":"UK Meta spend over the 7 days ÷ UK orders: £26.65. Two days were over £28 (25 and 28 Sep).","rule":"Amber from 90% of the £28 blended bar (£25.20). Over £28 is a decision: cut the weakest UK set that day.","src":"Meta spend UK ÷ Shopify UK orders, 23–29 Sep","hist":[26.6,25.9,29.1,25.6,25.6,28.8,24.96],"hp":"£"}},"uscpo":{"v":34.27,"min":12,"max":40,"t":"£34.27","l":"US Meta cost per order","s":"7-day blend · bar £28 · see row 2","z":[[12,25.2,"good"],[25.2,28,"warn"],[28,40,"decide"]],"d":{"why":"US Meta spend over the 7 days ÷ US orders: £34.27. All 7 days were over the £28 bar; the News article US feed set is the main cause and has its own row on the table.","rule":"Over £28 is a decision, not an alarm: pick the US set to cut. Red is never used here.","src":"Meta spend US ÷ Shopify US orders, 23–29 Sep","hist":[31.2,36.4,33.0,38.9,30.1,35.7,34.61],"hp":"£"}}}};
+  function setPeriod(p){
+    const H=HERO[p]; if(!H) return;
+    $$('#period [data-period]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.period===p)));
+    $('#eyebrow').textContent=H.eyebrow; $('#sub1').textContent=H.sub1;
+    $$('#hero .tile[data-k]').forEach(el=>{
+      const t=H[el.dataset.k]; if(!t) return;
+      const per=$('.per',el); if(per) per.textContent=H.per;
+      if(el.classList.contains('dial')){ el.dataset.dial=JSON.stringify(t); renderDial(el); return; }
+      el.dataset.state=t.state; el.dataset.detail=JSON.stringify(t.d);
+      const sv=$('.sv',el); if(sv){ sv.dataset.n=t.n; sv.dataset.pre=t.pre||''; sv.dataset.suf=t.suf||''; sv.dataset.dp=t.dp||0; countUp(sv); }
+      const ss=$('.ss',el); if(ss) ss.textContent=t.ss;
+      const ch=$('.chip',el); if(ch) ch.outerHTML=chip(t.state);
+    });
+    pulse();
+  }
+  $('#period').addEventListener('click',e=>{ const b=e.target.closest('[data-period]'); if(b) setPeriod(b.dataset.period); });
+
+  // ---- boot --------------------------------------------------------------------------------
+  $$('.dial[data-dial]').forEach(renderDial);
+  $$('.ring[data-ring]').forEach(renderRing);
+  $$('.tile.stat').forEach(renderStat);
+  $$('.tile[data-src]').forEach(watermark);
+  $$('.spark[data-spark]').forEach(sparkBars);
+  $$('.tcard[data-test]').forEach(renderTest);
+  // ---- new reviews (Judge.me): publish after a confirm tap, or open it in Judge.me -------
+  const WORD=['No','One','Two','Three','Four','Five','Six','Seven','Eight','Nine'];
+  function revCount(){
+    const n=$$('#reviews .rv:not(.done)').length, c=$('#rvcount');
+    c.className='chip '+(n?'decide':'good'); c.textContent=n?`◆ ${n} waiting`:'✓ All caught up';
+    $('#subrv').textContent=n?` ${WORD[n]||n} new review${n===1?'':'s'} to check.`:'';
+    pulse();
+  }
+  $$('#reviews .stars').forEach(el=>{ const n=+el.dataset.stars; el.setAttribute('role','img'); el.setAttribute('aria-label',`${n} out of 5 stars`);
+    el.innerHTML=[1,2,3,4,5].map(i=>`<svg class="${i<=n?'on':'off'}" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-star"/></svg>`).join(''); });
+  $('#reviews').addEventListener('click',e=>{
+    const rt=e.target.closest('.rt[data-sheet]');
+    if(rt){ let d=null; try{d=JSON.parse(rt.dataset.sheet)}catch(err){} if(!d) return;
+      openSheet(d.state,d.title,{why:d.why,rule:d.rule,src:d.src},null);
+      if(d.extra&&d.extra.length) $('#sh-extra').innerHTML='<dl class="xdl">'+d.extra.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')+'</dl>';
+      return; }
+    const card=e.target.closest('.rv'); if(!card) return;
+    const act=e.target.closest('[data-act]');
+    if(act){ card._pending=act; $('.confirm p',card).textContent=act.dataset.msg||''; $('.acts',card).hidden=true; $('.confirm',card).hidden=false; return; }
+    if(e.target.closest('[data-confirm]')){ if(card._pending){ markDone(card,card._pending,false); revCount(); } return; }
+    if(e.target.closest('[data-back]')){ $('.confirm',card).hidden=true; $('.acts',card).hidden=false; return; }
+    if(e.target.closest('.undo')){ undo(card); revCount(); }
+  });
+  $('#counts').addEventListener('click',e=>{ if(!e.target.closest('[data-rv]')) return; const r=$('#reviews'); r.scrollIntoView({behavior:reduce?'auto':'smooth',block:'start'}); });
+
+  tabDots(); deckCount(); revCount();
+  setPeriod('today');
+  $('#tabs').addEventListener('click',e=>{const t=e.target.closest('.tab'); if(t){ if(q) q.value=''; $$('[data-panel] .tile').forEach(x=>x.hidden=false); if(dialcount) dialcount.textContent=dialcountText; selectTab(t.dataset.tab);} });
+  const h=location.hash.replace('#',''); if(TABS.includes(h)) selectTab(h);
+})();
+</script>

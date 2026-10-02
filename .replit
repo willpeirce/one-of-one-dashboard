@@ -9,7 +9,7 @@ HOST = "0.0.0.0"
 [deployment]
 deploymentTarget = "vm"
 build = ["sh", "-c", "npm ci --include=dev && npm run build"]
-run = ["sh", "-c", "NODE_ENV=production npm start"]
+run = ["sh", "-c", "HOST=0.0.0.0 NODE_ENV=production npm start"]
 
 [[ports]]
 localPort = 3000

@@ -34,3 +34,5 @@ The real dashboard, source metrics and fixture responses, Settings, Server-Sent 
 ## Open questions for Will
 
 Before production enrollment, confirm the final dashboard address (`pulse.oneofonehq.com` remains a working name), configure its HTTPS `APP_ORIGIN` and a setup phrase in Replit, and confirm the database used by the published app. These do not block fixture-based development. Other later-stage items remain in plan section 12.
+
+After the first deployment, confirm Replit's proxy chain and configure trust for exactly those hops so rate limits apply per visitor. Revisit the global login-options limit so a stranger cannot exhaust it and lock Will out for 15 minutes. Rate-limit behaviour is unchanged in this follow-up.

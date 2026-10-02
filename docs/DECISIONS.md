@@ -32,3 +32,9 @@ Register all ten sources from section 1 using its exact key names. The setup phr
 The audit log records fixed event names, timestamp and optional credential ID, without arbitrary request data or customer fields. Authentication transitions and sessions are committed together. Failure responses and startup logs suppress raw exception details, and request logging is off so setup phrases and assertions cannot reach logs.
 
 Every pull request runs typecheck, tests against a real PostgreSQL service, the production build, and Chromium WebAuthn smoke checks with a virtual authenticator. The browser tests use real signatures, cover replay/origin/signature rejection, persisted 30-day sessions, and the plain screen at phone/desktop sizes in both themes. Gitleaks 8.28.0 is downloaded with pinned publisher checksums and scans current files plus full history. Its default rules remain enabled, with additional rules for Pulse's secret names and generated-secret/redaction self-tests. No exclusions or baselines are added.
+
+## 2026-10-02, stage 0a: explicit deployment host
+The Reserved VM deployment command sets `HOST=0.0.0.0` alongside `NODE_ENV=production`, so its network binding is self-contained. Relying only on `.replit`'s `[env]` block was considered less reliable for deployment. The local runtime default remains loopback.
+
+## 2026-10-02, stage 0a: safe configuration diagnostics
+Runtime validation uses `ConfigError` for fixed, safe configuration messages. Startup prints `Pulse could not start: <message>` only for that error type; other failures retain a generic message. This makes configuration mistakes actionable without exposing environment values or raw exceptions. Suppressing every validation detail and logging arbitrary exception messages were considered and rejected.

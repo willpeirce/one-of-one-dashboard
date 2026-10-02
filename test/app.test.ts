@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac, randomBytes } from 'node:crypto';
 import { createApp } from '../src/app.js';
-import { readRuntime } from '../src/runtime.js';
+import { ConfigError, readRuntime } from '../src/runtime.js';
 import { createTestDatabase } from './helpers/database.js';
 import type { Database } from '../src/db.js';
 
@@ -156,4 +156,27 @@ test('runtime configuration binds passkeys to an explicit secure production orig
   for (const DASHBOARD_SETUP_CODE of [' '.repeat(30), 'short', 'a'.repeat(1025)]) assert.throws(() => readRuntime({ ...base, DASHBOARD_SETUP_CODE }));
   assert.throws(() => readRuntime({ ...base, PORT: '-1' }));
   assert.throws(() => readRuntime({}));
+});
+
+test('configuration errors use fixed messages without exposing supplied values', () => {
+  const base = { DATABASE_URL: 'postgresql://localhost/pulse_test' };
+  const cases: { env: NodeJS.ProcessEnv; message: string }[] = [
+    { env: { APP_ORIGIN: 'https://pulse.example.test' }, message: 'DATABASE_URL is required' },
+    { env: { ...base, PORT: 'invalid-port' }, message: 'Invalid PORT' },
+    { env: { ...base, NODE_ENV: 'production' }, message: 'APP_ORIGIN is required in production' },
+    { env: { ...base, APP_ORIGIN: 'invalid-origin' }, message: 'Invalid APP_ORIGIN' },
+    { env: { ...base, APP_ORIGIN: 'https://pulse.example.test/private-path' }, message: 'APP_ORIGIN must contain only a scheme, hostname and optional port' },
+    { env: { ...base, NODE_ENV: 'production', APP_ORIGIN: 'http://pulse.example.test' }, message: 'APP_ORIGIN must use HTTPS (HTTP localhost is allowed in development)' },
+    { env: { ...base, DASHBOARD_SETUP_CODE: randomBytes(19).toString('hex').slice(0, 19) }, message: 'DASHBOARD_SETUP_CODE must contain 20 to 1024 characters' },
+  ];
+  for (const { env, message } of cases) {
+    assert.throws(() => readRuntime(env), (error: unknown) => {
+      assert.ok(error instanceof ConfigError);
+      assert.equal(error.message, message);
+      for (const [name, value] of Object.entries(env)) {
+        if (name !== 'NODE_ENV' && value) assert.equal(error.message.includes(value), false);
+      }
+      return true;
+    });
+  }
 });

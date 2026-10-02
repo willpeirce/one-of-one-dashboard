@@ -1,7 +1,7 @@
 import { createApp } from './app.js';
 import { openPostgres } from './db.js';
 import { migrate } from './migrate.js';
-import { readRuntime } from './runtime.js';
+import { ConfigError, readRuntime } from './runtime.js';
 
 async function main(): Promise<void> {
   const config = readRuntime();
@@ -21,7 +21,9 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch(() => {
-  console.error('Pulse could not start. Check database access, migrations and runtime configuration.');
+main().catch((error: unknown) => {
+  console.error(error instanceof ConfigError
+    ? `Pulse could not start: ${error.message}`
+    : 'Pulse could not start. Check database access, migrations and runtime configuration.');
   process.exitCode = 1;
 });

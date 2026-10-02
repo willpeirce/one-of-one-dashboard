@@ -80,7 +80,7 @@ Secret scanning downloads checksum-verified Gitleaks 8.28.0, runs generated-secr
 
 ## Replit hosting
 
-`.replit` selects Node 24 and a Reserved VM, installs locked dependencies and builds on publication, then starts the compiled service on `0.0.0.0:3000`. Startup applies migrations. Replit's AI agent must not edit this repository; `replit.md` remains the hosting rulebook.
+`.replit` selects Node 24 and a Reserved VM, installs locked dependencies and builds on publication, then starts the compiled service on `0.0.0.0:3000`. The deployment command explicitly sets `HOST=0.0.0.0` and `NODE_ENV=production`. Startup applies migrations. Replit's AI agent must not edit this repository; `replit.md` remains the hosting rulebook.
 
 Will adds PostgreSQL and confirms which published database `DATABASE_URL` selects; this has not been inspected or deployed from the build environment. Set `NODE_ENV=production` (the deployment command does this), the confirmed HTTPS `APP_ORIGIN`, and `DASHBOARD_SETUP_CODE` in Replit. The working hostname in `src/config.ts` is explicitly unconfirmed; production refuses to start without an explicit HTTPS origin. Confirm the final address before enrolling a real device: passkeys belong to its hostname. HTTPS sessions use Secure, HttpOnly, SameSite=Strict cookies with the `__Host-` prefix. Do not move a live deployment to a different origin without planning device re-enrollment.
 

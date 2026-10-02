@@ -1,0 +1,16 @@
+modules = ["nodejs-24"]
+entrypoint = "src/server.ts"
+run = "npm run dev"
+
+[env]
+PORT = "3000"
+HOST = "0.0.0.0"
+
+[deployment]
+deploymentTarget = "vm"
+build = ["sh", "-c", "npm ci --include=dev && npm run build"]
+run = ["sh", "-c", "HOST=0.0.0.0 NODE_ENV=production npm start"]
+
+[[ports]]
+localPort = 3000
+externalPort = 80

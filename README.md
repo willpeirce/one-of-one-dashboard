@@ -8,9 +8,15 @@ Will Peirce's private dashboard for One of One Trading Cards: sales, ads, stock,
 
 Keys live only in Replit Secrets. Never commit one.
 
-## Stage 0a
+## Stage 0b
 
-Node 24, TypeScript and one Fastify service, with PostgreSQL migrations, passkey sign-in, a private audit log and ten source health rows. After sign-in the plain page is labelled **sample data**. The real dashboard, Settings, live updates and home-screen installation are stage 0b. No source clients or external API calls exist yet.
+Node 24, TypeScript and one Fastify service, with PostgreSQL migrations, passkey sign-in, an audit log and ten source health rows. After sign-in the dashboard ports the supplied mockup: the period-driven hero, reviews above Tests, dials, detail sheets and navigation, in dark and light themes. All business figures are **sample data** served by the app. No source clients or external API calls exist yet.
+
+Use the **W** account menu for Settings, source health, the audit log, the theme switch and sign-out. Source-changing actions remain disabled with a **Not built yet** note. Settings contains only the fields in plan 7.7; changes persist in PostgreSQL and each changed field has an audit entry. Unknown costs stay blank. The morning-summary switch saves a preference; delivery comes in stage 7.
+
+The dashboard receives authenticated Server-Sent Events at `/api/events`: an initial snapshot, refreshes every 15 seconds and immediate updates after Settings changes. Changing the blended Meta tripwire updates an open dashboard without reloading. The sample date and figures remain fixed; the connection timestamp is the real refresh time. A lost connection keeps the last sample snapshot and retries. Signing out revokes the stream.
+
+Outfit, Plus Jakarta Sans, the supplied logo and all icons are served locally. The page makes no outside asset requests. On an iPhone, open the published HTTPS app in Safari, sign in, then choose **Share → Add to Home Screen**. The manifest uses standalone mode; there is no service worker or offline cache of private pages. Icon/font provenance and icon regeneration are in [public/README.md](public/README.md).
 
 ## Install and run locally
 
@@ -47,7 +53,7 @@ npm run build
 npm start
 ```
 
-Both run commands read an existing `.env`. `HOST` defaults to loopback and `PORT` to 3000. `/health` returns only `{"status":"ok"}`, or `{"status":"unavailable"}` with HTTP 503 when PostgreSQL cannot be reached. `/` and `/audit` require a session. There are no request-body or credential logs.
+Both run commands read an existing `.env`. `HOST` defaults to loopback and `PORT` to 3000. `/health` returns only `{"status":"ok"}`, or `{"status":"unavailable"}` with HTTP 503 when PostgreSQL cannot be reached. The dashboard, `/sources`, `/settings`, `/audit` and their data/event APIs require a session. There are no request-body or credential logs.
 
 ## Database and migrations
 
@@ -56,6 +62,8 @@ The service runs `migrations/*.sql` before listening. `npm run migrate` does the
 Replit manages `public` during publication. New application tables must use `pulse`, or `pulse_private` for authentication state; never add `CREATE TABLE` in `public`. The already-applied migration `001_foundations.sql` remains unchanged. `002_application_schema.sql` moves the existing health and audit tables into `pulse`, or recreates them there if Replit has removed them, without dropping tables. Follow the publication order below before applying 002 in the Replit development database.
 
 `pulse.source_health` keeps source mode, health, failure count and last-attempt/last-success times. `pulse.audit_log` stores fixed event names, timestamps and optional credential IDs; it has no arbitrary request or customer payload. The last 100 events are available after sign-in. Failed enrollment/sign-in, successful enrollment/sign-in, sign-out and rate-limit events are recorded.
+
+Migration 003 adds `pulse.settings` and `pulse.settings_changes`. Settings saves validate the complete allowed shape and use a version to reject stale edits from another tab. Every changed field is recorded atomically with the save; unchanged saves add no audit noise. The audit stores field paths, never the values entered. Key expiry fields hold only a known key name and a date, never a key value. Back up Settings with the database because it cannot be recovered from a source.
 
 The `pulse_private` schema holds passkey public keys, challenges, sessions, rate-limit counters, a random owner ID and generated application keys. Session tokens are random and stored only as HMACs. The session HMAC key and push key pair are generated once and retained in that private schema. PUBLIC access is revoked. Stage 7 must explicitly grant its separate read-only Ask role access only to intended `pulse` tables, never to this schema or the application's owner role.
 
@@ -76,7 +84,7 @@ Without `TEST_DATABASE_URL`, tests use PGlite, an embedded PostgreSQL engine. Th
 
 To run the same tests against a real disposable PostgreSQL server, set `TEST_DATABASE_URL` in the shell to its admin database URL, then run `npm test` and `npm run test:browser`. This test role needs `CREATEDB`: every test creates a randomly named database and drops it on completion. Never point it at production. Unit tests intentionally do not load `.env`.
 
-`test:browser` starts its own server and isolated test database, generates its own temporary setup phrase in memory, and uses Chromium's virtual authenticator for real WebAuthn registration and signing. It checks sign-out, sign-in, replay/origin/signature rejection, persisted 30-day sessions, source health and the audit page at phone/desktop sizes in both themes. If Chromium is already installed, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to its executable instead of downloading a browser. `npm run browser:check` runs the browser checks against an already-running disposable instance using its `APP_ORIGIN` and setup phrase; it enrolls a test credential, so do not use it against production.
+`test:browser` starts its own server and isolated test database, generates its own temporary setup phrase in memory, and uses Chromium's virtual authenticator for real WebAuthn registration and signing. It checks sign-out, sign-in, replay/origin/signature rejection, persisted 30-day sessions, source health and audit. The dashboard renders at 390px and 1280px in both themes without console errors, outside requests or horizontal overflow. It also exercises the hero periods, dials, reviews/Tests ordering, disabled actions, local fonts, installation assets, Settings persistence and an actual SSE update. If Chromium is already installed, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to its executable instead of downloading a browser. `npm run browser:check` runs these checks against an already-running disposable instance using its `APP_ORIGIN` and setup phrase; it enrolls a test credential and edits a test setting, so do not use it against production.
 
 Secret scanning downloads checksum-verified Gitleaks 8.28.0, runs generated-secret/redaction self-tests, and scans both current nonignored files and full git history. It retains Gitleaks' default rules and adds detection for the named Pulse secrets, including setup phrases. It requires Bash, curl, Git, Node and complete history (`git fetch --unshallow` if necessary). No secret baselines or suppressions are used. Every pull request runs typecheck, the real PostgreSQL tests, production build, Chromium checks and the secret scan in GitHub Actions.
 
@@ -96,4 +104,4 @@ For the migration 002 publication, follow this order:
 4. In the deployment logs, check for `Pulse Node major: 24`, `Database migrations complete.`, and `One of One Pulse is listening.`
 5. Only after publication succeeds, run `npm run migrate` in the workspace **Shell** so the development database catches up.
 
-All source names, key requirements and stage numbers are in `src/sources.ts`; nonsecret store, location, product, account, list and campaign IDs are in `src/config.ts`. A source enters **live** mode only when all its required keys are present and nonblank. Missing keys show **Waiting for keys**; a fully configured source shows **Client not built**, never a false healthy state. Adding keys does not trigger any external call in stage 0a. Judge.me publishing remains disabled. API versions will be pinned with the source clients in their own stages.
+All source names, key requirements and stage numbers are in `src/sources.ts`; nonsecret store, location, product, account, list and campaign IDs are in `src/config.ts`. A source enters **live** mode only when all its required keys are present and nonblank. Missing keys show **Waiting for keys**; a fully configured source shows **Client not built**, never a false healthy state. The stage 0b dashboard is explicitly a sample preview, including when keys are present: key readiness does not make its examples live. Adding keys does not trigger any external call. Judge.me publishing remains disabled. API-shaped fixtures and API versions will be introduced with the source clients in their own stages; `src/sample-dashboard.ts` holds the mockup's source-tagged presentation examples.

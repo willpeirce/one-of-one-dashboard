@@ -1,5 +1,9 @@
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 
+try {
+  document.documentElement.dataset.theme = localStorage.getItem('pulse-theme') === 'light' ? 'light' : 'dark';
+} catch { document.documentElement.dataset.theme = 'dark'; }
+
 class RequestFailed extends Error {
   constructor(readonly status: number) {
     super('Request failed');

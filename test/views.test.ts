@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { SourceHealth } from '../src/sources.js';
-import { auditPage, dashboardPage, loginPage } from '../src/views.js';
+import { auditPage, sourceHealthPage, loginPage } from '../src/views.js';
 
 function source(overrides: Partial<SourceHealth> = {}): SourceHealth {
   return {
@@ -15,7 +15,7 @@ function source(overrides: Partial<SourceHealth> = {}): SourceHealth {
 
 test('source and audit values cannot inject markup or execute a script', () => {
   const attack = '<img src=x onerror="alert(1)">&\'"';
-  const healthHtml = dashboardPage([source({ name: attack, requiredKeys: [attack] })]);
+  const healthHtml = sourceHealthPage([source({ name: attack, requiredKeys: [attack] })]);
   const auditHtml = auditPage([{ event: attack, occurred_at: new Date() }]);
   for (const html of [healthHtml, auditHtml]) {
     assert.ok(!html.includes(attack));
@@ -35,7 +35,7 @@ test('audit times follow the UK clock change on 25 October 2026', () => {
 });
 
 test('the source page labels samples and does not mistake key presence for a working client', () => {
-  const html = dashboardPage([
+  const html = sourceHealthPage([
     source(), source({ source: 'meta', name: 'Meta Ads', mode: 'live', status: 'not_implemented' }),
   ]);
   assert.match(html, /<strong>sample data<\/strong>/);

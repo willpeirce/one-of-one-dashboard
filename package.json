@@ -3,10 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24 <25" },
+  "engines": {
+    "node": ">=24 <25"
+  },
   "scripts": {
     "dev": "npm run build && node --env-file-if-exists=.env --import tsx --watch src/server.ts",
-    "build": "tsc -p tsconfig.build.json && esbuild src/browser.ts --bundle --format=esm --target=es2022 --outfile=dist/public/browser.js && cp src/styles.css dist/public/styles.css",
+    "build": "tsc -p tsconfig.build.json && node --import tsx scripts/build-assets.ts",
+    "icons:generate": "bash scripts/generate-icons.sh",
     "start": "node --env-file-if-exists=.env dist/server.js",
     "migrate": "node --env-file-if-exists=.env --import tsx src/migrate.ts",
     "typecheck": "tsc --noEmit",
@@ -24,6 +27,8 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.8",
+    "@fontsource-variable/outfit": "5.3.0",
+    "@fontsource-variable/plus-jakarta-sans": "5.3.0",
     "@types/node": "24.10.1",
     "@types/pg": "8.15.6",
     "esbuild": "0.28.2",

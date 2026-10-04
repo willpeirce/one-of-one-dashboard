@@ -1,4 +1,5 @@
 import { getSystemErrorMap } from 'node:util';
+import { ConfigError } from './runtime.js';
 
 const systemCodes = new Set([...getSystemErrorMap().values()].map(([name]) => name));
 // Node's DNS, URL and TLS layers also emit codes outside libuv's error map.
@@ -37,6 +38,8 @@ export class MigrationError extends Error {
 
 export function failureMessage(context: 'startup' | 'migration', error: unknown): string {
   const label = context === 'startup' ? 'Pulse could not start' : 'Database migration failed';
+  // ConfigError contains only our fixed validation messages, never environment values.
+  if (error instanceof ConfigError) return `${label}: ${error.message}`;
   const migration = error instanceof MigrationError && error.migration ? `; migration: ${error.migration}` : '';
   return `${label} (code: ${errorCode(error)}${migration}).`;
 }

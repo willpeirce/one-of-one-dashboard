@@ -25,9 +25,9 @@ Review and merge the Replit database fix, then publish using the migration 002 o
 - Verified-device passkey enrollment with a setup phrase, passkey sign-in, persistent rate limiting, 30-day server sessions and immediate sign-out revocation.
 - Authenticated source health table under the **sample data** banner, plus an audit page.
 - All ten sources select sample/live independently from required key presence. No keys means **Waiting for keys**. All keys means live mode with **Client not built**. No live data is fetched and no external client is implemented.
-- CI is configured for every pull request: typecheck, real PostgreSQL database tests, build, browser WebAuthn checks and a secret scan. Local checks use the same tests on PGlite or PostgreSQL; Chromium's virtual authenticator exercises real signatures. Remote CI results remain to be checked on the opened PR.
+- CI is configured for every pull request: typecheck, real PostgreSQL database tests, build, browser WebAuthn checks and a secret scan. Local checks use the same tests on PGlite or PostgreSQL; Chromium's virtual authenticator exercises real signatures.
 - Initial stage 0a local validation passed: all 26 tests on PGlite and PostgreSQL 17.11; typecheck and build; Chromium sign-in and rejection checks on both database backends; Gitleaks with generated-secret self-tests; compiled production startup and migration repeatability.
-- Replit database fix validation: all 41 tests pass on PGlite and PostgreSQL 17.11, plus typecheck, build, browser checks on both backends and the secret scan. Compiled startup and migration CLI checks confirm SQLSTATE/filename-only failures and the Node, migrations-complete and listening log lines.
+- Replit database fix validation: all 42 tests pass on PGlite and PostgreSQL 17.11, plus typecheck, build, browser checks on both backends and the secret scan. The review regression test confirms fixed configuration messages for a bad `APP_ORIGIN` at startup and missing `DATABASE_URL` in the CLI, without exposing values. Compiled startup and migration CLI checks confirm SQLSTATE/filename-only database failures and the Node, migrations-complete and listening log lines.
 
 ## Not in 0a
 

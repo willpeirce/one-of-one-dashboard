@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { type Database, openPostgres } from './db.js';
 import { failureMessage, MigrationError } from './diagnostics.js';
+import { ConfigError } from './runtime.js';
 
 const migrationsDirectory = fileURLToPath(new URL('../migrations/', import.meta.url));
 
@@ -53,16 +54,16 @@ export async function migrate(db: Database): Promise<void> {
 
 async function main(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) throw new Error('DATABASE_URL is required');
+  if (!databaseUrl) throw new ConfigError('DATABASE_URL is required');
   const db = openPostgres(databaseUrl);
   try {
     await migrate(db);
-    console.info('Database migrations complete.');
   } catch (error) {
     await db.close().catch(() => {});
     throw error;
   }
   await db.close();
+  console.info('Database migrations complete.');
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

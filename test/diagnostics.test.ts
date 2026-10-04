@@ -132,28 +132,53 @@ async function closedPort(): Promise<number> {
   return address.port;
 }
 
+async function runCommand(entry: 'server' | 'migrate', env: NodeJS.ProcessEnv): Promise<{ code: number | null; output: string }> {
+  return await new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['--import', 'tsx', `src/${entry}.ts`], {
+      cwd: fileURLToPath(new URL('../', import.meta.url)),
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 20_000,
+    });
+    let output = '';
+    child.stdout.on('data', (chunk: Buffer) => { output += chunk.toString(); });
+    child.stderr.on('data', (chunk: Buffer) => { output += chunk.toString(); });
+    child.once('error', reject);
+    child.once('close', (code) => resolve({ code, output }));
+  });
+}
+
+test('commands report fixed configuration messages for a bad APP_ORIGIN and missing DATABASE_URL', async () => {
+  const marker = randomUUID();
+  const badOrigin = `invalid-origin-${marker}`;
+  const databaseUrl = `postgresql://${marker}.invalid/diagnostics_test`;
+  const startup = await runCommand('server', {
+    NODE_ENV: 'production', DATABASE_URL: databaseUrl, APP_ORIGIN: badOrigin,
+  });
+  const migration = await runCommand('migrate', { NODE_ENV: 'test' });
+  for (const [result, expected] of [
+    [startup, 'Pulse could not start: Invalid APP_ORIGIN'],
+    [migration, 'Database migration failed: DATABASE_URL is required'],
+  ] as const) {
+    assert.equal(result.code, 1);
+    assert.ok(result.output.includes(`${expected}\n`));
+    for (const privateValue of [marker, badOrigin, databaseUrl]) {
+      assert.ok(!result.output.includes(privateValue), 'Configuration diagnostics must omit environment values');
+    }
+    assert.ok(!result.output.includes('Database migrations complete.'));
+  }
+});
+
 test('startup and migration commands expose connection codes without exposing the URL or environment', async () => {
   const port = await closedPort();
   const marker = randomUUID();
   const url = new URL(`postgresql://127.0.0.1:${port}/diagnostics_test`);
   url.username = 'synthetic-user';
   url.password = marker;
-  for (const [entry, prefix] of [['server', 'Pulse could not start'], ['migrate', 'Database migration failed']]) {
-    const result = await new Promise<{ code: number | null; output: string }>((resolve, reject) => {
-      const child = spawn(process.execPath, ['--import', 'tsx', `src/${entry}.ts`], {
-        cwd: fileURLToPath(new URL('../', import.meta.url)),
-        env: {
-          NODE_ENV: 'test', DATABASE_URL: url.href, APP_ORIGIN: 'http://localhost:3000',
-          PULSE_TEST_PRIVATE_MARKER: marker,
-        },
-        stdio: ['ignore', 'pipe', 'pipe'],
-        timeout: 20_000,
-      });
-      let output = '';
-      child.stdout.on('data', (chunk: Buffer) => { output += chunk.toString(); });
-      child.stderr.on('data', (chunk: Buffer) => { output += chunk.toString(); });
-      child.once('error', reject);
-      child.once('close', (code) => resolve({ code, output }));
+  for (const [entry, prefix] of [['server', 'Pulse could not start'], ['migrate', 'Database migration failed']] as const) {
+    const result = await runCommand(entry, {
+      NODE_ENV: 'test', DATABASE_URL: url.href, APP_ORIGIN: 'http://localhost:3000',
+      PULSE_TEST_PRIVATE_MARKER: marker,
     });
     assert.equal(result.code, 1);
     assert.ok(result.output.includes(`${prefix} (code: ECONNREFUSED).`));

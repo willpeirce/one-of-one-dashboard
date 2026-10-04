@@ -51,7 +51,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   });
   app.get('/audit', async (request, reply) => {
     if (!await auth.session(request)) return reply.redirect('/login');
-    const events = await db.query<{ event: string; occurred_at: Date }>('SELECT event, occurred_at FROM public.audit_log ORDER BY occurred_at DESC, id DESC LIMIT 100');
+    const events = await db.query<{ event: string; occurred_at: Date }>('SELECT event, occurred_at FROM pulse.audit_log ORDER BY occurred_at DESC, id DESC LIMIT 100');
     return reply.type('text/html; charset=utf-8').send(auditPage(events.rows));
   });
   // Fixed paths only; the server never exposes repository or environment files.

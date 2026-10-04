@@ -3,14 +3,17 @@ import { readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { type Database, openPostgres } from './db.js';
+import { failureMessage, MigrationError } from './diagnostics.js';
 
 const migrationsDirectory = fileURLToPath(new URL('../migrations/', import.meta.url));
 
 export async function migrate(db: Database): Promise<void> {
   const files = (await readdir(migrationsDirectory)).filter((name) => /^\d+_[a-z0-9_]+\.sql$/.test(name)).sort();
   const migrations = await Promise.all(files.map(async (name) => {
-    const sql = await readFile(resolve(migrationsDirectory, name), 'utf8');
-    return { name, sql, checksum: createHash('sha256').update(sql).digest('hex') };
+    try {
+      const sql = await readFile(resolve(migrationsDirectory, name), 'utf8');
+      return { name, sql, checksum: createHash('sha256').update(sql).digest('hex') };
+    } catch (error) { throw new MigrationError(name, error); }
   }));
 
   await db.transaction(async (transaction) => {
@@ -32,16 +35,18 @@ export async function migrate(db: Database): Promise<void> {
     for (const row of applied.rows) {
       const migration = migrations.find((candidate) => candidate.name === row.name);
       if (!migration || migration.checksum !== row.checksum) {
-        throw new Error(`Migration history does not match ${row.name}`);
+        throw new MigrationError(row.name, new Error('Migration history does not match'));
       }
     }
     for (const migration of migrations) {
       if (applied.rows.some((row) => row.name === migration.name)) continue;
-      await transaction.query(migration.sql);
-      await transaction.query(
-        'INSERT INTO pulse_private.schema_migrations (name, checksum) VALUES ($1, $2)',
-        [migration.name, migration.checksum],
-      );
+      try {
+        await transaction.query(migration.sql);
+        await transaction.query(
+          'INSERT INTO pulse_private.schema_migrations (name, checksum) VALUES ($1, $2)',
+          [migration.name, migration.checksum],
+        );
+      } catch (error) { throw new MigrationError(migration.name, error); }
     }
   });
 }
@@ -53,14 +58,16 @@ async function main(): Promise<void> {
   try {
     await migrate(db);
     console.info('Database migrations complete.');
-  } finally {
-    await db.close();
+  } catch (error) {
+    await db.close().catch(() => {});
+    throw error;
   }
+  await db.close();
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  main().catch(() => {
-    console.error('Database migration failed. Check database access and migration history.');
+  main().catch((error: unknown) => {
+    console.error(failureMessage('migration', error));
     process.exitCode = 1;
   });
 }

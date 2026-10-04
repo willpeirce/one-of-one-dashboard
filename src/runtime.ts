@@ -12,6 +12,11 @@ export class ConfigError extends Error {
   override name = 'ConfigError';
 }
 
+export function logNodeVersion(major = Number(process.versions.node.split('.')[0])): void {
+  console.info(`Pulse Node major: ${major}`);
+  if (major !== 24) console.warn(`Warning: Pulse expects Node 24; continuing on Node ${major}.`);
+}
+
 export function readRuntime(env: NodeJS.ProcessEnv = process.env): RuntimeConfig {
   const production = env.NODE_ENV === 'production';
   const port = Number(env.PORT || 3000);

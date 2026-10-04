@@ -55,7 +55,7 @@ export function getSourceStates(env: NodeJS.ProcessEnv): SourceState[] {
 export async function syncSourceHealth(db: Database, env: NodeJS.ProcessEnv): Promise<void> {
   for (const state of getSourceStates(env)) {
     await db.query(
-      `INSERT INTO public.source_health (source, mode, status)
+      `INSERT INTO pulse.source_health (source, mode, status)
        VALUES ($1, $2, $3)
        ON CONFLICT (source) DO UPDATE SET
          mode = EXCLUDED.mode,
@@ -85,7 +85,7 @@ interface HealthRow extends Record<string, unknown> {
 export async function readSourceHealth(db: Database): Promise<SourceHealth[]> {
   const { rows } = await db.query<HealthRow>(
     `SELECT source, mode, status, last_success_at, last_attempt_at,
-            consecutive_failures, updated_at FROM public.source_health`,
+            consecutive_failures, updated_at FROM pulse.source_health`,
   );
   const bySource = new Map(rows.map((row) => [row.source, row]));
   return sourceDefinitions.flatMap(({ id, name, stage, requiredKeys }) => {

@@ -40,7 +40,7 @@ function embeddedConnection(connection: EmbeddedConnection): Database {
   return db;
 }
 
-async function createEmbeddedDatabase(): Promise<Database> {
+async function createEmbeddedDatabase(applyMigrations: boolean): Promise<Database> {
   const embedded = new PGlite();
   const connection = embeddedConnection(embedded);
   const db: Database = {
@@ -49,7 +49,7 @@ async function createEmbeddedDatabase(): Promise<Database> {
     close: () => embedded.close(),
   };
   try {
-    await migrate(db);
+    if (applyMigrations) await migrate(db);
     return db;
   } catch (error) {
     await db.close();
@@ -57,7 +57,7 @@ async function createEmbeddedDatabase(): Promise<Database> {
   }
 }
 
-async function createPostgresDatabase(databaseUrl: string): Promise<Database> {
+async function createPostgresDatabase(databaseUrl: string, applyMigrations: boolean): Promise<Database> {
   // This must be a disposable test server: the test role needs CREATEDB.
   // A distinct database prevents parallel files or failed tests sharing state.
   const name = `pulse_test_${randomUUID().replaceAll('-', '')}`;
@@ -90,7 +90,7 @@ async function createPostgresDatabase(databaseUrl: string): Promise<Database> {
     },
   };
   try {
-    await migrate(db);
+    if (applyMigrations) await migrate(db);
     return db;
   } catch (error) {
     await db.close();
@@ -98,8 +98,9 @@ async function createPostgresDatabase(databaseUrl: string): Promise<Database> {
   }
 }
 
-export function createTestDatabase(): Promise<Database> {
+export function createTestDatabase(options: { migrate?: boolean } = {}): Promise<Database> {
+  const applyMigrations = options.migrate !== false;
   return process.env.TEST_DATABASE_URL
-    ? createPostgresDatabase(process.env.TEST_DATABASE_URL)
-    : createEmbeddedDatabase();
+    ? createPostgresDatabase(process.env.TEST_DATABASE_URL, applyMigrations)
+    : createEmbeddedDatabase(applyMigrations);
 }

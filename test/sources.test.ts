@@ -99,7 +99,7 @@ test('source health persists rows without credentials and resets freshness only 
   assert.equal(live.lastSuccessAt, null);
   assert.equal((await readSourceHealth(db)).filter(({ mode }) => mode === 'sample').length, 9);
 
-  await db.query(`UPDATE public.source_health
+  await db.query(`UPDATE pulse.source_health
     SET last_success_at = '2026-09-30T12:00:00Z', last_attempt_at = '2026-09-30T13:00:00Z',
         status = 'error', consecutive_failures = 2 WHERE source = 'shopify'`);
   await syncSourceHealth(db, env);
@@ -108,7 +108,7 @@ test('source health persists rows without credentials and resets freshness only 
   assert.equal(restarted.lastSuccessAt?.toISOString(), '2026-09-30T12:00:00.000Z');
   assert.equal(restarted.lastAttemptAt?.toISOString(), '2026-09-30T13:00:00.000Z');
   assert.equal(restarted.consecutiveFailures, 2);
-  const stored = await db.query('SELECT * FROM public.source_health');
+  const stored = await db.query('SELECT * FROM pulse.source_health');
   for (const value of Object.values(env)) assert.equal(JSON.stringify(stored.rows).includes(value!), false);
 
   await syncSourceHealth(db, {});

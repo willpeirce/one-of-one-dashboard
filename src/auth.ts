@@ -17,7 +17,7 @@ type Credential = Record<string, unknown> & {
 type AuditEvent = 'device_added' | 'device_rejected' | 'sign_in' | 'sign_in_rejected' | 'sign_out' | 'rate_limited';
 
 export async function audit(db: Database, event: AuditEvent, credentialId?: string): Promise<void> {
-  await db.query('INSERT INTO public.audit_log(event, credential_id) VALUES ($1, $2)', [event, credentialId ?? null]);
+  await db.query('INSERT INTO pulse.audit_log(event, credential_id) VALUES ($1, $2)', [event, credentialId ?? null]);
 }
 
 export class Auth {

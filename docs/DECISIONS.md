@@ -38,3 +38,15 @@ The Reserved VM deployment command sets `HOST=0.0.0.0` alongside `NODE_ENV=produ
 
 ## 2026-10-02, stage 0a: safe configuration diagnostics
 Runtime validation uses `ConfigError` for fixed, safe configuration messages. Startup prints `Pulse could not start: <message>` only for that error type; other failures retain a generic message. This makes configuration mistakes actionable without exposing environment values or raw exceptions. Suppressing every validation detail and logging arbitrary exception messages were considered and rejected.
+
+## 2026-10-04, stage 0a: confirmed production deployment
+Stage 0a was merged and deployed on 2 October at https://one-of-one-dashboard.replit.app on a Replit Reserved VM. A separate Replit production database was added that evening; Will confirmed enrollment and sign-in on his phone on 4 October. These facts supersede the earlier open deployment, origin, setup-phrase and database-binding items. Keep the enrolled hostname rather than moving existing passkeys to the earlier proposed custom domain.
+
+## 2026-10-04, database fix: application tables outside Replit's managed schema
+Use `pulse` for application tables because Replit manages `public` during publication. Going forward, never add `CREATE TABLE` in `public`; keep authentication state in `pulse_private`, and grant the future Ask role only intended `pulse` tables. The already-applied `001_foundations.sql` is an immutable historical exception. `002_application_schema.sql` moves existing health and audit tables to `pulse`, or recreates them if missing, without dropping tables. Editing 001 or relying on Replit to preserve application tables in `public` was rejected. For this transition, publish before running development migrations so Replit does not interpret the development schema move as a production-table removal.
+
+## 2026-10-04, database fix: useful database diagnostics without raw errors
+Migration and startup diagnostics expose only validated SQLSTATE or Node error codes (`UNKNOWN` otherwise) and a migration filename where available. No exception message, SQL or connection details are logged; this supersedes the earlier `ConfigError` message output. Generic errors alone hid the failing operation; logging whole exceptions could disclose credentials.
+
+## 2026-10-04, database fix: observe the deployed Node runtime
+Log the actual Node major at startup, expected as `Pulse Node major: 24`, and warn without aborting when it differs. Read that evidence in deployment logs rather than relying on the workspace Shell, which can run a different Node version. Observe the published runtime before changing hosting settings; guessing new `.replit` settings was rejected.

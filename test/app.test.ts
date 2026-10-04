@@ -128,7 +128,7 @@ test('service and authentication boundaries against the database', async t => {
     await db.query("INSERT INTO pulse_private.sessions(token_hash, credential_id, created_at, expires_at) VALUES ($1, $2, now() - interval '31 days', now() - interval '1 second')", [hash, id]);
     assert.equal((await app.inject({ url: '/', headers: { cookie } })).statusCode, 302);
     assert.equal((await db.query('SELECT name FROM pulse_private.app_secrets')).rowCount, 2);
-    const auditRows = await db.query('SELECT event, credential_id FROM public.audit_log');
+    const auditRows = await db.query('SELECT event, credential_id FROM pulse.audit_log');
     const auditText = JSON.stringify(auditRows.rows);
     assert.equal(auditText.includes(setupCode), false);
     assert.equal(auditText.includes(token), false);

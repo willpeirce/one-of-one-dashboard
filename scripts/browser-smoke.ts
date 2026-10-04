@@ -73,6 +73,34 @@ async function assertLocalFonts(page: Page): Promise<void> {
   assert.ok(fonts.some((font) => font.family.includes('Jakarta') && font.status === 'loaded'));
 }
 
+async function assertSampleTextStyles(page: Page): Promise<void> {
+  const mismatches = await page.locator('[data-sample-text]').evaluateAll((wrappers) => wrappers.flatMap((wrapper) => {
+    const parent = wrapper.parentElement;
+    if (!parent) return ['Missing sample-text parent'];
+    const actual = getComputedStyle(wrapper), expected = getComputedStyle(parent);
+    return actual.fontSize === expected.fontSize && actual.color === expected.color
+      ? [] : [`${wrapper.getAttribute('data-sample-text')}: ${actual.fontSize}/${actual.color} instead of ${expected.fontSize}/${expected.color}`];
+  }));
+  assert.deepEqual(mismatches, [], 'Sample-text wrappers must inherit their parent typography');
+  const values = await page.locator('#table .nums b > [data-sample-text]').evaluateAll((wrappers) => wrappers.map((wrapper) => getComputedStyle(wrapper).fontSize));
+  assert.deepEqual(values, Array<string>(18).fill('17px'));
+}
+
+async function assertUnbuiltActions(page: Page): Promise<void> {
+  const buttons = page.locator('button[data-unbuilt]');
+  assert.ok(await buttons.count() >= 17);
+  for (const button of await buttons.all()) {
+    const label = await button.getAttribute('aria-label');
+    assert.ok(label);
+    assert.ok(label.endsWith(' · Not built yet'));
+    assert.equal(await button.isDisabled(), true);
+    assert.equal(await button.textContent(), label.replace(/ · Not built yet$/, ''));
+    const note = button.locator('..').locator('.unbuilt-note');
+    assert.equal(await note.textContent(), 'Not built yet');
+    assert.equal(await note.isVisible(), await button.isVisible());
+  }
+}
+
 async function checkManifest(page: Page, context: BrowserContext, origin: string): Promise<void> {
   const href = await page.locator('link[rel="manifest"]').getAttribute('href');
   assert.ok(href);
@@ -211,6 +239,8 @@ async function run(): Promise<void> {
         await hideAccountMenu(page);
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
         await assertLocalFonts(page);
+        await assertSampleTextStyles(page);
+        await assertUnbuiltActions(page);
         const order = await page.evaluate(() => {
           const reviews = document.querySelector('#reviews')!;
           const tests = document.querySelector('#tests')!;
@@ -268,9 +298,15 @@ async function run(): Promise<void> {
     assert.ok(await mutations.count() >= 10);
     for (const button of await mutations.all()) {
       assert.equal(await button.isDisabled(), true);
-      assert.match(await button.textContent() ?? '', /not built/i);
+      assert.ok((await button.textContent())?.trim());
     }
-    assert.ok(await page.getByText(/not built/i).count() > 0);
+    await assertUnbuiltActions(page);
+    await page.locator('#tabs [data-tab="ads"]').click();
+    await page.locator('#livesets').click();
+    await assertSampleTextStyles(page);
+    await assertUnbuiltActions(page);
+    assert.equal(await page.locator('#sheet [data-unbuilt]').count(), 2);
+    await page.locator('#sh-x').click();
 
     step = 'check same-origin manifest and installation icons';
     await checkManifest(page, context, origin);
@@ -305,6 +341,8 @@ async function run(): Promise<void> {
     assert.equal(await page.locator('#period [data-period="7d"]').getAttribute('aria-selected'), 'true');
     assert.equal(await page.locator('#tabs [data-tab="stock"]').getAttribute('aria-selected'), 'true');
     assert.equal(await page.locator('html').getAttribute('data-theme'), 'dark');
+    await assertSampleTextStyles(page);
+    await assertUnbuiltActions(page);
     step = 'check the saved Settings value persists in the API and form';
     const saved = await context.request.get('/api/settings');
     assert.equal(saved.status(), 200);

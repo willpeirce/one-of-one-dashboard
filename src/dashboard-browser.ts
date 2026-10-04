@@ -157,7 +157,7 @@ function renderTest(card: HTMLElement, data: TestModel): void {
   get('[data-say]', card).innerHTML = `${esc(result.say)}<small>${esc(result.small)}</small>`;
   get('[data-prog]', card).textContent = result.progress;
   const call = card.querySelector<HTMLButtonElement>('[data-call]');
-  if (call) { call.disabled = true; call.textContent = 'Not built yet'; call.title = result.buttonText; }
+  if (call) call.disabled = true;
 }
 
 interface Tally { good: number; warn: number; alarm: number; decide: number; info: number }
@@ -282,6 +282,9 @@ function updateSnapshot(next: DashboardSnapshot, initial = false): void {
         const sample = snapshot.textValues[key];
         if (sample) element.setAttribute(attribute, sample.value);
       }
+    });
+    all<HTMLButtonElement>('[data-unbuilt]', root).forEach((button) => {
+      button.textContent = button.getAttribute('aria-label')?.replace(/ · Not built yet$/, '') ?? '';
     });
   }
   all('[data-model-id]').forEach((element) => {

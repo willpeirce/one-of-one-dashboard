@@ -203,12 +203,14 @@ svg.ic{width:1.1em;height:1.1em;fill:none;stroke:currentColor;stroke-width:2;str
 .nums{display:flex;gap:16px;white-space:nowrap}
 .nums div{display:grid;line-height:1.1}
 .nums b{font-family:var(--disp);font-size:17px;font-weight:700;font-variant-numeric:tabular-nums}
-.nums span{font-size:11px;color:var(--muted)}
+.nums div > span{font-size:11px;color:var(--muted)}
 .acts{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 .act{border:1px solid var(--line-2);background:var(--glass);border-radius:999px;padding:8px 14px;font-weight:600;font-size:13px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .act:hover{background:var(--glass-2)}
 .act.primary{background:var(--solid);color:var(--solid-ink);border-color:transparent}
 .act.wa{background:var(--good);color:var(--chip-ink);border-color:transparent}
+.unbuilt-action{display:inline-flex;flex-direction:column;align-items:flex-start;gap:4px;max-width:100%}
+.unbuilt-note{font-size:11px;color:var(--muted)}
 .why{color:var(--ink-2);font-size:14px;max-width:72ch;padding:0 0 2px 0}
 .confirm{display:grid;gap:10px;background:var(--well);border-radius:14px;padding:12px 14px}
 .confirm p{font-size:14px;color:var(--ink);max-width:70ch}
@@ -338,7 +340,7 @@ td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
 .rvm{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
 .rvm .age{font-size:12px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
 button.pk{cursor:pointer;font:inherit;font-family:var(--disp);font-size:13px;font-weight:600}
-@media (max-width:760px){.revs{padding:14px} .rvhead{grid-template-columns:36px minmax(0,1fr)} .rvhead .src{width:36px;height:36px} .rvhead>.act{grid-column:1/-1;justify-self:start}
+@media (max-width:760px){.revs{padding:14px} .rvhead{grid-template-columns:36px minmax(0,1fr)} .rvhead .src{width:36px;height:36px} .rvhead>.act,.rvhead>.unbuilt-action{grid-column:1/-1;justify-self:start}
   .rvr{grid-template-columns:minmax(0,1fr)} .rvs{grid-auto-flow:column;justify-content:start;align-items:center;gap:10px}
   .rvm{flex-direction:row;align-items:center;justify-content:space-between;flex-wrap:wrap} .rvm .acts{margin-left:auto}}
 

@@ -37,6 +37,10 @@ The Replit database fix is merged. Review stage 0b, then Will publishes and chec
 
 Source clients and measured business data, source API fixtures, source-system writes, test verdict calculations/writes, uploads and cost models, Handover/UGC integrations, push delivery and Ask. Push keys are retained privately for later use; the summary preference sends nothing yet. Home-screen installation still needs Will's check on the published iPhone app.
 
+## Open engineering work
+
+The current 15-second SSE heartbeat re-sends the full snapshot, approximately 71 KB per open tab, even when the dashboard data is unchanged. In a later change, keep session revalidation on the heartbeat, send an SSE comment ping to maintain the connection, and send a snapshot only when its content changes, excluding `generatedAt` from that comparison. This review follow-up leaves SSE behaviour unchanged.
+
 ## Open questions for Will
 
 Confirm Replit's deployed proxy chain and configure trust for exactly those hops so rate limits apply per visitor. Revisit the global login-options limit so a stranger cannot exhaust it and lock Will out for 15 minutes. Rate-limit behaviour is unchanged in this stage. Other later-stage items remain in plan section 12.

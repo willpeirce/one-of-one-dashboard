@@ -30,11 +30,15 @@ test('service and authentication boundaries against the database', async t => {
       assert.equal(down.statusCode, 503);
       assert.deepEqual(down.json(), { status: 'unavailable' });
     } finally { unavailable = false; }
-    for (const path of ['/', '/audit']) {
+    for (const path of ['/', '/audit', '/sources', '/settings']) {
       const response = await app.inject(path);
       assert.equal(response.statusCode, 302);
       assert.equal(response.headers.location, '/login');
     }
+    for (const path of ['/api/dashboard', '/api/settings', '/api/events']) {
+      assert.equal((await app.inject(path)).statusCode, 401);
+    }
+    assert.equal((await post('/api/settings')).statusCode, 401);
   });
 
   await t.test('private pages and assets have restrictive headers and no file traversal', async () => {
@@ -47,7 +51,7 @@ test('service and authentication boundaries against the database', async t => {
   });
 
   await t.test('all authentication writes reject missing/wrong origins and non-JSON requests', async () => {
-    for (const url of ['/auth/register/options', '/auth/register/verify', '/auth/login/options', '/auth/login/verify', '/auth/logout']) {
+    for (const url of ['/auth/register/options', '/auth/register/verify', '/auth/login/options', '/auth/login/verify', '/auth/logout', '/api/settings']) {
       for (const origin of [undefined, 'https://untrusted.example.test']) {
         const result = await app.inject({ method: 'POST', url, payload: {}, headers: origin ? { origin } : {} });
         assert.equal(result.statusCode, 403);
@@ -120,6 +124,26 @@ test('service and authentication boundaries against the database', async t => {
       assert.equal(page.statusCode, 200);
       assert.match(page.body, /sample data/);
       assert.equal((await restarted.inject({ url: '/audit', headers: { cookie } })).statusCode, 200);
+      const sample = await restarted.inject({ url: '/api/dashboard', headers: { cookie } });
+      assert.equal(sample.statusCode, 200);
+      assert.equal(sample.headers['cache-control'], 'no-store');
+      assert.equal(sample.json().mode, 'sample');
+      assert.equal(sample.json().sourceHealth.length, 10);
+      const settings = (await restarted.inject({ url: '/api/settings', headers: { cookie } })).json();
+      const saved = await restarted.inject({
+        method: 'POST', url: '/api/settings', headers: { ...headers, cookie },
+        payload: { version: settings.version, values: { ...settings.values, blendedMetaTripwireGbp: 31 } },
+      });
+      assert.equal(saved.statusCode, 200);
+      assert.deepEqual(saved.json().changedFields, ['blendedMetaTripwireGbp']);
+      const updated = (await restarted.inject({ url: '/api/dashboard', headers: { cookie } })).json();
+      for (const period of ['today', 'yday', '7d']) assert.match(updated.hero[period].ukcpo.s, /£31/);
+      const audit = await restarted.inject({ url: '/audit', headers: { cookie } });
+      assert.match(audit.body, /settings changed/);
+      assert.match(audit.body, /blendedMetaTripwireGbp/);
+      for (const url of ['/api/reviews/1/publish', '/api/ads/1/pause']) {
+        assert.equal((await restarted.inject({ method: 'POST', url, headers: { ...headers, cookie }, payload: {} })).statusCode, 404);
+      }
       assert.equal((await restarted.inject({ url: '/', headers: { cookie: `__Host-pulse_session=${randomBytes(32).toString('base64url')}` } })).statusCode, 302);
     } finally { await restarted.close(); }
     assert.equal((await post('/auth/logout', {}, cookie)).statusCode, 200);

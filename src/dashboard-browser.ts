@@ -1,0 +1,405 @@
+import type { DashboardSnapshot, Detail, DialModel, HeroMetric, Period, RingModel, SheetModel, State, TestModel, Zone } from './dashboard-types.js';
+
+const states: Record<State, [string, string]> = {
+  good: ['Good', '✓'], warn: ['Watch', '!'], decide: ['Decide', '◆'], alarm: ['Alarm', '✕'],
+  info: ['Info', 'i'], sofar: ['So far', '·'], est: ['Estimate', '≈'],
+};
+const rank: Record<State, number> = { good: 0, info: 0, sofar: 0, est: 0, warn: 1, decide: 2, alarm: 3 };
+const colour: Record<State, string> = {
+  good: 'var(--good)', warn: 'var(--warn)', decide: 'var(--decide)', alarm: 'var(--alarm)',
+  info: 'var(--info)', sofar: 'var(--info)', est: 'var(--info)',
+};
+const icons: Record<string, string> = { meta: 'i-meta', google: 'i-google', shopify: 'i-bag', mail: 'i-mail', growth: 'i-growth', stock: 'i-box' };
+const groups = [['meta', 'Meta'], ['google', 'Google'], ['growth', 'Growth'], ['store', 'Store'], ['email', 'Email'], ['stock', 'Stock']] as const;
+const panelGroups: Record<string, string> = { ads: 'meta', store: 'store', growth: 'growth', stock: 'stock' };
+const iconGroups: Record<string, string> = { 'i-meta': 'meta', 'i-google': 'google', 'i-bag': 'store', 'i-mail': 'email', 'i-growth': 'growth', 'i-box': 'stock' };
+const all = <T extends Element = HTMLElement>(selector: string, root: ParentNode = document): T[] => Array.from(root.querySelectorAll<T>(selector));
+function get<T extends Element = HTMLElement>(selector: string, root: ParentNode = document): T {
+  const element = root.querySelector<T>(selector);
+  if (!element) throw new Error('Dashboard element missing');
+  return element;
+}
+const esc = (value: string | number): string => String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!);
+const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
+const rounded = (value: number): number => Math.round(value * 100) / 100;
+const chip = (state: State): string => `<span class="chip ${state}">${states[state][1]} ${states[state][0]}</span>`;
+const reducedMotion = (): boolean => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const scrollTo = (element: Element): void => element.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' });
+
+function zoneIndex(value: number, zones: Zone[]): number {
+  const index = zones.findIndex(([min, max], i) => value >= min && (value < max || (i === zones.length - 1 && value <= max)));
+  return index >= 0 ? index : value < (zones[0]?.[0] ?? 0) ? 0 : zones.length - 1;
+}
+const zoneOf = (value: number, zones: Zone[]): State => zones[zoneIndex(value, zones)]?.[2] ?? 'info';
+const angle = (value: number, min: number, max: number): number => Math.PI * (1 - clamp((value - min) / (max - min), 0, 1));
+const point = (a: number, radius: number, cx = 50, cy = 50): [number, number] => [rounded(cx + radius * Math.cos(a)), rounded(cy - radius * Math.sin(a))];
+function arc(start: number, end: number, radius = 40): string {
+  const [x1, y1] = point(start, radius), [x2, y2] = point(end, radius);
+  return `M${x1} ${y1}A${radius} ${radius} 0 ${start - end > Math.PI ? 1 : 0} 1 ${x2} ${y2}`;
+}
+function formatLike(text: string): (value: number) => string {
+  const prefix = text.match(/^[^\d-]+/)?.[0] ?? '', suffix = text.match(/[^\d.,]+$/)?.[0] ?? '';
+  return (value) => prefix + (Math.abs(value) >= 1000 ? value.toLocaleString('en-GB') : String(rounded(value))) + suffix;
+}
+function watermark(element: HTMLElement): void {
+  const icon = icons[element.dataset.src ?? ''];
+  if (icon && !element.querySelector('.wm')) element.insertAdjacentHTML('afterbegin', `<svg class="ic wm" aria-hidden="true"><use href="#${icon}"/></svg>`);
+}
+
+interface SheetDetail { state: State; title: string; detail: Detail; dial?: Pick<DialModel, 'min' | 'max' | 'z' | 't'> }
+const details = new WeakMap<HTMLElement, SheetDetail>();
+let selectedPeriod: Period = 'today';
+let selectedDeck = ['ads', 'store', 'growth', 'stock'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'ads';
+let snapshot: DashboardSnapshot;
+let openDetail: HTMLElement | undefined;
+let openTemplateId: string | undefined;
+
+function renderDial(element: HTMLElement, data: DialModel): void {
+  const { v, min, max, z } = data, activeZone = zoneIndex(v, z), state = data.cap ?? zoneOf(v, z), format = formatLike(data.t);
+  let svg = `<span class="well"><svg viewBox="0 0 100 64" aria-hidden="true"><path d="${arc(Math.PI, 0)}" fill="none" stroke="var(--line)" stroke-width="7"/>`;
+  z.forEach(([start, end, status], index) => {
+    const a = angle(start, min, max) - (index ? 0.035 : 0), b = angle(end, min, max) + (index < z.length - 1 ? 0.035 : 0);
+    if (a > b) svg += `<path d="${arc(a, b)}" fill="none" stroke="${colour[status]}" stroke-width="7" stroke-opacity="${index === activeZone ? 1 : 0.28}"/>`;
+  });
+  const [x, y] = point(angle(v, min, max), 40);
+  svg += `<circle cx="${x}" cy="${y}" r="5" fill="var(--ink)" stroke="var(--pointer-ring)" stroke-width="2.5"/><text x="50" y="52" text-anchor="middle" font-family="var(--disp)" font-size="15" font-weight="700" fill="var(--ink)">${esc(data.t)}</text><text x="10" y="62" text-anchor="middle" font-size="7.5" fill="var(--muted)">${esc(format(min))}</text><text x="90" y="62" text-anchor="middle" font-size="7.5" fill="var(--muted)">${esc(format(max))}</text></svg></span>`;
+  element.innerHTML = `${svg}<span class="dl">${esc(data.l)}</span><span class="ds">${esc(data.s)}</span>${chip(state)}`;
+  element.dataset.state = state;
+  element.setAttribute('aria-label', `${data.l}: ${data.t}, ${states[state][0]}`);
+  details.set(element, { state, title: data.l, detail: data.d, dial: data });
+  watermark(element);
+}
+
+function renderRing(element: HTMLElement, data: RingModel): void {
+  const state = data.z ? zoneOf(data.v, data.z) : data.state ?? 'info', circumference = 2 * Math.PI * 40;
+  element.innerHTML = `<span class="well"><svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="40" fill="none" stroke="var(--line)" stroke-width="8"/><circle cx="50" cy="50" r="40" fill="none" stroke="${colour[state]}" stroke-width="8" stroke-linecap="round" transform="rotate(-90 50 50)" stroke-dasharray="${rounded(clamp(data.v / data.max, 0, 1) * circumference)} ${rounded(circumference)}"/><text x="50" y="56" text-anchor="middle" font-family="var(--disp)" font-size="17" font-weight="700" fill="var(--ink)">${esc(data.t)}</text></svg></span><span class="dl">${esc(data.l)}</span><span class="ds">${esc(data.s)}</span>${chip(state)}`;
+  element.dataset.state = state;
+  element.setAttribute('aria-label', `${data.l}: ${data.t}, ${states[state][0]}`);
+  details.set(element, { state, title: data.l, detail: data.d, ...(data.z ? { dial: { min: 0, max: data.max, z: data.z, t: data.t } } : {}) });
+  watermark(element);
+}
+
+function renderSpark(element: HTMLElement, values: number[]): void {
+  const high = Math.max(...values, 1), width = (220 - 6 * (values.length - 1)) / values.length;
+  element.innerHTML = `<svg viewBox="0 0 220 34" preserveAspectRatio="none" aria-hidden="true">${values.map((value, index) => {
+    const height = Math.max(3, 34 * value / high);
+    return `<rect x="${rounded(index * (width + 6))}" y="${rounded(34 - height)}" width="${rounded(width)}" height="${rounded(height)}" rx="3" fill="${index === values.length - 1 ? 'var(--spark)' : 'var(--line-2)'}"/>`;
+  }).join('')}</svg>`;
+}
+
+function statChip(element: HTMLElement, state: State): void {
+  element.querySelector(':scope > .chip')?.remove();
+  element.insertAdjacentHTML('beforeend', chip(state));
+  watermark(element);
+}
+
+const animations = new WeakMap<HTMLElement, number>();
+function metricNumber(element: HTMLElement, data: HeroMetric, animate: boolean): void {
+  const show = (value: number): void => { element.textContent = (data.pre ?? '') + (data.dp ? value.toFixed(data.dp) : Math.round(value).toLocaleString('en-GB')) + (data.suf ?? ''); };
+  const generation = (animations.get(element) ?? 0) + 1;
+  animations.set(element, generation);
+  if (!animate || reducedMotion()) { show(data.n); return; }
+  const start = performance.now();
+  function frame(now: number): void {
+    if (animations.get(element) !== generation) return;
+    const progress = clamp((now - start) / 900, 0, 1);
+    show(data.n * (1 - (1 - progress) ** 3));
+    if (progress < 1) requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+function setPeriod(period: Period, animate = true): void {
+  selectedPeriod = period;
+  const hero = snapshot.hero[period];
+  all('#period [data-period]').forEach((element) => element.setAttribute('aria-selected', String(element.dataset.period === period)));
+  get('#eyebrow').textContent = hero.eyebrow;
+  get('#sub1').textContent = hero.sub1;
+  for (const key of ['net', 'orders', 'cr', 'spend', 'roas', 'margin'] as const) {
+    const element = get(`#hero .tile[data-k="${key}"]`), metric = hero[key];
+    get('.per', element).textContent = hero.per;
+    metricNumber(get('.sv', element), metric, animate);
+    get('.ss', element).textContent = metric.ss;
+    element.dataset.state = metric.state;
+    element.dataset.detail = JSON.stringify(metric.d);
+    statChip(element, metric.state);
+    details.set(element, { state: metric.state, title: get('.sl', element).textContent ?? '', detail: metric.d });
+    const spark = element.querySelector<HTMLElement>('.spark');
+    if (spark && metric.d.hist) renderSpark(spark, metric.d.hist);
+  }
+  for (const key of ['ukcpo', 'uscpo'] as const) {
+    const element = get(`#hero [data-k="${key}"]`);
+    element.dataset.dial = JSON.stringify(hero[key]);
+    renderDial(element, hero[key]);
+  }
+  renderHealth();
+}
+
+function renderTest(card: HTMLElement, data: TestModel): void {
+  const top = Math.max(...data.arms.map((arm) => arm.x + 1.28 * Math.sqrt(arm.x))) * 1.08 || 1;
+  const leader = Math.max(...data.arms.map((arm) => arm.x)), tied = data.arms.every((arm) => arm.x === leader);
+  get('[data-bars]', card).innerHTML = data.arms.map((arm) => {
+    const band = 1.28 * Math.sqrt(arm.x), low = Math.max(arm.x - band, 0), high = arm.x + band;
+    return `<div class="tbar${arm.x === leader && !tied ? ' lead' : ''}"><div class="tl2"><span>${esc(arm.k)} · ${esc(arm.l)}</span><b>${arm.x}<small>${esc(data.unit)}</small></b></div><div class="trk"><i class="fill" style="width:${rounded(arm.x / top * 100)}%"></i><i class="band" style="left:${rounded(low / top * 100)}%;width:${rounded((high - low) / top * 100)}%"></i></div></div>`;
+  }).join('');
+  const result = data.presentation;
+  let dial = '<svg viewBox="0 0 100 58" aria-hidden="true">';
+  result.sureZones.forEach(([start, end, state], index) => {
+    dial += `<path d="${arc(angle(start, 0, 100) - (index ? 0.035 : 0), angle(end, 0, 100) + (index < result.sureZones.length - 1 ? 0.035 : 0))}" fill="none" stroke="${colour[state]}" stroke-width="7" stroke-linecap="round" opacity="${state === 'info' ? 0.45 : 0.9}"/>`;
+  });
+  const [x1, y1] = point(angle(result.sure, 0, 100), 31), [x2, y2] = point(angle(result.sure, 0, 100), 39);
+  dial += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/><text x="50" y="44" text-anchor="middle" font-size="22" font-weight="700" fill="var(--ink)" font-family="var(--disp)">${result.sure}%</text><text x="50" y="55" text-anchor="middle" font-size="7.5" fill="var(--muted)">${esc(result.sureLabel)}</text></svg>`;
+  get('[data-sure]', card).innerHTML = `${dial}<div class="tstrip" title="${esc(result.stripLabel)}">${data.strip.map((value) => `<i class="${value === 'A' ? 'a' : value === 'B' ? 'b' : ''}">${esc(value)}</i>`).join('')}<i>·</i><i>·</i></div><span class="tcap">${esc(result.sureCaption)}</span>`;
+  card.dataset.state = result.state;
+  const badge = get('[data-tchip]', card);
+  badge.className = `chip ${result.state}`;
+  badge.textContent = result.chipText;
+  get('[data-say]', card).innerHTML = `${esc(result.say)}<small>${esc(result.small)}</small>`;
+  get('[data-prog]', card).textContent = result.progress;
+  const call = card.querySelector<HTMLButtonElement>('[data-call]');
+  if (call) call.disabled = true;
+}
+
+interface Tally { good: number; warn: number; alarm: number; decide: number; info: number }
+const emptyTally = (): Tally => ({ good: 0, warn: 0, alarm: 0, decide: 0, info: 0 });
+const score = (value: Tally): number => value.good + value.warn + value.alarm ? (value.good + 0.5 * value.warn) / (value.good + value.warn + value.alarm) : 1;
+function renderHealth(): void {
+  const total = emptyTally(), byGroup: Record<string, Tally> = {};
+  all('.tile[data-state],.dcard[data-state],.tcard[data-state]').forEach((element) => {
+    const state = element.dataset.state ?? '';
+    if (!(state in total)) return;
+    total[state as keyof Tally] += 1;
+    const panel = element.closest<HTMLElement>('[data-panel]')?.dataset.panel ?? '';
+    const icon = element.querySelector('.src use')?.getAttribute('href')?.slice(1) ?? '';
+    const group = element.dataset.g || panelGroups[panel] || iconGroups[icon];
+    if (!group || group === 'hero') return;
+    byGroup[group] ??= emptyTally();
+    byGroup[group][state as keyof Tally] += 1;
+  });
+  const health = Math.round(100 * score(total));
+  const rows = all('.dcard[data-state]'), alarmCount = rows.filter((row) => row.dataset.state === 'alarm').length, decisions = rows.filter((row) => row.dataset.state === 'decide').length;
+  const reviewCount = all('#reviews .rv').length;
+  get('#counts').innerHTML = `<span class="pk health"><b>${health}</b> health</span>` + ([['alarm', alarmCount, alarmCount === 1 ? 'alarm' : 'alarms'], ['decide', decisions, decisions === 1 ? 'decision' : 'decisions'], ['warn', total.warn, 'to watch'], ['good', total.good, 'good']] as const).map(([state, count, label]) => `<span class="pk" style="--c:${colour[state]}"><i>${states[state][1]}</i><b>${count}</b> ${label}</span>`).join('') + (reviewCount ? `<button class="pk" type="button" data-rv style="--c:var(--decide)"><i>★</i><b>${reviewCount}</b> new ${reviewCount === 1 ? 'review' : 'reviews'}</button>` : '');
+  get('#rvcount').textContent = reviewCount ? `◆ ${reviewCount} waiting` : '✓ All caught up';
+  get('#rvcount').className = `chip ${reviewCount ? 'decide' : 'good'}`;
+  get('#subrv').textContent = reviewCount ? ` ${reviewCount} new ${reviewCount === 1 ? 'review' : 'reviews'} to check.` : '';
+  get('#deckcount').textContent = `${alarmCount} ${alarmCount === 1 ? 'alarm' : 'alarms'} · ${decisions} ${decisions === 1 ? 'decision' : 'decisions'}`;
+  const radarPoint = (index: number, radius: number): [number, number] => [rounded(160 + radius * Math.cos(-Math.PI / 2 + index * 2 * Math.PI / groups.length)), rounded(150 + radius * Math.sin(-Math.PI / 2 + index * 2 * Math.PI / groups.length))];
+  const polygon = (points: [number, number][]): string => points.map((p) => p.join(',')).join(' ');
+  let svg = '<svg viewBox="0 0 320 300" aria-hidden="true">';
+  for (const scale of [0.25, 0.5, 0.75, 1]) svg += `<polygon points="${polygon(groups.map((_, index) => radarPoint(index, 108 * scale)))}" fill="none" stroke="var(--line)" stroke-width="1"/>`;
+  groups.forEach((_, index) => { const [x, y] = radarPoint(index, 108); svg += `<line x1="160" y1="150" x2="${x}" y2="${y}" stroke="var(--line)" stroke-width="1"/>`; });
+  svg += `<text x="160" y="172" text-anchor="middle" font-family="var(--disp)" font-size="64" font-weight="800" fill="var(--ink)" fill-opacity=".18">${health}</text><text x="160" y="190" text-anchor="middle" font-family="var(--disp)" font-size="11" font-weight="700" letter-spacing="1.5" fill="var(--ink)" fill-opacity=".45">HEALTH</text>`;
+  const scores = groups.map(([key]) => score(byGroup[key] ?? emptyTally())), points = groups.map((_, index) => radarPoint(index, 108 * scores[index]!));
+  svg += `<polygon points="${polygon(points)}" fill="var(--accent)" fill-opacity=".28" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round"/>`;
+  points.forEach(([x, y]) => { svg += `<circle cx="${x}" cy="${y}" r="4.5" fill="var(--accent)" stroke="var(--pointer-ring)" stroke-width="2"/>`; });
+  const described: string[] = [];
+  groups.forEach(([, name], index) => {
+    const [x, y] = radarPoint(index, 132), percent = Math.round(scores[index]! * 100);
+    svg += `<text x="${x}" y="${y}" text-anchor="${Math.abs(x - 160) < 2 ? 'middle' : x > 160 ? 'start' : 'end'}" font-family="var(--disp)" font-size="13" font-weight="600" fill="var(--ink)">${name}<tspan x="${x}" dy="14" font-size="11" font-weight="500" fill="var(--muted)">${percent}%</tspan></text>`;
+    described.push(`${name} ${percent}%`);
+  });
+  get('#radar').innerHTML = `${svg}</svg>`;
+  get('#radar').setAttribute('aria-label', `Sample health ${health}. ${described.join(', ')}.`);
+}
+
+function miniChart(detail: Detail, dial?: SheetDetail['dial']): string {
+  const values = detail.hist;
+  if (!values?.length) return '';
+  const format = formatLike(detail.hp ? `${detail.hp}0` : detail.hs ? `0${detail.hs}` : dial?.t ?? '');
+  const lines = dial?.z.slice(1).flatMap((zone, index) => (rank[dial.z[index]![2]] >= 2) !== (rank[zone[2]] >= 2) ? [zone[0]] : []) ?? [];
+  const width = (320 - 6 * (values.length - 1)) / values.length, high = Math.max(...values, ...lines, 1) * 1.08;
+  const y = (value: number): number => 16 + 66 * (1 - value / high);
+  let svg = '<svg viewBox="0 0 320 96" role="img" aria-label="Sample history">';
+  values.forEach((value, index) => {
+    const fill = dial ? colour[zoneOf(value, dial.z)] : index === values.length - 1 ? 'var(--spark)' : 'var(--line-2)';
+    svg += `<rect x="${rounded(index * (width + 6))}" y="${rounded(y(value))}" width="${rounded(width)}" height="${rounded(82 - y(value))}" rx="4" fill="${fill}" fill-opacity="${dial && index < values.length - 1 ? 0.55 : 1}"/>`;
+  });
+  lines.forEach((bar) => { svg += `<line x1="0" x2="320" y1="${rounded(y(bar))}" y2="${rounded(y(bar))}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="4 4"/><text x="320" y="${rounded(y(bar) - 3)}" text-anchor="end" font-size="10" fill="var(--muted)">bar ${esc(format(bar))}</text>`; });
+  svg += `<text x="${rounded(width / 2)}" y="${rounded(y(values[0]!) - 4)}" text-anchor="middle" font-size="10" fill="var(--ink-2)">${esc(format(values[0]!))}</text><text x="${rounded(320 - width / 2)}" y="${rounded(y(values.at(-1)!) - 4)}" text-anchor="middle" font-size="10" font-weight="700" fill="var(--ink)">${esc(format(values.at(-1)!))}</text><text x="0" y="96" font-size="9.5" fill="var(--muted)">Earlier</text><text x="320" y="96" text-anchor="end" font-size="9.5" fill="var(--muted)">Latest sample</text></svg>`;
+  return svg;
+}
+
+function showDetail(element: HTMLElement, reopen = true): void {
+  const data = details.get(element);
+  if (!data) return;
+  openDetail = element; openTemplateId = undefined;
+  const sheet = get<HTMLDialogElement>('#sheet');
+  get('#sh-title').textContent = data.title;
+  get('#sh-dot').className = `dot ${data.state}`;
+  get('#sh-dot').textContent = states[data.state][1];
+  get('#sh-dl').hidden = false;
+  get('#sh-why').textContent = data.detail.why;
+  get('#sh-rule').textContent = data.detail.rule;
+  get('#sh-src').textContent = `${data.detail.src} · sample data`;
+  get('#sh-chart').innerHTML = miniChart(data.detail, data.dial);
+  get('#sh-extra').innerHTML = data.detail.extra?.length ? `<dl class="xdl">${data.detail.extra.map(([key, value]) => `<dt>${esc(key)}</dt><dd>${esc(value)}</dd>`).join('')}</dl>` : '';
+  if (reopen && !sheet.open) sheet.showModal();
+}
+
+function showTemplate(id: string, title: string, reopen = true): void {
+  openTemplateId = id; openDetail = undefined;
+  get('#sh-title').textContent = title;
+  get('#sh-dot').className = 'dot info'; get('#sh-dot').textContent = 'i';
+  get('#sh-dl').hidden = true; get('#sh-chart').replaceChildren();
+  get('#sh-extra').replaceChildren(get<HTMLTemplateElement>(id).content.cloneNode(true));
+  const sheet = get<HTMLDialogElement>('#sheet');
+  if (reopen && !sheet.open) sheet.showModal();
+}
+
+function selectDeck(deck: string): void {
+  selectedDeck = deck;
+  all('.tab[data-tab]').forEach((element) => element.setAttribute('aria-selected', String(element.dataset.tab === deck)));
+  all('[data-panel]').forEach((element) => { element.hidden = element.dataset.panel !== deck; });
+  history.replaceState(null, '', `#${deck}`);
+}
+function filterDials(): void {
+  const query = get<HTMLInputElement>('#q').value.trim().toLowerCase();
+  const tiles = all('[data-panel] .tile');
+  if (!query) {
+    tiles.forEach((tile) => { tile.hidden = false; });
+    selectDeck(selectedDeck);
+    get('#dialcount').textContent = 'Tap any dial for the detail';
+    return;
+  }
+  all('[data-panel]').forEach((panel) => { panel.hidden = false; });
+  let matches = 0;
+  tiles.forEach((tile) => { tile.hidden = !tile.textContent?.toLowerCase().includes(query); if (!tile.hidden) matches += 1; });
+  all('.tab[data-tab]').forEach((tab) => tab.setAttribute('aria-selected', 'false'));
+  get('#dialcount').textContent = `${matches} ${matches === 1 ? 'dial' : 'dials'} match “${get<HTMLInputElement>('#q').value.trim()}”`;
+}
+
+function updateSnapshot(next: DashboardSnapshot, initial = false): void {
+  snapshot = next;
+  for (const root of [document, ...all<HTMLTemplateElement>('template').map((template) => template.content)]) {
+    all('[data-sample-text]', root).forEach((element) => {
+      const sample = snapshot.textValues[element.dataset.sampleText ?? ''];
+      if (sample) element.textContent = sample.value;
+    });
+    all('[data-sample-attributes]', root).forEach((element) => {
+      const attributes = JSON.parse(element.dataset.sampleAttributes ?? '{}') as Record<string, string>;
+      for (const [attribute, key] of Object.entries(attributes)) {
+        const sample = snapshot.textValues[key];
+        if (sample) element.setAttribute(attribute, sample.value);
+      }
+    });
+    all<HTMLButtonElement>('[data-unbuilt]', root).forEach((button) => {
+      button.textContent = button.getAttribute('aria-label')?.replace(/ · Not built yet$/, '') ?? '';
+    });
+  }
+  all('[data-model-id]').forEach((element) => {
+    const widget = snapshot.widgets[element.dataset.modelId ?? ''];
+    if (!widget) return;
+    element.dataset[widget.kind] = JSON.stringify(widget.value);
+    if (widget.kind === 'dial') renderDial(element, widget.value);
+    else if (widget.kind === 'ring') renderRing(element, widget.value);
+    else if (widget.kind === 'test') renderTest(element, widget.value);
+    else if (widget.kind === 'sheet') {
+      const data: SheetModel = widget.value;
+      details.set(element, { state: data.state, title: data.title, detail: data });
+    } else if (widget.kind === 'detail') {
+      const state = (element.dataset.state ?? 'info') as State;
+      details.set(element, { state, title: element.querySelector('.sl')?.textContent ?? '', detail: widget.value });
+      statChip(element, state);
+    }
+  });
+  all('.tile[data-src]').forEach(watermark);
+  all('.spark[data-spark]').forEach((element) => renderSpark(element, (element.dataset.spark ?? '').split(',').map(Number)));
+  all('#reviews .stars').forEach((element) => {
+    const rating = Number(element.dataset.stars);
+    element.setAttribute('role', 'img'); element.setAttribute('aria-label', `${rating} out of 5 stars`);
+    element.innerHTML = [1, 2, 3, 4, 5].map((star) => `<svg class="${star <= rating ? 'on' : 'off'}" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-star"/></svg>`).join('');
+  });
+  setPeriod(selectedPeriod, initial);
+  all('.tab[data-tab]').forEach((tab) => {
+    const panel = document.querySelector<HTMLElement>(`[data-panel="${tab.dataset.tab}"]`);
+    if (!panel) return;
+    const worst = all('.tile[data-state]', panel).reduce<State>((previous, tile) => rank[(tile.dataset.state ?? 'info') as State] > rank[previous] ? tile.dataset.state as State : previous, 'info');
+    const dot = get('.dot', tab); dot.className = `dot ${worst}`; dot.textContent = states[worst][1];
+  });
+  filterDials();
+  const healthLabels = { waiting_for_keys: 'waiting for keys', not_implemented: 'client not built', healthy: 'connected', error: 'source unavailable' };
+  get('#feeds').innerHTML = (snapshot.sourceHealth ?? []).map((row) => `<span><i style="background:var(--info)"></i>${esc(row.name)} · ${healthLabels[row.status]}</span>`).join('') + '<a href="/sources">Connection details</a>';
+  document.documentElement.dataset.updatedAt = snapshot.generatedAt;
+  get('#update-status').textContent = `Connected · updated ${new Date(snapshot.generatedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Europe/London' })} UK`;
+  if (get<HTMLDialogElement>('#sheet').open) {
+    const scroll = get('#sheet').scrollTop;
+    if (openDetail) showDetail(openDetail, false);
+    else if (openTemplateId) showTemplate(openTemplateId, get('#sh-title').textContent ?? '', false);
+    get('#sheet').scrollTop = scroll;
+  }
+}
+
+function applyTheme(theme: 'dark' | 'light'): void {
+  document.documentElement.dataset.theme = theme;
+  const button = get<HTMLButtonElement>('#theme-toggle');
+  button.textContent = theme === 'dark' ? 'Light theme' : 'Dark theme';
+  button.setAttribute('aria-label', `Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`);
+  try { localStorage.setItem('pulse-theme', theme); } catch { /* A theme still works when storage is unavailable. */ }
+}
+
+function boot(): void {
+  let theme: 'light' | 'dark' = 'dark';
+  try { const stored = localStorage.getItem('pulse-theme'); if (stored === 'light' || stored === 'dark') theme = stored; } catch { /* Storage is optional. */ }
+  applyTheme(theme);
+  get('#theme-toggle').addEventListener('click', () => applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));
+  updateSnapshot(JSON.parse(get('#dashboard-state').getAttribute('data-snapshot') ?? '{}') as DashboardSnapshot, true);
+  get('#dashboard-state').remove();
+  get('#q').addEventListener('input', filterDials);
+  document.addEventListener('click', (event) => {
+    const target = event.target instanceof Element ? event.target : undefined;
+    if (!target) return;
+    const element = target.closest<HTMLElement>('.tile,.rt[data-sheet]');
+    if (element && details.has(element)) { showDetail(element); return; }
+    const period = target.closest<HTMLElement>('[data-period]')?.dataset.period;
+    if (period === 'today' || period === 'yday' || period === '7d') { setPeriod(period); return; }
+    const deck = target.closest<HTMLElement>('.tab[data-tab]')?.dataset.tab;
+    if (deck) { get<HTMLInputElement>('#q').value = ''; selectDeck(deck); filterDials(); return; }
+    const scoreTab = target.closest<HTMLElement>('[data-st]')?.dataset.st;
+    if (scoreTab) {
+      all('[data-st]').forEach((tab) => tab.setAttribute('aria-selected', String(tab.dataset.st === scoreTab)));
+      all('[data-sp]').forEach((panel) => { panel.hidden = panel.dataset.sp !== scoreTab; });
+      return;
+    }
+    const nav = target.closest<HTMLElement>('[data-go]');
+    if (nav) {
+      const destination = document.getElementById(nav.dataset.go ?? '');
+      if (destination) scrollTo(destination);
+      all('[data-go]').forEach((item) => item.setAttribute('aria-current', String(item === nav)));
+      return;
+    }
+    if (target.closest('[data-rv]')) { scrollTo(get('#reviews')); return; }
+    const rowTitle = target.closest<HTMLElement>('.dcard .rt');
+    if (rowTitle) {
+      const expanded = rowTitle.getAttribute('aria-expanded') === 'true';
+      rowTitle.setAttribute('aria-expanded', String(!expanded));
+      const why = rowTitle.closest('.dcard')?.querySelector<HTMLElement>('.why');
+      if (why) why.hidden = expanded;
+    }
+    const rowTarget = target.closest<HTMLElement>('[data-goto]')?.dataset.goto;
+    if (rowTarget) {
+      const row = document.querySelector<HTMLElement>(`.dcard[data-id="${rowTarget}"]`);
+      if (row) scrollTo(row);
+    }
+  });
+  get('#livesets').addEventListener('click', () => showTemplate('#t-livesets', 'Sample live sets, ours'));
+  get('#alldates').addEventListener('click', () => showTemplate('#t-dates', 'Sample dates'));
+  const sheet = get<HTMLDialogElement>('#sheet');
+  get('#sh-x').addEventListener('click', () => sheet.close());
+  sheet.addEventListener('click', (event) => { if (event.target === sheet) sheet.close(); });
+  const stream = new EventSource('/api/events');
+  stream.addEventListener('dashboard', (event: MessageEvent<string>) => {
+    try {
+      const next = JSON.parse(event.data) as DashboardSnapshot;
+      if (next.schemaVersion === 1 && next.mode === 'sample') updateSnapshot(next);
+    } catch { get('#update-status').textContent = 'Could not refresh · showing the last sample snapshot'; }
+  });
+  stream.addEventListener('error', () => { get('#update-status').textContent = 'Reconnecting · showing the last sample snapshot'; });
+  stream.addEventListener('signed-out', () => { stream.close(); window.location.assign('/login'); });
+  stream.addEventListener('unavailable', () => { get('#update-status').textContent = 'Reconnecting · showing the last sample snapshot'; });
+  window.addEventListener('pagehide', () => stream.close(), { once: true });
+  window.addEventListener('pageshow', (event) => { if (event.persisted) window.location.reload(); });
+  document.documentElement.dataset.dashboardReady = 'true';
+}
+
+try { boot(); } catch { const status = document.getElementById('update-status'); if (status) status.textContent = 'Could not finish loading. Refresh to try again.'; }

@@ -18,20 +18,28 @@ function timestamp(value: Date | string | null): string {
 
 function page(title: string, content: string, signedIn: boolean): string {
   return `<!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#1e0f48">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Pulse">
   <title>${escapeHtml(title)} · One of One Pulse</title>
   <link rel="stylesheet" href="/assets/styles.css">
+  <link rel="stylesheet" href="/assets/fonts.css">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="/assets/icon-192.png">
   <script type="module" src="/assets/browser.js"></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <header>
     <a class="wordmark" href="/">One of One <span>Pulse</span></a>
-    ${signedIn ? `<nav aria-label="Main"><a href="/">Source health</a><a href="/audit">Audit log</a><button id="sign-out" type="button" disabled>Sign out</button></nav>` : ''}
+    ${signedIn ? `<nav aria-label="Main"><a href="/">Home</a><a href="/sources">Source health</a><a href="/settings">Settings</a><a href="/audit">Audit log</a><button id="sign-out" type="button" disabled>Sign out</button></nav>` : ''}
   </header>
   <main id="main">${content}<p id="auth-message" role="status" aria-live="polite"></p></main>
   <noscript><p class="notice">Enable JavaScript to sign in or sign out with a passkey.</p></noscript>
@@ -64,7 +72,7 @@ const healthLabels: Record<SourceHealth['status'], string> = {
   error: 'Source unavailable',
 };
 
-export function dashboardPage(rows: readonly SourceHealth[]): string {
+export function sourceHealthPage(rows: readonly SourceHealth[]): string {
   return page('Source health', `<p class="sample-banner"><strong>sample data</strong> · No source data has been imported.</p>
     <h1>Source health</h1>
     <p>Live mode means all required keys are present. Each source starts importing data when its client is built.</p>
@@ -83,14 +91,14 @@ export function dashboardPage(rows: readonly SourceHealth[]): string {
     </div>`, true);
 }
 
-export function auditPage(events: readonly { event: string; occurred_at: Date | string }[]): string {
+export function auditPage(events: readonly { event: string; occurred_at: Date | string; field?: string | null }[]): string {
   return page('Audit log', `<h1>Audit log</h1>
     <p>Recent activity in Pulse. Times are shown in UK time.</p>
     <div class="table-scroll" role="region" aria-label="Audit log" tabindex="0">
       <table id="audit-log">
         <caption>Latest 100 events</caption>
         <thead><tr><th scope="col">When</th><th scope="col">Activity</th></tr></thead>
-        <tbody>${events.length === 0 ? '<tr><td colspan="2">No activity yet.</td></tr>' : events.map((event) => `<tr><td>${timestamp(event.occurred_at)}</td><td>${escapeHtml(event.event.replaceAll('_', ' '))}</td></tr>`).join('')}</tbody>
+        <tbody>${events.length === 0 ? '<tr><td colspan="2">No activity yet.</td></tr>' : events.map((event) => `<tr><td>${timestamp(event.occurred_at)}</td><td>${escapeHtml(event.event.replaceAll('_', ' '))}${event.field ? ` · ${escapeHtml(event.field)}` : ''}</td></tr>`).join('')}</tbody>
       </table>
     </div>`, true);
 }

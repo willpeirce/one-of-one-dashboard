@@ -160,6 +160,7 @@ async function checkDatePicker(page: Page, context: BrowserContext, snapshot: Da
   await page.locator('#period [data-period="today"]').click();
   await page.locator('#pickbtn').click();
   assert.equal(await page.locator('#pkcal .mon').count(), width <= 640 ? 1 : 2);
+  assert.deepEqual(await page.locator('#pkcal .mon h4').allTextContents(), width <= 640 ? ['September 2026'] : ['August 2026', 'September 2026']);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('data-date')), snapshot.bounds.today);
   assert.equal(await page.getByRole('button', { name: 'Wednesday, 30 September 2026, sample today', exact: true }).count(), 1);

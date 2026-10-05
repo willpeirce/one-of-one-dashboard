@@ -319,3 +319,28 @@ test('the hero identifies market-specific spike dates, including real month ends
     assert.ok(!hero.orders.d.extra?.some(([key]) => key === 'Spike days'), date);
   }
 });
+
+test('spike notes list up to five days, then use a count throughout the range details', () => {
+  const rows = sampleDays();
+  const warning = 'Do not base a verdict on a spike day alone.';
+  const five = buildHeroRange(rows, '2026-09-24', '2026-09-30', completed);
+  assert.equal(five.net.d.extra?.find(([key]) => key === 'Spike days')?.[1],
+    `Spike days: 24 Sep (UK), 25 Sep (UK), 26 Sep (UK), 29 Sep (UK and US), 30 Sep (UK and US). ${warning}`);
+
+  for (const [from, count] of [['2026-09-15', 6], [SAMPLE_START, 63]] as const) {
+    const hero = buildHeroRange(rows, from, SAMPLE_TODAY, completed);
+    const note = `${count} spike days in this range. ${warning}`;
+    for (const metric of [hero.net, hero.orders, hero.cr, hero.spend, hero.roas, hero.margin, hero.ukcpo, hero.uscpo]) {
+      assert.equal(metric.d.extra?.find(([key]) => key === 'Spike days')?.[1], note);
+      assert.ok(metric.d.ha?.endsWith(note));
+      assert.ok(!metric.d.rule.includes('Spike days:'));
+    }
+    for (const metric of [hero.net, hero.orders, hero.cr, hero.ukcpo, hero.uscpo]) {
+      assert.ok(metric.d.rule.endsWith(note));
+    }
+    assert.ok(hero.orders.d.why.endsWith(note));
+    // Individual bars retain the dates and markets, even for a long range.
+    assert.ok(hero.orders.d.hm?.some((mark) => mark.includes('30 Sep (UK and US)')));
+    if (count === 63) assert.equal(hero.orders.d.hm?.[0], 'Spike days: 1 Jan (US)');
+  }
+});

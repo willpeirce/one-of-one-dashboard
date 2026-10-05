@@ -7,7 +7,13 @@ const isoDay = (day: number): string => dateAt(day).toISOString().slice(0, 10);
 const monthOf = (day: number): number => dateAt(day).getUTCFullYear() * 12 + dateAt(day).getUTCMonth();
 const monthStart = (month: number): number => Date.UTC(Math.floor(month / 12), month % 12, 1) / dayMs;
 const shortMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const fullMonths = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const fullWeekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const shortDate = (day: number): string => `${dateAt(day).getUTCDate()} ${shortMonths[dateAt(day).getUTCMonth()]}`;
+function fullDate(day: number): string {
+  const date = dateAt(day);
+  return `${fullWeekdays[date.getUTCDay()]}, ${date.getUTCDate()} ${fullMonths[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+}
 function rangeLabel(from: number, to: number): string {
   if (from === to) return shortDate(from);
   return monthOf(from) === monthOf(to) ? `${dateAt(from).getUTCDate()}–${shortDate(to)}` : `${shortDate(from)}–${shortDate(to)}`;
@@ -55,7 +61,7 @@ export function createDatePicker(options: {
     calendar.replaceChildren();
     for (const month of bounds.two ? [view - 1, view] : [view]) {
       const start = monthStart(month), end = monthStart(month + 1);
-      const name = dateAt(start).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+      const name = `${fullMonths[dateAt(start).getUTCMonth()]} ${dateAt(start).getUTCFullYear()}`;
       const group = document.createElement('div');
       group.className = 'mon'; group.setAttribute('role', 'group'); group.setAttribute('aria-label', name);
       const title = document.createElement('h4'); title.textContent = name; group.append(title);
@@ -75,7 +81,7 @@ export function createDatePicker(options: {
         button.textContent = String(dateAt(day).getUTCDate());
         button.disabled = day < bounds.min || day > bounds.max;
         button.tabIndex = day === focusDay ? 0 : -1;
-        button.setAttribute('aria-label', dateAt(day).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) + (day === bounds.today ? ', sample today' : ''));
+        button.setAttribute('aria-label', fullDate(day) + (day === bounds.today ? ', sample today' : ''));
         button.setAttribute('aria-pressed', String(selected));
         if (day === bounds.today) button.setAttribute('aria-current', 'date');
         days.append(button);

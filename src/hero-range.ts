@@ -131,8 +131,9 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
   const base = previous.length === comparisonDays ? aggregateDays(previous) : null;
   const comparison = (metric: Metric): number | null => base ? metrics[metric](base) / (one && additive.has(metric) ? 7 : 1) : null;
   const spikeRows = selected.filter((row) => spikeMarkets(row.date).length);
-  const spikeSummary = spikeRows.map((row) => `${shortDate(row.date)} (${spikeMarkets(row.date).join(' and ')})`).join(', ');
-  const spikeNote = spikeSummary ? `Spike days: ${spikeSummary}. Do not base a verdict on a spike day alone.` : '';
+  const spikeSummary = spikeRows.length > 5 ? `${spikeRows.length} spike days in this range`
+    : `Spike days: ${spikeRows.map((row) => `${shortDate(row.date)} (${spikeMarkets(row.date).join(' and ')})`).join(', ')}`;
+  const spikeNote = spikeRows.length ? `${spikeSummary}. Do not base a verdict on a spike day alone.` : '';
   const state = (value: number, compared: number | null): State => partial ? 'sofar' : one && spikeRows.length ? 'info'
     : compared === null ? 'info' : value >= compared ? 'good' : value < 0.85 * compared ? 'warn' : 'info';
   const percent = (value: number, compared: number): number => compared ? Math.round(Math.abs(value / compared - 1) * 100) : 0;

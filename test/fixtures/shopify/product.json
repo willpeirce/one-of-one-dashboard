@@ -1,0 +1,33 @@
+{
+  "data": {
+    "product": {
+      "id": "gid://shopify/Product/10896502063438",
+      "variants": {
+        "nodes": [
+          {
+            "id": "gid://shopify/ProductVariant/900001",
+            "sku": "ultimate",
+            "inventoryItem": {
+              "id": "gid://shopify/InventoryItem/900001"
+            }
+          }
+        ],
+        "pageInfo": {
+          "hasNextPage": false,
+          "endCursor": null
+        }
+      }
+    }
+  },
+  "extensions": {
+    "cost": {
+      "requestedQueryCost": 20,
+      "actualQueryCost": 12,
+      "throttleStatus": {
+        "maximumAvailable": 2000,
+        "currentlyAvailable": 1988,
+        "restoreRate": 100
+      }
+    }
+  }
+}

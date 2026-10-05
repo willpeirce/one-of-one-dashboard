@@ -1,0 +1,124 @@
+{
+  "data": {
+    "order": {
+      "id": "gid://shopify/Order/900001",
+      "createdAt": "2026-09-29T23:30:00Z",
+      "updatedAt": "2026-09-30T11:50:00Z",
+      "cancelledAt": null,
+      "test": false,
+      "displayFinancialStatus": "PARTIALLY_REFUNDED",
+      "currencyCode": "GBP",
+      "subtotalPriceSet": {
+        "shopMoney": {
+          "amount": "108.00",
+          "currencyCode": "GBP"
+        }
+      },
+      "totalTaxSet": {
+        "shopMoney": {
+          "amount": "19.00",
+          "currencyCode": "GBP"
+        }
+      },
+      "totalShippingPriceSet": {
+        "shopMoney": {
+          "amount": "6.00",
+          "currencyCode": "GBP"
+        }
+      },
+      "customer": {
+        "id": "gid://shopify/Customer/900001"
+      },
+      "shippingAddress": {
+        "countryCodeV2": "GB",
+        "provinceCode": "ENG",
+        "zip": "SW1A 1AA"
+      },
+      "customAttributes": [
+        {
+          "key": "__gift_test",
+          "value": "A"
+        }
+      ],
+      "lineItems": {
+        "nodes": [
+          {
+            "id": "gid://shopify/LineItem/900001",
+            "sku": "ultimate",
+            "quantity": 2,
+            "product": {
+              "id": "gid://shopify/Product/10896502063438"
+            },
+            "taxLines": [
+              {
+                "priceSet": {
+                  "shopMoney": {
+                    "amount": "18.00",
+                    "currencyCode": "GBP"
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "pageInfo": {
+          "hasNextPage": false,
+          "endCursor": null
+        }
+      },
+      "refunds": [
+        {
+          "id": "gid://shopify/Refund/900001",
+          "createdAt": "2026-09-30T11:45:00Z",
+          "refundLineItems": {
+            "nodes": [
+              {
+                "quantity": 1,
+                "subtotalSet": {
+                  "shopMoney": {
+                    "amount": "54.00",
+                    "currencyCode": "GBP"
+                  }
+                },
+                "totalTaxSet": {
+                  "shopMoney": {
+                    "amount": "9.00",
+                    "currencyCode": "GBP"
+                  }
+                }
+              }
+            ],
+            "pageInfo": {
+              "hasNextPage": false,
+              "endCursor": null
+            }
+          }
+        }
+      ],
+      "fulfillments": [],
+      "customerJourneySummary": {
+        "firstVisit": null,
+        "lastVisit": {
+          "landingPage": "https://oneofonehq.com/?utm_source=One%20of%20One&utm_medium=email&utm_campaign=welcome_email",
+          "utmParameters": {
+            "source": "One of One",
+            "medium": "email",
+            "campaign": "welcome_email"
+          }
+        }
+      },
+      "taxesIncluded": true
+    }
+  },
+  "extensions": {
+    "cost": {
+      "requestedQueryCost": 20,
+      "actualQueryCost": 12,
+      "throttleStatus": {
+        "maximumAvailable": 2000,
+        "currentlyAvailable": 1988,
+        "restoreRate": 100
+      }
+    }
+  }
+}

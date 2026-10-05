@@ -361,7 +361,7 @@ function updateSnapshot(next: DashboardSnapshot, initial = false): void {
   });
   filterDials();
   const healthLabels = { waiting_for_keys: 'waiting for keys', not_implemented: 'client not built', healthy: 'connected', error: 'source unavailable' };
-  get('#feeds').innerHTML = (snapshot.sourceHealth ?? []).map((row) => `<span><i style="background:var(--info)"></i>${esc(row.name)} · ${healthLabels[row.status]}</span>`).join('') + '<a href="/sources">Connection details</a>';
+  get('#feeds').innerHTML = (snapshot.sourceHealth ?? []).map((row) => `<span><i style="background:var(--info)"></i>${esc(row.name)} · ${row.source === 'shopify' && row.status === 'not_implemented' ? 'first sync pending' : healthLabels[row.status]}</span>`).join('') + '<a href="/sources">Connection details</a>';
   document.documentElement.dataset.updatedAt = snapshot.generatedAt;
   get('#update-status').textContent = `Connected · updated ${new Date(snapshot.generatedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Europe/London' })} UK`;
   if (get<HTMLDialogElement>('#sheet').open) {

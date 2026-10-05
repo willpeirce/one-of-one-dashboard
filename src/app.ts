@@ -1,4 +1,7 @@
 import Fastify from 'fastify';
+import { appConfig } from './config.js';
+import { ShopifyWorker } from './shopify/worker.js';
+import { registerShopifyWebhooks } from './shopify/webhooks.js';
 import cookie from '@fastify/cookie';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -14,13 +17,18 @@ import { registerDashboardEvents } from './events.js';
 import { readSettings, saveSettings, SettingsValidationError, SettingsConflictError } from './settings.js';
 import { settingsPage } from './settings-view.js';
 
-export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: NodeJS.ProcessEnv = {}) {
+export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: NodeJS.ProcessEnv = {}, shopifyOptions: ConstructorParameters<typeof ShopifyWorker>[3] = {}) {
   // Request/error logging is deliberately off: authentication bodies contain private material.
   const app = Fastify({ logger: false, bodyLimit: 32_768, trustProxy: false, requestTimeout: 15_000 });
   await app.register(cookie);
   const auth = await Auth.create(db, config);
   await auth.cleanup();
   await syncSourceHealth(db, sourceEnv);
+  const shopify = new ShopifyWorker(db, sourceEnv, config.origin, shopifyOptions);
+  await shopify.initialize();
+  if (shopify.mode === 'sample') await shopify.tick();
+  app.addHook('onReady', async () => { shopify.start(); });
+  app.addHook('onClose', async () => { await shopify.stop(); });
   app.addHook('onRequest', async (request, reply) => {
     reply.header('Cache-Control', 'no-store');
     reply.header('X-Content-Type-Options', 'nosniff');
@@ -29,6 +37,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     reply.header('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; font-src 'self'; connect-src 'self'; img-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
     reply.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
     if (config.secureCookies) reply.header('Strict-Transport-Security', 'max-age=31536000');
+    if (request.method === 'POST' && request.url === appConfig.shopify.webhookPath) return;
     if (request.method !== 'GET' && request.method !== 'HEAD') {
       if (request.headers.origin !== config.origin) return reply.code(403).send({ error: 'Request origin is not allowed.' });
       if (request.headers['content-type']?.split(';')[0]?.trim() !== 'application/json') {
@@ -36,6 +45,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
       }
     }
   });
+  await registerShopifyWebhooks(app, db, sourceEnv, () => shopify.triggerInbox());
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof HeroRangeError) return reply.code(400).send({ error: 'Invalid date range.' });
     if (error instanceof SettingsValidationError) {
@@ -79,7 +89,11 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   });
   app.get('/sources', async (request, reply) => {
     if (!await auth.session(request)) return reply.redirect('/login');
-    return reply.type('text/html; charset=utf-8').send(sourceHealthPage(await readSourceHealth(db)));
+    return reply.type('text/html; charset=utf-8').send(sourceHealthPage(await readSourceHealth(db), await shopify.store.summary()));
+  });
+  app.get('/api/shopify', async (request, reply) => {
+    if (!await auth.session(request)) return reply.code(401).send({ error: 'Sign in to continue.' });
+    return shopify.store.summary();
   });
   app.get('/settings', async (request, reply) => {
     if (!await auth.session(request)) return reply.redirect('/login');

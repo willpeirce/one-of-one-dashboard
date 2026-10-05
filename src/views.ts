@@ -1,3 +1,4 @@
+import type { ShopifyStore } from './shopify/store.js';
 import type { SourceHealth } from './sources.js';
 
 function escapeHtml(value: string): string {
@@ -72,10 +73,11 @@ const healthLabels: Record<SourceHealth['status'], string> = {
   error: 'Source unavailable',
 };
 
-export function sourceHealthPage(rows: readonly SourceHealth[]): string {
-  return page('Source health', `<p class="sample-banner"><strong>sample data</strong> · No source data has been imported.</p>
+export function sourceHealthPage(rows: readonly SourceHealth[], shopify?: Awaited<ReturnType<ShopifyStore['summary']>>): string {
+  return page('Source health', `<p class="sample-banner"><strong>sample data</strong> · ${shopify ? 'Business cards remain sample data until part 1b.' : 'No source data has been imported.'}</p>
     <h1>Source health</h1>
-    <p>Live mode means all required keys are present. Each source starts importing data when its client is built.</p>
+    ${shopify ? `<section aria-label="Shopify imports"><h2>Shopify imports · ${shopify.sample ? 'sample data' : 'live'}</h2><p>${shopify.counts.order ?? 0} orders · ${shopify.counts.inventory ?? 0} inventory rows · ${shopify.counts.sessions ?? 0} session days · ${shopify.counts.sales ?? 0} older sales days · ${shopify.pendingWebhooks} webhooks pending.</p><p>Cards, watchdogs and New reviews follow in part 1b.</p>${shopify.notices.length ? `<p>Needs attention: ${shopify.notices.map(n => escapeHtml(n.replaceAll('_', ' '))).join(' · ')}</p>` : ''}</section>` : ''}
+    <p>Live mode means all required keys are present. Shopify imports automatically. The remaining source clients arrive in their stages.</p>
     <div class="table-scroll" role="region" aria-label="Source health table, scroll horizontally if needed" tabindex="0">
       <table id="source-health">
         <caption>Source connections · times shown in UK time</caption>
@@ -83,7 +85,7 @@ export function sourceHealthPage(rows: readonly SourceHealth[]): string {
         <tbody>${rows.map((row) => `<tr>
           <th scope="row">${escapeHtml(row.name)}</th>
           <td>${row.mode === 'sample' ? 'Sample' : 'Live'}</td>
-          <td>${escapeHtml(healthLabels[row.status])}</td>
+          <td>${escapeHtml(row.source === 'shopify' && row.status === 'not_implemented' ? 'First sync pending' : healthLabels[row.status])}</td>
           <td>${timestamp(row.lastSuccessAt)}</td>
           <td class="key-names">${row.requiredKeys.map((key) => `<code>${escapeHtml(key)}</code>`).join('<br>')}</td>
         </tr>`).join('')}</tbody>

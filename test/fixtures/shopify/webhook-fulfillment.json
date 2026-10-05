@@ -1,0 +1,10 @@
+{
+  "id": 900003,
+  "order_id": 900001,
+  "status": "success",
+  "tracking_number": "fixture-only",
+  "destination": {
+    "name": "Invented Fixture",
+    "address1": "1 Fictional Test Street"
+  }
+}

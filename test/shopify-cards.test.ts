@@ -8,6 +8,7 @@ import { cleanOrder, cleanSessions, type Order } from '../src/shopify/model.js';
 import { ShopifyStore } from '../src/shopify/store.js';
 import { fixture, SampleShopify } from '../src/shopify/sample.js';
 import { ShopifyWorker, channelQuery } from '../src/shopify/worker.js';
+import { orderFields } from '../src/shopify/client.js';
 import { dataset, dailyRows, emailFlow, shopifyHero, stockCover, type Facts } from '../src/shopify/metrics.js';
 import { blankObservation, dispatchLate, evaluateWatchdogs, observe, updateObservation } from '../src/shopify/watchdogs.js';
 import { applyShopifyDashboard } from '../src/shopify/dashboard.js';
@@ -23,6 +24,30 @@ function facts(orders: Order[], from = '2026-08-01', extra: Facts['records'] = [
     records: [...orders.map(data => ({ kind: 'order', data, fetched_at: now })), ...extra] };
 }
 async function order(): Promise<Order> { return cleanOrder((await fixture('order')).data.order); }
+
+test('zero-total paid orders without transactions count as paid and do not hold order/dispatch checks unknown', async () => {
+  const o = cleanOrder((await fixture('order-zero-total-paid')).data.order) as Order;
+  assert.equal(o.itemsAfterDiscountsPence, 0);
+  assert.equal(o.paidAt, o.createdAt);
+  const checks = evaluateWatchdogs(facts([o]), now, settings, blankObservation(), [], []);
+  assert.equal(checks.find(c => c.id === 'orders')!.status, 'pass');
+  assert.equal(checks.find(c => c.id === 'dispatch')!.status, 'pass');
+  assert.equal(shopifyHero(facts([o]), '2026-09-30', '2026-09-30', '2026-09-30', settings).orders.n, 1);
+  assert.equal(dispatchLate({ ...o, paidAt: null, market: 'unknown' }, now, settings, []), false);
+});
+
+test('nullable successful transaction times are skipped; valid payment times take precedence and unpaid orders have no fallback', async () => {
+  const raw = (await fixture('order-zero-total-paid')).data.order;
+  raw.transactions = [{ kind: 'SALE', status: 'SUCCESS', processedAt: null }, { kind: 'CAPTURE', status: 'SUCCESS', processedAt: '2026-09-30T12:00:00Z' }];
+  assert.equal(cleanOrder(raw).paidAt, '2026-09-30T12:00:00.000Z');
+  raw.transactions.pop();
+  assert.equal(cleanOrder(raw).paidAt, cleanOrder(raw).createdAt);
+  raw.displayFinancialStatus = 'PENDING';
+  assert.equal(cleanOrder(raw).paidAt, null);
+  raw.displayFinancialStatus = 'PAID';
+  raw.transactions = Array.from({ length: 250 }, () => ({ kind: 'SALE', status: 'SUCCESS', processedAt: null }));
+  assert.equal(cleanOrder(raw).paidAt, null);
+});
 
 test('4.1/4.2 net sales use UK order/refund dates, inclusive item tax, and exclude shipping and old recently updated orders', async () => {
   const uk = cleanOrder((await fixture('order-uk-tax-inclusive-refund')).data.order) as Order;
@@ -70,6 +95,8 @@ test('4.3 tiers, TikTok orders and spike dates; 4.5 UTM email/refill attribution
   assert.equal(hero.orders.n,3); assert.equal(hero.business!.orderDays[0]!.TikTok,1);
   assert.equal(hero.business!.orderDays[0]!.UK,2); assert.match(hero.orders.d.extra!.find(([k])=>k==='Spike days')![1],/30 Sep/);
   assert.equal(hero.business!.refill.count,1); assert.equal(hero.business!.email.count,3);
+  assert.match(hero.business!.refill.detail.why, /1 order containing SKU REFILL in 30 Sep\./);
+  assert.ok(!hero.business!.refill.detail.why.includes('2026-09-30–2026-09-30'));
   assert.equal(emailFlow(refill),'D30 refill');
   const discountOnly={...refill,lastVisit:null,discountSignals:['SLABPACK']}; assert.equal(emailFlow(discountOnly),null);
   assert.match(shopifyHero(facts([o]),'2026-09-30','2026-09-20','2026-09-30',settings).business!.email.detail.why,/partial/);
@@ -97,6 +124,9 @@ test('dispatch uses payment time, working days, bank holidays, both cutoffs and 
   assert.equal(dispatchLate({...o,market:'US',paidAt:'2026-09-28T18:00:00Z'},new Date('2026-09-29T19:00:00Z'),settings,[]),true);
   assert.equal(dispatchLate({...o,paidAt:null},now,settings,[]),null);
   assert.equal(dispatchLate({...o,fulfillmentStatus:'FULFILLED'},now,settings,[]),false);
+  assert.equal(dispatchLate({...o,paidAt:null,market:'unknown',fulfillmentStatus:'RESTOCKED'},now,settings,[]),false);
+  assert.equal(dispatchLate({...o,paidAt:null,financialStatus:'REFUNDED',fulfillmentStatus:'UNFULFILLED'},now,settings,[]),false);
+  assert.equal(dispatchLate({...o,financialStatus:'PARTIALLY_REFUNDED'},now,settings,[]),true);
   assert.equal(dispatchLate(o,new Date('2028-01-02T12:00:00Z'),settings,holidays),null);
 });
 
@@ -149,12 +179,53 @@ test('daily channels check reports shortage and recovery over the same UK dates;
   reader.bad=false;reader.short=false;await db.query("UPDATE pulse.shopify_jobs SET next_run_at=$1 WHERE name='reconcile'",[now]);await worker.tick();assert.equal((await worker.store.facts()).noticeDetails.filter(n=>n.kind==='channel_short').length,0);
 });
 
+test('null channels map known source names and pool Unknown orders against unmatched report channels without hiding real shortages', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  assert.match(orderFields(true), /sourceName/);
+  const envelope = (await fixture('orders-null-channel')).data.orders;
+  assert.equal(cleanOrder(envelope.nodes[0]).channel, 'Draft Orders');
+  assert.equal(cleanOrder(envelope.nodes[1]).channel, 'Unknown');
+  assert.equal(cleanOrder({ ...envelope.nodes[0], sourceName: 'web' }).channel, 'Online Store');
+  assert.equal(cleanOrder({ ...envelope.nodes[0], sourceName: 'pos' }).channel, 'Point of Sale');
+  assert.equal(cleanOrder({ ...envelope.nodes[0], sourceName: '__proto__' }).channel, 'Unknown');
+  assert.equal(cleanOrder({ ...envelope.nodes[0], channelInformation: { channelDefinition: { channelName: 'TikTok' } } }).channel, 'TikTok');
+  const table = (await fixture('channels-null-channel')).data.shopifyqlQuery.tableData;
+  class Reader extends SampleShopify {
+    override async orders(query: string) {
+      const from = /(?:created_at|updated_at):>=(\S+)/.exec(query)?.[1];
+      const to = /(?:created_at|updated_at):<=(\S+)/.exec(query)?.[1];
+      return { ...envelope, nodes: envelope.nodes.filter((o: any) => (!from || o.createdAt >= from) && (!to || o.createdAt <= to)) };
+    }
+    override async report(query: string) { return query.includes('sales_channel') ? table : super.report(query); }
+    override async subscribe() {}
+  }
+  const worker = new ShopifyWorker(db, { SHOPIFY_CLIENT_ID: randomUUID(), SHOPIFY_CLIENT_SECRET: randomUUID() }, 'https://pulse.example.test', { reader: new Reader(), clock: () => now });
+  await worker.initialize(); await worker.tick();
+  const notices = async () => (await worker.store.facts()).noticeDetails.filter(n => n.kind === 'channel_short');
+  const reconcile = async () => { await db.query("UPDATE pulse.shopify_jobs SET next_run_at=$1 WHERE name='reconcile'", [now]); await worker.tick(); };
+  assert.equal((await notices()).length, 0);
+  // A pooled shortage is one card; the two Unknown orders are not credited to each channel separately.
+  table.rows[2][2] = 2; await reconcile();
+  assert.equal((await notices()).length, 1);
+  assert.equal((await notices())[0]!.source_id, 'channel:unknown');
+  assert.equal((await notices())[0]!.detail.stored, 2);
+  assert.equal((await notices())[0]!.detail.reported, 3);
+  table.rows[2][2] = 1; table.rows[0][2] = 2; await reconcile();
+  assert.equal((await notices()).length, 1);
+  assert.equal((await notices())[0]!.detail.channel, 'draft orders');
+  // An explicit Unknown report row shares the same pool without double-using its stored count.
+  table.rows[0][2] = 1; table.rows[1][1] = 'Unknown'; await reconcile();
+  assert.equal((await notices()).length, 0);
+});
+
 test('integrated live dashboard has no example Shopify values; mode changes cannot read sample records; rendered data is escaped', async t => {
   const db=await createTestDatabase();t.after(()=>db.close());
   const store=new ShopifyStore(db,'sample');await store.orders([(await fixture('order')).data.order],now);
   assert.equal((await new ShopifyStore(db,'live').facts()).records.length,0);
   const o=await order();o.paidAt=now.toISOString();o.fulfillmentStatus='UNFULFILLED';
   const snap=await applyShopifyDashboard(getSampleDashboard(),db,facts([o]),settings,[],now);
+  assert.equal(snap.textValues.t0026!.value, 'Wed 30 Sept, 13:00 UK');
+  assert.match(snap.hero.today.sub1, /^1 order so far\./);
   assert.equal(snap.hero.today.net.mode,'live');assert.equal(snap.hero.today.net.n,66.62);assert.equal(snap.hero.today.spend.unavailable,true);
   assert.equal(snap.widgets.w037!.mode,'live');assert.match(snap.banner!,/Advertising.*sample/);
   const html=dashboardPage(snap);assert.match(html,/£66.62/);assert.ok(!html.includes('£296'));assert.match(html,/New reviews/);

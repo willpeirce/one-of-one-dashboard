@@ -1,0 +1,43 @@
+{
+  "data": {
+    "shopifyqlQuery": {
+      "tableData": {
+        "columns": [
+          {
+            "name": "day",
+            "dataType": "date",
+            "displayName": "Day"
+          },
+          {
+            "name": "sales_channel",
+            "dataType": "string",
+            "displayName": "Sales channel"
+          },
+          {
+            "name": "orders",
+            "dataType": "integer",
+            "displayName": "Orders"
+          }
+        ],
+        "rows": [
+          [
+            "2026-09-29",
+            "Draft Orders",
+            1
+          ],
+          [
+            "2026-09-29",
+            "Invented Channel A",
+            1
+          ],
+          [
+            "2026-09-29",
+            "Invented Channel B",
+            1
+          ]
+        ]
+      },
+      "parseErrors": []
+    }
+  }
+}

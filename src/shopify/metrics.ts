@@ -1,5 +1,5 @@
 import { appConfig } from '../config.js';
-import { addDays, buildHeroRange, dayCount, HeroRangeError, type DailyMetrics } from '../hero-range.js';
+import { addDays, buildHeroRange, dayCount, HeroRangeError, rangeLabel, ukToday, type DailyMetrics } from '../hero-range.js';
 import type { HeroPeriod } from '../dashboard-types.js';
 import type { Order, Inventory, Sessions } from './model.js';
 import type { Settings } from '../settings.js';
@@ -36,7 +36,6 @@ export function orderNet(o: Order, from: string, to: string): number {
   return (o.day >= from && o.day <= to ? o.itemsAfterDiscountsPence : 0)
     - o.refunds.filter(r => { const day = ukToday(new Date(r.createdAt)); return day >= from && day <= to; }).reduce((n, r) => n + r.itemsPence, 0);
 }
-import { ukToday } from '../hero-range.js';
 export function dailyRows(facts: Facts, today: string): DailyMetrics[] {
   const data = dataset(facts, today);
   const byDay = new Map<string, DailyMetrics>();
@@ -85,15 +84,16 @@ export function shopifyHero(facts: Facts, today: string, from: string, to: strin
   for (const metric of [hero.net, hero.orders, hero.cr]) metric.d.src += ` · ${lastLabel}`;
   const kitOrders = orders.filter(isKit);
   hero.orders.d.extra = [...(hero.orders.d.extra ?? []), ['Orders by market', breakdown], ['Average order', ratio(hero.net.n, hero.orders.n) === null ? 'No paid orders' : `£${(hero.net.n / hero.orders.n).toFixed(2)}`], ['Upgrade rate', kitOrders.length ? `${(100 * orders.filter(isUpgrade).length / kitOrders.length).toFixed(1)}% · tiers from ordered products` : 'No kit orders'], ['Coverage', `Order details from ${data.from}. Earlier sales are store-wide ShopifyQL only; no invented market split.`]];
-  hero.sub1 = `${hero.orders.n} orders${to === today ? ' so far' : ''}.`;
+  const orderLabel = `${hero.orders.n} ${hero.orders.n === 1 ? 'order' : 'orders'}`;
+  hero.sub1 = `${orderLabel}${to === today ? ' so far' : ''}.`;
   if (from === today && to === today) {
     const currentTime = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(facts.jobs.find(j => j.name === 'poll')?.last_success_at ?? `${today}T00:00:00Z`));
     const yesterday = addDays(today, -1);
     const byNow = data.orders.filter(o => o.day === yesterday && new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(o.createdAt)) <= currentTime).length;
     hero.sub1 += data.ready && data.from <= yesterday ? ` ${byNow} by ${currentTime} UK yesterday (last order poll).` : ' Yesterday comparison unavailable.';
   }
-  hero.net.ss = `${hero.orders.n} orders · ${provenance}`;
-  if (from < data.from) hero.orders.ss = `${hero.orders.n} orders · older market detail unavailable`;
+  hero.net.ss = `${orderLabel} · ${provenance}`;
+  if (from < data.from) hero.orders.ss = `${orderLabel} · older market detail unavailable`;
   const totalSessions = sessions.reduce((n, s) => n + s.sessions, 0);
   const marketReliable = sessions.every(s => s.marketReliable) && from >= data.from;
   const usSessions = sessions.reduce((n, s) => n + s.us, 0);
@@ -118,7 +118,7 @@ export function shopifyHero(facts: Facts, today: string, from: string, to: strin
   hero.business = {
     email: { count: periodEmail.length, detail: { why: `${periodEmail.length} last-visit email orders; £${emailNet.toFixed(2)} net sales, ${from}–${to}. ${from < '2026-09-27' ? 'Attribution partial before 27 Sep 2026.' : ''}`, rule: 'UTM medium=email, grouped by last-visit campaign; first visit is assisted only. SLABPACK is never an email signal. Sends, reachable-by-email and Mailchimp credit await their source.', src: provenance,
       extra: appConfig.mailchimp.flows.filter(f => f.status === 'live').map(f => [f.name, `${periodEmail.filter(o => emailFlow(o) === f.name).length} Shopify orders · Mailchimp figures unavailable`]) } },
-    refill: { count: refill.length, detail: { why: `${refill.length} orders containing SKU REFILL in ${from}–${to}.`, rule: 'D30 attribution needs a refill campaign or REFILLSHIP. Early for 4 weeks from first send on 25 Sep 2026; sends threshold awaits Mailchimp. Before launch on 11 Sep 2026 has no refill history.', src: provenance,
+    refill: { count: refill.length, detail: { why: `${refill.length} ${refill.length === 1 ? 'order' : 'orders'} containing SKU REFILL in ${rangeLabel(from, to)}.`, rule: 'D30 attribution needs a refill campaign or REFILLSHIP. Early for 4 weeks from first send on 25 Sep 2026; sends threshold awaits Mailchimp. Before launch on 11 Sep 2026 has no refill history.', src: provenance,
       extra: [['D30 email', String(refill.filter(o => emailFlow(o)?.startsWith('D30 refill')).length)], ['Site / other', String(refill.filter(o => !emailFlow(o)?.startsWith('D30 refill')).length)], ['Since launch', `${data.orders.filter(o => o.day >= '2026-09-11' && isRefill(o)).length}${data.from > '2026-09-11' ? ' (partial history)' : ''}`], ['Stock', 'Open Stock and cover for configured warehouse stock.']] } },
     orderDays: rows.filter(r => r.date >= from && r.date <= to).map(r => { const dayOrders = ordersByDay.get(r.date) ?? []; return { day: r.date, UK: dayOrders.filter(o => o.market === 'UK' && !isTikTok(o)).length, US: dayOrders.filter(o => o.market === 'US' && !isTikTok(o)).length, EU: dayOrders.filter(o => o.market === 'EU' && !isTikTok(o)).length, TikTok: dayOrders.filter(isTikTok).length, unknown: dayOrders.filter(o => o.market === 'unknown' && !isTikTok(o)).length, total: r.o, detailAvailable: r.date >= data.from }; }),
   };

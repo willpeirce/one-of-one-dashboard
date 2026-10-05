@@ -1,6 +1,7 @@
 import { checksHtml, liveHtml, needsHtml, storePanelsHtml } from './shopify/presentation.js';
 import type { DashboardSnapshot, Detail, DialModel, HeroMetric, HeroPeriod, Period, RingModel, SheetModel, State, TestModel, Zone } from './dashboard-types.js';
 import { createDatePicker } from './dashboard-dates.js';
+import { rangeLabel } from './hero-range.js';
 
 const states: Record<State, [string, string]> = {
   good: ['Good', '✓'], warn: ['Watch', '!'], decide: ['Decide', '◆'], alarm: ['Alarm', '✕'],
@@ -159,7 +160,7 @@ function renderHero(hero: HeroPeriod, animate = false): void {
   if (hero.business) for (const [kind, widgetId, valueKey, subKey] of [['email','w039','t0269','t0270'], ['refill','w037','t0266','t0267']] as const) {
     const model = hero.business[kind], element = document.querySelector<HTMLElement>(`[data-model-id="${widgetId}"]`);
     all(`[data-sample-text="${valueKey}"]`).forEach(e => { e.textContent = String(model.count); });
-    all(`[data-sample-text="${subKey}"]`).forEach(e => { e.textContent = `${hero.from}–${hero.to} · Shopify ${hero.net.mode}`; });
+    all(`[data-sample-text="${subKey}"]`).forEach(e => { e.textContent = `${rangeLabel(hero.from, hero.to)} · Shopify ${hero.net.mode}`; });
     if (element) details.set(element, { state: 'info', title: kind === 'email' ? 'Email · Shopify' : 'Refill Pack', detail: model.detail });
   }
   renderHealth();

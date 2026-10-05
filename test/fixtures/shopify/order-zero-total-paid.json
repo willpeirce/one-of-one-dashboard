@@ -1,0 +1,59 @@
+{
+  "data": {
+    "order": {
+      "id": "gid://shopify/Order/990101",
+      "createdAt": "2026-09-30T11:59:00Z",
+      "updatedAt": "2026-09-30T11:59:00Z",
+      "cancelledAt": null,
+      "test": false,
+      "displayFinancialStatus": "PAID",
+      "currencyCode": "GBP",
+      "subtotalPriceSet": {
+        "shopMoney": {
+          "amount": "0.00",
+          "currencyCode": "GBP"
+        }
+      },
+      "totalTaxSet": {
+        "shopMoney": {
+          "amount": "0.00",
+          "currencyCode": "GBP"
+        }
+      },
+      "totalShippingPriceSet": {
+        "shopMoney": {
+          "amount": "0.00",
+          "currencyCode": "GBP"
+        }
+      },
+      "customer": null,
+      "shippingAddress": null,
+      "customAttributes": [],
+      "lineItems": {
+        "nodes": [
+          {
+            "id": "gid://shopify/LineItem/990101",
+            "sku": "ultimate",
+            "quantity": 1,
+            "product": {
+              "id": "gid://shopify/Product/10896502063438"
+            },
+            "taxLines": []
+          }
+        ],
+        "pageInfo": {
+          "hasNextPage": false,
+          "endCursor": null
+        }
+      },
+      "refunds": [],
+      "fulfillments": [],
+      "customerJourneySummary": null,
+      "taxesIncluded": true,
+      "channelInformation": null,
+      "sourceName": "web",
+      "displayFulfillmentStatus": "FULFILLED",
+      "transactions": []
+    }
+  }
+}

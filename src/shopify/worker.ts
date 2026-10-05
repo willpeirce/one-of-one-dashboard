@@ -151,10 +151,17 @@ export class ShopifyWorker {
     await this.db.transaction(async tx => {
       const store = new ShopifyStore(tx, this.mode);
       await tx.query("DELETE FROM pulse.shopify_notices WHERE mode = $1 AND kind = 'channel_short'", [this.mode]);
+      const unknown = counts.get('unknown') ?? 0;
+      const unmatched = [...expected].filter(([channel]) => channel === 'unknown' || !counts.has(channel));
       for (const [channel, reported] of expected) {
+        if (unknown > 0 && unmatched.some(([name]) => name === channel)) continue;
         const stored = counts.get(channel) ?? 0;
         if (stored < reported) await store.notice('channel_short', `channel:${channel}`, now, { channel, stored, reported, from, to });
       }
+      // Unknown source orders can account for report-only channels, without guessing which.
+      const reported = unmatched.reduce((n, [, count]) => n + count, 0);
+      if (unknown > 0 && unknown < reported) await store.notice('channel_short', 'channel:unknown', now,
+        { channel: `Unknown / unmatched (${unmatched.map(([channel]) => channel).join(', ')})`, stored: unknown, reported, from, to });
     });
   }
   private async execute(name: Job, state: any, lastSuccess: Date | null): Promise<any> {

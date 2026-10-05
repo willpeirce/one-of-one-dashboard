@@ -4,7 +4,7 @@ import type { DashboardSnapshot, Detail, DialModel, Period, State } from '../das
 import type { Settings } from '../settings.js';
 import type { SourceHealth } from '../sources.js';
 import { appConfig } from '../config.js';
-import { dailyRows, dataset, emailFlow, isRefill, isUpgrade, isKit, orderNet, ratio, shopifyHero, stockCover, type Facts, type StockCover } from './metrics.js';
+import { dailyRows, dataset, emailFlow, isRefill, isUpgrade, isKit, kitIds, orderNet, ratio, shopifyHero, stockCover, type Facts, type StockCover } from './metrics.js';
 import { blankObservation, evaluateWatchdogs, type Check, type Observation } from './watchdogs.js';
 
 export interface ShopifyDashboard {
@@ -41,7 +41,7 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
     }
   }
   snapshot.asOf = today; snapshot.bounds = { min: data.min, max: today, today };
-  snapshot.textValues.t0026 = { source: ['shopify'], mode: facts.mode, value: new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date()) + ' UK' };
+  snapshot.textValues.t0026 = { source: ['shopify'], mode: facts.mode, value: new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(now) + ' UK' };
   const initial = snapshot.hero.today;
   for (const [key, rawKey, displayKey, subKey] of [['net','t0001','t0038','t0039'],['orders','t0003','t0042','t0043'],['cr','t0004','t0046','t0047'],['spend','t0005','t0050','t0051'],['roas','t0006','t0054','t0055'],['margin','t0007','t0058','t0059']] as const) {
     const metric = initial[key];
@@ -114,4 +114,3 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
     live: { lastOrder: last ? `${Math.max(0, Math.floor((now.getTime() - Date.parse(last.paidAt!)) / 60_000))} min` : 'Unknown', dispatch: checks.find(c => c.id === 'dispatch')!.why, carts: 'Open carts unavailable · session funnel is not a live cart count' } };
   return snapshot;
 }
-import { kitIds } from './metrics.js';

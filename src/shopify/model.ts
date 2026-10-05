@@ -53,11 +53,19 @@ export function cleanOrder(raw: any) {
   const warehouses = raw.fulfillments.map((f: any) => f.location?.id).filter((id: unknown) => Object.values(appConfig.shopify.locations).some(l => l.id === id));
   const country = /^[A-Z]{2}$/.test(raw.shippingAddress?.countryCodeV2 ?? '') ? raw.shippingAddress.countryCodeV2 : null;
   const market = country === 'GB' ? 'UK' : country === 'US' ? 'US' : country && appConfig.shopify.euCountries.some(c => c === country) ? 'EU' : country ? 'unknown' : raw.currencyCode === 'USD' || warehouses.includes(appConfig.shopify.locations.us.id) ? 'US' : raw.currencyCode === 'GBP' || warehouses.includes(appConfig.shopify.locations.uk.id) ? 'UK' : 'unknown';
+  const transactions = Array.isArray(raw.transactions) ? raw.transactions : [];
+  const paidAt = transactions.length < 250 ? transactions
+    .filter((t: any) => t.status === 'SUCCESS' && ['SALE', 'CAPTURE'].includes(t.kind) && t.processedAt != null)
+    .map((t: any) => instant(t.processedAt)).sort().at(-1)
+    // Zero-total and manually paid orders need no money transaction.
+    ?? (raw.displayFinancialStatus === 'PAID' ? instant(raw.createdAt) : null) : null;
+  const sourceChannels = new Map([['web', 'Online Store'], ['pos', 'Point of Sale'], ['shopify_draft_order', 'Draft Orders']]);
+  const channelName = raw.channelInformation?.channelDefinition?.channelName;
+  const channel = typeof channelName === 'string' && channelName.trim() ? channelName.slice(0, 100) : sourceChannels.get(raw.sourceName) ?? 'Unknown';
   return {
     id: gid('Order', raw.id), createdAt: instant(raw.createdAt), updatedAt: instant(raw.updatedAt), day: ukToday(new Date(raw.createdAt)),
     cancelledAt: raw.cancelledAt ? instant(raw.cancelledAt) : null, test: raw.test === true,
-    channel: typeof raw.channelInformation?.channelDefinition?.channelName === 'string' ? raw.channelInformation.channelDefinition.channelName.slice(0, 100) : 'Unknown',
-    paidAt: Array.isArray(raw.transactions) && raw.transactions.length < 250 ? raw.transactions.filter((t: any) => t.status === 'SUCCESS' && ['SALE', 'CAPTURE'].includes(t.kind)).map((t: any) => instant(t.processedAt)).sort().at(-1) ?? null : null,
+    channel, paidAt,
     fulfillmentStatus: raw.displayFulfillmentStatus ?? 'unknown',
     discountSignals: (raw.discountCodes ?? []).filter((c: string) => ['SHIPPINGONME', 'REFILLSHIP'].includes(c)),
     financialStatus: ['PAID', 'PARTIALLY_REFUNDED', 'REFUNDED', 'PARTIALLY_PAID', 'PENDING', 'AUTHORIZED', 'VOIDED', 'EXPIRED'].includes(raw.displayFinancialStatus) ? raw.displayFinancialStatus : 'unknown',

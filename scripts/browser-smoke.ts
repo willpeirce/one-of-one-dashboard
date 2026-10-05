@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import type { AuthenticationResponseJSON } from '@simplewebauthn/server';
 import { chromium, type BrowserContext, type Page } from 'playwright';
+import { rangeLabel } from '../src/hero-range.js';
 
 let step = 'read test configuration';
 
@@ -66,6 +67,7 @@ async function assertHeroModel(page: Page, metrics: HeroPeriod): Promise<void> {
   }), expected);
   assert.equal(await page.locator('#eyebrow').textContent(), metrics.eyebrow);
   assert.equal(await page.locator('#sub1').textContent(), metrics.sub1);
+  for (const key of ['t0267', 't0270']) assert.ok((await page.locator(`[data-sample-text="${key}"]`).textContent())?.startsWith(`${rangeLabel(metrics.from, metrics.to)} · Shopify `));
   for (const key of Object.keys(expected)) {
     assert.equal(await page.locator(`#hero [data-k="${key}"]`).count(), 1);
   }

@@ -7,7 +7,7 @@ Updated in every pull request.
 | 0a | Service, database, passkeys, audit, source registry, CI | merged 2 Oct 2026; deployed 2 Oct | `DASHBOARD_SETUP_CODE`: configured | Will's phone enrollment and sign-in confirmed 4 Oct |
 | 0b | Real screen on sample data, live updates, Settings, home-screen app | merged 4 Oct 2026; logo/date follow-up merged and published 5 Oct; home-screen icon follow-up merged 5 Oct | no source keys needed | Will saw the published dark look and white logo and added the app to his home screen, 5 Oct |
 | 1a | Shopify token manager, backfill, webhooks and polls | PR #7 merged and published 5 Oct; sessions fix PR #8 merged | configured for the 5 Oct live check | sessions column and sales query checked; full report agreement awaits 1b |
-| 1b | Shopify cards, watchdogs and 5 Oct follow-ups | implemented on `stage-1b-cards-reviews`; review pending | Shopify already configured; no new Shopify key | fixture checks; live checks below remain |
+| 1b | Shopify cards, watchdogs and 5 Oct follow-ups | PR #9; review fixes on `stage-1b-cards-reviews` | Shopify already configured; no new Shopify key | fixture checks; live checks below remain |
 | 1c | New reviews (Judge.me) | next, split from 1b; Publish flag remains off | `JUDGEME_API_TOKEN` needed for 1c | no |
 | 2 | Meta | not started | no | no |
 | 3 | Google Ads | not started | no | no |
@@ -82,5 +82,9 @@ The current 15-second SSE heartbeat re-sends the full snapshot even when the das
 Confirm Replit's deployed proxy chain and configure trust for exactly those hops so rate limits apply per visitor. Revisit the global login-options limit so a stranger cannot exhaust it and lock Will out for 15 minutes. Rate-limit behaviour is unchanged in this stage. Other later-stage items remain in plan section 12.
 
 ## Part 1b validation
+
+Review fixes, 5 Oct: paid orders with no dated successful SALE/CAPTURE (including invented zero-total orders) use creation time, while saturated transaction lists remain unknown. Null transaction timestamps are skipped. Fulfilled/restocked and fully refunded-unfulfilled orders are not due for dispatch, even without payment time or market. Known `sourceName` values recover missing channel information (including Draft Orders); remaining Unknown orders are compared once against the combined report channels with no stored match, while known-channel shortages still trip. New invented fixtures and regressions cover these cases and recovery. The header clock uses injected time; singular order wording and one-day Refill/email labels use the existing dashboard date format. Imports are at the top. No keys or required scopes change. Per-poll facts caching is deferred because webhook updates also require invalidation.
+
+Review validation: typecheck, all 113 tests on PGlite, production build, Chromium browser checks (390px/1280px, light/dark preferences) and secret scanning pass locally. CI checks the pushed revision against real PostgreSQL; its result is recorded in PR #9.
 
 API fixtures are entirely invented. `scripts/generate-shopify-cards-fixtures.py` reproducibly writes 400-day order/session/channel API envelopes; source units tests retain their small focused fixtures. The new suite covers tax/shipping/refund-day maths, old-window exclusions, missing data, geo/phantom guards, bundle tiers/TikTok, spike labels, email/refill attribution, allocated stock rates, dispatch across holidays, synthetic silence/recovery, persistent observations, channel shortage/recovery and escaped live rendering. Browser checks retain passkey/security, date controls, phone/desktop, Settings/SSE, no external requests and no sideways scroll, and verify No data on unavailable hero values. Final local/CI results are recorded in the pull request.

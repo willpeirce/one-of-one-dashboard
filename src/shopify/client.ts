@@ -7,7 +7,7 @@ const money = 'shopMoney { amount currencyCode }';
 const lineFields = `id sku quantity product { id } taxLines { priceSet { ${money} } }`;
 export const orderFields = (address: boolean) => `
   id createdAt updatedAt cancelledAt test displayFinancialStatus displayFulfillmentStatus currencyCode taxesIncluded
-  channelInformation { channelDefinition { channelName } }
+  sourceName channelInformation { channelDefinition { channelName } }
   transactions(first: 250) { kind status processedAt }
   discountCodes
   subtotalPriceSet { ${money} }

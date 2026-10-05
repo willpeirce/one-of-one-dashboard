@@ -2,9 +2,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap">
 <style>
-/* Mockup 7. Dark-first: a violet-to-magenta-to-blue sky that runs edge to edge, frosted glass panels on it,
-   white rounded type. Status colours (mint, amber, sky, red) were checked against the dark dial wells
-   and the light wells; every state also carries an icon and a word, never colour alone. */
+/* Mockup 8. Dark only (Will, 5 Oct): a violet-to-magenta-to-blue sky that runs edge to edge, frosted glass panels on it,
+   white rounded type, whatever the phone's light or dark setting. Status colours (mint, amber, sky, red) were checked
+   against the dark dial wells; every state also carries an icon and a word, never colour alone. */
 :root{
   color-scheme:dark;
   --bg:#1e0f48;
@@ -19,33 +19,10 @@
   --good:#4cf0a0; --warn:#ffc43d; --decide:#7fd8ff; --alarm:#ff5a6e; --info:rgba(255,255,255,.55);
   --chip-ink:#20103f;
   --sheet:rgba(34,16,78,.94); --shadow:0 24px 60px rgba(10,0,40,.38);
+  --logo-filter:brightness(0) invert(1) drop-shadow(0 1px 2px rgba(0,0,0,.25));
   --font:'Plus Jakarta Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
   --disp:'Outfit','Plus Jakarta Sans',system-ui,sans-serif;
   --r:28px; --r2:20px; --r3:14px;
-}
-@media (prefers-color-scheme:light){:root:not([data-theme="dark"]){
-  color-scheme:light; --bg:#ece8ff;
-  --sky:radial-gradient(70% 55% at 12% 0%,#f1c3ee 0%,rgba(241,195,238,0) 62%),radial-gradient(60% 50% at 92% 18%,#c3ccff 0%,rgba(195,204,255,0) 62%),linear-gradient(180deg,#dfd3ff 0%,#eae5ff 55%,#f4f1ff 100%);
-  --topbar:rgba(255,255,255,.55);
-  --glass:rgba(255,255,255,.58); --glass-2:rgba(255,255,255,.76); --glass-3:rgba(255,255,255,.92);
-  --line:rgba(40,20,110,.12); --line-2:rgba(40,20,110,.24);
-  --well:rgba(255,255,255,.82); --pointer-ring:#fff;
-  --ink:#1c1142; --ink-2:rgba(28,17,66,.82); --muted:rgba(28,17,66,.62); --faint:rgba(28,17,66,.4);
-  --accent:#ff6a45; --accent-ink:#fff; --solid:#2a1a66; --solid-ink:#fff;
-  --good:#0d9b5a; --warn:#b4760a; --decide:#1e78cc; --alarm:#d62f45; --info:rgba(28,17,66,.45);
-  --chip-ink:#fff; --sheet:rgba(255,255,255,.97); --shadow:0 24px 60px rgba(60,30,140,.18);
-}}
-:root[data-theme="light"]{
-  color-scheme:light; --bg:#ece8ff;
-  --sky:radial-gradient(70% 55% at 12% 0%,#f1c3ee 0%,rgba(241,195,238,0) 62%),radial-gradient(60% 50% at 92% 18%,#c3ccff 0%,rgba(195,204,255,0) 62%),linear-gradient(180deg,#dfd3ff 0%,#eae5ff 55%,#f4f1ff 100%);
-  --topbar:rgba(255,255,255,.55);
-  --glass:rgba(255,255,255,.58); --glass-2:rgba(255,255,255,.76); --glass-3:rgba(255,255,255,.92);
-  --line:rgba(40,20,110,.12); --line-2:rgba(40,20,110,.24);
-  --well:rgba(255,255,255,.82); --pointer-ring:#fff;
-  --ink:#1c1142; --ink-2:rgba(28,17,66,.82); --muted:rgba(28,17,66,.62); --faint:rgba(28,17,66,.4);
-  --accent:#ff6a45; --accent-ink:#fff; --solid:#2a1a66; --solid-ink:#fff;
-  --good:#0d9b5a; --warn:#b4760a; --decide:#1e78cc; --alarm:#d62f45; --info:rgba(28,17,66,.45);
-  --chip-ink:#fff; --sheet:rgba(255,255,255,.97); --shadow:0 24px 60px rgba(60,30,140,.18);
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 var(--font);-webkit-font-smoothing:antialiased;overflow-x:hidden}
@@ -61,7 +38,7 @@ svg.ic{width:1.1em;height:1.1em;fill:none;stroke:currentColor;stroke-width:2;str
 .top{position:sticky;top:env(safe-area-inset-top,0px);z-index:6;background:var(--topbar);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-bottom:1px solid var(--line)}
 .hin{max-width:1240px;margin:0 auto;padding-inline:16px;padding-block:10px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px}
 .logo{display:inline-flex;align-items:center;color:var(--ink);text-decoration:none}
-.logo img{height:34px;width:auto;display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,.25))}
+.logo img{height:34px;width:auto;display:block;filter:var(--logo-filter)}
 .pills{display:flex;gap:6px;justify-self:center;background:var(--glass);border:1px solid var(--line);border-radius:999px;padding:4px}
 .pill{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;border-radius:999px;text-decoration:none;color:var(--ink-2);font-weight:600;font-size:13.5px;white-space:nowrap;border:0;background:transparent;cursor:pointer}
 .pill svg{width:17px;height:17px}
@@ -105,6 +82,14 @@ svg.ic{width:1.1em;height:1.1em;fill:none;stroke:currentColor;stroke-width:2;str
 .seg{display:flex;width:max-content;max-width:100%;gap:4px;background:var(--well);border-radius:999px;padding:4px;margin-bottom:12px}
 .seg button{border:0;background:transparent;border-radius:999px;padding:7px 14px;font-family:var(--disp);font-weight:600;font-size:13.5px;color:var(--muted);cursor:pointer;white-space:nowrap}
 .seg button[aria-selected="true"]{background:var(--solid);color:var(--solid-ink)}
+.seg button .ic{width:15px;height:15px;margin-right:5px;vertical-align:-3px}
+.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (max-width:480px){
+  .seg{width:100%}
+  .seg button{flex:1 1 auto;padding:7px 8px;font-size:12.5px}
+  #picklbl{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  #pickbtn .ic{margin-right:0}
+}
 .greet h1{font-size:38px;font-weight:800;line-height:1.05;margin-top:6px}
 .sub{color:var(--ink-2);margin-top:10px;max-width:46ch;font-size:15.5px}
 .counts{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
@@ -122,8 +107,6 @@ svg.ic{width:1.1em;height:1.1em;fill:none;stroke:currentColor;stroke-width:2;str
 .tile.coral{--ink:var(--accent-ink);--ink-2:var(--accent-ink);--muted:rgba(42,16,48,.72);--line-2:rgba(42,16,48,.22);--spark:var(--accent-ink);background:var(--accent);border-color:transparent}
 .tile.solid{--ink:var(--solid-ink);--ink-2:var(--solid-ink);--muted:rgba(36,18,74,.66);--line-2:rgba(36,18,74,.18);--spark:var(--solid-ink);background:var(--solid);border-color:transparent}
 .tile.coral:hover,.tile.solid:hover{filter:brightness(1.04)}
-:root[data-theme="light"] .tile.coral,:root[data-theme="light"] .tile.solid{--muted:rgba(255,255,255,.78);--line-2:rgba(255,255,255,.3)}
-@media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .tile.coral,:root:not([data-theme="dark"]) .tile.solid{--muted:rgba(255,255,255,.78);--line-2:rgba(255,255,255,.3)}}
 .sl{font-size:12.5px;font-weight:600;color:var(--muted);letter-spacing:.02em}
 .sv{font-family:var(--disp);font-size:26px;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums;color:var(--ink)}
 .sv.big{font-size:40px;font-weight:800}
@@ -139,8 +122,6 @@ svg.ic{width:1.1em;height:1.1em;fill:none;stroke:currentColor;stroke-width:2;str
 .tile.dial .wm,.tile.ring .wm{width:200px;height:200px;right:-34px;bottom:-30px}
 .tile.dial .well,.tile.ring .well{background:color-mix(in srgb,var(--well) 45%,transparent)}
 .tile>*:not(.wm){position:relative;z-index:1}
-@media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .wm{opacity:.16}}
-:root[data-theme="light"] .wm{opacity:.16}
 .well{display:block;width:100%;background:var(--well);border-radius:var(--r3);padding:6px 8px 2px;margin-bottom:6px}
 .well svg{width:100%;height:auto;display:block}
 .tile.ring .well{padding:8px 26px 2px}
@@ -297,13 +278,42 @@ svg.ic{width:1.1em;height:1.1em;fill:none;stroke:currentColor;stroke-width:2;str
 .note{max-width:90ch}
 
 /* ---- sheet ----------------------------------------------------------------------- */
-dialog#sheet{border:0;padding:0;background:transparent;max-width:none;width:100%;margin:auto 0 0;max-height:92vh;color:var(--ink)}
-dialog#sheet::backdrop{background:rgba(10,0,40,.55);backdrop-filter:blur(4px)}
+dialog#sheet,dialog#picker{border:0;padding:0;background:transparent;max-width:none;width:100%;margin:auto 0 0;max-height:92vh;color:var(--ink)}
+dialog#sheet::backdrop,dialog#picker::backdrop{background:rgba(10,0,40,.55);backdrop-filter:blur(4px)}
 .sheet{background:var(--sheet);border:1px solid var(--line);border-radius:28px 28px 0 0;padding:12px 20px calc(20px + env(safe-area-inset-bottom,0px));max-width:720px;margin:0 auto;max-height:92vh;overflow:auto;box-shadow:var(--shadow);backdrop-filter:blur(20px)}
 .grab{width:44px;height:5px;border-radius:3px;background:var(--line-2);margin:0 auto 12px}
 .ttl{display:flex;align-items:center;gap:10px}
 .ttl h3{flex:1;font-size:18px;font-weight:700}
 .x{border:0;background:var(--glass-2);border-radius:50%;width:32px;height:32px;font-size:20px;line-height:1;cursor:pointer;color:var(--ink)}
+/* date picker (mockup 8): one day or a range, Monday-first, sample days from 1 Jan 2026 */
+#picker .ttl .ic{width:20px;height:20px;color:var(--accent)}
+.quick{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 6px}
+.calbar{display:flex;align-items:center;gap:8px;margin-top:8px}
+.calbar p{flex:1;text-align:center;color:var(--muted);font-size:13.5px;min-width:0}
+.nav{width:34px;height:34px;border-radius:50%;border:1px solid var(--line-2);background:var(--glass);color:var(--ink);font-size:20px;line-height:1;cursor:pointer;flex:none}
+.nav:disabled{opacity:.35;cursor:default}
+.cals{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:10px}
+.cals.one{grid-template-columns:1fr}
+.mon h4{font-family:var(--disp);font-size:15px;font-weight:700;text-align:center;margin:0 0 8px}
+.wk,.days{display:grid;grid-template-columns:repeat(7,1fr)}
+.wk span{font-size:11px;color:var(--faint);text-align:center;padding-bottom:4px;font-weight:600}
+.days{row-gap:4px}
+.day{border:0;background:transparent;height:38px;font:600 14px var(--disp);color:var(--ink);font-variant-numeric:tabular-nums;border-radius:999px;cursor:pointer;padding:0;min-width:0}
+.day:hover:not(:disabled){background:var(--glass-2)}
+.day:disabled{color:var(--faint);cursor:default}
+.day.today{box-shadow:inset 0 0 0 2px var(--accent)}
+.day.in{background:var(--glass-3);border-radius:0}
+.days>:nth-child(7n+1).in{border-radius:999px 0 0 999px}
+.days>:nth-child(7n).in{border-radius:0 999px 999px 0}
+.day.a,.day.b,.day.a:hover,.day.b:hover{background:var(--solid);color:var(--solid-ink)}
+.day.a.in{border-radius:999px 0 0 999px}
+.day.b.in{border-radius:0 999px 999px 0}
+.day.a.b{border-radius:999px}
+.days>:nth-child(7n).a.in,.days>:nth-child(7n+1).b.in{border-radius:999px}
+.day:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.pkfoot{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:flex-end;margin-top:16px}
+.pknote{flex:1 1 180px;font-size:12.5px;color:var(--faint);min-width:0}
+.act.primary:disabled{opacity:.45;cursor:default}
 dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:14px 0 0;font-size:14px}
 dt{font-family:var(--disp);font-weight:600;color:var(--muted)} dd{margin:0;color:var(--ink-2)}
 #sh-chart{margin-top:14px} #sh-chart svg{width:100%;height:auto;display:block}
@@ -388,7 +398,7 @@ button.pk{cursor:pointer;font:inherit;font-family:var(--disp);font-size:13px;fon
   <div class="left">
     <div class="glass greet">
       <div>
-        <div class="seg" role="tablist" id="period" aria-label="Period"><button role="tab" type="button" aria-selected="true" data-period="today">Today</button><button role="tab" type="button" aria-selected="false" data-period="yday">Yesterday</button><button role="tab" type="button" aria-selected="false" data-period="7d">Last 7 days</button></div>
+        <div class="seg" role="tablist" id="period" aria-label="Period"><button role="tab" type="button" aria-selected="true" data-period="today">Today</button><button role="tab" type="button" aria-selected="false" data-period="yday">Yesterday</button><button role="tab" type="button" aria-selected="false" data-period="7d">7 days</button><button role="tab" type="button" aria-selected="false" data-period="30d">30 days</button><button role="tab" type="button" aria-selected="false" data-period="pick" id="pickbtn" aria-haspopup="dialog" aria-label="Pick a day or dates"><svg class="ic" aria-hidden="true"><use href="#i-cal"/></svg><span id="picklbl">Dates</span></button></div>
         <span class="eyebrow" id="eyebrow">Wed 30 Sep · today so far</span>
         <h1>Morning, Will.</h1>
         <p class="sub" id="sub"><span id="sub1">6 orders so far, 4 by this time yesterday.</span> One alarm and five decisions are on the table.<span id="subrv"></span></p>
@@ -738,7 +748,7 @@ button.pk{cursor:pointer;font:inherit;font-family:var(--disp);font-size:13px;fon
     <span><i></i>Shopify 2 min</span><span><i></i>Meta 12 min</span><span><i></i>Google 58 min</span><span><i></i>Mailchimp 15 min</span><span><i></i>Uptime 1 min</span><span><i></i>HQ repo 07:39</span><span>· Daily ads check still runs: parallel day 1 of 7</span>
   </div>
   <div class="log" id="log"><strong>Today’s log</strong><ul id="loglist"><li class="mut">Nothing yet. Every button on this page writes a line here and to HQ.</li></ul></div>
-  <p class="note">Mockup 7 with sample data from the 29 Sep readout. The three reviews are invented samples. Buttons act on this page only. In the real dashboard, Pause and Step go to Meta after the confirm tap, Publish goes to Judge.me only if you allow that one write (otherwise reviews show Open only), every action is logged to HQ with an undo, and WhatsApp opens with the message ready to send. The Meta, Google, Shopify and email marks are drawn placeholders until the real files are embedded. The net margin tile is a sample until knowledge/costs.md is filled.</p>
+  <p class="note">Mockup 8 with sample data from the 29 Sep readout. Days picked with Dates use invented sample days from 1 Jan; only the last 15 days match the readout. The ad verdicts, tests and decisions below still read the last 7 days. The three reviews are invented samples. Buttons act on this page only. In the real dashboard, Pause and Step go to Meta after the confirm tap, Publish goes to Judge.me only if you allow that one write (otherwise reviews show Open only), every action is logged to HQ with an undo, and WhatsApp opens with the message ready to send. The Meta, Google, Shopify and email marks are drawn placeholders until the real files are embedded. The net margin tile is a sample until knowledge/costs.md is filled.</p>
 </footer>
 
 </main>
@@ -750,6 +760,17 @@ button.pk{cursor:pointer;font:inherit;font-family:var(--disp);font-size:13px;fon
     <dl id="sh-dl"><dt>Why</dt><dd id="sh-why"></dd><dt>Rule</dt><dd id="sh-rule"></dd><dt>Source</dt><dd id="sh-src"></dd></dl>
     <div id="sh-chart"></div>
     <div id="sh-extra"></div>
+  </div>
+</dialog>
+
+<dialog id="picker" aria-labelledby="pk-title">
+  <div class="sheet">
+    <div class="grab" aria-hidden="true"></div>
+    <div class="ttl"><svg class="ic" aria-hidden="true"><use href="#i-cal"/></svg><h3 id="pk-title">Pick a day or dates</h3><button class="x" id="pk-x" aria-label="Close">×</button></div>
+    <div class="quick" id="pkquick"><button class="act" type="button" data-q="14">Last 14 days</button><button class="act" type="button" data-q="mtd">Month to date</button><button class="act" type="button" data-q="lm">Last month</button><button class="act" type="button" data-q="ytd">Year to date</button></div>
+    <div class="calbar"><button class="nav" type="button" data-nav="-1" aria-label="Earlier month">‹</button><p id="pkhint" aria-live="polite"></p><button class="nav" type="button" data-nav="1" aria-label="Later month">›</button></div>
+    <div class="cals" id="pkcal"></div>
+    <div class="pkfoot"><span class="pknote">Sample days from 1 Jan 2026. Today counts as so far.</span><button class="act" type="button" id="pkclear">Clear</button><button class="act primary" type="button" id="pkgo" disabled>Pick a day</button></div>
   </div>
 </dialog>
 
@@ -875,9 +896,9 @@ button.pk{cursor:pointer;font:inherit;font-family:var(--disp);font-size:13px;fon
 
   // ---- 7-day sparkbars in the net-sales tile ----------------------------------
   function sparkBars(el){
-    const v=el.dataset.spark.split(',').map(Number), hi=Math.max(...v), n=v.length, W=220,H=34,g=6, w=(W-g*(n-1))/n;
+    const v=el.dataset.spark.split(',').map(Number), hi=Math.max(1,...v), n=v.length, W=220,H=34,g=n>14?2:6, w=(W-g*(n-1))/n;
     let s=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">`;
-    v.forEach((x,i)=>{const h=Math.max(3,H*x/hi); s+=`<rect x="${f(i*(w+g))}" y="${f(H-h)}" width="${f(w)}" height="${f(h)}" rx="3" fill="${i===n-1?'var(--spark)':'var(--line-2)'}"/>`;});
+    v.forEach((x,i)=>{const h=Math.max(3,H*x/hi); s+=`<rect x="${f(i*(w+g))}" y="${f(H-h)}" width="${f(w)}" height="${f(h)}" rx="${f(Math.min(3,w/2))}" fill="${i===n-1?'var(--spark)':'var(--line-2)'}"/>`;});
     el.innerHTML=s+'</svg>';
   }
 
@@ -1077,22 +1098,25 @@ button.pk{cursor:pointer;font:inherit;font-family:var(--disp);font-size:13px;fon
 
   // 7 rounded bars, a dashed line where a zone turns into Decide or Alarm, labels on the ends only
   function miniChart(d,dial){
-    const v=d.hist, n=v.length, W=320,H=96,top=16,bot=14,g=6, w=(W-g*(n-1))/n, fmt=fmtLike(d.hp?d.hp+'0':d.hs?'0'+d.hs:(dial&&dial.t)||'');
-    const z=dial&&dial.z?dial.z:null, lines=[];
+    const v=d.hist, n=v.length, W=320,H=96,top=16,bot=14,g=n>14?2:6, w=(W-g*(n-1))/n, fmt=fmtLike(d.hp?d.hp+'0':d.hs?'0'+d.hs:(dial&&dial.t)||'');
+    const z=dial&&dial.z?dial.z:null, lines=[], hl=d.hl||['7 days ago','yesterday'];
     if(z) for(let i=1;i<z.length;i++){ const a=RANK[z[i-1][2]]>=2, b=RANK[z[i][2]]>=2; if(a!==b) lines.push(z[i][0]); }
-    const hi=Math.max(...v,...lines)*1.08, y=x=>top+(H-top-bot)*(1-x/hi);
-    let s=`<svg viewBox="0 0 ${W} ${H}" aria-label="Last 7 days">`;
+    const hi=(Math.max(...v,...lines)||1)*1.08, y=x=>top+(H-top-bot)*(1-Math.max(0,x)/hi);
+    let s=`<svg viewBox="0 0 ${W} ${H}" aria-label="${esc(d.ha||'Last 7 days')}">`;
     v.forEach((x,i)=>{
       const st=z?zoneOf(x,z):(i===n-1?'accent':'line');
       const fill=st==='accent'?'var(--spark)':st==='line'?'var(--line-2)':COL[st];
-      s+=`<rect x="${f(i*(w+g))}" y="${f(y(x))}" width="${f(w)}" height="${f(H-bot-y(x))}" rx="4" fill="${fill}" fill-opacity="${z&&i<n-1?.55:1}"/>`;
+      const yy=Math.min(y(x),H-bot-2);
+      s+=`<rect x="${f(i*(w+g))}" y="${f(yy)}" width="${f(w)}" height="${f(H-bot-yy)}" rx="${f(Math.min(4,w/2))}" fill="${fill}" fill-opacity="${z&&i<n-1?.55:1}"/>`;
     });
     lines.forEach(b=>{ s+=`<line x1="0" x2="${W}" y1="${f(y(b))}" y2="${f(y(b))}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="4 4"/><text x="${W}" y="${f(y(b)-3)}" text-anchor="end" font-size="10" fill="var(--muted)">bar ${esc(fmt(b))}</text>`; });
-    s+=`<text x="${f(w/2)}" y="${f(y(v[0])-4)}" text-anchor="middle" font-size="10" fill="var(--ink-2)">${esc(fmt(v[0]))}</text>`;
-    s+=`<text x="${f(W-w/2)}" y="${f(y(v[n-1])-4)}" text-anchor="middle" font-size="10" font-weight="700" fill="var(--ink)">${esc(fmt(v[n-1]))}</text>`;
-    s+=`<text x="0" y="${H}" font-size="9.5" fill="var(--muted)">7 days ago</text><text x="${W}" y="${H}" text-anchor="end" font-size="9.5" fill="var(--muted)">yesterday</text></svg>`;
+    const nw=w<24, x0=nw?0:w/2, x1=nw?W:W-w/2;
+    s+=`<text x="${f(x0)}" y="${f(y(v[0])-4)}" text-anchor="${nw?'start':'middle'}" font-size="10" fill="var(--ink-2)">${esc(fmt(v[0]))}</text>`;
+    s+=`<text x="${f(x1)}" y="${f(y(v[n-1])-4)}" text-anchor="${nw?'end':'middle'}" font-size="10" font-weight="700" fill="var(--ink)">${esc(fmt(v[n-1]))}</text>`;
+    s+=`<text x="0" y="${H}" font-size="9.5" fill="var(--muted)">${esc(hl[0])}</text><text x="${W}" y="${H}" text-anchor="end" font-size="9.5" fill="var(--muted)">${esc(hl[1])}</text></svg>`;
     return s;
   }
+
 
   // ---- tests: live bars, how-sure dial, honest states ----------------------------------
   function erf(x){const sg=x<0?-1:1; x=Math.abs(x); const t=1/(1+0.3275911*x); const y=1-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-x*x); return sg*y;}
@@ -1171,11 +1195,175 @@ button.pk{cursor:pointer;font:inherit;font-family:var(--disp);font-size:13px;fon
     if(e.target.closest('.undo')){ undo(card); }
   });
 
-  // ---- period: Today / Yesterday / Last 7 days drive every hero number ------------------
+  // ---- sample days, 1 Jan to today (Wed 30 Sep 2026). Invented, except the last 15 days, which add up to the readout ----
+  const D0=Date.UTC(2026,0,1), DAY=864e5, T=Math.round((Date.UTC(2026,8,30)-D0)/DAY);
+  const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const MONTH=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const dt=n=>new Date(D0+n*DAY), dlab=n=>dt(n).getUTCDate()+' '+MON[dt(n).getUTCMonth()], wlab=n=>WD[dt(n).getUTCDay()]+' '+dlab(n);
+  const rlab=(a,b)=>a===b?dlab(a):dt(a).getUTCMonth()===dt(b).getUTCMonth()?dt(a).getUTCDate()+'–'+dlab(b):dlab(a)+'–'+dlab(b);
+  const mStart=m=>Math.round((Date.UTC(2026,m,1)-D0)/DAY), TM=dt(T).getUTCMonth();
+  const f1=n=>Math.round(n*10)/10, gb=n=>Math.round(n).toLocaleString('en-GB'), money=n=>'£'+gb(n), div=(x,y)=>y?x/y:0;
+  const OURS=0.4113; // our share of Meta spend in the readout week
+  const ROWS=(()=>{
+    let s=20260930;
+    const rnd=()=>{ s|=0; s=s+0x6D2B79F5|0; let t=Math.imul(s^s>>>15,1|s); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; };
+    const r=(a,b)=>a+(b-a)*rnd(), DOW=[1.12,.97,.95,1,.98,1.02,.98], R=[];
+    for(let n=0;n<258;n++){
+      const o=Math.max(8,Math.round((22+11*n/257)*DOW[dt(n).getUTCDay()]*r(.9,1.1))), uk=Math.round(o*r(.55,.65)), us=o-uk, sess=Math.round(o/r(.033,.04));
+      R.push({net:Math.round(o*r(44,50)),o,uk,us,sess,ukS:Math.round(sess*r(.45,.51)),ukM:uk*r(24,28),usM:us*r(28,36),g:r(70,110)});
+    }
+    [[1590,33,20,917],[1660,34,21,944],[1860,37,22,1028],[1720,35,21,972],[2060,42,25,1167],[1580,32,19,889],[1750,35,21,972]].forEach(([net,o,uk,sess])=>
+      R.push({net,o,uk,us:o-uk,sess,ukS:Math.round(sess*.49),ukM:uk*26.2,usM:(o-uk)*33.5,g:92}));
+    const net=[1640,1710,1980,1820,2310,1760,2099], o=[35,36,40,37,46,32,43], sess=[951,953,1032,1034,1126,919,1105], ukS=[470,468,508,506,556,452,480],
+      uk=[21,22,27,24,28,20,27], ukC=[26.6,25.9,29.1,25.6,25.6,28.8,24.96], usC=[31.2,36.4,33.0,38.9,30.1,35.7,34.61], sp=[1120,1170,1280,1200,1370,1086,1370];
+    net.forEach((x,i)=>{ const us=o[i]-uk[i], ukM=ukC[i]*uk[i], usM=usC[i]*us; R.push({net:x,o:o[i],uk:uk[i],us,sess:sess[i],ukS:ukS[i],ukM,usM,g:sp[i]-ukM-usM}); });
+    R.push({net:296,o:6,uk:2,us:4,sess:188,ukS:90,ukM:49,usM:111,g:14});
+    return R;
+  })();
+  const KEYS=['net','o','uk','us','sess','ukS','ukM','usM','g'];
+  function tot(a,b){
+    const t={}; KEYS.forEach(k=>t[k]=0); a=Math.max(0,a);
+    for(let n=a;n<=b;n++) KEYS.forEach(k=>t[k]+=ROWS[n][k]);
+    t.usS=t.sess-t.ukS; t.meta=t.ukM+t.usM; t.spend=t.meta+t.g; t.ours=t.meta*OURS; t.days=b-a+1;
+    return t;
+  }
+  const M={net:t=>t.net,orders:t=>t.o,cr:t=>100*div(t.o,t.sess),spend:t=>t.spend,roas:t=>div(t.net,t.spend),
+    margin:t=>t.net?100*(1-t.spend/t.net-.25):0,ukcpo:t=>div(t.ukM,t.uk),uscpo:t=>div(t.usM,t.us)};
+  const ADD={net:1,orders:1,spend:1};
+  const Z=[[12,25.2,'good'],[25.2,28,'warn'],[28,40,'decide']];
+
+  // the hero numbers for any day or range, in the same shape as HERO
+  function rangeHero(a,b,name){
+    const n=b-a+1, one=n===1, part=b===T, lab=rlab(a,b), wl=wlab(a), t=tot(a,b);
+    const when=(one?dlab(a):lab)+(part?', today so far':''), on=one?'on '+wl:'over '+lab;
+    const bs=one?a-7:a-n, base=bs>=0?tot(bs,a-1):null;
+    const cv=m=>base?(one&&ADD[m]?M[m](base)/7:M[m](base)):null;
+    const judge=(v,c)=>part?'sofar':c==null?'info':v>=c?'good':v<.85*c?'warn':'info';
+    const pct=(v,c)=>Math.round(Math.abs(v/c-1)*100);
+    const cmp=(v,c,fm)=>one?`${pct(v,c)}% ${v>=c?'above':'below'} the 7-day average of ${fm(c)}`:`${v>=c?'Up':'Down'} ${pct(v,c)}% on the previous ${n} days (${fm(c)})`;
+    const sg=(v,c)=>(v>=c?'+':'−')+pct(v,c)+'%';
+    const rule0=base?(one?'Green when at or above the 7-day average. Amber under 85% of it. Red is never used here: a quiet day is not a failure.':`Green when at or above the previous ${n} days, amber under 85% of it.`)
+      :'Sample days start on 1 Jan, so there is nothing earlier to compare with.';
+    const later=r=>part?'No judgement until today ends. After that, '+r[0].toLowerCase()+r.slice(1):r;
+    const rule=part?(base?later(rule0):'No judgement until today ends. '+rule0):rule0;
+    // chart under each number: day by day up to 31 bars, else week by week (average a day)
+    const lo=one?Math.max(0,a-6):a, ch=[];
+    if(b-lo+1<=31) for(let i=lo;i<=b;i++) ch.push([i,i]); else for(let i=a;i<=b;i+=7) ch.push([i,Math.min(b,i+6)]);
+    const wk=ch[0][0]!==ch[0][1];
+    const hl=wk?['week of '+dlab(a),'week of '+dlab(ch[ch.length-1][0])]:[dlab(lo),part?'today so far':dlab(b)];
+    const ha=(wk?'Week by week, average a day, ':'Day by day, ')+rlab(lo,b);
+    const hist=m=>ch.map(([x,y])=>{ const tt=tot(x,y), v=M[m](tt); return ADD[m]?Math.round(v/tt.days):m==='cr'?f1(v):m==='margin'?Math.round(v):f(v); });
+    const D=(m,o)=>Object.assign({rule,hist:hist(m),hl,ha},o);
+    let best=a; for(let i=a;i<=b;i++) if(ROWS[i].o>ROWS[best].o) best=i;
+
+    const cN=cv('net'), cO=cv('orders'), cr=M.cr(t), cC=cv('cr'), ro=M.roas(t), mg=M.margin(t);
+    const ukR=100*div(t.uk,t.ukS), usR=100*div(t.us,t.usS), lz=t.meta-t.ours;
+    const H={a,b,short:one?dlab(a):lab,spark:hist('net'),
+      eyebrow:one?`${wl} · one day`:`${lab} · ${name||n+' days'}${part?', today so far':''}`,
+      sub1:one?`${t.o} orders on ${wl}.`:`${gb(t.o)} orders over ${lab}${part?' so far':''}, avg ${gb(t.o/n)} a day.`,
+      per:name||(one?wl:lab)};
+    H.net={n:Math.round(t.net),state:judge(t.net,cN),pre:'£',
+      ss:one?(cN!=null?`7-day avg ${money(cN)} · ${sg(t.net,cN)}`:'no earlier days to compare'):`avg ${money(t.net/n)} a day`+(cN!=null?` · prev ${n} days ${money(cN)}`:''),
+      d:D('net',{hp:'£',src:'Shopify Analytics, net sales, UK and US markets, '+when,
+        why:one?`${money(t.net)} net sales on ${wl}`+(cN!=null?`, ${cmp(t.net,cN,money)}.`:'.'):`${money(t.net)} net sales over ${lab}, ${money(t.net/n)} a day.`+(cN!=null?` ${cmp(t.net,cN,money)}.`:'')})};
+    H.orders={n:t.o,state:judge(t.o,cO),
+      ss:one?(cO!=null?`avg ${gb(cO)} · `:'')+`UK ${t.uk} · US ${t.us}`:`UK ${gb(t.uk)} · US ${gb(t.us)}`+(cO!=null?` · prev ${n} days ${gb(cO)}`:''),
+      d:D('orders',{src:'Shopify orders, paid, both markets, '+when,
+        why:one?`${t.o} orders on ${wl}`+(cO!=null?`, against a 7-day average of ${gb(cO)}`:'')+`. UK ${t.uk}, US ${t.us}.`
+          :`${gb(t.o)} orders over ${lab}, ${gb(t.o/n)} a day.`+(cO!=null?` ${cmp(t.o,cO,gb)}.`:'')+` UK ${gb(t.uk)}, US ${gb(t.us)}. Best day ${wlab(best)} with ${ROWS[best].o}.`})};
+    H.cr={n:f1(cr),state:judge(cr,cC),suf:'%',dp:1,
+      ss:`${gb(t.o)} of ${gb(t.sess)} sessions · UK ${f1(ukR)}% · US ${f1(usR)}%`,
+      d:D('cr',{hs:'%',src:'Shopify Analytics, orders ÷ sessions, both markets, '+when,
+        why:`${gb(t.o)} orders from ${gb(t.sess)} sessions ${on}, ${f1(cr)}%`+(cC!=null?(one?`, against a 7-day average of ${f1(cC)}%`:`, against ${f1(cC)}% over the previous ${n} days`):'')
+          +`. UK ${gb(t.uk)} of ${gb(t.ukS)} (${f1(ukR)}%), US ${gb(t.us)} of ${gb(t.usS)} (${f1(usR)}%).`})};
+    H.spend={n:Math.round(t.spend),state:part?'sofar':'info',pre:'£',
+      ss:`ours ${money(t.ours)} · Laszlo ${money(lz)} · Google ${money(t.g)}`,
+      d:D('spend',{hp:'£',rule:'Spend has no bar of its own. The budget dial under Ads watches ours against the day plan.',src:'Meta Ads Manager (ours and Laszlo), Google Ads, '+when,
+        why:`${money(t.spend)} ${on}: Meta ${money(t.meta)} (ours ${money(t.ours)}, Laszlo ${money(lz)}), Google ${money(t.g)}.`})};
+    H.roas={n:f(ro),state:'info',suf:'×',dp:2,ss:'net sales ÷ all ad spend · set a bar',
+      d:D('roas',{hs:'×',rule:'No bar yet. Break-even ROAS comes from costs.md: 1 ÷ (1 − non-ad cost share). Grey until then.',src:'Shopify net sales ÷ Meta + Google + TikTok spend',
+        why:`${money(t.net)} ÷ ${money(t.spend)} ${on} = ${ro.toFixed(2)}×.`})};
+    H.margin={n:Math.round(mg),state:'est',suf:'%',ss:'live estimate · sample until costs.md is filled',
+      d:D('margin',{hs:'%',rule:`No bar until the costs are real. At ${ro.toFixed(2)}× ROAS the true number may be near zero.`,src:'Shopify net sales and orders, knowledge/costs.md, Meta + Google + TikTok spend',
+        why:`Sample only. Assumes non-ad costs at 25% of net sales until knowledge/costs.md is filled: 1 − ${money(t.spend)} ÷ ${money(t.net)} − 25% = ${Math.round(mg)}%.`})};
+    [['ukcpo','UK','Amber from 90% of the £28 blended bar (£25.20). Over £28 is a decision: cut the weakest UK set that day.'],
+     ['uscpo','US','Over £28 is a decision, not an alarm: pick the US set to cut. Red is never used here.']].forEach(([k,c,r])=>{
+      const v=M[k](t); let over=0;
+      for(let i=a;i<=b;i++) if(M[k](tot(i,i))>28) over++;
+      const days=over===n?`All ${n} days were`:over===1?'1 day was':over?`${over} of ${n} days were`:'No day was';
+      H[k]=Object.assign({v:f(v),min:12,max:40,t:'£'+v.toFixed(2),l:c+' Meta cost per order',z:Z,
+        s:one?'bar £28':part?'so far · bar £28':`${n}-day blend · bar £28`,
+        d:D(k,{hp:'£',rule:later(r),src:`Meta spend ${c} ÷ Shopify ${c} orders, `+when,
+          why:one?`${c} Meta spend on ${wl} ÷ ${c} orders: £${v.toFixed(2)}, ${v>28?'over':'under'} the £28 bar.`
+            :`${c} Meta spend over ${lab} ÷ ${c} orders: £${v.toFixed(2)}. ${days} over £28.`})},part?{cap:'sofar'}:{});
+    });
+    return H;
+  }
+
+  // ---- date picker: tap a day, tap a second day for a range, or a quick range -----------------
+  const PRESET={today:[T,T],yday:[T-1,T-1],'7d':[T-7,T-1],'30d':[T-30,T-1]};
+  let curR=PRESET.today;
+  const picker=$('#picker'), P={a:null,b:null,phase:0,view:TM,vmin:0,two:false};
+  function monthHTML(m){
+    const s=mStart(m), len=mStart(m+1)-s, lead=(dt(s).getUTCDay()+6)%7;
+    let h=`<div class="mon"><h4>${MONTH[m]} 2026</h4><div class="wk" aria-hidden="true">${'MTWTFSS'.split('').map(c=>`<span>${c}</span>`).join('')}</div><div class="days">`+'<span></span>'.repeat(lead);
+    for(let n=s;n<s+len;n++){
+      const sel=P.a!=null&&n>=P.a&&n<=P.b, c=['day'];
+      if(n===T) c.push('today'); if(sel&&P.a!==P.b) c.push('in'); if(n===P.a) c.push('a'); if(n===P.b) c.push('b');
+      h+=`<button type="button" class="${c.join(' ')}" data-n="${n}" aria-label="${wlab(n)} 2026${n===T?', today':''}" aria-pressed="${sel}"${n>T?' disabled':''}>${dt(n).getUTCDate()}</button>`;
+    }
+    return h+'</div></div>';
+  }
+  function drawPicker(){
+    const ms=P.two?[P.view-1,P.view]:[P.view], cal=$('#pkcal');
+    cal.classList.toggle('one',!P.two); cal.innerHTML=ms.map(monthHTML).join('');
+    $('#picker [data-nav="-1"]').disabled=P.view<=P.vmin; $('#picker [data-nav="1"]').disabled=P.view>=TM;
+    const go=$('#pkgo'), has=P.a!=null, n=has?P.b-P.a+1:0;
+    go.disabled=!has; go.textContent=has?'Show '+rlab(P.a,P.b)+(n>1?` · ${n} days`:''):'Pick a day';
+    $('#pkhint').textContent=P.phase==='fresh'?`Showing ${rlab(curR[0],curR[1])}. Tap a day to start.`
+      :P.phase===1?`${dlab(P.a)}. Tap another day for a range, or Show.`
+      :P.phase===2?`${rlab(P.a,P.b)} · ${n} days. Tap a day to start again.`:'Tap a day. Tap a second day for a range.';
+  }
+  function openPicker(){
+    P.a=curR[0]; P.b=curR[1]; P.phase='fresh';
+    P.two=matchMedia('(min-width:641px)').matches; P.vmin=P.two?1:0;
+    P.view=clamp(dt(curR[1]).getUTCMonth(),P.vmin,TM);
+    drawPicker(); picker.showModal();
+  }
+  function tapDay(n){
+    if(P.phase!==1){ P.a=P.b=n; P.phase=1; }
+    else if(n!==P.a){ P.b=Math.max(P.a,n); P.a=Math.min(P.a,n); P.phase=2; }
+    drawPicker(); const d=$(`#pkcal [data-n="${n}"]`); if(d) d.focus();
+  }
+  function applyRange(a,b,name){
+    if(picker.open) picker.close();
+    const k=Object.keys(PRESET).find(p=>PRESET[p][0]===a&&PRESET[p][1]===b);
+    if(k) setPeriod(k); else setPeriod('pick',rangeHero(a,b,name));
+  }
+  $('#pkcal').addEventListener('click',e=>{ const d=e.target.closest('.day'); if(d&&!d.disabled) tapDay(+d.dataset.n); });
+  $('#pkquick').addEventListener('click',e=>{
+    const q=(e.target.closest('[data-q]')||{}).dataset; if(!q) return;
+    if(q.q==='14') applyRange(T-14,T-1,'last 14 days');
+    if(q.q==='mtd') applyRange(mStart(TM),T,'month to date');
+    if(q.q==='lm') applyRange(mStart(TM-1),mStart(TM)-1,'last month');
+    if(q.q==='ytd') applyRange(0,T,'year to date');
+  });
+  $$('#picker [data-nav]').forEach(b=>b.addEventListener('click',()=>{ P.view=clamp(P.view+Number(b.dataset.nav),P.vmin,TM); drawPicker(); }));
+  $('#pkclear').addEventListener('click',()=>{ P.a=P.b=null; P.phase=0; drawPicker(); });
+  $('#pkgo').addEventListener('click',()=>{ if(P.a!=null) applyRange(P.a,P.b); });
+  $('#pk-x').addEventListener('click',()=>picker.close());
+  picker.addEventListener('click',e=>{ if(e.target===picker) picker.close(); });
+
+  // ---- period: Today / Yesterday / 7 days / 30 days / Dates drive every hero number -------
   const HERO={"today":{"eyebrow":"Wed 30 Sep · today so far","sub1":"6 orders so far, 4 by this time yesterday.","per":"today so far","net":{"n":296,"state":"sofar","d":{"why":"£296 net sales so far today from 6 orders, UK 2 and US 4. 4 orders by this time yesterday.","rule":"No judgement on a part day. The tile reads So far until midnight UK, then it is judged against the 7-day average: green at or above it, amber under 85%. Red is never used here: a quiet day is not a failure.","src":"Shopify Analytics, net sales, UK and US markets, 30 Sep 00:00 UK to now","hist":[1640,1710,1980,1820,2310,1760,2099],"hp":"£"},"ss":"6 orders · 7-day avg £1,903 a day","pre":"£"},"orders":{"n":6,"state":"sofar","d":{"why":"6 orders so far today, 4 by this time yesterday. Last order 23 minutes ago: US, 2 kits.","rule":"No judgement on a part day. From midnight UK: green at or above the 7-day average of 38, amber under 85% of it.","src":"Shopify orders, paid, both markets, today so far","hist":[35,36,40,37,46,32,43]},"ss":"UK 2 · US 4 · 4 by this time yesterday"},"cr":{"n":3.2,"state":"sofar","d":{"why":"6 orders from 188 sessions so far today, 3.2%. The 7-day average is 3.8%.","rule":"No judgement on a part day. From midnight UK: green at or above the 7-day average, amber under 85% of it. Sessions count every visit, so a big ad day lowers the rate before it lifts orders.","src":"Shopify Analytics, orders ÷ sessions, both markets, today so far","hist":[3.7,3.8,3.9,3.6,4.1,3.5,3.9],"hs":"%"},"ss":"6 of 188 sessions · 7-day avg 3.8%","suf":"%","dp":1},"spend":{"n":174,"state":"sofar","d":{"why":"£174 so far today: ours £59, Laszlo £101, Google £14. TikTok shows here once the freelancer’s campaign serves.","rule":"Spend has no bar of its own. The budget dial under Ads watches ours against the day plan.","src":"Meta Ads Manager (ours and Laszlo), Google Ads, TikTok once it serves, today so far","hist":[1120,1170,1280,1200,1370,1086,1370],"hp":"£"},"ss":"ours £59 · Laszlo £101 · Google £14","pre":"£"},"roas":{"n":1.7,"state":"info","d":{"why":"£296 net sales ÷ £174 ad spend so far today (Meta ours and Laszlo, Google; TikTok once it serves) = 1.70×.","rule":"No bar yet. Break-even ROAS comes from costs.md: 1 ÷ (1 − non-ad cost share). Grey until then.","src":"Shopify net sales ÷ Meta + Google + TikTok spend","hist":[1.46,1.46,1.55,1.52,1.69,1.62,1.53],"hs":"×"},"ss":"net sales ÷ all ad spend · set a bar","suf":"×","dp":2},"margin":{"n":16,"state":"est","d":{"why":"Sample only. Assumes landed cost, fulfilment, payment fees and discounts at 25% of net sales until knowledge/costs.md is filled: 1 − £174 ÷ £296 − 25% = 16%. Then: (net sales − landed cost − fulfilment per parcel from last month’s shipping invoices − fees − discounts − all ad spend) ÷ net sales.","rule":"No bar until the costs are real. At 1.53× ROAS yesterday the true number may be near zero.","src":"Shopify net sales and orders, knowledge/costs.md, Meta + Google + TikTok spend","hist":[7,7,10,9,16,13,10],"hs":"%"},"ss":"live estimate · sample until costs.md is filled","suf":"%"},"ukcpo":{"v":24.5,"min":12,"max":40,"t":"£24.50","l":"UK Meta cost per order","s":"so far · bar £28","z":[[12,25.2,"good"],[25.2,28,"warn"],[28,40,"decide"]],"d":{"why":"£49 of UK Meta spend so far today (ours plus Laszlo) over 2 UK orders. Too few orders to judge.","rule":"No judgement on a part day. From midnight UK: amber from 90% of the £28 blended bar (£25.20), over £28 is a decision.","src":"Meta spend UK ÷ Shopify UK orders, today so far","hist":[26.6,25.9,29.1,25.6,25.6,28.8,24.96],"hp":"£"},"cap":"sofar"},"uscpo":{"v":27.75,"min":12,"max":40,"t":"£27.75","l":"US Meta cost per order","s":"so far · bar £28","z":[[12,25.2,"good"],[25.2,28,"warn"],[28,40,"decide"]],"d":{"why":"£111 of US Meta spend so far today (ours plus Laszlo) over 4 US orders. Too few orders to judge.","rule":"No judgement on a part day. From midnight UK: amber from 90% of the £28 blended bar (£25.20), over £28 is a decision.","src":"Meta spend US ÷ Shopify US orders, today so far","hist":[31.2,36.4,33.0,38.9,30.1,35.7,34.61],"hp":"£"},"cap":"sofar"}},"yday":{"eyebrow":"Tue 29 Sep · yesterday, a month-end spike day","sub1":"43 orders yesterday, best Tuesday this month.","per":"yesterday","net":{"n":2099,"state":"good","d":{"why":"£2,099 net sales, 10% above the 7-day average of £1,903. Spike-day pattern: strong UK morning, US afternoon.","rule":"Green when at or above the 7-day average. Amber under 85% of it. Red is never used here: a quiet day is not a failure.","src":"Shopify Analytics, net sales, UK and US markets, 29 Sep 00:00–23:59 UK","hist":[1640,1710,1980,1820,2310,1760,2099],"hp":"£"},"ss":"7 days · avg £1,903 · yesterday +10%","pre":"£"},"orders":{"n":43,"state":"good","d":{"why":"43 orders against a 7-day average of 38. UK 27, US 16.","rule":"Green at or above the 7-day average, amber under 85% of it.","src":"Shopify orders, paid, both markets","hist":[35,36,40,37,46,32,43]},"ss":"avg 38 · UK 27 · US 16"},"cr":{"n":3.9,"state":"good","d":{"why":"43 orders from 1,105 sessions, 3.9%, against a 7-day average of 3.8%. UK 27 of 480 (5.6%), US 16 of 625 (2.6%).","rule":"Green at or above the 7-day average, amber under 85% of it.","src":"Shopify Analytics, orders ÷ sessions, both markets, 29 Sep","hist":[3.7,3.8,3.9,3.6,4.1,3.5,3.9],"hs":"%"},"ss":"43 of 1,105 sessions · UK 5.6% · US 2.6%","suf":"%","dp":1},"spend":{"n":1370,"state":"info","d":{"why":"£1,370 across Meta and Google yesterday: ours £466, Laszlo £810, Google £94.52.","rule":"Spend has no bar of its own. The budget dial under Ads watches ours against the day plan.","src":"Meta Ads Manager and Google Ads, yesterday","hist":[1120,1170,1280,1200,1370,1086,1370],"hp":"£"},"ss":"ours £466 · Laszlo £810 · Google £95","pre":"£"},"roas":{"n":1.53,"state":"info","d":{"why":"£2,099 ÷ £1,370 yesterday = 1.53×. Meta ours £466, Laszlo £810, Google £95.","rule":"No bar yet. Break-even ROAS comes from costs.md: 1 ÷ (1 − non-ad cost share). Grey until then.","src":"Shopify net sales ÷ Meta + Google + TikTok spend","hist":[1.46,1.46,1.55,1.52,1.69,1.62,1.53],"hs":"×"},"ss":"net sales ÷ all ad spend · set a bar","suf":"×","dp":2},"margin":{"n":10,"state":"est","d":{"why":"Sample only. Assumes non-ad costs at 25% of net sales until knowledge/costs.md is filled: 1 − £1,370 ÷ £2,099 − 25% = 10%.","rule":"No bar until the costs are real. At 1.53× ROAS the true number may be near zero.","src":"Shopify net sales and orders, knowledge/costs.md, Meta + Google + TikTok spend","hist":[7,7,10,9,16,13,10],"hs":"%"},"ss":"live estimate · sample until costs.md is filled","suf":"%"},"ukcpo":{"v":24.96,"min":12,"max":40,"t":"£24.96","l":"UK Meta cost per order","s":"bar £28 · best this week","z":[[12,25.2,"good"],[25.2,28,"warn"],[28,40,"decide"]],"d":{"why":"All UK Meta spend (ours plus Laszlo) divided by UK Shopify orders. £24.96 is the lowest of the last 7 days.","rule":"Amber from 90% of the £28 blended bar (£25.20). Over £28 is a decision: cut the weakest UK set that day.","src":"Meta spend UK ÷ Shopify UK orders, yesterday","hist":[26.6,25.9,29.1,25.6,25.6,28.8,24.96],"hp":"£"}},"uscpo":{"v":34.61,"min":12,"max":40,"t":"£34.61","l":"US Meta cost per order","s":"bar £28 · see row 2","z":[[12,25.2,"good"],[25.2,28,"warn"],[28,40,"decide"]],"d":{"why":"US blended cost per order has been over the £28 bar on all 7 days. The News article US feed set (7d £43.52 per purchase) is the main cause and has its own row on the table.","rule":"Over £28 is a decision, not an alarm: pick the US set to cut. Red is never used here.","src":"Meta spend US ÷ Shopify US orders, yesterday","hist":[31.2,36.4,33.0,38.9,30.1,35.7,34.61],"hp":"£"}}},"7d":{"eyebrow":"23–29 Sep · last 7 days","sub1":"269 orders in the last 7 days, avg 38 a day.","per":"last 7 days","net":{"n":13319,"state":"good","d":{"why":"£13,319 net sales over 23–29 Sep, £1,903 a day. Up 9% on the previous 7 days (£12,220).","rule":"Green when at or above the previous 7 days, amber under 85% of it.","src":"Shopify Analytics, net sales, UK and US markets, 23–29 Sep","hist":[1640,1710,1980,1820,2310,1760,2099],"hp":"£"},"ss":"avg £1,903 a day · prev 7 days £12,220","pre":"£"},"orders":{"n":269,"state":"good","d":{"why":"269 orders over 23–29 Sep, 38 a day. UK 169, US 100. Best day Sun 27 Sep with 46.","rule":"Green when at or above the previous 7 days (248), amber under 85% of it.","src":"Shopify orders, paid, both markets, 23–29 Sep","hist":[35,36,40,37,46,32,43]},"ss":"UK 169 · US 100 · prev 7 days 248"},"cr":{"n":3.8,"state":"good","d":{"why":"269 orders from 7,120 sessions over 23–29 Sep, 3.8%. UK 169 of 3,440 (4.9%), US 100 of 3,680 (2.7%).","rule":"Green when at or above the previous 7 days, amber under 85% of it.","src":"Shopify Analytics, orders ÷ sessions, both markets, 23–29 Sep","hist":[3.7,3.8,3.9,3.6,4.1,3.5,3.9],"hs":"%"},"ss":"269 of 7,120 sessions · UK 4.9% · US 2.7%","suf":"%","dp":1},"spend":{"n":8596,"state":"info","d":{"why":"£8,596 over 23–29 Sep: Meta £7,931 (ours £3,262, Laszlo £4,669), Google £665.","rule":"Spend has no bar of its own. The budget dial under Ads watches ours against the day plan.","src":"Meta Ads Manager (ours and Laszlo), Google Ads, 23–29 Sep","hist":[1120,1170,1280,1200,1370,1086,1370],"hp":"£"},"ss":"ours £3,262 · Laszlo £4,669 · Google £665","pre":"£"},"roas":{"n":1.55,"state":"info","d":{"why":"£13,319 ÷ £8,596 over 23–29 Sep = 1.55×.","rule":"No bar yet. Break-even ROAS comes from costs.md: 1 ÷ (1 − non-ad cost share). Grey until then.","src":"Shopify net sales ÷ Meta + Google + TikTok spend","hist":[1.46,1.46,1.55,1.52,1.69,1.62,1.53],"hs":"×"},"ss":"net sales ÷ all ad spend · set a bar","suf":"×","dp":2},"margin":{"n":10,"state":"est","d":{"why":"Sample only. Assumes non-ad costs at 25% of net sales until knowledge/costs.md is filled: 1 − £8,596 ÷ £13,319 − 25% = 10%.","rule":"No bar until the costs are real. At 1.53× ROAS the true number may be near zero.","src":"Shopify net sales and orders, knowledge/costs.md, Meta + Google + TikTok spend","hist":[7,7,10,9,16,13,10],"hs":"%"},"ss":"live estimate · sample until costs.md is filled","suf":"%"},"ukcpo":{"v":26.65,"min":12,"max":40,"t":"£26.65","l":"UK Meta cost per order","s":"7-day blend · bar £28","z":[[12,25.2,"good"],[25.2,28,"warn"],[28,40,"decide"]],"d":{"why":"UK Meta spend over the 7 days ÷ UK orders: £26.65. Two days were over £28 (25 and 28 Sep).","rule":"Amber from 90% of the £28 blended bar (£25.20). Over £28 is a decision: cut the weakest UK set that day.","src":"Meta spend UK ÷ Shopify UK orders, 23–29 Sep","hist":[26.6,25.9,29.1,25.6,25.6,28.8,24.96],"hp":"£"}},"uscpo":{"v":34.27,"min":12,"max":40,"t":"£34.27","l":"US Meta cost per order","s":"7-day blend · bar £28 · see row 2","z":[[12,25.2,"good"],[25.2,28,"warn"],[28,40,"decide"]],"d":{"why":"US Meta spend over the 7 days ÷ US orders: £34.27. All 7 days were over the £28 bar; the News article US feed set is the main cause and has its own row on the table.","rule":"Over £28 is a decision, not an alarm: pick the US set to cut. Red is never used here.","src":"Meta spend US ÷ Shopify US orders, 23–29 Sep","hist":[31.2,36.4,33.0,38.9,30.1,35.7,34.61],"hp":"£"}}}};
-  function setPeriod(p){
-    const H=HERO[p]; if(!H) return;
+  const SPARK0=$('#hero .spark').dataset.spark.split(',').map(Number);
+  function setPeriod(p,H){
+    H=H||HERO[p]; if(!H) return;
+    curR=p==='pick'?[H.a,H.b]:PRESET[p];
     $$('#period [data-period]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.period===p)));
+    $('#picklbl').textContent=p==='pick'?H.short:'Dates';
+    $('#pickbtn').setAttribute('aria-label',p==='pick'?'Dates, showing '+H.short:'Pick a day or dates');
     $('#eyebrow').textContent=H.eyebrow; $('#sub1').textContent=H.sub1;
     $$('#hero .tile[data-k]').forEach(el=>{
       const t=H[el.dataset.k]; if(!t) return;
@@ -1186,9 +1374,10 @@ button.pk{cursor:pointer;font:inherit;font-family:var(--disp);font-size:13px;fon
       const ss=$('.ss',el); if(ss) ss.textContent=t.ss;
       const ch=$('.chip',el); if(ch) ch.outerHTML=chip(t.state);
     });
+    const sp=$('#hero .spark'); if(sp){ sp.dataset.spark=(H.spark||SPARK0).join(','); sparkBars(sp); }
     pulse();
   }
-  $('#period').addEventListener('click',e=>{ const b=e.target.closest('[data-period]'); if(b) setPeriod(b.dataset.period); });
+  $('#period').addEventListener('click',e=>{ const b=e.target.closest('[data-period]'); if(!b) return; if(b.dataset.period==='pick') openPicker(); else setPeriod(b.dataset.period); });
 
   // ---- boot --------------------------------------------------------------------------------
   $$('.dial[data-dial]').forEach(renderDial);
@@ -1223,6 +1412,7 @@ button.pk{cursor:pointer;font:inherit;font-family:var(--disp);font-size:13px;fon
   $('#counts').addEventListener('click',e=>{ if(!e.target.closest('[data-rv]')) return; const r=$('#reviews'); r.scrollIntoView({behavior:reduce?'auto':'smooth',block:'start'}); });
 
   tabDots(); deckCount(); revCount();
+  HERO['30d']=rangeHero(T-30,T-1,'last 30 days');
   setPeriod('today');
   $('#tabs').addEventListener('click',e=>{const t=e.target.closest('.tab'); if(t){ if(q) q.value=''; $$('[data-panel] .tile').forEach(x=>x.hidden=false); if(dialcount) dialcount.textContent=dialcountText; selectTab(t.dataset.tab);} });
   const h=location.hash.replace('#',''); if(TABS.includes(h)) selectTab(h);

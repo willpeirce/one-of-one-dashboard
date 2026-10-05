@@ -1,6 +1,6 @@
 # Spec (read-only copy)
 
-Copied from the HQ repo `willpeirce/one-of-one-hq` at commit 6e3a05d by `scripts/dashboard-seed.sh`. Do not edit these files here: HQ holds the master copy, and the next refresh overwrites them. Paths inside them (`knowledge/`, `ops/`, `log/`, `STATUS.md`) are HQ files.
+Copied from the HQ repo `willpeirce/one-of-one-hq` at commit 1e15222 by `scripts/dashboard-seed.sh`. Do not edit these files here: HQ holds the master copy, and the next refresh overwrites them. Paths inside them (`knowledge/`, `ops/`, `log/`, `STATUS.md`) are HQ files.
 
 | File here | HQ source |
 |---|---|

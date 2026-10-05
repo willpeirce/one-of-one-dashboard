@@ -13,7 +13,7 @@ Instructions for any coding agent working in this repo. The first build is done 
 
 1. `docs/BUILD-STATUS.md` and `docs/DECISIONS.md`: where the build is.
 2. `docs/spec/plan.md`: sections 1 to 7 before writing code, then 8 to 13 as your stage needs them. Keys, sources, the facts the code must handle, metric definitions, build stages, screens.
-3. `docs/spec/mockup.html`: the screen. Open it in a browser at phone width and at desktop width, in both themes. Port it; don't redesign it.
+3. `docs/spec/mockup.html`: the screen. Open it in a browser at phone width and at desktop width. It has one look, dark only, whatever the browser's light or dark setting. Port it; don't redesign it.
 4. `docs/spec/control-centre.md` (what each part of the mockup means and what it defers) and `docs/spec/design-rules.md` (Will's taste).
 5. As needed: `docs/spec/tests-register.md` (the Tests section and its stopping rule, 7.8) and `docs/spec/costs.md` (the costs table behind net margin, stage 6).
 
@@ -40,7 +40,7 @@ Breaking one of these fails the review, whatever else the pull request does.
 ## Stack
 
 - One service: Node 24 and TypeScript, PostgreSQL, served from a Replit Reserved VM.
-- Front end ported from `docs/spec/mockup.html`: keep its look, layout, fonts, both themes and its phone and desktop behaviour. Choose the front-end approach (plain TypeScript and templates, or a small framework) and record why in DECISIONS. The page must work as an installed home-screen app (web app manifest, icons from `docs/spec/logo.png`).
+- Front end ported from `docs/spec/mockup.html`: keep its look (dark only, no theme switch), layout, fonts and its phone and desktop behaviour. Choose the front-end approach (plain TypeScript and templates, or a small framework) and record why in DECISIONS. The page must work as an installed home-screen app (web app manifest, icons from `docs/spec/logo.png`).
 - Live updates over Server-Sent Events. Passkey sign-in (WebAuthn, Face ID and Touch ID); `DASHBOARD_SETUP_CODE` adds a device; attempts are rate-limited; sessions last 30 days.
 - `/health` returns status only, no data. A source health table, Settings (only the fields in plan 7.7) and an audit log.
 - Database migrations in the repo. Ask (stage 7) uses a read-only database role. Keys the app makes itself (session signing, push) live in a table that role can't read.

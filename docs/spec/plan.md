@@ -213,7 +213,7 @@ Order: foundations, then Shopify, Meta, Google Ads and Mailchimp (every other nu
 
 ### Stage 0: foundations
 - Will: create the private repo `one-of-one-dashboard` and give the Claude GitHub App access to it (HQ setup step 9), then connect Codex to that repo only, with no secrets (`docs/dashboard-build.md`). A Claude session seeds it with the build pack. Once stage 0 is merged, in Replit: Import from GitHub, giving Replit access to that one repo only (if Replit offers its Agent to set things up, decline); add PostgreSQL; publish as a Reserved VM; link the dashboard's address (add the records Replit shows wherever oneofonehq.com's DNS is managed); add `DASHBOARD_SETUP_CODE`.
-- The address used throughout this plan, `pulse.oneofonehq.com`, is a working name until Will confirms it (open item 5). Settle it before any passkey is registered, because a passkey belongs to one address.
+- The address used throughout this plan, `pulse.oneofonehq.com`, was a working name. Decided by Will on 2 Oct (open item 5): the dashboard starts on Replit's own `*.replit.app` address, so no DNS is needed now, and later moves to a kindarare.com subdomain. Read `pulse.oneofonehq.com` in this plan as "the dashboard's address". A passkey belongs to one address, so the move means updating `APP_ORIGIN` in Replit Secrets and enrolling the phone again (about 2 minutes), plus a `log/` entry.
 - Builder (Codex for the first build, in two parts, 0a and 0b):
   - One Node 24 + TypeScript service with PostgreSQL. `.replit` holds the run, build and deployment settings so Replit needs no setup. A `replit.md` tells Replit's agent (which reads that file) not to change anything. Check which database the published app uses and note it in DECISIONS.
   - GitHub Actions on every pull request: typecheck, tests, and a secret scan (gitleaks or similar) that fails on anything that looks like a key.
@@ -294,7 +294,7 @@ Principles, shown on the page and kept true:
 3. Green stays quiet. Healthy checks collapse into one pill; only a tripped check is named.
 4. Hard caps: ten numbers up top, five risks, three opportunities. Dismiss one and the next comes up.
 5. Every item links out to where Will deals with it.
-6. Weekly for ads, monthly for margin. The hero opens on Today, and every hero number follows the period switch (Today, Yesterday, Last 7 days; Will, 1 Oct 2026). Ad verdicts still read 7 days whatever the period.
+6. Weekly for ads, monthly for margin. The hero opens on Today, and every hero number follows the period switch (Today, Yesterday, 7 days, 30 days, and Dates for any one day or range; Will, 1 and 4 Oct 2026). Ad verdicts still read 7 days whatever the period.
 7. Ask instead of digging.
 8. Nothing changes silently. The app reads from every source and writes only to its own database. Uploads are shown line by line and confirmed before they save.
 
@@ -302,7 +302,7 @@ Principles, shown on the page and kept true:
 - One header row on every width: the wordmark ("Pulse" hidden on phones), the watchdog pill, and on tablet and desktop the tabs: Business, Handover (badge: items waiting on Will), UGC (badge: replies owed).
 - Phones (under 760px): a bottom tab bar instead (Business, Handover, UGC, Ask) with the same badges, clear of the home indicator. The floating Ask button is desktop only.
 - Controls row: a date menu (Today, Yesterday, Last 7 days, Last 30 days, Pick a day or dates; the same date twice is one day) and a compare menu. Hidden on Handover.
-- Period switch on the hero (mockup 6): Today, Yesterday, Last 7 days as tabs. It drives every hero number: net sales, orders, conversion rate, ad spend, UK and US cost per order, overall ROAS and the net margin estimate. Today reads "so far" with the same time yesterday beside it.
+- Period switch on the hero (mockup 8, Will 4 Oct): Today, Yesterday, 7 days and 30 days as tabs, then a Dates button (calendar icon; the word is hidden on phones) that opens a calendar: tap one day, or a first and a last day for a range, then Show. Quick ranges: last 14 days, month to date, last month, year to date. A day or range that matches a tab selects that tab. One month on a phone as a bottom sheet, two side by side from 641px. The eyebrow names the dates and the period ("8–20 Sep · 13 days"); the net sales bars are daily up to 31 days and weekly beyond. No future days. It drives every hero number: net sales, orders, conversion rate, ad spend, UK and US cost per order, overall ROAS and the net margin estimate. Today reads "so far" with the same time yesterday beside it.
 - Watchdog pill: passing checks out of all checks, "9/9" when all is well, "⚠ 8/9" when one trips (desktop adds its name). Tap opens the list.
 
 ### 7.2 Business tab
@@ -338,7 +338,7 @@ Will's existing UGC app runs inside this tab, opening on Reply owed and restyled
 - Dashboard side: one full-height frame loading `https://creators.oneofonehq.com/<reply-owed path>?embed=1` (address to confirm, section 12), with deep links as `&conversation=<id>`. The tab's badge counts replies owed: the app posts it with `postMessage` (check the sender's origin) and the replies-owed feed backs it up. If the app doesn't load, show a card saying so with a link to open it in a new tab. A "Full app" link sits in the tab's top line.
 - UGC app side, a small job in that app's code:
   - embed mode (`?embed=1`) hides its own header and outer navigation and keeps its internal tabs as a slim row;
-  - in embed mode it loads `https://pulse.oneofonehq.com/theme.css` (the dashboard's design tokens as CSS variables, light and dark) and maps its styles onto them;
+  - in embed mode it loads `https://pulse.oneofonehq.com/theme.css` (the dashboard's design tokens as CSS variables; the dashboard has one look, dark only) and maps its styles onto them;
   - it opens on Reply owed and supports `conversation=<id>`;
   - it allows framing only from the dashboard (`Content-Security-Policy: frame-ancestors https://pulse.oneofonehq.com`, no blocking `X-Frame-Options`);
   - it posts the count and the open conversation to the parent window;
@@ -457,7 +457,7 @@ Alerts are push notifications to the dashboard installed on Will's home screen, 
 2. One J&J parcel export as a sample.
 3. Supplier samples: a Rising Games order confirmation, a Penny invoice or Alibaba order, a Hedy invoice, a forwarder invoice.
 4. Markers and pencils per kit, as Penny invoices them.
-5. The dashboard's address (working name `pulse.oneofonehq.com`) and where oneofonehq.com's DNS is managed. Needed before stage 0 ends.
+5. Answered 2 Oct: Replit's own `*.replit.app` address for now, a kindarare.com subdomain later (Will's call). DNS is only needed for the later move, and then for kindarare.com, not oneofonehq.com.
 6. The UGC app: confirm it is the one at `creators.oneofonehq.com`, the address of its Reply owed page, and connect its Replit project to GitHub.
 7. Stage 5 access: the Gorgias subdomain, the Discord server and which channels to watch.
 8. Where "labels claimed" per series comes from.

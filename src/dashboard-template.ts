@@ -50,7 +50,7 @@ export const dashboardTemplate = `
   <div class="left">
     <div class="glass greet">
       <div>
-        <div class="seg" role="tablist" id="period" aria-label="Period"><button role="tab" type="button" aria-selected="true" data-period="today"><span data-sample-text="t0029">{{sample:t0029}}</span></button><button role="tab" type="button" aria-selected="false" data-period="yday"><span data-sample-text="t0030">{{sample:t0030}}</span></button><button role="tab" type="button" aria-selected="false" data-period="7d"><span data-sample-text="t0031">{{sample:t0031}}</span></button></div>
+        <div class="seg" role="tablist" id="period" aria-label="Period"><button role="tab" type="button" aria-selected="true" data-period="today">Today</button><button role="tab" type="button" aria-selected="false" data-period="yday">Yesterday</button><button role="tab" type="button" aria-selected="false" data-period="7d">7 days</button><button role="tab" type="button" aria-selected="false" data-period="30d">30 days</button><button role="tab" type="button" aria-selected="false" data-period="pick" id="pickbtn" aria-haspopup="dialog" aria-label="Pick a day or dates"><svg class="ic" aria-hidden="true"><use href="#i-cal"/></svg><span id="picklbl">Dates</span></button></div>
         <span class="eyebrow" id="eyebrow"><span data-sample-text="t0032">{{sample:t0032}}</span></span>
         <h1><span data-sample-text="t0033">{{sample:t0033}}</span></h1>
         <p class="sub" id="sub"><span id="sub1"><span data-sample-text="t0034">{{sample:t0034}}</span></span><span data-sample-text="t0035">{{sample:t0035}}</span><span id="subrv"></span></p>
@@ -412,6 +412,18 @@ export const dashboardTemplate = `
     <dl id="sh-dl"><dt><span data-sample-text="t0304">{{sample:t0304}}</span></dt><dd id="sh-why"></dd><dt><span data-sample-text="t0305">{{sample:t0305}}</span></dt><dd id="sh-rule"></dd><dt><span data-sample-text="t0306">{{sample:t0306}}</span></dt><dd id="sh-src"></dd></dl>
     <div id="sh-chart"></div>
     <div id="sh-extra"></div>
+  </div>
+</dialog>
+
+<dialog id="picker" aria-labelledby="pk-title">
+  <div class="sheet">
+    <div class="grab" aria-hidden="true"></div>
+    <div class="ttl"><svg class="ic" aria-hidden="true"><use href="#i-cal"/></svg><h3 id="pk-title">Pick a day or dates</h3><button class="x" id="pk-x" aria-label="Close">×</button></div>
+    <div class="quick" id="pkquick"><button class="act" type="button" data-q="14">Last 14 days</button><button class="act" type="button" data-q="mtd">Month to date</button><button class="act" type="button" data-q="lm">Last month</button><button class="act" type="button" data-q="ytd">Year to date</button></div>
+    <div class="calbar"><button class="nav" type="button" data-nav="-1" aria-label="Earlier month">‹</button><p id="pkhint" aria-live="polite"></p><button class="nav" type="button" data-nav="1" aria-label="Later month">›</button></div>
+    <div class="cals" id="pkcal"></div>
+    <p id="pkerror" role="status" aria-live="polite"></p>
+    <div class="pkfoot"><span class="pknote" id="pkbounds"></span><button class="act" type="button" id="pkclear">Clear</button><button class="act primary" type="button" id="pkgo" disabled>Pick a day</button></div>
   </div>
 </dialog>
 

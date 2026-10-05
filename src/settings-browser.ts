@@ -195,22 +195,6 @@ function initializeSettings(form: HTMLFormElement): void {
     event.preventDefault();
   });
 
-  const themeToggle = document.querySelector<HTMLButtonElement>('#theme-toggle');
-  const applyTheme = (theme: string): void => {
-    document.documentElement.dataset.theme = theme;
-    if (themeToggle) {
-      themeToggle.textContent = theme === 'dark' ? 'Light theme' : 'Dark theme';
-      themeToggle.setAttribute('aria-label', `Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`);
-    }
-  };
-  let theme = 'dark';
-  try { if (localStorage.getItem('pulse-theme') === 'light') theme = 'light'; } catch { /* A theme preference is optional. */ }
-  applyTheme(theme);
-  themeToggle?.addEventListener('click', () => {
-    theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-    applyTheme(theme);
-    try { localStorage.setItem('pulse-theme', theme); } catch { /* Continue for this page when storage is unavailable. */ }
-  });
   save.disabled = false;
 }
 

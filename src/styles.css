@@ -1,5 +1,5 @@
 :root {
-  color-scheme: dark light;
+  color-scheme: dark;
   --background: #191725;
   --surface: #252232;
   --text: #f1eff7;
@@ -59,14 +59,4 @@ code { font-size: 0.85rem; }
   header { align-items: flex-start; }
   nav { gap: 0.9rem; }
   .sign-in { margin-top: 2rem; }
-}
-
-:root[data-theme="light"] {
-    --background: #f7f5fa;
-    --surface: #eeebf3;
-    --text: #211b2d;
-    --muted: #595065;
-    --line: #b5aabe;
-    --accent: #593298;
-    --button-text: #ffffff;
 }

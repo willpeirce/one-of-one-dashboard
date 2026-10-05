@@ -14,7 +14,7 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
     if (value === undefined) throw new Error('Dashboard sample binding is missing');
     return escapeHtml(value);
   });
-  content = content.replaceAll('type="button" disabled', 'type="button" disabled data-unbuilt');
+  content = content.replace(/type="button" disabled(?= title=)/g, 'type="button" disabled data-unbuilt');
   // Labels are already HTML-escaped with the snapshot bindings above.
   content = content.replace(/(<button\b[^>]*\bdata-unbuilt\b[^>]*aria-label="([^"]*)"[^>]*>)Not built yet<\/button>/g,
     (_button, openingTag: string, label: string) => `<span class="unbuilt-action">${openingTag}${label.replace(/ · Not built yet$/, '')}</button><small class="unbuilt-note" aria-hidden="true">Not built yet</small></span>`);
@@ -26,17 +26,17 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
     <summary class="avatar" aria-label="Account menu">W</summary>
     <nav class="account-links" aria-label="Account">
       <a href="/sources">Source health</a><a href="/settings">Settings</a><a href="/audit">Audit log</a>
-      <button type="button" id="theme-toggle" aria-label="Switch to light theme">Light theme</button>
       <button type="button" id="sign-out" disabled>Sign out</button>
     </nav>
   </details>`);
   content = content.replace('</footer>', '<p id="update-status" role="status" aria-live="polite">Connecting…</p><p id="auth-message" role="status" aria-live="polite"></p></footer>');
   return `<!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#5130c2">
+  <meta name="color-scheme" content="dark">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Pulse">

@@ -121,7 +121,7 @@ export function settingsPage(snapshot: SettingsSnapshot): string {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="color-scheme" content="dark light">
+  <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#5130c2">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>Settings · One of One Pulse</title>
@@ -137,7 +137,7 @@ export function settingsPage(snapshot: SettingsSnapshot): string {
   <a class="settings-skip" href="#main">Skip to settings</a>
   <header class="top"><div class="hin settings-header">
     <a class="settings-wordmark" href="/" aria-label="One of One Pulse home"><img src="/assets/logo.png" width="55" height="34" alt="One of One"><span>Pulse</span></a>
-    <nav class="settings-nav" aria-label="Main"><a class="btn" href="/">Dashboard</a><a class="btn" href="/audit">Audit log</a><button class="btn" id="theme-toggle" type="button" aria-label="Switch to light theme">Light theme</button><button class="btn" id="sign-out" type="button" disabled>Sign out</button></nav>
+    <nav class="settings-nav" aria-label="Main"><a class="btn" href="/">Dashboard</a><a class="btn" href="/audit">Audit log</a><button class="btn" id="sign-out" type="button" disabled>Sign out</button></nav>
   </div></header>
   <main class="wrap settings-wrap" id="main">
     <div class="settings-intro"><p class="eyebrow">Your business, your rules</p><h1>Settings</h1><p>Real business settings, saved in Pulse. Dashboard figures remain labelled sample data while source feeds are being built.</p></div>

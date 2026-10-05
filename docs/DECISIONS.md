@@ -74,3 +74,27 @@ Scope the `.nums` label rule to direct child label spans. Nested `data-sample-*`
 
 ## 2026-10-04, stage 0b review: keep disabled actions recognisable
 Keep each disabled action's original label visible and add a separate small “Not built yet” note. Preserve its existing `aria-label` so the action remains identifiable to assistive technology. Replacing every label with “Not built yet” concealed what the button would do; title-only labels were also rejected because phone users cannot rely on hover. The actions remain disabled.
+
+## 2026-10-05, logo and dates: one dark look
+Follow Will's 5 October instruction and mockup 8: all pages use the dark palette, regardless of browser preference or an old `pulse-theme` value. Remove light tokens, light-only rules, theme controls and theme storage reads. This supersedes stage 0b's saved-theme decision; retaining a hidden light mode would leave old browsers showing the wrong look.
+
+## 2026-10-05, logo and dates: draw the supplied wordmark white
+Use mockup 8's `--logo-filter` token, including `brightness(0) invert(1)`, on the header logo and Settings wordmark. Keep the supplied file and its transparent lettering. A replacement image or a drawn copy is unnecessary; the manifest and home-screen icons stay unchanged.
+
+## 2026-10-05, logo and dates: four tab periods and the mockup calendar
+Add the 30 days tab beside Today, Yesterday and 7 days, then the calendar-icon Dates control. Port the mockup's sheet/dialog, month layout, quick ranges and selection appearance; add arrow-key navigation, full-date accessible names and focus return to Dates. A matching selection uses its tab. The 7- and 30-day tabs cover complete days before the fixed sample today, 30 September 2026; sample history starts on 1 January. Moving the sample clock with the real day would detach the existing readout and other dated cards from their example scenario, so this change keeps the mockup's sample clock explicit.
+
+## 2026-10-05, logo and dates: aggregate daily samples behind an authenticated range endpoint
+Serve one `HeroPeriod` from signed-in `GET /api/hero?from=YYYY-MM-DD&to=YYYY-MM-DD`, using the same session check as `/api/dashboard`. Validate real dates, ordering, the current Europe/London day and a maximum of 366 inclusive days; dates outside the available sample history also receive the same fixed 400 response. Never reflect invalid input in the error. Keep daily aggregation separate from the deterministic sample generator so later Shopify, Meta and Google sources can supply daily rows without replacing the range maths. The generator ports the mockup's seeded days and final 15 readout days; no request-time randomness or external calls are introduced.
+
+Net-sales bars and detail histories use daily values up to 31 days, then weekly averages per day, with the mockup's date labels and accessible descriptions. Server-Sent Events carry only the four tab periods. A picked range is fetched on demand and held on screen through live updates; it is fetched again when selected again. Pushing every possible range or silently replacing one with the current tab would break the chosen view.
+
+The mockup's daily Meta spend rows do not exactly reproduce its seven-day readout. Reconcile the invented 23–28 September rows in pence to the existing UK £26.65 and US £34.27 blended readouts, preserving 29 September's market costs per order and each day's total ad spend; Google receives the balancing remainder. Preserve the readout's £59 own spend today, £466 yesterday and £3,262 over seven days by allocating owner spend in the sample source. The old yesterday split is also contradictory: its market orders and costs imply £1,227.68 Meta spend, so Google becomes £142.32 of the £1,370 total, instead of the old £94.52. All eight headline hero values stay intact; range sums and the breakdown now agree.
+
+The source guard follows plan 4.2: ranges containing 22 or 23 September show market conversion as unknown while retaining store-wide conversion. Spike-day notes follow plan 4.3. These factual rules take precedence over the mockup's unguarded sample calculations; the spec files remain unchanged.
+
+## 2026-10-05, logo/date review: concise spike-day notes
+List individual dates and markets for up to five spike days; for more, show the number of spike days in the range. Keep the warning against basing a verdict on a spike day alone and each chart bar's date/market markers. This keeps long-range detail sheets and accessible chart descriptions readable on a phone; repeating all 63 year-to-date dates was rejected. Counts refer to distinct days, including days that affect both markets.
+
+## 2026-10-05, logo/date review: consistent calendar names
+Build full calendar day names and month titles from fixed English weekday/month arrays and UTC date parts. Keep the full weekday, date and year, plus the sample-today label where applicable. Browser locale formatting was rejected here because its punctuation differs between browsers, making accessible names and their exact browser checks inconsistent.

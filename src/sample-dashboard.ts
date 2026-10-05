@@ -1,5 +1,7 @@
-import type { DashboardSnapshot, DialModel } from './dashboard-types.js';
+import type { DashboardSnapshot, DialModel, HeroPeriod, Period } from './dashboard-types.js';
 import type { Settings } from './settings.js';
+import { addDays, buildHeroRange, validateHeroRange } from './hero-range.js';
+import { sampleDays, SAMPLE_START, SAMPLE_TODAY } from './sample-days.js';
 
 /**
  * Server-only presentation fixtures ported from docs/spec/mockup.html. These are
@@ -7,768 +9,11 @@ import type { Settings } from './settings.js';
  * Models, copy and stable binding ids match dashboard-template.ts; keep that
  * template's refresh instructions when updating the source mockup.
  */
-const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth'> = {
+const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds' | 'hero'> = {
   "schemaVersion": 1,
   "mode": "sample",
   "brand": "one-of-one",
   "asOf": "2026-09-30T06:41:00.000Z",
-  "hero": {
-    "today": {
-      "eyebrow": "Wed 30 Sep · today so far",
-      "sub1": "6 orders so far, 4 by this time yesterday.",
-      "per": "today so far",
-      "net": {
-        "n": 296,
-        "state": "sofar",
-        "d": {
-          "why": "£296 net sales so far today from 6 orders, UK 2 and US 4. 4 orders by this time yesterday.",
-          "rule": "No judgement on a part day. The tile reads So far until midnight UK, then it is judged against the 7-day average: green at or above it, amber under 85%. Red is never used here: a quiet day is not a failure.",
-          "src": "Shopify Analytics, net sales, UK and US markets, 30 Sep 00:00 UK to now",
-          "hist": [
-            1640,
-            1710,
-            1980,
-            1820,
-            2310,
-            1760,
-            2099
-          ],
-          "hp": "£"
-        },
-        "ss": "6 orders · 7-day avg £1,903 a day",
-        "pre": "£",
-        "mode": "sample",
-        "source": [
-          "shopify"
-        ]
-      },
-      "orders": {
-        "n": 6,
-        "state": "sofar",
-        "d": {
-          "why": "6 orders so far today, 4 by this time yesterday. Last order 23 minutes ago: US, 2 kits.",
-          "rule": "No judgement on a part day. From midnight UK: green at or above the 7-day average of 38, amber under 85% of it.",
-          "src": "Shopify orders, paid, both markets, today so far",
-          "hist": [
-            35,
-            36,
-            40,
-            37,
-            46,
-            32,
-            43
-          ]
-        },
-        "ss": "UK 2 · US 4 · 4 by this time yesterday",
-        "mode": "sample",
-        "source": [
-          "shopify"
-        ]
-      },
-      "cr": {
-        "n": 3.2,
-        "state": "sofar",
-        "d": {
-          "why": "6 orders from 188 sessions so far today, 3.2%. The 7-day average is 3.8%.",
-          "rule": "No judgement on a part day. From midnight UK: green at or above the 7-day average, amber under 85% of it. Sessions count every visit, so a big ad day lowers the rate before it lifts orders.",
-          "src": "Shopify Analytics, orders ÷ sessions, both markets, today so far",
-          "hist": [
-            3.7,
-            3.8,
-            3.9,
-            3.6,
-            4.1,
-            3.5,
-            3.9
-          ],
-          "hs": "%"
-        },
-        "ss": "6 of 188 sessions · 7-day avg 3.8%",
-        "suf": "%",
-        "dp": 1,
-        "mode": "sample",
-        "source": [
-          "shopify"
-        ]
-      },
-      "spend": {
-        "n": 174,
-        "state": "sofar",
-        "d": {
-          "why": "£174 so far today: ours £59, Laszlo £101, Google £14. TikTok shows here once the freelancer’s campaign serves.",
-          "rule": "Spend has no bar of its own. The budget dial under Ads watches ours against the day plan.",
-          "src": "Meta Ads Manager (ours and Laszlo), Google Ads, TikTok once it serves, today so far",
-          "hist": [
-            1120,
-            1170,
-            1280,
-            1200,
-            1370,
-            1086,
-            1370
-          ],
-          "hp": "£"
-        },
-        "ss": "ours £59 · Laszlo £101 · Google £14",
-        "pre": "£",
-        "mode": "sample",
-        "source": [
-          "meta",
-          "google-ads"
-        ]
-      },
-      "roas": {
-        "n": 1.7,
-        "state": "info",
-        "d": {
-          "why": "£296 net sales ÷ £174 ad spend so far today (Meta ours and Laszlo, Google; TikTok once it serves) = 1.70×.",
-          "rule": "No bar yet. Break-even ROAS comes from costs.md: 1 ÷ (1 − non-ad cost share). Grey until then.",
-          "src": "Shopify net sales ÷ Meta + Google + TikTok spend",
-          "hist": [
-            1.46,
-            1.46,
-            1.55,
-            1.52,
-            1.69,
-            1.62,
-            1.53
-          ],
-          "hs": "×"
-        },
-        "ss": "net sales ÷ all ad spend · set a bar",
-        "suf": "×",
-        "dp": 2,
-        "mode": "sample",
-        "source": [
-          "shopify",
-          "meta",
-          "google-ads"
-        ]
-      },
-      "margin": {
-        "n": 16,
-        "state": "est",
-        "d": {
-          "why": "Sample only. Assumes landed cost, fulfilment, payment fees and discounts at 25% of net sales until knowledge/costs.md is filled: 1 − £174 ÷ £296 − 25% = 16%. Then: (net sales − landed cost − fulfilment per parcel from last month’s shipping invoices − fees − discounts − all ad spend) ÷ net sales.",
-          "rule": "No bar until the costs are real. At 1.53× ROAS yesterday the true number may be near zero.",
-          "src": "Shopify net sales and orders, knowledge/costs.md, Meta + Google + TikTok spend",
-          "hist": [
-            7,
-            7,
-            10,
-            9,
-            16,
-            13,
-            10
-          ],
-          "hs": "%"
-        },
-        "ss": "sample estimate · costs model not built",
-        "suf": "%",
-        "mode": "sample",
-        "source": [
-          "shopify",
-          "meta",
-          "google-ads",
-          "github-hq"
-        ]
-      },
-      "ukcpo": {
-        "v": 24.5,
-        "min": 12,
-        "max": 40,
-        "t": "£24.50",
-        "l": "UK Meta cost per order",
-        "s": "so far · bar £28",
-        "z": [
-          [
-            12,
-            25.2,
-            "good"
-          ],
-          [
-            25.2,
-            28,
-            "warn"
-          ],
-          [
-            28,
-            40,
-            "decide"
-          ]
-        ],
-        "d": {
-          "why": "£49 of UK Meta spend so far today (ours plus Laszlo) over 2 UK orders. Too few orders to judge.",
-          "rule": "No judgement on a part day. From midnight UK: amber from 90% of the £28 blended bar (£25.20), over £28 is a decision.",
-          "src": "Meta spend UK ÷ Shopify UK orders, today so far",
-          "hist": [
-            26.6,
-            25.9,
-            29.1,
-            25.6,
-            25.6,
-            28.8,
-            24.96
-          ],
-          "hp": "£"
-        },
-        "cap": "sofar",
-        "mode": "sample",
-        "source": [
-          "shopify",
-          "meta"
-        ]
-      },
-      "uscpo": {
-        "v": 27.75,
-        "min": 12,
-        "max": 40,
-        "t": "£27.75",
-        "l": "US Meta cost per order",
-        "s": "so far · bar £28",
-        "z": [
-          [
-            12,
-            25.2,
-            "good"
-          ],
-          [
-            25.2,
-            28,
-            "warn"
-          ],
-          [
-            28,
-            40,
-            "decide"
-          ]
-        ],
-        "d": {
-          "why": "£111 of US Meta spend so far today (ours plus Laszlo) over 4 US orders. Too few orders to judge.",
-          "rule": "No judgement on a part day. From midnight UK: amber from 90% of the £28 blended bar (£25.20), over £28 is a decision.",
-          "src": "Meta spend US ÷ Shopify US orders, today so far",
-          "hist": [
-            31.2,
-            36.4,
-            33.0,
-            38.9,
-            30.1,
-            35.7,
-            34.61
-          ],
-          "hp": "£"
-        },
-        "cap": "sofar",
-        "mode": "sample",
-        "source": [
-          "shopify",
-          "meta"
-        ]
-      }
-    },
-    "yday": {
-      "eyebrow": "Tue 29 Sep · yesterday, a month-end spike day",
-      "sub1": "43 orders yesterday, best Tuesday this month.",
-      "per": "yesterday",
-      "net": {
-        "n": 2099,
-        "state": "good",
-        "d": {
-          "why": "£2,099 net sales, 10% above the 7-day average of £1,903. Spike-day pattern: strong UK morning, US afternoon.",
-          "rule": "Green when at or above the 7-day average. Amber under 85% of it. Red is never used here: a quiet day is not a failure.",
-          "src": "Shopify Analytics, net sales, UK and US markets, 29 Sep 00:00–23:59 UK",
-          "hist": [
-            1640,
-            1710,
-            1980,
-            1820,
-            2310,
-            1760,
-            2099
-          ],
-          "hp": "£"
-        },
-        "ss": "7 days · avg £1,903 · yesterday +10%",
-        "pre": "£",
-        "mode": "sample",
-        "source": [
-          "shopify"
-        ]
-      },
-      "orders": {
-        "n": 43,
-        "state": "good",
-        "d": {
-          "why": "43 orders against a 7-day average of 38. UK 27, US 16.",
-          "rule": "Green at or above the 7-day average, amber under 85% of it.",
-          "src": "Shopify orders, paid, both markets",
-          "hist": [
-            35,
-            36,
-            40,
-            37,
-            46,
-            32,
-            43
-          ]
-        },
-        "ss": "avg 38 · UK 27 · US 16",
-        "mode": "sample",
-        "source": [
-          "shopify"
-        ]
-      },
-      "cr": {
-        "n": 3.9,
-        "state": "good",
-        "d": {
-          "why": "43 orders from 1,105 sessions, 3.9%, against a 7-day average of 3.8%. UK 27 of 480 (5.6%), US 16 of 625 (2.6%).",
-          "rule": "Green at or above the 7-day average, amber under 85% of it.",
-          "src": "Shopify Analytics, orders ÷ sessions, both markets, 29 Sep",
-          "hist": [
-            3.7,
-            3.8,
-            3.9,
-            3.6,
-            4.1,
-            3.5,
-            3.9
-          ],
-          "hs": "%"
-        },
-        "ss": "43 of 1,105 sessions · UK 5.6% · US 2.6%",
-        "suf": "%",
-        "dp": 1,
-        "mode": "sample",
-        "source": [
-          "shopify"
-        ]
-      },
-      "spend": {
-        "n": 1370,
-        "state": "info",
-        "d": {
-          "why": "£1,370 across Meta and Google yesterday: ours £466, Laszlo £810, Google £94.52.",
-          "rule": "Spend has no bar of its own. The budget dial under Ads watches ours against the day plan.",
-          "src": "Meta Ads Manager and Google Ads, yesterday",
-          "hist": [
-            1120,
-            1170,
-            1280,
-            1200,
-            1370,
-            1086,
-            1370
-          ],
-          "hp": "£"
-        },
-        "ss": "ours £466 · Laszlo £810 · Google £95",
-        "pre": "£",
-        "mode": "sample",
-        "source": [
-          "meta",
-          "google-ads"
-        ]
-      },
-      "roas": {
-        "n": 1.53,
-        "state": "info",
-        "d": {
-          "why": "£2,099 ÷ £1,370 yesterday = 1.53×. Meta ours £466, Laszlo £810, Google £95.",
-          "rule": "No bar yet. Break-even ROAS comes from costs.md: 1 ÷ (1 − non-ad cost share). Grey until then.",
-          "src": "Shopify net sales ÷ Meta + Google + TikTok spend",
-          "hist": [
-            1.46,
-            1.46,
-            1.55,
-            1.52,
-            1.69,
-            1.62,
-            1.53
-          ],
-          "hs": "×"
-        },
-        "ss": "net sales ÷ all ad spend · set a bar",
-        "suf": "×",
-        "dp": 2,
-        "mode": "sample",
-        "source": [
-          "shopify",
-          "meta",
-          "google-ads"
-        ]
-      },
-      "margin": {
-        "n": 10,
-        "state": "est",
-        "d": {
-          "why": "Sample only. Assumes non-ad costs at 25% of net sales until knowledge/costs.md is filled: 1 − £1,370 ÷ £2,099 − 25% = 10%.",
-          "rule": "No bar until the costs are real. At 1.53× ROAS the true number may be near zero.",
-          "src": "Shopify net sales and orders, knowledge/costs.md, Meta + Google + TikTok spend",
-          "hist": [
-            7,
-            7,
-            10,
-            9,
-            16,
-            13,
-            10
-          ],
-          "hs": "%"
-        },
-        "ss": "sample estimate · costs model not built",
-        "suf": "%",
-        "mode": "sample",
-        "source": [
-          "shopify",
-          "meta",
-          "google-ads",
-          "github-hq"
-        ]
-      },
-      "ukcpo": {
-        "v": 24.96,
-        "min": 12,
-        "max": 40,
-        "t": "£24.96",
-        "l": "UK Meta cost per order",
-        "s": "bar £28 · best this week",
-        "z": [
-          [
-            12,
-            25.2,
-            "good"
-          ],
-          [
-            25.2,
-            28,
-            "warn"
-          ],
-          [
-            28,
-            40,
-            "decide"
-          ]
-        ],
-        "d": {
-          "why": "All UK Meta spend (ours plus Laszlo) divided by UK Shopify orders. £24.96 is the lowest of the last 7 days.",
-          "rule": "Amber from 90% of the £28 blended bar (£25.20). Over £28 is a decision: cut the weakest UK set that day.",
-          "src": "Meta spend UK ÷ Shopify UK orders, yesterday",
-          "hist": [
-            26.6,
-            25.9,
-            29.1,
-            25.6,
-            25.6,
-            28.8,
-            24.96
-          ],
-          "hp": "£"
-        },
-        "mode": "sample",
-        "source": [
-          "shopify",
-          "meta"
-        ]
-      },
-      "uscpo": {
-        "v": 34.61,
-        "min": 12,
-        "max": 40,
-        "t": "£34.61",
-        "l": "US Meta cost per order",
-        "s": "bar £28 · see row 2",
-        "z": [
-          [
-            12,
-            25.2,
-            "good"
-          ],
-          [
-            25.2,
-            28,
-            "warn"
-          ],
-          [
-            28,
-            40,
-            "decide"
-          ]
-        ],
-        "d": {
-          "why": "US blended cost per order has been over the £28 bar on all 7 days. The News article US feed set (7d £43.52 per purchase) is the main cause and has its own row on the table.",
-          "rule": "Over £28 is a decision, not an alarm: pick the US set to cut. Red is never used here.",
-          "src": "Meta spend US ÷ Shopify US orders, yesterday",
-          "hist": [
-            31.2,
-            36.4,
-            33.0,
-            38.9,
-            30.1,
-            35.7,
-            34.61
-          ],
-          "hp": "£"
-        },
-        "mode": "sample",
-        "source": [
-          "shopify",
-          "meta"
-        ]
-      }
-    },
-    "7d": {
-      "eyebrow": "23–29 Sep · last 7 days",
-      "sub1": "269 orders in the last 7 days, avg 38 a day.",
-      "per": "last 7 days",
-      "net": {
-        "n": 13319,
-        "state": "good",
-        "d": {
-          "why": "£13,319 net sales over 23–29 Sep, £1,903 a day. Up 9% on the previous 7 days (£12,220).",
-          "rule": "Green when at or above the previous 7 days, amber under 85% of it.",
-          "src": "Shopify Analytics, net sales, UK and US markets, 23–29 Sep",
-          "hist": [
-            1640,
-            1710,
-            1980,
-            1820,
-            2310,
-            1760,
-            2099
-          ],
-          "hp": "£"
-        },
-        "ss": "avg £1,903 a day · prev 7 days £12,220",
-        "pre": "£",
-        "mode": "sample",
-        "source": [
-          "shopify"
-        ]
-      },
-      "orders": {
-        "n": 269,
-        "state": "good",
-        "d": {
-          "why": "269 orders over 23–29 Sep, 38 a day. UK 169, US 100. Best day Sun 27 Sep with 46.",
-          "rule": "Green when at or above the previous 7 days (248), amber under 85% of it.",
-          "src": "Shopify orders, paid, both markets, 23–29 Sep",
-          "hist": [
-            35,
-            36,
-            40,
-            37,
-            46,
-            32,
-            43
-          ]
-        },
-        "ss": "UK 169 · US 100 · prev 7 days 248",
-        "mode": "sample",
-        "source": [
-          "shopify"
-        ]
-      },
-      "cr": {
-        "n": 3.8,
-        "state": "good",
-        "d": {
-          "why": "269 orders from 7,120 sessions over 23–29 Sep, 3.8%. UK 169 of 3,440 (4.9%), US 100 of 3,680 (2.7%).",
-          "rule": "Green when at or above the previous 7 days, amber under 85% of it.",
-          "src": "Shopify Analytics, orders ÷ sessions, both markets, 23–29 Sep",
-          "hist": [
-            3.7,
-            3.8,
-            3.9,
-            3.6,
-            4.1,
-            3.5,
-            3.9
-          ],
-          "hs": "%"
-        },
-        "ss": "269 of 7,120 sessions · UK 4.9% · US 2.7%",
-        "suf": "%",
-        "dp": 1,
-        "mode": "sample",
-        "source": [
-          "shopify"
-        ]
-      },
-      "spend": {
-        "n": 8596,
-        "state": "info",
-        "d": {
-          "why": "£8,596 over 23–29 Sep: Meta £7,931 (ours £3,262, Laszlo £4,669), Google £665.",
-          "rule": "Spend has no bar of its own. The budget dial under Ads watches ours against the day plan.",
-          "src": "Meta Ads Manager (ours and Laszlo), Google Ads, 23–29 Sep",
-          "hist": [
-            1120,
-            1170,
-            1280,
-            1200,
-            1370,
-            1086,
-            1370
-          ],
-          "hp": "£"
-        },
-        "ss": "ours £3,262 · Laszlo £4,669 · Google £665",
-        "pre": "£",
-        "mode": "sample",
-        "source": [
-          "meta",
-          "google-ads"
-        ]
-      },
-      "roas": {
-        "n": 1.55,
-        "state": "info",
-        "d": {
-          "why": "£13,319 ÷ £8,596 over 23–29 Sep = 1.55×.",
-          "rule": "No bar yet. Break-even ROAS comes from costs.md: 1 ÷ (1 − non-ad cost share). Grey until then.",
-          "src": "Shopify net sales ÷ Meta + Google + TikTok spend",
-          "hist": [
-            1.46,
-            1.46,
-            1.55,
-            1.52,
-            1.69,
-            1.62,
-            1.53
-          ],
-          "hs": "×"
-        },
-        "ss": "net sales ÷ all ad spend · set a bar",
-        "suf": "×",
-        "dp": 2,
-        "mode": "sample",
-        "source": [
-          "shopify",
-          "meta",
-          "google-ads"
-        ]
-      },
-      "margin": {
-        "n": 10,
-        "state": "est",
-        "d": {
-          "why": "Sample only. Assumes non-ad costs at 25% of net sales until knowledge/costs.md is filled: 1 − £8,596 ÷ £13,319 − 25% = 10%.",
-          "rule": "No bar until the costs are real. At 1.53× ROAS the true number may be near zero.",
-          "src": "Shopify net sales and orders, knowledge/costs.md, Meta + Google + TikTok spend",
-          "hist": [
-            7,
-            7,
-            10,
-            9,
-            16,
-            13,
-            10
-          ],
-          "hs": "%"
-        },
-        "ss": "sample estimate · costs model not built",
-        "suf": "%",
-        "mode": "sample",
-        "source": [
-          "shopify",
-          "meta",
-          "google-ads",
-          "github-hq"
-        ]
-      },
-      "ukcpo": {
-        "v": 26.65,
-        "min": 12,
-        "max": 40,
-        "t": "£26.65",
-        "l": "UK Meta cost per order",
-        "s": "7-day blend · bar £28",
-        "z": [
-          [
-            12,
-            25.2,
-            "good"
-          ],
-          [
-            25.2,
-            28,
-            "warn"
-          ],
-          [
-            28,
-            40,
-            "decide"
-          ]
-        ],
-        "d": {
-          "why": "UK Meta spend over the 7 days ÷ UK orders: £26.65. Two days were over £28 (25 and 28 Sep).",
-          "rule": "Amber from 90% of the £28 blended bar (£25.20). Over £28 is a decision: cut the weakest UK set that day.",
-          "src": "Meta spend UK ÷ Shopify UK orders, 23–29 Sep",
-          "hist": [
-            26.6,
-            25.9,
-            29.1,
-            25.6,
-            25.6,
-            28.8,
-            24.96
-          ],
-          "hp": "£"
-        },
-        "mode": "sample",
-        "source": [
-          "shopify",
-          "meta"
-        ]
-      },
-      "uscpo": {
-        "v": 34.27,
-        "min": 12,
-        "max": 40,
-        "t": "£34.27",
-        "l": "US Meta cost per order",
-        "s": "7-day blend · bar £28 · see row 2",
-        "z": [
-          [
-            12,
-            25.2,
-            "good"
-          ],
-          [
-            25.2,
-            28,
-            "warn"
-          ],
-          [
-            28,
-            40,
-            "decide"
-          ]
-        ],
-        "d": {
-          "why": "US Meta spend over the 7 days ÷ US orders: £34.27. All 7 days were over the £28 bar; the News article US feed set is the main cause and has its own row on the table.",
-          "rule": "Over £28 is a decision, not an alarm: pick the US set to cut. Red is never used here.",
-          "src": "Meta spend US ÷ Shopify US orders, 23–29 Sep",
-          "hist": [
-            31.2,
-            36.4,
-            33.0,
-            38.9,
-            30.1,
-            35.7,
-            34.61
-          ],
-          "hp": "£"
-        },
-        "mode": "sample",
-        "source": [
-          "shopify",
-          "meta"
-        ]
-      }
-    }
-  },
   "widgets": {
     "w001": {
       "kind": "dial",
@@ -5262,10 +4507,60 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth'> = {
 
 /** Return a fresh snapshot so one request cannot mutate another user's settings. */
 export function getSampleDashboard(settings?: Settings): DashboardSnapshot {
-  const snapshot: DashboardSnapshot = { ...structuredClone(fixture), generatedAt: new Date().toISOString() };
+  const hero = Object.fromEntries(Object.entries(samplePresets).map(([period, range]) => [period, getSampleHero(range.from, range.to, settings)])) as Record<Period, HeroPeriod>;
+  const snapshot: DashboardSnapshot = { ...structuredClone(fixture), hero,
+    bounds: { min: SAMPLE_START, max: SAMPLE_TODAY, today: SAMPLE_TODAY }, generatedAt: new Date().toISOString() };
   const bar = settings?.blendedMetaTripwireGbp;
   if (bar !== undefined) applyBlendedBar(snapshot, bar);
   return snapshot;
+}
+
+export const samplePresets: Record<Period, { from: string; to: string; name: string }> = {
+  today: { from: SAMPLE_TODAY, to: SAMPLE_TODAY, name: 'today so far' },
+  yday: { from: addDays(SAMPLE_TODAY, -1), to: addDays(SAMPLE_TODAY, -1), name: 'yesterday' },
+  '7d': { from: addDays(SAMPLE_TODAY, -7), to: addDays(SAMPLE_TODAY, -1), name: 'last 7 days' },
+  '30d': { from: addDays(SAMPLE_TODAY, -30), to: addDays(SAMPLE_TODAY, -1), name: 'last 30 days' },
+};
+
+export function getSampleHero(from: string, to: string, settings?: Settings): HeroPeriod {
+  validateHeroRange(from, to);
+  // The public API also validates actual UK today. The dated fixture never
+  // invents days beyond its available Jan–Sep scenario or silently clamps input.
+  sampleDays(from, to);
+  const monthStart = `${SAMPLE_TODAY.slice(0, 7)}-01`;
+  const lastMonthEnd = addDays(monthStart, -1);
+  const names = [
+    ...Object.values(samplePresets),
+    { from: addDays(SAMPLE_TODAY, -14), to: addDays(SAMPLE_TODAY, -1), name: 'last 14 days' },
+    { from: monthStart, to: SAMPLE_TODAY, name: 'month to date' },
+    { from: `${lastMonthEnd.slice(0, 7)}-01`, to: lastMonthEnd, name: 'last month' },
+    { from: `${SAMPLE_TODAY.slice(0, 4)}-01-01`, to: SAMPLE_TODAY, name: 'year to date' },
+  ];
+  const hero = buildHeroRange(sampleDays(), from, to, {
+    today: SAMPLE_TODAY,
+    name: names.find((range) => range.from === from && range.to === to)?.name,
+    blendedMetaTripwireGbp: settings?.blendedMetaTripwireGbp,
+  });
+  if (from === SAMPLE_TODAY && to === SAMPLE_TODAY) {
+    // The intraday comparison is a supplied sample observation, not a fabricated
+    // daily-rate extrapolation: four orders at this time yesterday.
+    hero.sub1 = `${hero.orders.n} orders so far, 4 by this time yesterday.`;
+    hero.orders.ss = 'UK 2 · US 4 · 4 by this time yesterday';
+    hero.orders.d.why = `${hero.orders.d.why} 4 orders by this time yesterday.`;
+    hero.net.d.why = `${hero.net.d.why} 4 orders by this time yesterday.`;
+    // The original Today readout compares with completed days. Other one-day
+    // selections use the generic seven bars ending on their selected day.
+    const week = getSampleHero(samplePresets['7d'].from, samplePresets['7d'].to, settings);
+    hero.spark = [...week.spark];
+    hero.net.ss = `${hero.orders.n} orders · 7-day avg £${Math.round(week.net.n / 7).toLocaleString('en-GB')} a day`;
+    for (const key of ['net', 'orders', 'cr', 'spend', 'roas', 'margin', 'ukcpo', 'uscpo'] as const) {
+      hero[key].d.hist = [...week[key].d.hist!];
+      hero[key].d.hl = [...week[key].d.hl!];
+      hero[key].d.ha = week[key].d.ha;
+      if (week[key].d.hm) hero[key].d.hm = [...week[key].d.hm!];
+    }
+  }
+  return hero;
 }
 
 function applyBlendedBar(snapshot: DashboardSnapshot, bar: number): void {
@@ -5283,10 +4578,6 @@ function applyBlendedBar(snapshot: DashboardSnapshot, bar: number): void {
     }
     model.d.rule = replace(model.d.rule);
   };
-  for (const period of Object.values(snapshot.hero)) {
-    update(period.ukcpo);
-    update(period.uscpo);
-  }
   for (const widget of Object.values(snapshot.widgets)) {
     if (widget.kind === 'dial' && /Meta cost per order/.test(widget.value.l)) update(widget.value);
   }

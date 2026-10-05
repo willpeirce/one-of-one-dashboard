@@ -1,4 +1,5 @@
-import type { DashboardSnapshot, Detail, DialModel, HeroMetric, Period, RingModel, SheetModel, State, TestModel, Zone } from './dashboard-types.js';
+import type { DashboardSnapshot, Detail, DialModel, HeroMetric, HeroPeriod, Period, RingModel, SheetModel, State, TestModel, Zone } from './dashboard-types.js';
+import { createDatePicker } from './dashboard-dates.js';
 
 const states: Record<State, [string, string]> = {
   good: ['Good', '✓'], warn: ['Watch', '!'], decide: ['Decide', '◆'], alarm: ['Alarm', '✕'],
@@ -48,7 +49,10 @@ function watermark(element: HTMLElement): void {
 
 interface SheetDetail { state: State; title: string; detail: Detail; dial?: Pick<DialModel, 'min' | 'max' | 'z' | 't'> }
 const details = new WeakMap<HTMLElement, SheetDetail>();
-let selectedPeriod: Period = 'today';
+let selectedPeriod: Period | 'pick' = 'today';
+let pickedHero: HeroPeriod | undefined;
+let rangeRequest: AbortController | undefined;
+let rangeGeneration = 0;
 let selectedDeck = ['ads', 'store', 'growth', 'stock'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'ads';
 let snapshot: DashboardSnapshot;
 let openDetail: HTMLElement | undefined;
@@ -79,11 +83,13 @@ function renderRing(element: HTMLElement, data: RingModel): void {
   watermark(element);
 }
 
-function renderSpark(element: HTMLElement, values: number[]): void {
-  const high = Math.max(...values, 1), width = (220 - 6 * (values.length - 1)) / values.length;
-  element.innerHTML = `<svg viewBox="0 0 220 34" preserveAspectRatio="none" aria-hidden="true">${values.map((value, index) => {
-    const height = Math.max(3, 34 * value / high);
-    return `<rect x="${rounded(index * (width + 6))}" y="${rounded(34 - height)}" width="${rounded(width)}" height="${rounded(height)}" rx="3" fill="${index === values.length - 1 ? 'var(--spark)' : 'var(--line-2)'}"/>`;
+function renderSpark(element: HTMLElement, values: number[], detail?: Detail): void {
+  element.dataset.spark = values.join(',');
+  const high = Math.max(...values, 1), gap = values.length > 14 ? 2 : 6;
+  const width = (220 - gap * (values.length - 1)) / values.length;
+  element.innerHTML = `<svg viewBox="0 0 220 34" preserveAspectRatio="none"${detail?.ha ? ` role="img" aria-label="${esc(detail.ha)}"` : ' aria-hidden="true"'}>${values.map((value, index) => {
+    const height = Math.max(3, 34 * value / high), marker = detail?.hm?.[index];
+    return `<rect x="${rounded(index * (width + gap))}" y="${rounded(34 - height)}" width="${rounded(width)}" height="${rounded(height)}" rx="${rounded(Math.min(3, width / 2))}" fill="${index === values.length - 1 ? 'var(--spark)' : 'var(--line-2)'}"${marker ? ' class="spike" stroke="currentColor" stroke-width="1"' : ''}>${marker ? `<title>${esc(marker)}</title>` : ''}</rect>`;
   }).join('')}</svg>`;
 }
 
@@ -109,10 +115,24 @@ function metricNumber(element: HTMLElement, data: HeroMetric, animate: boolean):
   requestAnimationFrame(frame);
 }
 
+function activeHero(): HeroPeriod {
+  return selectedPeriod === 'pick' && pickedHero ? pickedHero : snapshot.hero[selectedPeriod === 'pick' ? 'today' : selectedPeriod];
+}
+function cancelRangeRequest(): void {
+  rangeGeneration += 1; rangeRequest?.abort(); rangeRequest = undefined;
+}
 function setPeriod(period: Period, animate = true): void {
+  cancelRangeRequest();
   selectedPeriod = period;
-  const hero = snapshot.hero[period];
+  pickedHero = undefined;
+  renderHero(snapshot.hero[period], animate);
+}
+function renderHero(hero: HeroPeriod, animate = false): void {
+  const period = selectedPeriod;
   all('#period [data-period]').forEach((element) => element.setAttribute('aria-selected', String(element.dataset.period === period)));
+  get('#picklbl').textContent = period === 'pick' ? hero.short : 'Dates';
+  get('#pickbtn').setAttribute('aria-label', period === 'pick' ? `Dates, showing ${hero.short}` : 'Pick a day or dates');
+  get('#hero').dataset.from = hero.from; get('#hero').dataset.to = hero.to;
   get('#eyebrow').textContent = hero.eyebrow;
   get('#sub1').textContent = hero.sub1;
   for (const key of ['net', 'orders', 'cr', 'spend', 'roas', 'margin'] as const) {
@@ -125,7 +145,7 @@ function setPeriod(period: Period, animate = true): void {
     statChip(element, metric.state);
     details.set(element, { state: metric.state, title: get('.sl', element).textContent ?? '', detail: metric.d });
     const spark = element.querySelector<HTMLElement>('.spark');
-    if (spark && metric.d.hist) renderSpark(spark, metric.d.hist);
+    if (spark) renderSpark(spark, hero.spark, metric.d);
   }
   for (const key of ['ukcpo', 'uscpo'] as const) {
     const element = get(`#hero [data-k="${key}"]`);
@@ -133,6 +153,24 @@ function setPeriod(period: Period, animate = true): void {
     renderDial(element, hero[key]);
   }
   renderHealth();
+}
+
+async function applyPickedRange(from: string, to: string): Promise<boolean> {
+  const preset = (Object.keys(snapshot.hero) as Period[]).find((key) => snapshot.hero[key].from === from && snapshot.hero[key].to === to);
+  if (preset) { setPeriod(preset); return true; }
+  cancelRangeRequest();
+  const generation = rangeGeneration;
+  const controller = new AbortController(); rangeRequest = controller;
+  try {
+    const response = await fetch(`/api/hero?${new URLSearchParams({ from, to })}`, { signal: controller.signal, credentials: 'same-origin', headers: { Accept: 'application/json' } });
+    if (response.status === 401) { window.location.assign('/login'); return false; }
+    if (!response.ok) return false;
+    const hero = await response.json() as HeroPeriod;
+    if (generation !== rangeGeneration || hero.from !== from || hero.to !== to) return false;
+    pickedHero = hero; selectedPeriod = 'pick'; renderHero(hero, true);
+    return true;
+  } catch { return false; }
+  finally { if (generation === rangeGeneration) rangeRequest = undefined; }
 }
 
 function renderTest(card: HTMLElement, data: TestModel): void {
@@ -208,15 +246,19 @@ function miniChart(detail: Detail, dial?: SheetDetail['dial']): string {
   if (!values?.length) return '';
   const format = formatLike(detail.hp ? `${detail.hp}0` : detail.hs ? `0${detail.hs}` : dial?.t ?? '');
   const lines = dial?.z.slice(1).flatMap((zone, index) => (rank[dial.z[index]![2]] >= 2) !== (rank[zone[2]] >= 2) ? [zone[0]] : []) ?? [];
-  const width = (320 - 6 * (values.length - 1)) / values.length, high = Math.max(...values, ...lines, 1) * 1.08;
-  const y = (value: number): number => 16 + 66 * (1 - value / high);
-  let svg = '<svg viewBox="0 0 320 96" role="img" aria-label="Sample history">';
+  const gap = values.length > 14 ? 2 : 6, width = (320 - gap * (values.length - 1)) / values.length;
+  const high = Math.max(...values, ...lines, 1) * 1.08;
+  const y = (value: number): number => 16 + 66 * (1 - Math.max(0, value) / high);
+  let svg = `<svg viewBox="0 0 320 96" role="img" aria-label="${esc(detail.ha ?? 'Sample history')}">`;
   values.forEach((value, index) => {
     const fill = dial ? colour[zoneOf(value, dial.z)] : index === values.length - 1 ? 'var(--spark)' : 'var(--line-2)';
-    svg += `<rect x="${rounded(index * (width + 6))}" y="${rounded(y(value))}" width="${rounded(width)}" height="${rounded(82 - y(value))}" rx="4" fill="${fill}" fill-opacity="${dial && index < values.length - 1 ? 0.55 : 1}"/>`;
+    const top = Math.min(y(value), 80), marker = detail.hm?.[index];
+    svg += `<rect x="${rounded(index * (width + gap))}" y="${rounded(top)}" width="${rounded(width)}" height="${rounded(82 - top)}" rx="${rounded(Math.min(4, width / 2))}" fill="${fill}" fill-opacity="${dial && index < values.length - 1 ? 0.55 : 1}"${marker ? ' class="spike" stroke="var(--accent)" stroke-width="1"' : ''}>${marker ? `<title>${esc(marker)}</title>` : ''}</rect>`;
   });
   lines.forEach((bar) => { svg += `<line x1="0" x2="320" y1="${rounded(y(bar))}" y2="${rounded(y(bar))}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="4 4"/><text x="320" y="${rounded(y(bar) - 3)}" text-anchor="end" font-size="10" fill="var(--muted)">bar ${esc(format(bar))}</text>`; });
-  svg += `<text x="${rounded(width / 2)}" y="${rounded(y(values[0]!) - 4)}" text-anchor="middle" font-size="10" fill="var(--ink-2)">${esc(format(values[0]!))}</text><text x="${rounded(320 - width / 2)}" y="${rounded(y(values.at(-1)!) - 4)}" text-anchor="middle" font-size="10" font-weight="700" fill="var(--ink)">${esc(format(values.at(-1)!))}</text><text x="0" y="96" font-size="9.5" fill="var(--muted)">Earlier</text><text x="320" y="96" text-anchor="end" font-size="9.5" fill="var(--muted)">Latest sample</text></svg>`;
+  const narrow = width < 24;
+  const labels = detail.hl ?? ['Earlier', 'Latest sample'];
+  svg += `<text x="${rounded(narrow ? 0 : width / 2)}" y="${rounded(y(values[0]!) - 4)}" text-anchor="${narrow ? 'start' : 'middle'}" font-size="10" fill="var(--ink-2)">${esc(format(values[0]!))}</text><text x="${rounded(narrow ? 320 : 320 - width / 2)}" y="${rounded(y(values.at(-1)!) - 4)}" text-anchor="${narrow ? 'end' : 'middle'}" font-size="10" font-weight="700" fill="var(--ink)">${esc(format(values.at(-1)!))}</text><text x="0" y="96" font-size="9.5" fill="var(--muted)">${esc(labels[0])}</text><text x="320" y="96" text-anchor="end" font-size="9.5" fill="var(--muted)">${esc(labels[1])}</text></svg>`;
   return svg;
 }
 
@@ -310,7 +352,7 @@ function updateSnapshot(next: DashboardSnapshot, initial = false): void {
     element.setAttribute('role', 'img'); element.setAttribute('aria-label', `${rating} out of 5 stars`);
     element.innerHTML = [1, 2, 3, 4, 5].map((star) => `<svg class="${star <= rating ? 'on' : 'off'}" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-star"/></svg>`).join('');
   });
-  setPeriod(selectedPeriod, initial);
+  renderHero(activeHero(), initial);
   all('.tab[data-tab]').forEach((tab) => {
     const panel = document.querySelector<HTMLElement>(`[data-panel="${tab.dataset.tab}"]`);
     if (!panel) return;
@@ -330,29 +372,27 @@ function updateSnapshot(next: DashboardSnapshot, initial = false): void {
   }
 }
 
-function applyTheme(theme: 'dark' | 'light'): void {
-  document.documentElement.dataset.theme = theme;
-  const button = get<HTMLButtonElement>('#theme-toggle');
-  button.textContent = theme === 'dark' ? 'Light theme' : 'Dark theme';
-  button.setAttribute('aria-label', `Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`);
-  try { localStorage.setItem('pulse-theme', theme); } catch { /* A theme still works when storage is unavailable. */ }
-}
-
 function boot(): void {
-  let theme: 'light' | 'dark' = 'dark';
-  try { const stored = localStorage.getItem('pulse-theme'); if (stored === 'light' || stored === 'dark') theme = stored; } catch { /* Storage is optional. */ }
-  applyTheme(theme);
-  get('#theme-toggle').addEventListener('click', () => applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));
   updateSnapshot(JSON.parse(get('#dashboard-state').getAttribute('data-snapshot') ?? '{}') as DashboardSnapshot, true);
   get('#dashboard-state').remove();
+  const dates = createDatePicker({ bounds: () => snapshot.bounds, selected: activeHero, apply: applyPickedRange, cancel: cancelRangeRequest });
   get('#q').addEventListener('input', filterDials);
+  get('#period').addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    const tabs = all<HTMLButtonElement>('#period [data-period]');
+    const index = tabs.findIndex((tab) => tab === event.target);
+    if (index < 0) return;
+    event.preventDefault();
+    tabs[(index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length]?.focus();
+  });
   document.addEventListener('click', (event) => {
     const target = event.target instanceof Element ? event.target : undefined;
     if (!target) return;
     const element = target.closest<HTMLElement>('.tile,.rt[data-sheet]');
     if (element && details.has(element)) { showDetail(element); return; }
     const period = target.closest<HTMLElement>('[data-period]')?.dataset.period;
-    if (period === 'today' || period === 'yday' || period === '7d') { setPeriod(period); return; }
+    if (period === 'pick') { dates.open(); return; }
+    if (period === 'today' || period === 'yday' || period === '7d' || period === '30d') { setPeriod(period); return; }
     const deck = target.closest<HTMLElement>('.tab[data-tab]')?.dataset.tab;
     if (deck) { get<HTMLInputElement>('#q').value = ''; selectDeck(deck); filterDials(); return; }
     const scoreTab = target.closest<HTMLElement>('[data-st]')?.dataset.st;

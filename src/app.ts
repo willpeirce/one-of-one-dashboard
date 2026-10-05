@@ -8,7 +8,8 @@ import { readSourceHealth, syncSourceHealth } from './sources.js';
 import { loginPage, sourceHealthPage, auditPage } from './views.js';
 import type { RuntimeConfig } from './runtime.js';
 import { dashboardPage } from './dashboard-view.js';
-import { getSampleDashboard } from './sample-dashboard.js';
+import { getSampleDashboard, getSampleHero } from './sample-dashboard.js';
+import { HeroRangeError, validateHeroRange } from './hero-range.js';
 import { registerDashboardEvents } from './events.js';
 import { readSettings, saveSettings, SettingsValidationError, SettingsConflictError } from './settings.js';
 import { settingsPage } from './settings-view.js';
@@ -36,6 +37,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     }
   });
   app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof HeroRangeError) return reply.code(400).send({ error: 'Invalid date range.' });
     if (error instanceof SettingsValidationError) {
       return reply.code(400).send({ error: error.message, fields: error.fields });
     }
@@ -66,6 +68,14 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   app.get('/api/dashboard', async (request, reply) => {
     if (!await auth.session(request)) return reply.code(401).send({ error: 'Sign in to continue.' });
     return await snapshot();
+  });
+  app.get('/api/hero', async (request, reply) => {
+    if (!await auth.session(request)) return reply.code(401).send({ error: 'Sign in to continue.' });
+    const query = request.query as Record<string, unknown>;
+    if (Object.keys(query).some((key) => key !== 'from' && key !== 'to')) throw new HeroRangeError();
+    const { from, to } = validateHeroRange(query.from, query.to);
+    const settings = await readSettings(db);
+    return getSampleHero(from, to, settings.values);
   });
   app.get('/sources', async (request, reply) => {
     if (!await auth.session(request)) return reply.redirect('/login');

@@ -28,12 +28,20 @@ export class ShopifyStore {
     for (const row of cleanSessions(table)) {
       await this.put('sessions', row.day, { ...row, provenance, partial: row.day === ukToday(fetched) }, fetched);
       if (!row.marketReliable) await this.notice('geo_unreliable', `geo:${row.day}`, fetched);
+      else await this.clearNotice(`geo:${row.day}`);
     }
   }
   async sales(table: any, fetched: Date): Promise<void> { for (const row of cleanSales(table)) await this.put('sales', row.day, row, fetched); }
-  async notice(kind: string, id: string, fetched: Date): Promise<void> {
-    await this.db.query(`INSERT INTO pulse.shopify_notices (mode, kind, source_id, fetched_at) VALUES ($1, $2, $3, $4)
-      ON CONFLICT (mode, source_id) DO UPDATE SET fetched_at = EXCLUDED.fetched_at`, [this.mode, kind, id, fetched]);
+  async notice(kind: string, id: string, fetched: Date, detail: unknown = {}): Promise<void> {
+    await this.db.query(`INSERT INTO pulse.shopify_notices (mode, kind, source_id, fetched_at, detail) VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT (mode, source_id) DO UPDATE SET fetched_at = EXCLUDED.fetched_at, detail = EXCLUDED.detail`, [this.mode, kind, id, fetched, JSON.stringify(detail)]);
+  }
+  async clearNotice(id: string): Promise<void> { await this.db.query('DELETE FROM pulse.shopify_notices WHERE mode = $1 AND source_id = $2', [this.mode, id]); }
+  async facts() {
+    const records = await this.db.query<{ kind: string; data: any; fetched_at: Date }>('SELECT kind, data, fetched_at FROM pulse.shopify_records WHERE mode = $1', [this.mode]);
+    const summary = await this.summary();
+    const notices = await this.db.query<{ kind: string; source_id: string; detail: any; fetched_at: Date }>('SELECT kind, source_id, detail, fetched_at FROM pulse.shopify_notices WHERE mode = $1', [this.mode]);
+    return { ...summary, records: records.rows, noticeDetails: notices.rows };
   }
   async summary() {
     const counts = await this.db.query<{ kind: string; count: string }>('SELECT kind, count(*)::text AS count FROM pulse.shopify_records WHERE mode = $1 GROUP BY kind', [this.mode]);

@@ -1,4 +1,5 @@
 import type { DashboardSnapshot } from './dashboard-types.js';
+import { checksHtml, liveHtml, needsHtml, storePanelsHtml } from './shopify/presentation.js';
 import { dashboardTemplate } from './dashboard-template.js';
 
 function escapeHtml(value: string): string {
@@ -14,6 +15,21 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
     if (value === undefined) throw new Error('Dashboard sample binding is missing');
     return escapeHtml(value);
   });
+  if (snapshot.shopify) {
+    content = content.replace(/(<p class="sample-banner"[^>]*>[\s\S]*?<\/p>)/, `$1<div id="shopify-checks">${checksHtml(snapshot.shopify)}</div>`);
+    content = content.replace('<div class="deck" id="deck">', `<div class="deck" id="deck"><div id="shopify-needs">${needsHtml(snapshot.shopify)}</div><p class="note">Sample decisions from later stages</p>`);
+    content = content.replace(/(<div class="srows" data-sp="live">)[\s\S]*?(?=<div class="srows" data-sp="wins")/, `$1${liveHtml(snapshot.shopify)}</div>\n`);
+    content = content.replace('<div class="panel" id="p-store" data-panel="store" hidden>', `<div class="panel" id="p-store" data-panel="store" hidden><div id="shopify-panels">${storePanelsHtml(snapshot.shopify)}</div>`);
+    content = content.replace(/data-model-id="(w029|w030|w031|w032|w033|w034|w035|w036|w037|w039|w046|w047|w048)"/g, `$& data-ingested-shopify`);
+    content = content.replace(/<button\b[^>]*data-model-id="([^"]+)"[^>]*>/g, (tag, key: string) => {
+      const widget = snapshot.widgets[key];
+      return widget ? tag.replace(/data-mode="[^"]+"/, `data-mode="${widget.mode}"`).replace(/data-source="[^"]+"/, `data-source="${widget.source.join(' ')}"`) : tag;
+    });
+    content = content.replace(/<button\b[^>]*data-k="(net|orders|cr|spend|roas|margin)"[^>]*>/g, (tag, key: 'net'|'orders'|'cr'|'spend'|'roas'|'margin') => tag.replace(/data-mode="[^"]+"/, `data-mode="${snapshot.hero.today[key].mode}"`));
+    // Label surviving mockup examples individually when a live source sits beside them.
+    content = content.replace(/(<(?:article|button|div)\b[^>]*data-mode="sample"[^>]*>)/g, '$1<span class="sample-label">Sample data</span>');
+  }
+  if (snapshot.banner) content = content.replace(/(<p class="sample-banner"[^>]*>)[\s\S]*?<\/p>/, `$1${escapeHtml(snapshot.banner)}</p>`);
   content = content.replace(/type="button" disabled(?= title=)/g, 'type="button" disabled data-unbuilt');
   // Labels are already HTML-escaped with the snapshot bindings above.
   content = content.replace(/(<button\b[^>]*\bdata-unbuilt\b[^>]*aria-label="([^"]*)"[^>]*>)Not built yet<\/button>/g,
@@ -53,7 +69,7 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
   <a class="skip-link" href="#main">Skip to content</a>
   ${content}
   <div id="dashboard-state" hidden data-snapshot="${escapeHtml(JSON.stringify(snapshot))}"></div>
-  <noscript><p class="sample-banner">JavaScript is needed for the dials, live updates and sign-out. The figures shown are sample data.</p></noscript>
+  <noscript><p class="sample-banner">JavaScript is needed for the dials, live updates and sign-out. Check each card’s source label.</p></noscript>
 </body>
 </html>`;
 }

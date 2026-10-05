@@ -369,3 +369,21 @@ button[disabled]{cursor:not-allowed}.act[disabled]{opacity:.5}
 :focus-visible{outline:3px solid var(--decide);outline-offset:4px}
 #sh-extra .note{margin-top:14px}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+
+/* Keep the mockup layout; source labels stay legible beside live Shopify cards. */
+.sample-label{display:block;color:var(--muted);font-size:10px;margin-top:3px}
+.pulse-watchdogs{position:relative;font-size:11px}
+.pulse-watchdogs>summary{cursor:pointer;font-size:11px}
+.pulse-watchdogs>div{position:absolute;z-index:20;top:100%;left:0;width:min(80vw,480px);max-height:70vh;overflow:auto;padding:16px}
+.pulse-watchdogs p{margin:8px 0}
+#shopify-needs{display:contents}
+#shopify-needs>details{padding:12px}
+#shopify-panels{margin-bottom:12px}
+@media(max-width:760px){#shopify-checks{max-width:100%}.pulse-watchdogs>summary{white-space:normal;padding:6px;font-size:10px}.pulse-watchdogs>div{position:fixed;top:80px;left:5vw;width:90vw}}
+.orders-bars{display:flex;align-items:flex-end;gap:3px;overflow:auto;max-width:100%;height:65px;margin-bottom:8px}
+.order-bar{display:flex;flex-direction:column-reverse;justify-content:flex-start;min-width:8px;flex:1}
+.order-bar i{display:block;width:100%}
+.pulse-need .rhead{grid-template-columns:auto auto minmax(0,1fr) auto}
+@media(max-width:760px){.pulse-need .rhead{grid-template-columns:auto 1fr}.pulse-need .rhead>div{grid-column:1/-1}.pulse-need .rhead .acts{justify-content:flex-start}.pulse-need .rhead .src{width:32px;height:32px}}
+
+#shopify-checks{margin:0 0 12px;position:relative;z-index:10}.pulse-watchdogs>div{background:var(--sky);border:1px solid var(--line);backdrop-filter:blur(20px)}

@@ -36,7 +36,7 @@ class Reader extends SampleShopify {
   }
   override async report(query: string) { if (this.deniedReports) throw new ShopifyError('denied'); return super.report(query); }
   override async subscriptions() { return { nodes: this.listed, pageInfo: { hasNextPage: false, endCursor: null } }; }
-  override async subscribe(topic: string, uri: string) { this.created.push({ topic, uri }); this.listed.push({ topic, endpoint: { callbackUrl: uri } }); }
+  override async subscribe(topic: string, uri: string) { this.created.push({ topic, uri }); this.listed.push({ topic, uri }); }
 }
 
 test('token grant uses form encoding, one exchange for concurrent calls, renews at 20 hours and never persists credentials', async () => {
@@ -89,7 +89,7 @@ test('401 renews once; read client allows only fixed queries and owned subscript
   assert.ok((await client.scopes()).includes('read_all_orders')); assert.equal(grants, 2);
   await client.subscribe('ORDERS_CREATE', 'https://pulse.example.test/webhooks/shopify');
   assert.equal(sent.filter(x => x.query.startsWith('mutation')).length, 1);
-  assert.equal(sent.at(-1).variables.input.callbackUrl, 'https://pulse.example.test/webhooks/shopify');
+  assert.equal(sent.at(-1).variables.input.uri, 'https://pulse.example.test/webhooks/shopify');
   assert.deepEqual(sent.at(-1).variables.input.includeFields, ['id', 'admin_graphql_api_id']);
   assert.equal('graphql' in client, false);
   await assert.rejects(client.subscribe('ORDERS_CREATE', 'https://other.example.test/webhooks/shopify'));
@@ -236,6 +236,7 @@ test('5-minute overlap poll, hourly missing-subscription repair, nightly reconci
   const db = await createTestDatabase(); t.after(() => db.close()); const env = credentials(); await syncSourceHealth(db, env);
   let clock = now; const reader = new Reader(); const worker = new ShopifyWorker(db, env, 'https://pulse.example.test', { reader, clock: () => clock });
   await worker.initialize(); await worker.tick(); assert.equal(reader.created.length, 7);
+  assert.ok(!(await worker.store.summary()).notices.includes('webhook_recreated'));
   assert.ok(reader.created.every(s => s.uri === 'https://pulse.example.test/webhooks/shopify'));
   assert.ok(reader.calls.some(c => c.query.includes('updated_at:>=2026-09-30T11:50:00.000Z')));
   assert.ok(reader.calls.some(c => c.query.startsWith('created_at:>=2026-09-22T23:00:00.000Z')));
@@ -244,6 +245,8 @@ test('5-minute overlap poll, hourly missing-subscription repair, nightly reconci
   reader.broken = false; clock = new Date(now.getTime() + 360_000); await worker.tick(); assert.equal((await readSourceHealth(db))[0]!.status, 'healthy');
   reader.listed.pop(); clock = new Date(now.getTime() + 3_600_000); await worker.tick(); assert.equal(reader.created.length, 8);
   assert.ok((await worker.store.summary()).notices.includes('webhook_recreated'));
+  clock = new Date(now.getTime() + 7_200_000); await worker.tick();
+  assert.ok(!(await worker.store.summary()).notices.includes('webhook_recreated'));
   clock = nextNight(now); await worker.tick(); assert.ok(reader.calls.some(c => c.query.startsWith('created_at:>=2026-09-23T23:00:00.000Z')));
 });
 
@@ -288,7 +291,7 @@ test('sample mode uses real API fixtures without network/subscriptions; source h
   const db = await createTestDatabase(); t.after(() => db.close()); await syncSourceHealth(db, {});
   const worker = new ShopifyWorker(db, {}, 'http://localhost:3000', { fetch: async () => { throw new Error('No network in sample mode'); } });
   await worker.initialize(); await Promise.all([worker.tick(), worker.tick()]);
-  const summary = await worker.store.summary(); assert.equal(summary.sample, true); assert.equal(summary.counts.order, 1); assert.equal(summary.counts.inventory, 1); assert.equal(summary.counts.sessions, 1);
+  const summary = await worker.store.summary(); assert.equal(summary.sample, true); assert.equal(summary.counts.order, 400); assert.equal(summary.counts.inventory, 1); assert.equal(summary.counts.sessions, 400);
   assert.equal((await readSourceHealth(db))[0]!.status, 'waiting_for_keys'); assert.equal((await readSourceHealth(db))[0]!.lastSuccessAt, null);
   const sql = await readFile(new URL('../migrations/004_shopify.sql', import.meta.url), 'utf8'); assert.ok(!sql.includes('CREATE TABLE public.'));
 });
@@ -361,6 +364,6 @@ test('source page shows ingestion counts from its own store and labels sample/li
   const db = await createTestDatabase(); t.after(() => db.close()); await syncSourceHealth(db, {});
   const worker = new ShopifyWorker(db, {}, 'http://localhost:3000'); await worker.initialize(); await worker.tick();
   const health = await readSourceHealth(db), summary = await worker.store.summary();
-  const html = sourceHealthPage(health, summary); assert.match(html, /Shopify imports · sample data/); assert.match(html, /1 orders · 1 inventory rows · 1 session days/); assert.match(html, /Business cards remain sample data until part 1b/);
-  const live = sourceHealthPage(health, { ...summary, mode: 'live', sample: false, counts: { order: 7 } }); assert.match(live, /Shopify imports · live/); assert.match(live, /7 orders/); assert.match(live, /Business cards remain sample data/);
+  const html = sourceHealthPage(health, summary); assert.match(html, /Shopify imports · sample data/); assert.match(html, /400 orders · 1 inventory rows · 400 session days/); assert.match(html, /Shopify cards use ingested data/);
+  const live = sourceHealthPage(health, { ...summary, mode: 'live', sample: false, counts: { order: 7 } }); assert.match(live, /Shopify imports · live/); assert.match(live, /7 orders/); assert.match(live, /Shopify cards use ingested data/);
 });

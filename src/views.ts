@@ -74,9 +74,9 @@ const healthLabels: Record<SourceHealth['status'], string> = {
 };
 
 export function sourceHealthPage(rows: readonly SourceHealth[], shopify?: Awaited<ReturnType<ShopifyStore['summary']>>): string {
-  return page('Source health', `<p class="sample-banner"><strong>sample data</strong> · ${shopify ? 'Business cards remain sample data until part 1b.' : 'No source data has been imported.'}</p>
+  return page('Source health', `<p class="sample-banner"><strong>sample data</strong> · ${shopify ? 'Shopify cards use ingested data; other sources remain labelled samples.' : 'No source data has been imported.'}</p>
     <h1>Source health</h1>
-    ${shopify ? `<section aria-label="Shopify imports"><h2>Shopify imports · ${shopify.sample ? 'sample data' : 'live'}</h2><p>${shopify.counts.order ?? 0} orders · ${shopify.counts.inventory ?? 0} inventory rows · ${shopify.counts.sessions ?? 0} session days · ${shopify.counts.sales ?? 0} older sales days · ${shopify.pendingWebhooks} webhooks pending.</p><p>Cards, watchdogs and New reviews follow in part 1b.</p>${shopify.notices.length ? `<p>Needs attention: ${shopify.notices.map(n => escapeHtml(n.replaceAll('_', ' '))).join(' · ')}</p>` : ''}</section>` : ''}
+    ${shopify ? `<section aria-label="Shopify imports"><h2>Shopify imports · ${shopify.sample ? 'sample data' : 'live'}</h2><p>${shopify.counts.order ?? 0} orders · ${shopify.counts.inventory ?? 0} inventory rows · ${shopify.counts.sessions ?? 0} session days · ${shopify.counts.sales ?? 0} older sales days · ${shopify.pendingWebhooks} webhooks pending.</p><p>Shopify cards and watchdogs are on Home. New reviews follow in part 1c. Import counts include older records retained for replay; window-based cards exclude them.</p>${shopify.notices.length ? `<p>Needs attention: ${shopify.notices.map(n => escapeHtml(n.replaceAll('_', ' '))).join(' · ')}</p>` : ''}</section>` : ''}
     <p>Live mode means all required keys are present. Shopify imports automatically. The remaining source clients arrive in their stages.</p>
     <div class="table-scroll" role="region" aria-label="Source health table, scroll horizontally if needed" tabindex="0">
       <table id="source-health">

@@ -5,9 +5,10 @@ export async function fixture(name: string): Promise<any> {
   return JSON.parse(await readFile(new URL(`../../test/fixtures/shopify/${name}.json`, import.meta.url), 'utf8'));
 }
 export class SampleShopify implements ShopifyReader {
+  constructor(private readonly cardHistory = false) {}
   async scopes(): Promise<string[]> { return (await fixture('scopes')).data.currentAppInstallation.accessScopes.map((s: any) => s.handle); }
   async orders(query: string, _after: string | null, address: boolean): Promise<Page> {
-    const result = (await fixture('orders')).data.orders;
+    const result = (await fixture(this.cardHistory ? 'card-orders' : 'orders')).data.orders;
     const from = /(?:created_at|updated_at):>=(\S+)/.exec(query)?.[1];
     const to = /(?:created_at|updated_at):<=(\S+)/.exec(query)?.[1];
     result.nodes = result.nodes.filter((n: any) => {
@@ -28,7 +29,7 @@ export class SampleShopify implements ShopifyReader {
     return (await fixture('levels')).data.inventoryItem.inventoryLevels.nodes.map((level: any) => ({ productId: product.id, variantId: variant.id, inventoryItemId: variant.inventoryItem.id, ...level }));
   }
   async report(query: string): Promise<any> {
-    const table = (await fixture(query.startsWith('FROM sales') ? 'sales' : 'sessions')).data.shopifyqlQuery.tableData;
+    const table = (await fixture(query.includes('sales_channel') ? this.cardHistory ? 'card-channels' : 'channels' : query.startsWith('FROM sales') ? 'sales' : this.cardHistory ? 'card-sessions' : 'sessions')).data.shopifyqlQuery.tableData;
     const from = /SINCE (\d{4}-\d{2}-\d{2})/.exec(query)?.[1];
     const to = /UNTIL (\d{4}-\d{2}-\d{2})/.exec(query)?.[1] ?? appConfig.shopify.sampleNow.slice(0, 10);
     table.rows = table.rows.filter((r: any) => (!from || r[0] >= from) && r[0] <= to);

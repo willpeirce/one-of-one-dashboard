@@ -6,7 +6,7 @@ Updated in every pull request.
 |---|---|---|---|---|
 | 0a | Service, database, passkeys, audit, source registry, CI | merged 2 Oct 2026; deployed 2 Oct | `DASHBOARD_SETUP_CODE`: configured | Will's phone enrollment and sign-in confirmed 4 Oct |
 | 0b | Real screen on sample data, live updates, Settings, home-screen app | merged 4 Oct 2026; logo/date follow-up merged and published 5 Oct; home-screen icon follow-up merged 5 Oct | no source keys needed | Will saw the published dark look and white logo and added the app to his home screen, 5 Oct |
-| 1a | Shopify token manager, backfill, webhooks and polls | implemented on `stage-1a-shopify`; PR review pending | no Shopify keys | fixture checks only; live checks await keys |
+| 1a | Shopify token manager, backfill, webhooks and polls | implemented on `stage-1a-shopify`; item-tax review fix included; PR review pending | no Shopify keys | fixture checks only; live checks await keys |
 | 1b | Shopify cards/watchdogs and New reviews (Judge.me) | next; Judge.me Publish behind its flag, off | no | no |
 | 2 | Meta | not started | no | no |
 | 3 | Google Ads | not started | no | no |
@@ -53,7 +53,11 @@ Other source clients and measured business cards, source-system writes, test ver
 
 ## Part 1a validation
 
-Local checks pass: all 99 tests on PGlite (81 retained plus 18 Shopify tests), typecheck, production build, Chromium checks at 390px/1280px under both browser preferences, and Gitleaks working-tree/full-history scans with their generated-secret self-tests. The mockup was opened at both widths. Focused Shopify checks also passed after tightening UK-midnight query boundaries. CI runs the full suite against real PostgreSQL; its result is linked in the PR. No live source check is claimed. Tests cover every section 4 fact touched by ingestion (4.1 UK days; 4.2 webhook reliability, geo guards, Level 2/address fallback, privacy, configured stock/TikTok exclusions, bundle tiers and phantom traffic). Spike presentation and attribution rules remain covered by existing tests and belong to card work in 1b.
+Review fix: order and refund item amounts are stored net of item tax using the order's inclusive/exclusive basis; shipping VAT is excluded from that calculation. The UK paid-shipping/partial-return fixture gives £45 net item sales; the US tax-exclusive/partial-return fixture gives £60. Local validation passes all 101 tests on PGlite, typecheck, production build, browser checks and secret scanning. CI checks the same revision against real PostgreSQL. No live comparison is claimed.
+
+Deferred checks stay in part 1b: wire these normalized amounts into the cards and verify three chosen days against Shopify, including an actual inclusive-tax partial refund with paid shipping. That live refund/report check requires keys; API-shaped fixtures alone cannot establish store report agreement. Cards, date aggregation, watchdogs and Judge.me remain deferred as listed above, with Publish off. Any pre-fix local ingestion records must be re-fetched from Shopify (or sample fixtures) before use in those cards; their stored total tax cannot reconstruct item tax separately. This unmerged part has not been deployed by the builder.
+
+Before the review fix, local checks passed all 99 tests on PGlite (81 retained plus 18 Shopify tests), typecheck, production build, Chromium checks at 390px/1280px under both browser preferences, and Gitleaks working-tree/full-history scans with their generated-secret self-tests. The mockup was opened at both widths. Focused Shopify checks also passed after tightening UK-midnight query boundaries. CI runs the full suite against real PostgreSQL; its result is linked in the PR. No live source check is claimed. Tests cover every section 4 fact touched by ingestion (4.1 UK days; 4.2 webhook reliability, geo guards, Level 2/address fallback, privacy, configured stock/TikTok exclusions, bundle tiers and phantom traffic). Spike presentation and attribution rules remain covered by existing tests and belong to card work in 1b.
 
 ## Open engineering work
 

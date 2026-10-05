@@ -109,8 +109,43 @@ test('4.1 UK days and nightly reconcile follow Europe/London through both clock 
 });
 function orderStub(): any {
   const m = { shopMoney: { amount: '1.00', currencyCode: 'GBP' } };
-  return { id: 'gid://shopify/Order/900001', createdAt: now.toISOString(), updatedAt: now.toISOString(), test: false, displayFinancialStatus: 'PAID', currencyCode: 'GBP', subtotalPriceSet: m, currentSubtotalPriceSet: m, totalTaxSet: m, totalShippingPriceSet: m, lineItems: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } }, refunds: [], fulfillments: [], customAttributes: [] };
+  return { id: 'gid://shopify/Order/900001', createdAt: now.toISOString(), updatedAt: now.toISOString(), test: false, displayFinancialStatus: 'PAID', currencyCode: 'GBP', taxesIncluded: false, subtotalPriceSet: m, totalTaxSet: m, totalShippingPriceSet: m, lineItems: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } }, refunds: [], fulfillments: [], customAttributes: [] };
 }
+
+test('section 5: UK tax-inclusive items and partial returns exclude item VAT and paid shipping VAT', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const raw = (await fixture('order-uk-tax-inclusive-refund')).data.order;
+  await new ShopifyStore(db, 'sample').orders([raw], now);
+  const order = (await db.query("SELECT data FROM pulse.shopify_records WHERE kind = 'order'")).rows[0]!.data as ReturnType<typeof cleanOrder>;
+  assert.equal(order.taxesIncluded, true);
+  assert.equal(order.itemTaxPence, 1800); assert.equal(order.taxPence, 1900); assert.equal(order.shippingPence, 600);
+  // £120 gross less £12 discounts includes £18 item VAT; £6 shipping includes £1 VAT.
+  assert.equal(order.itemsAfterDiscountsPence, 9000);
+  assert.equal(order.refunds[0].taxPence, 900); assert.equal(order.refunds[0].itemsPence, 4500);
+  assert.equal(order.itemsAfterDiscountsPence - order.refunds.reduce((n: number, r: any) => n + r.itemsPence, 0), 4500);
+  // Shipping and its VAT cannot affect net item sales, including after a return.
+  const changedShipping = structuredClone(raw);
+  changedShipping.totalShippingPriceSet.shopMoney.amount = '12.00'; changedShipping.totalTaxSet.shopMoney.amount = '20.00';
+  assert.equal(cleanOrder(changedShipping).itemsAfterDiscountsPence, 9000);
+  assert.deepEqual(cleanOrder(changedShipping).refunds, order.refunds);
+  assert.throws(() => cleanOrder({ ...raw, taxesIncluded: undefined }), ShopifyError);
+  const missingItemTax = structuredClone(raw); delete missingItemTax.lineItems.nodes[0].taxLines;
+  assert.throws(() => cleanOrder(missingItemTax), ShopifyError);
+});
+
+test('section 5: US tax-exclusive items and partial returns never subtract separately charged sales tax', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const raw = (await fixture('order-us-tax-exclusive')).data.order;
+  await new ShopifyStore(db, 'live').orders([raw], now);
+  const order = (await db.query("SELECT data FROM pulse.shopify_records WHERE kind = 'order'")).rows[0]!.data as ReturnType<typeof cleanOrder>;
+  assert.equal(order.market, 'US'); assert.equal(order.taxesIncluded, false);
+  assert.equal(order.itemTaxPence, 800); assert.equal(order.taxPence, 880); assert.equal(order.shippingPence, 1000);
+  assert.equal(order.itemsAfterDiscountsPence, 10000);
+  assert.equal(order.refunds[0].taxPence, 320); assert.equal(order.refunds[0].itemsPence, 4000);
+  assert.equal(order.itemsAfterDiscountsPence - order.refunds.reduce((n: number, r: any) => n + r.itemsPence, 0), 6000);
+  const exempt = structuredClone(raw); exempt.lineItems.nodes[0].taxLines = []; exempt.totalTaxSet.shopMoney.amount = '0.00'; exempt.refunds = [];
+  assert.equal(cleanOrder(exempt).itemsAfterDiscountsPence, 10000);
+});
 
 test('4.2 privacy strips webhook personal data, preserves only replay ids and checks original-byte HMAC', async () => {
   const secret = randomUUID(), bytes = Buffer.from(JSON.stringify(await fixture('webhook-order')));
@@ -216,7 +251,7 @@ test('ingest is idempotent and stale updates cannot overwrite cancellations/refu
   newer.refunds = [{ id: 'gid://shopify/Refund/900001', createdAt: newer.updatedAt, refundLineItems: { nodes: [{ quantity: 1, subtotalSet: { shopMoney: { amount: '79.95', currencyCode: 'GBP' } }, totalTaxSet: { shopMoney: { amount: '13.33', currencyCode: 'GBP' } } }], pageInfo: { hasNextPage: false, endCursor: null } } }];
   await store.orders([newer], now); await store.orders([raw], new Date(now.getTime() + 3600_000));
   const rows = (await db.query("SELECT data FROM pulse.shopify_records WHERE kind = 'order'")).rows; assert.equal(rows.length, 1);
-  const value = rows[0]!.data as any; assert.equal(value.financialStatus, 'REFUNDED'); assert.equal(value.refunds[0].itemsPence, 7995); assert.ok(value.cancelledAt);
+  const value = rows[0]!.data as any; assert.equal(value.financialStatus, 'REFUNDED'); assert.equal(value.refunds[0].itemsPence, 6662); assert.ok(value.cancelledAt);
   await new ShopifyStore(db, 'sample').orders([raw], now); assert.equal((await store.summary()).counts.order, 1);
   await assert.rejects(store.orders([raw, { ...raw, id: 'invalid' }], now)); assert.equal((await store.summary()).counts.order, 1);
 });
@@ -287,11 +322,12 @@ test('GraphQL client paginates nested order lines, refunds, variants and stock l
     const request = JSON.parse(String(init?.body)); requests.push(request); const q = request.query;
     if (q.includes('PulseOrders')) {
       const body = await fixture('orders'); const order = body.data.orders.nodes[0];
+      order.subtotalPriceSet.shopMoney.amount = '80.95'; order.totalTaxSet.shopMoney.amount = '13.50';
       order.lineItems.pageInfo = { hasNextPage: true, endCursor: 'line-2' };
       order.refunds = [{ id: 'gid://shopify/Refund/900001', createdAt: now.toISOString(), refundLineItems: { nodes: [], pageInfo: { hasNextPage: true, endCursor: 'refund-2' } } }];
       return Response.json(body);
     }
-    if (q.includes('PulseLines')) return Response.json({ data: { order: { lineItems: { nodes: [{ id: 'gid://shopify/LineItem/900002', sku: 'oneofone-slab', quantity: 1, product: { id: 'gid://shopify/Product/15948268306766' } }], pageInfo: { hasNextPage: false, endCursor: null } } } } });
+    if (q.includes('PulseLines')) return Response.json({ data: { order: { lineItems: { nodes: [{ id: 'gid://shopify/LineItem/900002', sku: 'oneofone-slab', quantity: 1, product: { id: 'gid://shopify/Product/15948268306766' }, taxLines: [{ priceSet: { shopMoney: { amount: '0.17', currencyCode: 'GBP' } } }] }], pageInfo: { hasNextPage: false, endCursor: null } } } } });
     if (q.includes('PulseRefundLines')) return Response.json({ data: { node: { refundLineItems: { nodes: [{ quantity: 1, subtotalSet: { shopMoney: { amount: '1.00', currencyCode: 'GBP' } }, totalTaxSet: { shopMoney: { amount: '0.17', currencyCode: 'GBP' } } }], pageInfo: { hasNextPage: false, endCursor: null } } } } });
     if (q.includes('PulseStock')) {
       if (request.variables.id !== 'gid://shopify/Product/10896502063438') return Response.json({ data: { product: null } });
@@ -308,7 +344,10 @@ test('GraphQL client paginates nested order lines, refunds, variants and stock l
   } });
   const client = new ShopifyClient(transport, credentials(), 'https://pulse.example.test');
   const result = await client.orders('created_at:>=2026-09-01', null, true);
-  const order = cleanOrder(result.nodes[0]); assert.equal(order.lines.length, 2); assert.equal(order.refunds[0].itemsPence, 100);
+  const order = cleanOrder(result.nodes[0]); assert.equal(order.lines.length, 2); assert.equal(order.refunds[0].itemsPence, 83);
+  assert.equal(order.itemTaxPence, 1350); assert.equal(order.itemsAfterDiscountsPence, 6745);
+  assert.match(orderFields(true), /taxesIncluded/); assert.match(orderFields(false), /taxesIncluded/);
+  assert.ok(requests.filter(r => /PulseOrders|PulseLines/.test(r.query)).every(r => /taxLines\s*\{\s*priceSet\s*\{\s*shopMoney/.test(r.query)));
   const stock = await client.inventory(); assert.equal(stock.length, 2); assert.ok(stock.every(s => cleanInventory(s)));
   assert.ok(requests.some(r => r.variables.after === 'variant-2')); assert.ok(requests.some(r => r.variables.after === 'level-2'));
   assert.ok(requests.filter(r => r.query.includes('PulseStock')).every(r => !appConfig.shopify.tiktokOrderOnlyProductIds.some(id => r.variables.id.endsWith(id))));

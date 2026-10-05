@@ -36,7 +36,20 @@ function journey(visit: any): Record<string, unknown> | null {
   };
 }
 export function cleanOrder(raw: any) {
+  if (typeof raw.taxesIncluded !== 'boolean') throw new ShopifyError('invalid');
   if (raw.lineItems.pageInfo.hasNextPage || raw.refunds.some((r: any) => r.refundLineItems.pageInfo.hasNextPage)) throw new ShopifyError('invalid');
+  // Order tax also includes shipping tax. Only item tax belongs in the item subtotal.
+  const itemTaxPence = raw.lineItems.nodes.reduce((total: number, line: any) => {
+    if (!Array.isArray(line.taxLines)) throw new ShopifyError('invalid');
+    return total + line.taxLines.reduce((n: number, tax: any) => n + pence(tax.priceSet), 0);
+  }, 0);
+  const itemsAfterDiscountsPence = pence(raw.subtotalPriceSet) - (raw.taxesIncluded ? itemTaxPence : 0);
+  const refunds = raw.refunds.map((r: any) => {
+    const taxPence = r.refundLineItems.nodes.reduce((n: number, l: any) => n + pence(l.totalTaxSet), 0);
+    // Refunded item subtotals follow the order's inclusive/exclusive tax basis.
+    const itemsPence = r.refundLineItems.nodes.reduce((n: number, l: any) => n + pence(l.subtotalSet), 0) - (raw.taxesIncluded ? taxPence : 0);
+    return { id: gid('Refund', r.id), createdAt: instant(r.createdAt), itemsPence, taxPence };
+  });
   const warehouses = raw.fulfillments.map((f: any) => f.location?.id).filter((id: unknown) => Object.values(appConfig.shopify.locations).some(l => l.id === id));
   const country = /^[A-Z]{2}$/.test(raw.shippingAddress?.countryCodeV2 ?? '') ? raw.shippingAddress.countryCodeV2 : null;
   const market = country === 'GB' ? 'UK' : country === 'US' ? 'US' : country && appConfig.shopify.euCountries.some(c => c === country) ? 'EU' : country ? 'unknown' : raw.currencyCode === 'USD' || warehouses.includes(appConfig.shopify.locations.us.id) ? 'US' : raw.currencyCode === 'GBP' || warehouses.includes(appConfig.shopify.locations.uk.id) ? 'UK' : 'unknown';
@@ -45,7 +58,7 @@ export function cleanOrder(raw: any) {
     cancelledAt: raw.cancelledAt ? instant(raw.cancelledAt) : null, test: raw.test === true,
     financialStatus: ['PAID', 'PARTIALLY_REFUNDED', 'REFUNDED', 'PARTIALLY_PAID', 'PENDING', 'AUTHORIZED', 'VOIDED', 'EXPIRED'].includes(raw.displayFinancialStatus) ? raw.displayFinancialStatus : 'unknown',
     currency: /^[A-Z]{3}$/.test(raw.currencyCode) ? raw.currencyCode : null,
-    itemsAfterDiscountsPence: pence(raw.subtotalPriceSet), currentItemsAfterDiscountsPence: pence(raw.currentSubtotalPriceSet),
+    taxesIncluded: raw.taxesIncluded, itemTaxPence, itemsAfterDiscountsPence,
     taxPence: pence(raw.totalTaxSet), shippingPence: pence(raw.totalShippingPriceSet),
     customerId: raw.customer ? gid('Customer', raw.customer.id) : null,
     market, marketBasis: country ? 'country' : 'currency_and_warehouse', country,
@@ -54,7 +67,7 @@ export function cleanOrder(raw: any) {
     lines: raw.lineItems.nodes.map((l: any) => ({ id: gid('LineItem', l.id), productId: l.product ? gid('Product', l.product.id) : null, sku: /^[\w-]{1,80}$/.test(l.sku ?? '') ? l.sku : null, quantity: l.quantity })),
     // Theme test attributes only. Arbitrary note attributes are not stored.
     giftTest: ['A', 'B'].includes(raw.customAttributes?.find((a: any) => a.key === '__gift_test')?.value) ? raw.customAttributes.find((a: any) => a.key === '__gift_test').value : null,
-    refunds: raw.refunds.map((r: any) => ({ id: gid('Refund', r.id), createdAt: instant(r.createdAt), itemsPence: r.refundLineItems.nodes.reduce((n: number, l: any) => n + pence(l.subtotalSet), 0), taxPence: r.refundLineItems.nodes.reduce((n: number, l: any) => n + pence(l.totalTaxSet), 0) })),
+    refunds,
     fulfillments: raw.fulfillments.map((f: any) => ({ id: gid('Fulfillment', f.id), status: ['SUCCESS', 'CANCELLED', 'ERROR', 'FAILURE', 'OPEN', 'PENDING'].includes(f.status) ? f.status : 'unknown', createdAt: instant(f.createdAt), updatedAt: instant(f.updatedAt), locationId: warehouses.includes(f.location?.id) ? f.location.id : null })),
     firstVisit: journey(raw.customerJourneySummary?.firstVisit), lastVisit: journey(raw.customerJourneySummary?.lastVisit),
   };

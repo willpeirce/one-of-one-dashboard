@@ -16,12 +16,6 @@
               "currencyCode": "GBP"
             }
           },
-          "currentSubtotalPriceSet": {
-            "shopMoney": {
-              "amount": "79.95",
-              "currencyCode": "GBP"
-            }
-          },
           "totalTaxSet": {
             "shopMoney": {
               "amount": "13.33",
@@ -56,7 +50,17 @@
                 "quantity": 1,
                 "product": {
                   "id": "gid://shopify/Product/10896502063438"
-                }
+                },
+                "taxLines": [
+                  {
+                    "priceSet": {
+                      "shopMoney": {
+                        "amount": "13.33",
+                        "currencyCode": "GBP"
+                      }
+                    }
+                  }
+                ]
               }
             ],
             "pageInfo": {
@@ -76,7 +80,8 @@
                 "campaign": "welcome_email"
               }
             }
-          }
+          },
+          "taxesIncluded": true
         }
       ],
       "pageInfo": {

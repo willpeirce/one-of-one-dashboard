@@ -4,14 +4,15 @@ import { TokenManager } from './token.js';
 
 const page = 'pageInfo { hasNextPage endCursor }';
 const money = 'shopMoney { amount currencyCode }';
+const lineFields = `id sku quantity product { id } taxLines { priceSet { ${money} } }`;
 export const orderFields = (address: boolean) => `
-  id createdAt updatedAt cancelledAt test displayFinancialStatus currencyCode
-  subtotalPriceSet { ${money} } currentSubtotalPriceSet { ${money} }
+  id createdAt updatedAt cancelledAt test displayFinancialStatus currencyCode taxesIncluded
+  subtotalPriceSet { ${money} }
   totalTaxSet { ${money} } totalShippingPriceSet { ${money} }
   customer { id }
   ${address ? 'shippingAddress { countryCodeV2 provinceCode zip }' : ''}
   customAttributes { key value }
-  lineItems(first: 100) { nodes { id sku quantity product { id } } ${page} }
+  lineItems(first: 100) { nodes { ${lineFields} } ${page} }
   refunds { id createdAt refundLineItems(first: 100) { nodes { quantity subtotalSet { ${money} } totalTaxSet { ${money} } } ${page} } }
   fulfillments(first: 100) { id status createdAt updatedAt location { id } }
   customerJourneySummary { firstVisit { landingPage utmParameters { source medium campaign } } lastVisit { landingPage utmParameters { source medium campaign } } }
@@ -64,7 +65,7 @@ export class ShopifyClient implements ShopifyReader {
   private async completeOrder(order: any): Promise<void> {
     let after = nextCursor(order.lineItems);
     while (after) {
-      const data = await this.#graphql(`query PulseLines($id: ID!, $after: String!) { order(id: $id) { lineItems(first: 100, after: $after) { nodes { id sku quantity product { id } } ${page} } } }`, { id: order.id, after });
+      const data = await this.#graphql(`query PulseLines($id: ID!, $after: String!) { order(id: $id) { lineItems(first: 100, after: $after) { nodes { ${lineFields} } ${page} } } }`, { id: order.id, after });
       const next = nextCursor(data.order.lineItems);
       if (next === after) throw new ShopifyError('invalid');
       order.lineItems.nodes.push(...data.order.lineItems.nodes); order.lineItems.pageInfo = data.order.lineItems.pageInfo; after = next;

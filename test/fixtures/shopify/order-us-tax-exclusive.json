@@ -6,23 +6,23 @@
       "updatedAt": "2026-09-30T11:50:00Z",
       "cancelledAt": null,
       "test": false,
-      "displayFinancialStatus": "PAID",
+      "displayFinancialStatus": "PARTIALLY_REFUNDED",
       "currencyCode": "GBP",
       "subtotalPriceSet": {
         "shopMoney": {
-          "amount": "79.95",
+          "amount": "100.00",
           "currencyCode": "GBP"
         }
       },
       "totalTaxSet": {
         "shopMoney": {
-          "amount": "13.33",
+          "amount": "8.80",
           "currencyCode": "GBP"
         }
       },
       "totalShippingPriceSet": {
         "shopMoney": {
-          "amount": "0.00",
+          "amount": "10.00",
           "currencyCode": "GBP"
         }
       },
@@ -30,9 +30,9 @@
         "id": "gid://shopify/Customer/900001"
       },
       "shippingAddress": {
-        "countryCodeV2": "GB",
-        "provinceCode": "ENG",
-        "zip": "SW1A 1AA"
+        "countryCodeV2": "US",
+        "provinceCode": "CA",
+        "zip": "90210"
       },
       "customAttributes": [
         {
@@ -45,7 +45,7 @@
           {
             "id": "gid://shopify/LineItem/900001",
             "sku": "ultimate",
-            "quantity": 1,
+            "quantity": 2,
             "product": {
               "id": "gid://shopify/Product/10896502063438"
             },
@@ -53,7 +53,7 @@
               {
                 "priceSet": {
                   "shopMoney": {
-                    "amount": "13.33",
+                    "amount": "8.00",
                     "currencyCode": "GBP"
                   }
                 }
@@ -66,7 +66,35 @@
           "endCursor": null
         }
       },
-      "refunds": [],
+      "refunds": [
+        {
+          "id": "gid://shopify/Refund/900001",
+          "createdAt": "2026-09-30T11:45:00Z",
+          "refundLineItems": {
+            "nodes": [
+              {
+                "quantity": 1,
+                "subtotalSet": {
+                  "shopMoney": {
+                    "amount": "40.00",
+                    "currencyCode": "GBP"
+                  }
+                },
+                "totalTaxSet": {
+                  "shopMoney": {
+                    "amount": "3.20",
+                    "currencyCode": "GBP"
+                  }
+                }
+              }
+            ],
+            "pageInfo": {
+              "hasNextPage": false,
+              "endCursor": null
+            }
+          }
+        }
+      ],
       "fulfillments": [],
       "customerJourneySummary": {
         "firstVisit": null,
@@ -79,7 +107,7 @@
           }
         }
       },
-      "taxesIncluded": true
+      "taxesIncluded": false
     }
   },
   "extensions": {

@@ -81,6 +81,9 @@ Follow Will's 5 October instruction and mockup 8: all pages use the dark palette
 ## 2026-10-05, logo and dates: draw the supplied wordmark white
 Use mockup 8's `--logo-filter` token, including `brightness(0) invert(1)`, on the header logo and Settings wordmark. Keep the supplied file and its transparent lettering. A replacement image or a drawn copy is unnecessary; the manifest and home-screen icons stay unchanged.
 
+## 2026-10-05, home-screen icon: the sky with the white mark, no plate
+Will found the published home-screen icon ugly: a white plate holding the black mark on flat purple. Draw the icons from the header's own `--sky` and `--logo-filter` tokens instead, read from `src/dashboard.css`, so the icon matches the header and follows any later token change when regenerated. The mark spans 70% of the width, inside iOS's rounded-corner mask, and its lettering shows the sky through it. Playwright's Chromium draws each size at its own pixels; it is already a pinned dev dependency, so ImageMagick is no longer needed and its radial gradients would not reproduce the CSS sky. This supersedes the logo-and-dates note that the icons stay unchanged.
+
 ## 2026-10-05, logo and dates: four tab periods and the mockup calendar
 Add the 30 days tab beside Today, Yesterday and 7 days, then the calendar-icon Dates control. Port the mockup's sheet/dialog, month layout, quick ranges and selection appearance; add arrow-key navigation, full-date accessible names and focus return to Dates. A matching selection uses its tab. The 7- and 30-day tabs cover complete days before the fixed sample today, 30 September 2026; sample history starts on 1 January. Moving the sample clock with the real day would detach the existing readout and other dated cards from their example scenario, so this change keeps the mockup's sample clock explicit.
 

@@ -96,7 +96,7 @@ export function cleanSessions(table: any) {
     const day = String(row.day);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || ukToday(new Date(`${day}T12:00:00Z`)) !== day) throw new ShopifyError('invalid');
     const carts = count(row.sessions_with_cart_additions);
-    if (row.landing_page_path === '/pages/inside' && String(row.device_type).toLowerCase() === 'desktop' && String(row.referrer_source).toLowerCase() === 'google' && carts === 0) continue;
+    if (row.landing_page_path === '/pages/inside' && String(row.session_device_type).toLowerCase() === 'desktop' && String(row.referrer_source).toLowerCase() === 'google' && carts === 0) continue;
     const total = days.get(day) ?? { day, sessions: 0, carts: 0, checkouts: 0, completed: 0, uk: 0, us: 0, missouri: 0 };
     const sessions = count(row.sessions);
     total.sessions += sessions; total.carts += carts; total.checkouts += count(row.sessions_that_reached_checkout); total.completed += count(row.sessions_that_completed_checkout);

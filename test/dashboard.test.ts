@@ -61,14 +61,15 @@ test('sample snapshots remain independent and configured tripwires update every 
     }
   }
   assert.equal(changed.hero.today.net.n, original.hero.today.net.n);
-  assert.ok(changed.hero['7d'].ukcpo.d.why.includes('0 of 7 sample history days'));
-  assert.ok(changed.hero['7d'].uscpo.d.why.includes('6 of 7 sample history days'));
+  assert.ok(changed.hero['7d'].ukcpo.d.why.includes('0 of 7 days were'));
+  assert.ok(changed.hero['7d'].uscpo.d.why.includes('6 of 7 days were'));
   assert.ok(!changed.hero['7d'].ukcpo.d.why.includes('Two days'));
   assert.ok(!changed.hero['7d'].uscpo.d.why.includes('All 7 days'));
   const highBar = getSampleDashboard({ ...defaultSettings(), blendedMetaTripwireGbp: 100 });
-  for (const period of Object.values(highBar.hero)) {
-    assert.ok(period.ukcpo.d.why.includes('0 of 7 sample history days'));
-    assert.ok(period.uscpo.d.why.includes('0 of 7 sample history days'));
+  for (const [key, days] of [['today', 1], ['yday', 1], ['7d', 7], ['30d', 30]] as const) {
+    const period = highBar.hero[key];
+    assert.ok(period.ukcpo.d.why.includes(`0 of ${days} days were`));
+    assert.ok(period.uscpo.d.why.includes(`0 of ${days} days were`));
   }
   const fractionalBar = getSampleDashboard({ ...defaultSettings(), blendedMetaTripwireGbp: 31.2 });
   assert.ok(fractionalBar.hero.today.ukcpo.d.rule.includes('£28.08'));
@@ -77,6 +78,19 @@ test('sample snapshots remain independent and configured tripwires update every 
   changed.hero.today.net.n = -1;
   assert.equal(getSampleDashboard().hero.today.net.n, original.hero.today.net.n);
   assert.equal(original.hero.today.ukcpo.z[1]?.[1], 28);
+});
+
+test('Today retains the supplied complete-week history and never judges a partial-day percentage', () => {
+  const today = getSampleDashboard().hero.today;
+  assert.deepEqual(today.spark, [1640, 1710, 1980, 1820, 2310, 1760, 2099]);
+  assert.deepEqual(today.net.d.hl, ['23 Sep', '29 Sep']);
+  assert.equal(today.net.ss, '6 orders · 7-day avg £1,903 a day');
+  assert.equal(today.net.n, 296);
+  assert.equal(today.net.state, 'sofar');
+  assert.doesNotMatch(today.net.d.why, /%/);
+  assert.match(today.net.d.why, /4 orders by this time yesterday/);
+  assert.equal(today.net.d.hm, undefined);
+  assert.ok(today.orders.d.hm?.some((mark) => mark.includes('24 Sep (UK)')));
 });
 
 test('source actions are disabled while account navigation and sign-out remain available', () => {

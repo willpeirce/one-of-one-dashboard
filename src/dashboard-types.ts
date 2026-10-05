@@ -1,7 +1,7 @@
 import type { SourceHealth, SourceId } from './sources.js';
 
 export type State = 'good' | 'warn' | 'decide' | 'alarm' | 'info' | 'sofar' | 'est';
-export type Period = 'today' | 'yday' | '7d';
+export type Period = 'today' | 'yday' | '7d' | '30d';
 export type Zone = [number, number, State];
 
 export interface Detail {
@@ -9,6 +9,9 @@ export interface Detail {
   rule: string;
   src: string;
   hist?: number[];
+  hl?: [string, string];
+  ha?: string;
+  hm?: string[];
   hp?: string;
   hs?: string;
   extra?: [string, string][];
@@ -85,6 +88,10 @@ export interface HeroMetric extends SampleProvenance {
 }
 
 export interface HeroPeriod {
+  from: string;
+  to: string;
+  short: string;
+  spark: number[];
   eyebrow: string;
   sub1: string;
   per: string;
@@ -117,6 +124,7 @@ export interface DashboardSnapshot {
   brand: 'one-of-one';
   asOf: string;
   generatedAt: string;
+  bounds: { min: string; max: string; today: string };
   hero: Record<Period, HeroPeriod>;
   widgets: Record<string, DashboardWidget>;
   textValues: Record<string, SampleText>;

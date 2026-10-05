@@ -25,9 +25,9 @@
             "displayName": "landing_page_path"
           },
           {
-            "name": "device_type",
+            "name": "session_device_type",
             "dataType": "STRING",
-            "displayName": "device_type"
+            "displayName": "session_device_type"
           },
           {
             "name": "referrer_source",

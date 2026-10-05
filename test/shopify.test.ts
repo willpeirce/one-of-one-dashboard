@@ -194,7 +194,10 @@ test('4.2 session guards mask both broken dates and Missouri above 10%; exclude 
   const copy = structuredClone(table); copy.rows[2][6] = 20; assert.equal(cleanSessions(copy)[0].marketReliable, false);
   copy.rows[3][7] = 1; assert.equal(cleanSessions(copy)[0].sessions, 370);
   copy.rows[3][7] = 0; copy.rows[3][4] = 'mobile'; assert.equal(cleanSessions(copy)[0].sessions, 370);
-  assert.ok(sessionQuery('2026-09-29', '2026-09-30').includes('landing_page_path'));
+  // Live 5 Oct: Shopify rejected `device_type` ("Column Not Found"); its sessions column is `session_device_type`.
+  const groups = ['day', 'session_country', 'session_region', 'landing_page_path', 'session_device_type', 'referrer_source'];
+  assert.ok(sessionQuery('2026-09-29', '2026-09-30').includes(`GROUP BY ${groups.join(', ')} SINCE`));
+  assert.deepEqual(table.columns.slice(0, groups.length).map((c: any) => c.name), groups);
 });
 
 test('400-day/60-day backfill checkpoints survive restart and fall back to ShopifyQL history', async t => {

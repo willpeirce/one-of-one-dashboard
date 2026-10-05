@@ -15,7 +15,7 @@ export function backfillWindow(now: Date, allOrders: boolean) {
   return { from: addDays(ukToday(now), -(allOrders ? 399 : 59)), olderFrom: addDays(ukToday(now), -399), olderTo: addDays(ukToday(now), -60) };
 }
 export function sessionQuery(from: string, to: string): string {
-  return `FROM sessions SHOW sessions, sessions_with_cart_additions, sessions_that_reached_checkout, sessions_that_completed_checkout GROUP BY day, session_country, session_region, landing_page_path, device_type, referrer_source SINCE ${from} UNTIL ${to}`;
+  return `FROM sessions SHOW sessions, sessions_with_cart_additions, sessions_that_reached_checkout, sessions_that_completed_checkout GROUP BY day, session_country, session_region, landing_page_path, session_device_type, referrer_source SINCE ${from} UNTIL ${to}`;
 }
 function salesQuery(from: string, to: string): string { return `FROM sales SHOW orders, net_sales GROUP BY day SINCE ${from} UNTIL ${to} ORDER BY day`; }
 export function ukDayStart(day: string): Date {

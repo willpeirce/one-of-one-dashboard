@@ -1,0 +1,27 @@
+{
+  "id": 900001,
+  "admin_graphql_api_id": "gid://shopify/Order/900001",
+  "created_at": "2026-09-29T23:30:00Z",
+  "updated_at": "2026-09-30T11:50:00Z",
+  "email": "fixture-person@example.invalid",
+  "customer": {
+    "id": 900001,
+    "first_name": "Invented",
+    "last_name": "Fixture"
+  },
+  "shipping_address": {
+    "first_name": "Invented",
+    "last_name": "Fixture",
+    "address1": "1 Fictional Test Street",
+    "city": "Testville",
+    "zip": "SW1A 1AA",
+    "country_code": "GB"
+  },
+  "line_items": [
+    {
+      "id": 900001,
+      "product_id": 10896502063438,
+      "quantity": 1
+    }
+  ]
+}

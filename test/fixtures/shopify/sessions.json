@@ -1,0 +1,122 @@
+{
+  "data": {
+    "shopifyqlQuery": {
+      "parseErrors": [],
+      "tableData": {
+        "columns": [
+          {
+            "name": "day",
+            "dataType": "STRING",
+            "displayName": "day"
+          },
+          {
+            "name": "session_country",
+            "dataType": "STRING",
+            "displayName": "session_country"
+          },
+          {
+            "name": "session_region",
+            "dataType": "STRING",
+            "displayName": "session_region"
+          },
+          {
+            "name": "landing_page_path",
+            "dataType": "STRING",
+            "displayName": "landing_page_path"
+          },
+          {
+            "name": "device_type",
+            "dataType": "STRING",
+            "displayName": "device_type"
+          },
+          {
+            "name": "referrer_source",
+            "dataType": "STRING",
+            "displayName": "referrer_source"
+          },
+          {
+            "name": "sessions",
+            "dataType": "INTEGER",
+            "displayName": "sessions"
+          },
+          {
+            "name": "sessions_with_cart_additions",
+            "dataType": "INTEGER",
+            "displayName": "sessions_with_cart_additions"
+          },
+          {
+            "name": "sessions_that_reached_checkout",
+            "dataType": "INTEGER",
+            "displayName": "sessions_that_reached_checkout"
+          },
+          {
+            "name": "sessions_that_completed_checkout",
+            "dataType": "INTEGER",
+            "displayName": "sessions_that_completed_checkout"
+          }
+        ],
+        "rows": [
+          [
+            "2026-09-30",
+            "United Kingdom",
+            "England",
+            "/products/ultimate",
+            "mobile",
+            "direct",
+            100,
+            15,
+            10,
+            3
+          ],
+          [
+            "2026-09-30",
+            "United States",
+            "Ohio",
+            "/",
+            "mobile",
+            "facebook",
+            50,
+            8,
+            5,
+            2
+          ],
+          [
+            "2026-09-30",
+            "United States",
+            "Missouri",
+            "/",
+            "mobile",
+            "direct",
+            2,
+            1,
+            1,
+            0
+          ],
+          [
+            "2026-09-30",
+            "United States",
+            "Missouri",
+            "/pages/inside",
+            "desktop",
+            "google",
+            200,
+            0,
+            0,
+            0
+          ]
+        ]
+      }
+    }
+  },
+  "extensions": {
+    "cost": {
+      "requestedQueryCost": 20,
+      "actualQueryCost": 12,
+      "throttleStatus": {
+        "maximumAvailable": 2000,
+        "currentlyAvailable": 1988,
+        "restoreRate": 100
+      }
+    }
+  }
+}

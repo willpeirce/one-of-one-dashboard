@@ -1,0 +1,91 @@
+{
+  "data": {
+    "order": {
+      "id": "gid://shopify/Order/900001",
+      "createdAt": "2026-09-29T23:30:00Z",
+      "updatedAt": "2026-09-30T11:50:00Z",
+      "cancelledAt": null,
+      "test": false,
+      "displayFinancialStatus": "PAID",
+      "currencyCode": "GBP",
+      "subtotalPriceSet": {
+        "shopMoney": {
+          "amount": "79.95",
+          "currencyCode": "GBP"
+        }
+      },
+      "currentSubtotalPriceSet": {
+        "shopMoney": {
+          "amount": "79.95",
+          "currencyCode": "GBP"
+        }
+      },
+      "totalTaxSet": {
+        "shopMoney": {
+          "amount": "13.33",
+          "currencyCode": "GBP"
+        }
+      },
+      "totalShippingPriceSet": {
+        "shopMoney": {
+          "amount": "0.00",
+          "currencyCode": "GBP"
+        }
+      },
+      "customer": {
+        "id": "gid://shopify/Customer/900001"
+      },
+      "shippingAddress": {
+        "countryCodeV2": "GB",
+        "provinceCode": "ENG",
+        "zip": "SW1A 1AA"
+      },
+      "customAttributes": [
+        {
+          "key": "__gift_test",
+          "value": "A"
+        }
+      ],
+      "lineItems": {
+        "nodes": [
+          {
+            "id": "gid://shopify/LineItem/900001",
+            "sku": "ultimate",
+            "quantity": 1,
+            "product": {
+              "id": "gid://shopify/Product/10896502063438"
+            }
+          }
+        ],
+        "pageInfo": {
+          "hasNextPage": false,
+          "endCursor": null
+        }
+      },
+      "refunds": [],
+      "fulfillments": [],
+      "customerJourneySummary": {
+        "firstVisit": null,
+        "lastVisit": {
+          "landingPage": "https://oneofonehq.com/?utm_source=One%20of%20One&utm_medium=email&utm_campaign=welcome_email",
+          "utmParameters": {
+            "source": "One of One",
+            "medium": "email",
+            "campaign": "welcome_email"
+          }
+        }
+      }
+    }
+  },
+  "extensions": {
+    "cost": {
+      "requestedQueryCost": 20,
+      "actualQueryCost": 12,
+      "throttleStatus": {
+        "maximumAvailable": 2000,
+        "currentlyAvailable": 1988,
+        "restoreRate": 100
+      }
+    }
+  }
+}

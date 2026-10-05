@@ -16,8 +16,13 @@ export const appConfig = {
   },
   shopify: {
     storeDomain: '6q0g0j-fv.myshopify.com',
+    apiVersion: '2026-10',
+    webhookPath: '/webhooks/shopify',
+    sampleNow: '2026-09-30T12:00:00Z',
+    sessionFallbackPath: 'ops/shopify-daily',
     storefrontDomain: 'oneofonehq.com',
     markets: ['UK', 'US', 'EU'],
+    euCountries: ['AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE'],
     locations: {
       uk: { name: 'Northampton', id: 'gid://shopify/Location/106790748494' },
       us: { name: 'Ohio', id: 'gid://shopify/Location/106790781262' },

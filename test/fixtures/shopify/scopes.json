@@ -1,0 +1,37 @@
+{
+  "data": {
+    "currentAppInstallation": {
+      "accessScopes": [
+        {
+          "handle": "read_orders"
+        },
+        {
+          "handle": "read_all_orders"
+        },
+        {
+          "handle": "read_products"
+        },
+        {
+          "handle": "read_inventory"
+        },
+        {
+          "handle": "read_locations"
+        },
+        {
+          "handle": "read_reports"
+        }
+      ]
+    }
+  },
+  "extensions": {
+    "cost": {
+      "requestedQueryCost": 20,
+      "actualQueryCost": 12,
+      "throttleStatus": {
+        "maximumAvailable": 2000,
+        "currentlyAvailable": 1988,
+        "restoreRate": 100
+      }
+    }
+  }
+}

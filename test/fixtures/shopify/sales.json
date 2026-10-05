@@ -1,0 +1,44 @@
+{
+  "data": {
+    "shopifyqlQuery": {
+      "parseErrors": [],
+      "tableData": {
+        "columns": [
+          {
+            "name": "day",
+            "dataType": "STRING",
+            "displayName": "day"
+          },
+          {
+            "name": "orders",
+            "dataType": "INTEGER",
+            "displayName": "orders"
+          },
+          {
+            "name": "net_sales",
+            "dataType": "INTEGER",
+            "displayName": "net_sales"
+          }
+        ],
+        "rows": [
+          [
+            "2025-08-27",
+            1,
+            "29.95"
+          ]
+        ]
+      }
+    }
+  },
+  "extensions": {
+    "cost": {
+      "requestedQueryCost": 20,
+      "actualQueryCost": 12,
+      "throttleStatus": {
+        "maximumAvailable": 2000,
+        "currentlyAvailable": 1988,
+        "restoreRate": 100
+      }
+    }
+  }
+}

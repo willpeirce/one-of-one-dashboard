@@ -1,0 +1,39 @@
+import { readFile } from 'node:fs/promises';
+import type { Page, ShopifyReader } from './client.js';
+import { appConfig } from '../config.js';
+export async function fixture(name: string): Promise<any> {
+  return JSON.parse(await readFile(new URL(`../../test/fixtures/shopify/${name}.json`, import.meta.url), 'utf8'));
+}
+export class SampleShopify implements ShopifyReader {
+  async scopes(): Promise<string[]> { return (await fixture('scopes')).data.currentAppInstallation.accessScopes.map((s: any) => s.handle); }
+  async orders(query: string, _after: string | null, address: boolean): Promise<Page> {
+    const result = (await fixture('orders')).data.orders;
+    const from = /(?:created_at|updated_at):>=(\S+)/.exec(query)?.[1];
+    const to = /(?:created_at|updated_at):<=(\S+)/.exec(query)?.[1];
+    result.nodes = result.nodes.filter((n: any) => {
+      const date = Date.parse(n[query.startsWith('updated_at') ? 'updatedAt' : 'createdAt']);
+      return (!from || date >= Date.parse(from)) && (!to || date <= Date.parse(to));
+    });
+    if (!address) for (const n of result.nodes) delete n.shippingAddress;
+    return result;
+  }
+  async order(id: string, address: boolean): Promise<any> {
+    const order = (await fixture('order')).data.order;
+    if (!address) delete order.shippingAddress;
+    return order.id === id ? order : null;
+  }
+  async inventory(): Promise<any[]> {
+    const product = (await fixture('product')).data.product;
+    const variant = product.variants.nodes[0];
+    return (await fixture('levels')).data.inventoryItem.inventoryLevels.nodes.map((level: any) => ({ productId: product.id, variantId: variant.id, inventoryItemId: variant.inventoryItem.id, ...level }));
+  }
+  async report(query: string): Promise<any> {
+    const table = (await fixture(query.startsWith('FROM sales') ? 'sales' : 'sessions')).data.shopifyqlQuery.tableData;
+    const from = /SINCE (\d{4}-\d{2}-\d{2})/.exec(query)?.[1];
+    const to = /UNTIL (\d{4}-\d{2}-\d{2})/.exec(query)?.[1] ?? appConfig.shopify.sampleNow.slice(0, 10);
+    table.rows = table.rows.filter((r: any) => (!from || r[0] >= from) && r[0] <= to);
+    return table;
+  }
+  async subscriptions(): Promise<Page> { return (await fixture('subscriptions')).data.webhookSubscriptions; }
+  async subscribe(_topic: string, _uri: string): Promise<void> { throw new Error('Sample mode cannot subscribe.'); }
+}

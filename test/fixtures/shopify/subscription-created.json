@@ -1,0 +1,21 @@
+{
+  "data": {
+    "webhookSubscriptionCreate": {
+      "webhookSubscription": {
+        "id": "gid://shopify/WebhookSubscription/900001"
+      },
+      "userErrors": []
+    }
+  },
+  "extensions": {
+    "cost": {
+      "requestedQueryCost": 20,
+      "actualQueryCost": 12,
+      "throttleStatus": {
+        "maximumAvailable": 2000,
+        "currentlyAvailable": 1988,
+        "restoreRate": 100
+      }
+    }
+  }
+}

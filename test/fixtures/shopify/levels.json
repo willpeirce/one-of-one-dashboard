@@ -1,0 +1,46 @@
+{
+  "data": {
+    "inventoryItem": {
+      "id": "gid://shopify/InventoryItem/900001",
+      "inventoryLevels": {
+        "nodes": [
+          {
+            "id": "gid://shopify/InventoryLevel/900001?inventory_item_id=900001",
+            "location": {
+              "id": "gid://shopify/Location/106790748494"
+            },
+            "quantities": [
+              {
+                "name": "available",
+                "quantity": 120
+              },
+              {
+                "name": "on_hand",
+                "quantity": 125
+              },
+              {
+                "name": "committed",
+                "quantity": 5
+              }
+            ]
+          }
+        ],
+        "pageInfo": {
+          "hasNextPage": false,
+          "endCursor": null
+        }
+      }
+    }
+  },
+  "extensions": {
+    "cost": {
+      "requestedQueryCost": 20,
+      "actualQueryCost": 12,
+      "throttleStatus": {
+        "maximumAvailable": 2000,
+        "currentlyAvailable": 1988,
+        "restoreRate": 100
+      }
+    }
+  }
+}

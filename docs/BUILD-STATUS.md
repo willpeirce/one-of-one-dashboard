@@ -5,8 +5,9 @@ Updated in every pull request.
 | Stage | What | Code | Keys in Replit | Live check ("Done when") |
 |---|---|---|---|---|
 | 0a | Service, database, passkeys, audit, source registry, CI | merged 2 Oct 2026; deployed 2 Oct | `DASHBOARD_SETUP_CODE`: configured | Will's phone enrollment and sign-in confirmed 4 Oct |
-| 0b | Real screen on sample data, live updates, Settings, home-screen app | merged 4 Oct 2026; logo/date follow-up merged and published 5 Oct; home-screen icon follow-up on `home-screen-icon` | no source keys needed | Will saw the published dark look and white logo and added the app to his home screen, 5 Oct |
-| 1 | Shopify, New reviews (Judge.me) | not started | no | no |
+| 0b | Real screen on sample data, live updates, Settings, home-screen app | merged 4 Oct 2026; logo/date follow-up merged and published 5 Oct; home-screen icon follow-up merged 5 Oct | no source keys needed | Will saw the published dark look and white logo and added the app to his home screen, 5 Oct |
+| 1a | Shopify token manager, backfill, webhooks and polls | implemented on `stage-1a-shopify`; PR review pending | no Shopify keys | fixture checks only; live checks await keys |
+| 1b | Shopify cards/watchdogs and New reviews (Judge.me) | next; Judge.me Publish behind its flag, off | no | no |
 | 2 | Meta | not started | no | no |
 | 3 | Google Ads | not started | no | no |
 | 4 | Mailchimp | not started | no | no |
@@ -16,7 +17,11 @@ Updated in every pull request.
 
 ## Next step
 
-Stage 0b and its logo/date follow-up are merged and published. Review the `home-screen-icon` follow-up: Will asked on 5 Oct for the sky with the white mark instead of the white plate. Will asked to move on to stage 1 rather than publish it alone, so it can ride the stage 1 publish. After that publish, Will removes the home-screen icon and adds it again, because iOS keeps the old one. No migration is needed. Source clients start in their own stages; Shopify and Judge.me are stage 1.
+Review and merge part 1a. It starts from latest `main` at `58a5058`, after confirming stage 0b PR #3 and follow-up PRs #5/#6 are merged. The home-screen icon is already on `main` and can ride the next publication; Will removes/re-adds the icon after that publication because iOS caches it. Will deploys; this task performs no deployment.
+
+**Part 1b holds:** replace Shopify business-card examples with the ingested source's live or labelled sample numbers: hero/scoreboard, orders by day and spike labels, checkout, stock/cover, Refill Pack and Shopify-side Email. Keep advertising/cost estimates and other sources explicitly labelled until their stages. Build the orders-flowing, US-cart, checkout, dispatch, refunds, webhook, geo and self-check watchdogs and their Needs you cards. Connect New reviews from Judge.me with its real API fixtures, polling/webhooks, greeting count, sorting, privacy and Open links. Judge.me Publish/hide remains behind `appConfig.judgeme.publishEnabled`, **off**; enable it only on Will's instruction. Its current sample Publish action remains disabled.
+
+Part 1a intentionally feeds the ingestion summary in Source health, not the business cards assigned to 1b. These cards still carry the sample banner even when Shopify imports live data. Three-day report agreement and order-to-card timing are full stage-1 checks after 1b and keys.
 
 ## What runs
 
@@ -28,7 +33,13 @@ Stage 0b and its logo/date follow-up are merged and published. Review the `home-
 - Local fonts and logo, manifest and home-screen icons; no external asset requests or private offline cache. Source health and audit remain available in the account menu.
 - Authenticated Server-Sent Events refresh the sample snapshot and apply Settings changes without reloading. Only the four tab periods travel in snapshots; picked ranges are fetched on demand and remain unchanged through a live update. Source-changing and deferred actions remain disabled with their original labels and **Not built yet** notes.
 - Only plan 7.7 Settings fields, stored in `pulse` with optimistic version checks and one atomic audit entry per changed field. No key values or before/after values enter the audit log.
-- All ten sources select sample/live independently from required key presence. No keys means **Waiting for keys**. All keys means live mode with **Client not built**. No live data is fetched and no external client is implemented.
+- All ten sources select sample/live independently from required key presence. Shopify now has its own worker: no Shopify keys uses API-shaped fixtures and **Waiting for keys**; both keys uses the live client automatically. Other complete-key sources remain **Client not built**. Shopify's initial state reads **First sync pending**, then real health, failure count and last good time.
+- Shopify Admin GraphQL/webhooks are pinned to **2026-10**. Ingest uses `pulse` tables from migration 004, partitioned by sample/live, with source id, fetched time and brand. Sample fixtures under `test/fixtures/shopify/` are invented, fixed to 30 September 2026. Source health and signed-in `/api/shopify` show counts from this store, labelled sample/live; sample imports never claim live success.
+- Token exchange uses client credentials, a 20-hour renewal point, in-memory single-flight caching and one refresh on 401. Calls have a 10-second timeout, up to three retries/backoff, serial rate-budget handling and request-id-only diagnostics. No token is persisted.
+- Backfill persists its page cursor and fixed window: 400 UK days with `read_all_orders`, otherwise 60 order days plus older ShopifyQL daily sales. Address denial retries a query without address fields; postcode retains the UK outward part only. Ordered products retain bundle tiers and TikTok duplicate orders; stock reads only configured products/J&J locations.
+- HMAC is checked over original webhook bytes. Subscriptions request identifiers only; the inbox retains a privacy-filtered replay projection, never a full personal payload. Created/updated/cancelled orders, refunds, fulfilments and inventory events are durably deduplicated. An independent inbox loop re-reads current source records, retries failures and resumes after restart. Subscription checks run hourly, repair missing subscriptions only at published `APP_ORIGIN`, and retain repair notices for the part-1b Needs you cards. Dev origins are rejected.
+- Orders poll every five minutes with at least ten minutes of overlap (longer after a missed run); inventory polls every five minutes; seven-completed-day order reconciliation runs after UK midnight. ShopifyQL sessions/funnel read today and yesterday every five minutes. The 22/23 September market guard and Missouri >10% guard retain store-wide totals but mark market conversion unreliable. Only the specified `/pages/inside` desktop/Google/no-cart phantom pattern is removed.
+- Level 2 refusal preserves unknowns/last good records. A narrow read-only fallback adapter accepts the connector routine's dated ShopifyQL table from `ops/shopify-daily/YYYY-MM-DD.json` on HQ `main`, with `GITHUB_HQ_TOKEN`, labelled `routine_daily`. No key/file means unavailable sessions; no invented zero. The routine/file contract is a new documented decision, not an existing live feed. Older order history still needs `read_all_orders` when ShopifyQL is refused.
 - CI is configured for every pull request: typecheck, real PostgreSQL database tests, build, browser WebAuthn checks and a secret scan. Local checks use the same tests on PGlite or PostgreSQL; Chromium's virtual authenticator exercises real signatures.
 - Initial stage 0a local validation passed: all 26 tests on PGlite and PostgreSQL 17.11; typecheck and build; Chromium sign-in and rejection checks on both database backends; Gitleaks with generated-secret self-tests; compiled production startup and migration repeatability.
 - Replit database fix validation: all 42 tests pass on PGlite and PostgreSQL 17.11, plus typecheck, build, browser checks on both backends and the secret scan. The review regression test confirms fixed configuration messages for a bad `APP_ORIGIN` at startup and missing `DATABASE_URL` in the CLI, without exposing values. Compiled startup and migration CLI checks confirm SQLSTATE/filename-only database failures and the Node, migrations-complete and listening log lines.
@@ -38,12 +49,18 @@ Stage 0b and its logo/date follow-up are merged and published. Review the `home-
 
 ## Not in 0b
 
-Source clients and measured business data, source API fixtures, source-system writes, test verdict calculations/writes, uploads and cost models, Handover/UGC integrations, push delivery and Ask. Push keys are retained privately for later use; the summary preference sends nothing yet. Will added the published app to his iPhone home screen on 5 October.
+Other source clients and measured business cards, source-system writes, test verdict calculations/writes, uploads and cost models, Handover/UGC integrations, push delivery and Ask. Push keys are retained privately for later use; the summary preference sends nothing yet. Will added the published app to his iPhone home screen on 5 October.
+
+## Part 1a validation
+
+Local checks pass: all 99 tests on PGlite (81 retained plus 18 Shopify tests), typecheck, production build, Chromium checks at 390px/1280px under both browser preferences, and Gitleaks working-tree/full-history scans with their generated-secret self-tests. The mockup was opened at both widths. Focused Shopify checks also passed after tightening UK-midnight query boundaries. CI runs the full suite against real PostgreSQL; its result is linked in the PR. No live source check is claimed. Tests cover every section 4 fact touched by ingestion (4.1 UK days; 4.2 webhook reliability, geo guards, Level 2/address fallback, privacy, configured stock/TikTok exclusions, bundle tiers and phantom traffic). Spike presentation and attribution rules remain covered by existing tests and belong to card work in 1b.
 
 ## Open engineering work
 
 The current 15-second SSE heartbeat re-sends the full snapshot even when the dashboard data is unchanged (now about 90 KB plus source health per open tab, with four hero periods). In a later change, keep session revalidation on the heartbeat, send an SSE comment ping to maintain the connection, and send a snapshot only when its content changes, excluding `generatedAt` from that comparison. The logo/date follow-up leaves this heartbeat behaviour unchanged.
 
 ## Open questions for Will
+
+For live Shopify checks: add `SHOPIFY_CLIENT_ID` and `SHOPIFY_CLIENT_SECRET` in Replit Secrets, redeploy, and confirm granted scopes/Level 2. Do not send keys to the builder. If Level 2 is refused, a session must create the connector routine and the documented dated HQ files; the dashboard never creates or changes that routine. The fallback needs `GITHUB_HQ_TOKEN` earlier than stage 5, only in that case. If both Level 2 and `read_all_orders` are refused, older history cannot be reconstructed. For 1b, add Judge.me's key and costs in Settings; Publish stays off. Prototype app removal still needs Will's explicit yes and is not performed here.
 
 Confirm Replit's deployed proxy chain and configure trust for exactly those hops so rate limits apply per visitor. Revisit the global login-options limit so a stranger cannot exhaust it and lock Will out for 15 minutes. Rate-limit behaviour is unchanged in this stage. Other later-stage items remain in plan section 12.

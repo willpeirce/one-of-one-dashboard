@@ -2,13 +2,13 @@
 
 `npm run build` bundles browser code and copies these assets into `dist/public`, using `scripts/build-assets.ts`. Runtime pages load only local assets. The manifest is served at `/manifest.webmanifest`; icons, styles, logo, fonts and font licenses are served under `/assets/`.
 
-The original logo is `docs/spec/logo.png`, supplied by Will. The build copies it unchanged as `/assets/logo.png`. The three committed PNG icons are generated from that same logo, preserving the complete mark on a white plate against the dashboard's dark purple. Regenerate them from the repository root with ImageMagick 7 installed:
+The original logo is `docs/spec/logo.png`, supplied by Will. The build copies it unchanged as `/assets/logo.png`. The three committed PNG icons are generated from that same logo: the header's `--sky` gradient edge to edge with the complete mark drawn white by the header's `--logo-filter`, both read from `src/dashboard.css`, so the lettering shows the sky through it and there is no plate. Regenerate them from the repository root after `npm ci`:
 
 ```sh
 npm run icons:generate
 ```
 
-`scripts/generate-icons.sh` defines the composition and sizes: 512 and 192 pixels for the manifest, and 180 pixels for the iPhone home-screen icon. ImageMagick is needed only when regenerating these committed files, not for installing, building or running the service. Do not hand-edit generated PNGs.
+`scripts/generate-icons.ts` defines the composition and sizes: 512 and 192 pixels for the manifest, and 180 pixels for the iPhone home-screen icon. It draws each size in Playwright's Chromium, the same pinned dev dependency the browser checks use; set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to use an installed Chromium. Chromium is needed only when regenerating these committed files, not for installing, building or running the service. Do not hand-edit generated PNGs.
 
 The mockup's fonts are self-hosted, normal-style Latin variable WOFF2 files from pinned npm packages:
 

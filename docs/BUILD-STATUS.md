@@ -5,7 +5,7 @@ Updated in every pull request.
 | Stage | What | Code | Keys in Replit | Live check ("Done when") |
 |---|---|---|---|---|
 | 0a | Service, database, passkeys, audit, source registry, CI | merged 2 Oct 2026; deployed 2 Oct | `DASHBOARD_SETUP_CODE`: configured | Will's phone enrollment and sign-in confirmed 4 Oct |
-| 0b | Real screen on sample data, live updates, Settings, home-screen app | merged 4 Oct 2026; mockup 8 logo/date follow-up on `logo-and-dates` | no source keys needed | Will's phone/install check pending |
+| 0b | Real screen on sample data, live updates, Settings, home-screen app | merged 4 Oct 2026; logo/date follow-up merged and published 5 Oct; home-screen icon follow-up on `home-screen-icon` | no source keys needed | Will saw the published dark look and white logo and added the app to his home screen, 5 Oct |
 | 1 | Shopify, New reviews (Judge.me) | not started | no | no |
 | 2 | Meta | not started | no | no |
 | 3 | Google Ads | not started | no | no |
@@ -16,14 +16,14 @@ Updated in every pull request.
 
 ## Next step
 
-Stage 0b and the mockup 8 spec refresh are merged. Review the small `logo-and-dates` follow-up for dark-only pages, the white wordmark and arbitrary sample date ranges. Will's dashboard and home-screen installation check is still pending. If migration 002 is not yet deployed, retain its publication order in README. Source clients start in their own stages; Shopify and Judge.me are stage 1.
+Stage 0b and its logo/date follow-up are merged and published. Review the `home-screen-icon` follow-up: Will asked on 5 Oct for the sky with the white mark instead of the white plate. Will asked to move on to stage 1 rather than publish it alone, so it can ride the stage 1 publish. After that publish, Will removes the home-screen icon and adds it again, because iOS keeps the old one. No migration is needed. Source clients start in their own stages; Shopify and Judge.me are stage 1.
 
 ## What runs
 
 - Node 24 + TypeScript service, PostgreSQL migrations and a status-only `/health`.
 - Live at https://one-of-one-dashboard.replit.app on a Reserved VM since 2 October 2026, with a separate Replit production database added that evening. Will confirmed phone enrollment and sign-in on 4 October.
 - Verified-device passkey enrollment with a setup phrase, passkey sign-in, persistent rate limiting, 30-day server sessions and immediate sign-out revocation.
-- Authenticated mockup screen under the **sample data** banner: Today, Yesterday, 7 days, 30 days and Dates drive the hero; score column, action table, New reviews above Tests, all four dial decks, detail sheets and navigation remain. Every page is dark only, including sign-in and Settings; saved light preferences are ignored. The supplied header and Settings wordmarks draw white through CSS; installation icons are unchanged.
+- Authenticated mockup screen under the **sample data** banner: Today, Yesterday, 7 days, 30 days and Dates drive the hero; score column, action table, New reviews above Tests, all four dial decks, detail sheets and navigation remain. Every page is dark only, including sign-in and Settings; saved light preferences are ignored. The supplied header and Settings wordmarks draw white through CSS. The home-screen and manifest icons use the same sky and white mark, with no plate.
 - Dates ports mockup 8's one-month phone sheet and two-month desktop calendar, including quick ranges, Clear and keyboard navigation. Deterministic samples span 1 January–30 September 2026; the last 15 days preserve the existing readout. Signed-in `/api/hero` aggregates a requested day or range separately from its sample source, with strict date/UK-future/366-day validation and fixed errors. Charts use daily bars up to 31 days and weekly averages beyond.
 - Local fonts and logo, manifest and home-screen icons; no external asset requests or private offline cache. Source health and audit remain available in the account menu.
 - Authenticated Server-Sent Events refresh the sample snapshot and apply Settings changes without reloading. Only the four tab periods travel in snapshots; picked ranges are fetched on demand and remain unchanged through a live update. Source-changing and deferred actions remain disabled with their original labels and **Not built yet** notes.
@@ -34,10 +34,11 @@ Stage 0b and the mockup 8 spec refresh are merged. Review the small `logo-and-da
 - Replit database fix validation: all 42 tests pass on PGlite and PostgreSQL 17.11, plus typecheck, build, browser checks on both backends and the secret scan. The review regression test confirms fixed configuration messages for a bad `APP_ORIGIN` at startup and missing `DATABASE_URL` in the CLI, without exposing values. Compiled startup and migration CLI checks confirm SQLSTATE/filename-only database failures and the Node, migrations-complete and listening log lines.
 - Stage 0b local validation: all 55 tests pass on PGlite and PostgreSQL 17.11, including Settings rollback/conflicts, safe sample rendering and SSE authentication/revocation/concurrency. Typecheck, build, secret scanning and Chromium checks pass. The mockup and port were inspected at 390px and 1280px in both themes; browser checks enforce no console errors, outside requests or sideways scroll, and confirm Settings updates reach an existing dashboard over SSE.
 - Logo/date follow-up validation: all 81 tests pass on PGlite; the new range API tests also pass on PostgreSQL. Typecheck, build, secret scan and browser checks pass. The mockup and port were inspected at 390px and 1280px under light and dark browser preferences. Checks cover fixed dark styling and white logos, preset/custom ranges, calendar keyboard controls and boundaries, daily/weekly bars, cancelling an outstanding range request, and retaining a custom range through an actual Settings SSE update without fetching it again. Review fixes keep spike-day notes short beyond five days (63 for year to date), preserve each bar's dates and markets, and make calendar day/month names consistent across browsers. Existing passkey, disabled-action and typography checks remain.
+- Home-screen icon follow-up validation: the three icons were drawn by `npm run icons:generate` and inspected at 512 and 180 pixels; typecheck, tests, build, browser checks and the secret scan pass.
 
 ## Not in 0b
 
-Source clients and measured business data, source API fixtures, source-system writes, test verdict calculations/writes, uploads and cost models, Handover/UGC integrations, push delivery and Ask. Push keys are retained privately for later use; the summary preference sends nothing yet. Home-screen installation still needs Will's check on the published iPhone app.
+Source clients and measured business data, source API fixtures, source-system writes, test verdict calculations/writes, uploads and cost models, Handover/UGC integrations, push delivery and Ask. Push keys are retained privately for later use; the summary preference sends nothing yet. Will added the published app to his iPhone home screen on 5 October.
 
 ## Open engineering work
 

@@ -44,10 +44,21 @@ function initializeSettings(form: HTMLFormElement): void {
   const lists = Array.from(form.querySelectorAll<HTMLElement>('[data-settings-list]'));
   let pending = false;
   let dirty = false;
+  function showShopifyCosts(): void {
+    const list = form.querySelector<HTMLElement>('[data-shopify-cost-map]');
+    if (!list) return;
+    const labels = JSON.parse(list.dataset.shopifyCostMap!) as Record<string,string>;
+    for (const row of Array.from(list.querySelectorAll<HTMLElement>('.setting-row'))) {
+      const sku = row.querySelector<HTMLInputElement>('[data-setting-path$=".sku"]')?.value ?? '';
+      const label = row.querySelector<HTMLElement>('[data-shopify-cost]');
+      if (label) label.textContent = Object.hasOwn(labels, sku) ? labels[sku]! : 'Not in Shopify';
+    }
+  }
 
   function markDirty(): void {
     if (pending) return;
     dirty = true;
+    showShopifyCosts();
     message.textContent = 'You have unsaved changes.';
     message.removeAttribute('data-error');
   }
@@ -134,6 +145,7 @@ function initializeSettings(form: HTMLFormElement): void {
       if (input instanceof HTMLInputElement && input.type === 'checkbox') input.checked = value === true;
       else input.value = value === null || value === undefined ? '' : String(value);
     });
+    showShopifyCosts();
   }
 
   form.addEventListener('submit', (event) => {

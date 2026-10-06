@@ -7,7 +7,8 @@ Updated in every pull request.
 | 0a | Service, database, passkeys, audit, source registry, CI | merged 2 Oct 2026; deployed 2 Oct | `DASHBOARD_SETUP_CODE`: configured | Will's phone enrollment and sign-in confirmed 4 Oct |
 | 0b | Real screen on sample data, live updates, Settings, home-screen app | merged 4 Oct 2026; logo/date follow-up merged and published 5 Oct; home-screen icon follow-up merged 5 Oct | no source keys needed | Will saw the published dark look and white logo and added the app to his home screen, 5 Oct |
 | 1a | Shopify token manager, backfill, webhooks and polls | PR #7 merged and published 5 Oct; sessions fix PR #8 merged | configured for the 5 Oct live check | sessions column and sales query checked; full report agreement awaits 1b |
-| 1b | Shopify cards, watchdogs and 5 Oct follow-ups | PR #9; review fixes on `stage-1b-cards-reviews` | Shopify already configured; no new Shopify key | fixture checks; live checks below remain |
+| 1b | Shopify cards, watchdogs and 5 Oct follow-ups | PR #9 merged 6 Oct 2026 | Shopify already configured; no new Shopify key | fixture checks; live checks below remain |
+| Change | Shopify unit-cost history and Settings fallback | `costs-from-shopify`; review pending, not a stage | no new keys or scopes | read access to unitCost not checked live |
 | 1c | New reviews (Judge.me) | next, split from 1b; Publish flag remains off | `JUDGEME_API_TOKEN` needed for 1c | no |
 | 2 | Meta | not started | no | no |
 | 3 | Google Ads | not started | no | no |
@@ -18,7 +19,7 @@ Updated in every pull request.
 
 ## Next step
 
-Review and merge part 1b, then Will publishes it. It starts from latest `main` at `85d3a33`, with stage 1a PR #7 and its sessions fix PR #8 merged. No deployment is performed by the builder.
+Review the small `costs-from-shopify` change, based on latest main `117f748` after merged part 1b. No part 1c or stage 2 has merged. After Publish, run `npm run migrate` in the Shell as usual. Needs from Will for this change: nothing new. No deployment is performed by the builder. New reviews remains the next stage work in part 1c.
 
 **Part 1b built:** Shopify hero sales/orders/conversion and range detail (AOV, upgrades, channel/market bars and spike labels), Live scoreboard, checkout, stock/cover/run-out, Refill Pack and Shopify-side Email use the ingested records, live or labelled sample. Recently updated orders created before the backfill's order boundary are excluded from every window-based metric, stock rate and watchdog; Source health reports all stored records and explains this distinction. Ads/cost-dependent hero values are unavailable until their stages; surviving other-source examples are labelled individually and do not affect Shopify health.
 
@@ -75,7 +76,7 @@ The current 15-second SSE heartbeat re-sends the full snapshot even when the das
 ### Needs from Will after merge
 
 - Replit keys: keep the existing `SHOPIFY_CLIENT_ID` and `SHOPIFY_CLIENT_SECRET`; if absent, add them before publishing. `JUDGEME_API_TOKEN` is for part 1c, not a new connection in 1b. Only if Level 2 is refused, the read-only routine fallback needs `GITHUB_HQ_TOKEN` and the real dated HQ files/routine; no fallback routine is created here. Never send key values to the builder.
-- Settings: set the seasonal multiplier to enable measured kit cover (blank means unknown); confirm Northampton/Ohio cut-offs (defaults 16:00 UK / 15:00 ET). Add key expiry dates. Starting COGS per SKU, payment-fee percentage, flat UK/US fulfilment and monthly overheads remain unset until Will supplies them for the costs stage; this part does not turn them into invented margin. Goals retain 100 orders/day and 20% net; safety weeks retains 3.
+- Settings: set the seasonal multiplier to enable measured kit cover (blank means unknown); confirm Northampton/Ohio cut-offs (defaults 16:00 UK / 15:00 ET). Add key expiry dates. Shopify's cost per item supplies unit costs automatically; Starting unit cost rows are optional fallbacks for SKUs with no Shopify cost. Payment fees, flat UK/US fulfilment and monthly overheads await the costs stage; this change adds no margin tiles. Goals retain 100 orders/day and 20% net; safety weeks retains 3.
 - Live checks: the three UK report days, including inclusive-tax partial refund with paid shipping; orders by channel/TikTok; order-to-card timing and webhook repair/recovery as listed above. The channel live check decides `read_marketplace_orders`; add it in Shopify's Dev Dashboard only if needed. Confirm actual J&J closure days before relying on the conservative holiday calendar.
 - Prototype app removal still needs Will's explicit yes and is not performed here.
 
@@ -88,3 +89,15 @@ Review fixes, 5 Oct: paid orders with no dated successful SALE/CAPTURE (includin
 Review validation: typecheck, all 113 tests on PGlite, production build, Chromium browser checks (390px/1280px, light/dark preferences) and secret scanning pass locally. CI checks the pushed revision against real PostgreSQL; its result is recorded in PR #9.
 
 API fixtures are entirely invented. `scripts/generate-shopify-cards-fixtures.py` reproducibly writes 400-day order/session/channel API envelopes; source units tests retain their small focused fixtures. The new suite covers tax/shipping/refund-day maths, old-window exclusions, missing data, geo/phantom guards, bundle tiers/TikTok, spike labels, email/refill attribution, allocated stock rates, dispatch across holidays, synthetic silence/recovery, persistent observations, channel shortage/recovery and escaped live rendering. Browser checks retain passkey/security, date controls, phone/desktop, Settings/SSE, no external requests and no sideways scroll, and verify No data on unavailable hero values. Final local/CI results are recorded in the pull request.
+
+## Small change: costs from Shopify
+
+PulseStock reads `inventoryItem.unitCost`; PulseLevels is unchanged. Migration 006 adds `pulse.shopify_cost_history`, partitioned by sample/live, including observations of missing costs. Existing inventory polls and inventory webhook refreshes append a row only for a changed amount/currency, otherwise update last seen; variants without warehouse levels are included. Existing migration checksums and jobs are unchanged. Access errors propagate with no alternate query or added scope.
+
+The exported `costOrder` helper uses variant history (SKU when needed), the observation in force at creation time, or the earliest observation for an older order. Missing Shopify costs use the Settings startingCogs value; absent fallback means unknown, and any unknown line makes the total unknown. Per-line sources preserve mixed provenance; a total using any Settings fallback is labelled settings. Foreign-currency observations are retained/displayed but remain unknown for GBP costing; no exchange rate is invented. Margin tiles are untouched.
+
+Settings shows observed costs, sample/live source labels and last-seen dates alongside editable fallback rows, including after SKU edits. Source health shows known/missing stock-variant counts and the last observed change. Invented sample fixtures include a missing cost and a change from 28 to 30 September. Tests cover the query/access failure, history/idempotency/concurrency, temporal selection, fallback/unknown/mixed totals, live rendering and inventory-webhook refresh; browser checks include Costs & dispatch at phone width. Validation results are recorded in the change PR.
+
+Local validation: typecheck, all 118 tests on PGlite, production build, browser checks and secret scanning pass. CI verifies the pushed revision against real PostgreSQL.
+
+PR #10 review fix: an observed Shopify variant with a null cost says “Shopify · live: no cost set · last seen …” (or sample data), while “Not in Shopify” is reserved for SKUs with no history row. Rendering and browser regressions cover the distinction.

@@ -76,7 +76,7 @@ export function cleanOrder(raw: any) {
     market, marketBasis: country ? 'country' : 'currency_and_warehouse', country,
     region: typeof raw.shippingAddress?.provinceCode === 'string' && /^[A-Z0-9-]{1,10}$/.test(raw.shippingAddress.provinceCode) ? raw.shippingAddress.provinceCode : null,
     postcodeArea: postcode(raw.shippingAddress?.zip),
-    lines: raw.lineItems.nodes.map((l: any) => ({ id: gid('LineItem', l.id), productId: l.product ? gid('Product', l.product.id) : null, sku: /^[\w-]{1,80}$/.test(l.sku ?? '') ? l.sku : null, quantity: l.quantity })),
+    lines: raw.lineItems.nodes.map((l: any) => ({ id: gid('LineItem', l.id), variantId: l.variant ? gid('ProductVariant', l.variant.id) : null, productId: l.product ? gid('Product', l.product.id) : null, sku: /^[\w-]{1,80}$/.test(l.sku ?? '') ? l.sku : null, quantity: l.quantity })),
     // Theme test attributes only. Arbitrary note attributes are not stored.
     giftTest: ['A', 'B'].includes(raw.customAttributes?.find((a: any) => a.key === '__gift_test')?.value) ? raw.customAttributes.find((a: any) => a.key === '__gift_test').value : null,
     refunds,
@@ -131,7 +131,7 @@ export function cleanSales(table: any) {
 }
 
 export type Order = Omit<ReturnType<typeof cleanOrder>, 'lines' | 'refunds' | 'fulfillments'> & {
-  lines: { id: string; productId: string | null; sku: string | null; quantity: number }[];
+  lines: { id: string; variantId?: string | null; productId: string | null; sku: string | null; quantity: number }[];
   refunds: { id: string; createdAt: string; itemsPence: number; taxPence: number }[];
   fulfillments: { id: string; status: string; createdAt: string; updatedAt: string; locationId: string | null; lines: { lineId: string; quantity: number }[] | null }[];
 };

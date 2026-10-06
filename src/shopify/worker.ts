@@ -218,7 +218,13 @@ export class ShopifyWorker {
       await this.store.sessions(await this.client.report(sessionQuery(from, date)), now);
       return this.mode === 'sample' ? { done: true } : { day: addDays(date, -1), continuing: true };
     }
-    if (name === 'inventory') { await this.store.inventory(await this.client.inventory(), now); return {}; }
+    if (name === 'inventory') {
+      if (this.mode === 'sample' && this.client instanceof SampleShopify && !state.costSeeded) {
+        const baseline = await this.client.costBaseline();
+        if (baseline) await this.store.inventory(baseline.rows, baseline.at);
+      }
+      await this.store.inventory(await this.client.inventory(), now); return { costSeeded: true };
+    }
     if (name === 'sessions') {
       // Re-read yesterday too: late report corrections and geo guard updates must replace previous totals.
       try { await this.store.sessions(await this.client.report(sessionQuery(addDays(day, -1), day)), now); await this.store.clearNotice('sessions'); return { cadence: 'five_minutes' }; }

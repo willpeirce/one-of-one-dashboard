@@ -4,7 +4,7 @@ import { TokenManager } from './token.js';
 
 const page = 'pageInfo { hasNextPage endCursor }';
 const money = 'shopMoney { amount currencyCode }';
-const lineFields = `id sku quantity product { id } taxLines { priceSet { ${money} } }`;
+const lineFields = `id sku quantity variant { id } product { id } taxLines { priceSet { ${money} } }`;
 export const orderFields = (address: boolean) => `
   id createdAt updatedAt cancelledAt test displayFinancialStatus displayFulfillmentStatus currencyCode taxesIncluded
   sourceName channelInformation { channelDefinition { channelName } }
@@ -101,17 +101,20 @@ export class ShopifyClient implements ShopifyReader {
     for (const product of appConfig.shopify.stockProducts) {
       let after: string | null = null;
       do {
-        const data = await this.#graphql(`query PulseStock($id: ID!, $after: String) { product(id: $id) { id variants(first: 100, after: $after) { nodes { id sku inventoryItem { id } } ${page} } } }`, { id: `gid://shopify/Product/${product.id}`, after });
+        const data = await this.#graphql(`query PulseStock($id: ID!, $after: String) { product(id: $id) { id variants(first: 100, after: $after) { nodes { id sku inventoryItem { id unitCost { amount currencyCode } } } ${page} } } }`, { id: `gid://shopify/Product/${product.id}`, after });
         if (!data.product) break;
         for (const variant of data.product.variants.nodes) {
+          const metadata = { productId: data.product.id, variantId: variant.id, sku: variant.sku, inventoryItemId: variant.inventoryItem.id, unitCost: variant.inventoryItem.unitCost };
+          let hasLevels = false;
           let levelsAfter: string | null = null;
           do {
             const levels = await this.#graphql(`query PulseLevels($id: ID!, $after: String) { inventoryItem(id: $id) { id inventoryLevels(first: 100, after: $after) { nodes { id location { id } quantities(names: ["available", "on_hand", "committed"]) { name quantity } } ${page} } } }`, { id: variant.inventoryItem.id, after: levelsAfter });
-            for (const level of levels.inventoryItem.inventoryLevels.nodes) result.push({ productId: data.product.id, variantId: variant.id, sku: variant.sku, inventoryItemId: variant.inventoryItem.id, ...level });
+            for (const level of levels.inventoryItem.inventoryLevels.nodes) { result.push({ ...metadata, ...level }); hasLevels = true; }
             const next = nextCursor(levels.inventoryItem.inventoryLevels);
             if (next && next === levelsAfter) throw new ShopifyError('invalid');
             levelsAfter = next;
           } while (levelsAfter);
+          if (!hasLevels) result.push({ ...metadata, location: null });
         }
         const next = nextCursor(data.product.variants);
         if (next && next === after) throw new ShopifyError('invalid');

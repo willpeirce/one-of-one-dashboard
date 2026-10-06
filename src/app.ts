@@ -108,7 +108,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   });
   app.get('/sources', async (request, reply) => {
     if (!await auth.session(request)) return reply.redirect('/login');
-    return reply.type('text/html; charset=utf-8').send(sourceHealthPage(await readSourceHealth(db), await shopify.store.summary()));
+    return reply.type('text/html; charset=utf-8').send(sourceHealthPage(await readSourceHealth(db), await shopify.store.summary(), await shopify.store.costSummary()));
   });
   app.get('/api/shopify', async (request, reply) => {
     if (!await auth.session(request)) return reply.code(401).send({ error: 'Sign in to continue.' });
@@ -116,7 +116,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   });
   app.get('/settings', async (request, reply) => {
     if (!await auth.session(request)) return reply.redirect('/login');
-    return reply.type('text/html; charset=utf-8').send(settingsPage(await readSettings(db)));
+    return reply.type('text/html; charset=utf-8').send(settingsPage(await readSettings(db), await shopify.store.latestCosts(), shopify.mode));
   });
   app.get('/api/settings', async (request, reply) => {
     if (!await auth.session(request)) return reply.code(401).send({ error: 'Sign in to continue.' });

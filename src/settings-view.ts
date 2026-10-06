@@ -1,4 +1,5 @@
 import { SETTINGS_KEY_NAMES, type SettingsSnapshot } from './settings.js';
+import type { ShopifyCost } from './shopify/costs.js';
 
 function escapeHtml(value: string | number): string {
   return String(value).replace(/[&<>"']/g, (character) => ({
@@ -38,12 +39,12 @@ function fields(definitions: readonly Field[], values: object, prefix = ''): str
   return definitions.map((definition) => field(definition, (values as Record<string, unknown>)[definition.key], prefix)).join('');
 }
 
-function collection(key: string, label: string, definitions: readonly Field[], rows: readonly Record<string, unknown>[], note: string): string {
-  const row = (value: Record<string, unknown>, index: number | string) => `<fieldset class="setting-row"><legend>${escapeHtml(label)} <span data-row-number>${typeof index === 'number' ? index + 1 : ''}</span></legend><div class="setting-row-fields">${fields(definitions, value, `${key}.${index}`)}</div><button class="btn setting-remove" type="button" data-remove-row aria-label="Remove ${escapeHtml(label.toLowerCase())}">Remove</button></fieldset>`;
+function collection(key: string, label: string, definitions: readonly Field[], rows: readonly Record<string, unknown>[], note: string, costs?: Record<string, string>): string {
+  const row = (value: Record<string, unknown>, index: number | string) => `<fieldset class="setting-row"><legend>${escapeHtml(label)} <span data-row-number>${typeof index === 'number' ? index + 1 : ''}</span></legend><div class="setting-row-fields">${fields(definitions, value, `${key}.${index}`)}</div>${costs ? `<p class="setting-help" data-shopify-cost>${escapeHtml(costs[String(value.sku)] ?? 'Not in Shopify')}</p>` : ''}<button class="btn setting-remove" type="button" data-remove-row aria-label="Remove ${escapeHtml(label.toLowerCase())}">Remove</button></fieldset>`;
   return `<section class="setting-collection" data-settings-list="${key}" aria-labelledby="${key}-heading">
     <h3 id="${key}-heading">${escapeHtml(label)} <span class="setting-count" data-list-count>${rows.length}</span></h3>
     <p class="setting-help">${escapeHtml(note)}</p>
-    <div data-list-rows>${rows.map((value, index) => row(value, index)).join('')}</div>
+    <div data-list-rows${costs ? ` data-shopify-cost-map="${escapeHtml(JSON.stringify(costs))}"` : ''}>${rows.map((value, index) => row(value, index)).join('')}</div>
     <p class="setting-empty" data-list-empty${rows.length ? ' hidden' : ''}>None added yet.</p>
     <template data-list-template>${row({}, '__index__')}</template>
     <button class="btn setting-add" type="button" data-add-row>Add ${escapeHtml(label.toLowerCase())}</button>
@@ -57,8 +58,14 @@ function section(title: string, description: string, content: string, open = fal
 const number = (key: string, label: string, extra: Partial<Field> = {}): Field => ({ key, label, type: 'number', ...extra });
 const checkbox = (key: string, label: string): Field => ({ key, label, type: 'checkbox' });
 
-export function settingsPage(snapshot: SettingsSnapshot): string {
+export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly ShopifyCost[] = [], mode: 'sample' | 'live' = 'sample'): string {
   const values = snapshot.values;
+  const costLabels: Record<string, string> = Object.create(null);
+  for (const c of shopifyCosts) if (c.sku) {
+    const seen = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(c.last_seen_at));
+    const amount = c.amount_pence === null ? 'Not in Shopify' : `${c.currency === 'GBP' ? '£' : c.currency + ' '}${(Number(c.amount_pence)/100).toFixed(2)}`;
+    costLabels[c.sku] = `Shopify · ${mode === 'sample' ? 'sample data' : 'live'}: ${amount} · last seen ${seen}`;
+  }
   const goals = section('Goals & overheads', 'The targets behind your business.', `<div class="settings-grid">${fields([
     number('goalOrdersPerDay', 'Order goal per day', { integer: true, min: 1 }),
     number('goalNetMarginPercent', 'Net margin goal (%)', { max: 100 }),
@@ -70,14 +77,14 @@ export function settingsPage(snapshot: SettingsSnapshot): string {
     number('cppUsBreakEvenGbp', 'US break-even cost (£)'), number('cppUsTargetGbp', 'US target cost (£)', { hint: 'At or below the US break-even cost.' }),
     number('blendedMetaTripwireGbp', 'Blended Meta tripwire (£)', { min: 0.01 }),
   ], values)}</div>`);
-  const costs = section('Costs & dispatch', 'Starting costs until invoice uploads are available.', `<div class="settings-grid">${fields([
+  const costs = section('Costs & dispatch', 'Shopify unit costs first; starting costs are the fallback.', `<div class="settings-grid">${fields([
     number('flatFulfilmentUkGbp', 'UK flat fulfilment cost (£)', { nullable: true }),
     number('flatFulfilmentUsGbp', 'US flat fulfilment cost (£)', { nullable: true }),
     { key: 'dispatchCutoffUk', label: 'Northampton dispatch cut-off', type: 'time', hint: 'Europe/London local time.' },
     { key: 'dispatchCutoffUs', label: 'Ohio dispatch cut-off', type: 'time', hint: 'America/New_York local time.' },
   ], values)}</div>${collection('startingCogs', 'SKU cost', [
     { key: 'sku', label: 'SKU' }, number('unitCostGbp', 'Starting unit cost (£)', { nullable: true }),
-  ], values.startingCogs, 'Leave a cost blank until you have the figure. Blank means unknown, not zero.')}`);
+  ], values.startingCogs, "Shopify’s cost per item comes first. These rows are the fallback for a SKU with no Shopify cost. Blank means unknown, never zero.", costLabels)}`);
   const stock = section('Stock planning', 'Supplier timing and components per kit.', `<div class="settings-grid">${fields([
     number('safetyWeeks', 'Safety stock (weeks)'),
     number('seasonalMultiplier', 'Seasonal multiplier', { nullable: true, min: 0.01 }),

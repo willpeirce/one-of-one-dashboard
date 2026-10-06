@@ -24,9 +24,18 @@ export class SampleShopify implements ShopifyReader {
     return order.id === id ? order : null;
   }
   async inventory(): Promise<any[]> {
-    const product = (await fixture('product')).data.product;
-    const variant = product.variants.nodes[0];
-    return (await fixture('levels')).data.inventoryItem.inventoryLevels.nodes.map((level: any) => ({ productId: product.id, variantId: variant.id, inventoryItemId: variant.inventoryItem.id, ...level }));
+    return this.inventoryFixture(this.cardHistory ? 'product-costs' : 'product');
+  }
+  private async inventoryFixture(name: string): Promise<any[]> {
+    const product = (await fixture(name)).data.product;
+    const levels = (await fixture('levels')).data.inventoryItem.inventoryLevels.nodes;
+    return product.variants.nodes.flatMap((variant: any, index: number) => {
+      const metadata = { productId: product.id, variantId: variant.id, sku: variant.sku, inventoryItemId: variant.inventoryItem.id, unitCost: variant.inventoryItem.unitCost };
+      return index === 0 ? levels.map((level: any) => ({ ...metadata, ...level })) : [{ ...metadata, location: null }];
+    });
+  }
+  async costBaseline(): Promise<{ rows: any[]; at: Date } | null> {
+    return this.cardHistory ? { rows: await this.inventoryFixture('product-costs-before'), at: new Date('2026-09-28T12:00:00Z') } : null;
   }
   async report(query: string): Promise<any> {
     const table = (await fixture(query.includes('sales_channel') ? this.cardHistory ? 'card-channels' : 'channels' : query.startsWith('FROM sales') ? 'sales' : this.cardHistory ? 'card-sessions' : 'sessions')).data.shopifyqlQuery.tableData;

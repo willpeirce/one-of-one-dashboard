@@ -14,6 +14,25 @@
                 "currencyCode": "GBP"
               }
             }
+          },
+          {
+            "id": "gid://shopify/ProductVariant/990201",
+            "sku": "oneofone-slab",
+            "inventoryItem": {
+              "id": "gid://shopify/InventoryItem/990201",
+              "unitCost": null
+            }
+          },
+          {
+            "id": "gid://shopify/ProductVariant/990202",
+            "sku": "oneofone1",
+            "inventoryItem": {
+              "id": "gid://shopify/InventoryItem/990202",
+              "unitCost": {
+                "amount": "2.34",
+                "currencyCode": "GBP"
+              }
+            }
           }
         ],
         "pageInfo": {

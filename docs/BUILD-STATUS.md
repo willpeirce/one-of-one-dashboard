@@ -8,7 +8,7 @@ Updated in every pull request.
 | 0b | Real screen on sample data, live updates, Settings, home-screen app | merged 4 Oct 2026; logo/date follow-up merged and published 5 Oct; home-screen icon follow-up merged 5 Oct | no source keys needed | Will saw the published dark look and white logo and added the app to his home screen, 5 Oct |
 | 1a | Shopify token manager, backfill, webhooks and polls | PR #7 merged and published 5 Oct; sessions fix PR #8 merged | configured for the 5 Oct live check | sessions column and sales query checked; full report agreement awaits 1b |
 | 1b | Shopify cards, watchdogs and 5 Oct follow-ups | PR #9 merged 6 Oct 2026 | Shopify already configured; no new Shopify key | fixture checks; live checks below remain |
-| Change | Shopify unit-cost history and Settings fallback | PR #10 merged 6 Oct 2026; not a stage | no new keys or scopes | read access to unitCost not checked live |
+| Change | Shopify unit-cost history and Settings fallback | PR #10 merged 6 Oct 2026; not a stage | no new keys or scopes | read access to unitCost checked live 6 Oct 2026 |
 | Change | J&J CSV imports, parcel actuals and learned estimates | `fulfilment-import`; change PR, not a stage | no new keys | fixture/browser checks; first live export awaits Will |
 | 1c | New reviews (Judge.me) | next, split from 1b; Publish flag remains off | `JUDGEME_API_TOKEN` needed for 1c | no |
 | 2 | Meta | not started | no | no |
@@ -115,3 +115,8 @@ Known services come from config; unknown services/centres stay visible. New surc
 Needs from Will: after Publish, `npm run migrate` in the Shell; allow the order-number backfill to complete. Check J&J GBP per USD on every invoice (0.754 on INV27164) and change the Setting when needed. Upload the 5 Oct export first, check its matched/unmatched rows and any unknown service/centre spellings, then confirm. No new keys or scopes.
 
 Fulfilment change local validation: typecheck, all 128 tests on PGlite, production build, phone/desktop browser checks (390px/1280px, preview/cancel/confirm/detail and complete-week coverage control) and Gitleaks working-tree/full-history scans pass. The mockup and fulfilment screen/detail were visually inspected at both widths. CI checks the same code against real PostgreSQL; results are recorded in the change PR. No live export agreement is claimed.
+
+
+PR #11 review fixes recognise the real ExportOrders service spellings and FedEx IOSS variants. Refresh replaces flags and baselines on all parcels, unknown spellings produce one Needs item per spelling with a count, and invalid cells identify their row/column without reflecting values. Summary uses an order count query; order batches unrelated to invoices reuse the saved model and update only their estimates. Per-mode summary caching remains deferred.
+
+Review-fix local validation: typecheck, all 132 tests on PGlite, production build, phone/desktop browser checks and Gitleaks pass. New regressions cover real services, unknown-service training exclusion, safe physical CSV row/column diagnostics, stale flags/baselines and the ingestion shortcut with rejected older polls. CI verifies the pushed head against real PostgreSQL; results are recorded in PR #11.

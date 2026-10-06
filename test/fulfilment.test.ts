@@ -1,9 +1,10 @@
+import { appConfig } from '../src/config.js';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createHmac, randomBytes } from 'node:crypto';
 import test from 'node:test';
 import { parseExport, columns, ImportError, type ParcelRow } from '../src/fulfilment/parser.js';
-import { actualPence, despatchDay, emptyModel, estimateOrder, learn, leastSquares, mixKey, parcelFlags, quantities, warehouseFor, weeklyReminder, type Parcel } from '../src/fulfilment/model.js';
+import { actualPence, knownService, despatchDay, emptyModel, estimateOrder, learn, leastSquares, mixKey, parcelFlags, quantities, warehouseFor, weeklyReminder, type Parcel } from '../src/fulfilment/model.js';
 import { confirmImport, previewImport, readEstimates, readParcels, readUploads, refreshFulfilment, fulfilmentSummary } from '../src/fulfilment/store.js';
 import { cleanOrder, type Order } from '../src/shopify/model.js';
 import { orderFields } from '../src/shopify/client.js';
@@ -169,4 +170,76 @@ test('stored USD parcels keep earlier invoice rates and concurrent confirmations
   assert.equal(complete.saved,0);assert.equal((await readUploads(db,'live')).filter(u=>u.coverageWeek==='2026-09-28').length,1);
   const repeated=await confirmImport(db,'live',row,'invented-us.csv',.5,now,undefined,'2026-09-28');assert.equal(repeated.uploadId,null);
   await assert.rejects(confirmImport(db,'live',row,'invented-us.csv',.5,now,undefined,'2026-09-21'),ImportError);
+});
+
+
+test('real ExportOrders services train, including FedEx IOSS, while unknown carriers stay excluded',async()=>{
+  const services=['Royal Mail Tracked 48','DPD V2 Parcel Next Day','DPD Two Day','USPS Ground Advantage','UPS Ground','FedEx International Connect Plus IOSS','FedEx IOSS Economy'];
+  const orders:Order[]=[],parcels:Parcel[]=[];
+  for (const [i,service] of [...services,'Invented Service','FedEx Invented Service'].entries()) {
+    const us=service.startsWith('USPS') || service.startsWith('UPS'),o=await order(String(992000+i),us);
+    const row=parseExport(csv({'Reference':o.orderNumber!,'Postage Method':service,'Fulfilment Centre':us?'Columbus':'Northampton 2','Country':us?'US':'FR'}))[0]!;
+    const p={...parcel(row,o.id),id:String(i)};orders.push(o);parcels.push(p);
+    assert.equal(knownService(p.warehouse,service),i<services.length);
+    assert.equal(parcelFlags(p,o,emptyModel()).includes('Unknown service'),i>=services.length);
+  }
+  const model=learn(parcels,orders);
+  assert.equal(model.rates.reduce((n,r)=>n+r.count,0),services.length);
+  for (const service of services) assert.ok(model.rates.some(r=>r.service===service));
+});
+
+test('bad CSV cells name physical 1-based row and allowlisted column without exposing values',()=>{
+  for (const column of columns) {
+    const bad=csv({[column]:'invented-private-value@invalid'}).split('\n')[1]!;
+    const input='\n\uFEFF'+columns.join(',')+'\n'+csv().split('\n')[1]+'\n'+bad;
+    assert.throws(()=>parseExport(input),error=>error instanceof ImportError && error.message===`Row 4, ${column}: invalid format.`);
+  }
+  assert.throws(()=>parseExport(csv({'Line Total':'2.0000'})),{message:'Row 2, Line Total: must cover Postage Charge.'});
+  const header=columns.join(',')+',Discarded Column';
+  const first=csv().split('\n')[1]+',"invented\nignored"';
+  const bad=csv({'Boxed Weight':'private-invalid-weight'}).split('\n')[1]+',ignored';
+  assert.throws(()=>parseExport(header+'\n'+first+'\n'+bad),{message:'Row 4, Boxed Weight: invalid format.'});
+  assert.throws(()=>parseExport(csv().replace('1.388 kg','"private-invalid')),error=>error instanceof ImportError && error.message==='Row 2, Boxed Weight: invalid CSV quoting.');
+});
+
+test('rebuild clears stale flags and baselines on all parcels; unknown Needs group by spelling and count',async t=>{
+  const db=await createTestDatabase();t.after(()=>db.close());
+  const orders=[await order('993001'),await order('993002'),await order('993003'),await order('993004')];
+  const store=new ShopifyStore(db,'live');for (const o of orders) await store.put('order',o.id,o,now);
+  const rows=orders.map((o,i)=>parseExport(csv({'Reference':o.orderNumber!,'Postage Method':i<2?'Invented Service':'Royal Mail Tracked 48','Fulfilment Centre':i<2?'Northampton 2':'Invented Centre'}))[0]!);
+  await confirmImport(db,'live',rows,'invented-review.csv',.754,now);
+  const summary=await fulfilmentSummary(db,'live',now);
+  const services=summary.needs.filter(n=>n.title==='Unknown service'),centres=summary.needs.filter(n=>n.title==='Unknown fulfilment centre');
+  assert.equal(services.length,1);assert.equal(services[0]!.why,'Invented Service · 2 parcels');
+  assert.equal(centres.length,1);assert.equal(centres[0]!.why,'Invented Centre · 2 parcels');
+  assert.equal(summary.model.rates.length,0);
+  const configuredServices=appConfig.fulfilment.knownServices.uk as unknown as string[];
+  configuredServices.push('Invented Service');
+  try {
+    await db.query("UPDATE pulse.fulfilment_parcels SET rate_baseline_pence=1 WHERE mode='live'");
+    await refreshFulfilment(db,'live',now);
+    const stored=await readParcels(db,'live');
+    for (const p of stored.filter(p=>p.service==='Invented Service')) {assert.ok(!p.flags.includes('Unknown service'));assert.equal(p.rateBaselinePence,481);assert.ok(!p.flags.includes('Cost more than 25% off its rate'));}
+    assert.equal((await fulfilmentSummary(db,'live',now)).needs.filter(n=>n.title==='Unknown service').length,0);
+  } finally {configuredServices.pop();}
+  await refreshFulfilment(db,'live',now);
+  for (const p of (await readParcels(db,'live')).filter(p=>p.service==='Invented Service')) {assert.ok(p.flags.includes('Unknown service'));assert.equal(p.rateBaselinePence,null);}
+  assert.equal((await fulfilmentSummary(db,'live',now)).model.rates.length,0);
+});
+
+
+test('order ingest without affected parcels updates estimates without relearning invoice models',async t=>{
+  const db=await createTestDatabase();t.after(()=>db.close());
+  const store=new ShopifyStore(db,'live'),o=await order();await store.put('order',o.id,o,now);
+  await confirmImport(db,'live',parseExport(csv()),'invented.csv',.754,now);
+  const before=(await db.query<{updated_at:Date}>('SELECT updated_at FROM pulse.fulfilment_models WHERE mode=$1',['live'])).rows[0]!.updated_at;
+  const raw=(await fixture('order')).data.order;raw.id='gid://shopify/Order/994001';raw.name='#994001';
+  await store.orders([raw],new Date(now.getTime()+60000));
+  const after=(await db.query<{updated_at:Date}>('SELECT updated_at FROM pulse.fulfilment_models WHERE mode=$1',['live'])).rows[0]!.updated_at;
+  assert.equal(new Date(after).getTime(),new Date(before).getTime());
+  assert.ok((await readEstimates(db,'live')).some(e=>e.orderId===raw.id));
+  assert.equal((await fulfilmentSummary(db,'live',now)).orderCount,2);
+  const estimates=await readEstimates(db,'live');
+  await store.orders([{...raw,updatedAt:'2020-01-01T00:00:00Z',shippingAddress:{countryCodeV2:'US',provinceCode:'CA'}}],new Date(now.getTime()+120000));
+  assert.deepEqual(await readEstimates(db,'live'),estimates);
 });

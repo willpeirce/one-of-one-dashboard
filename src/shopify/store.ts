@@ -18,8 +18,9 @@ export class ShopifyStore {
   async orders(rows: any[], fetched: Date): Promise<void> {
     await this.db.transaction(async tx => {
       const store = new ShopifyStore(tx, this.mode);
-      for (const raw of rows) { const order = cleanOrder(raw); await store.put('order', order.id, order, fetched, new Date(order.updatedAt)); }
-      await refreshFulfilment(tx, this.mode, fetched);
+      const orders=rows.map(cleanOrder);
+      for (const order of orders) await store.put('order', order.id, order, fetched, new Date(order.updatedAt));
+      await refreshFulfilment(tx, this.mode, fetched, orders);
     });
   }
   async inventory(rows: any[], fetched: Date): Promise<void> {

@@ -58,8 +58,8 @@ export function despatchDay(p: ParcelRow): string {
   return ukToday(new Date(instant));
 }
 
-export function knownService(warehouse: Warehouse, service: string): boolean {
-  return warehouse !== 'unknown' && appConfig.fulfilment.knownServices[warehouse].some(s => s.toLowerCase() === service.toLowerCase());
+export function knownService(_warehouse: Warehouse, service: string): boolean {
+  return Object.values(appConfig.fulfilment.knownServices).flat().some(s => s.toLowerCase() === service.toLowerCase()) || /^FedEx\b.*\bIOSS\b/i.test(service);
 }
 // Pivoted normal equations; dependent SKU columns get a deterministic zero coefficient.
 // This is ordinary least squares, with no invented product weights or ridge prior.

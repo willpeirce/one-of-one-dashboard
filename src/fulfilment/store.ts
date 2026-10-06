@@ -53,18 +53,18 @@ async function saveEstimates(db:Database,mode:SourceMode,orders:Order[],parcels:
   }
 }
 async function rebuild(db:Database,mode:SourceMode,orders:Order[],parcels:Parcel[],settings:Settings,now:Date):Promise<Model> {
-  const newlyMatched: Parcel[] = [];
   for (const p of parcels) {
     const order=matchOrder(p.orderNumber,orders);
-    if (order&&p.orderId!==order.id) {p.orderId=order.id;newlyMatched.push(p);await db.query('UPDATE pulse.fulfilment_parcels SET order_id=$1 WHERE id=$2',[order.id,p.id]);}
+    if (order&&p.orderId!==order.id) {p.orderId=order.id;await db.query('UPDATE pulse.fulfilment_parcels SET order_id=$1 WHERE id=$2',[order.id,p.id]);}
   }
   const model=learn(parcels,orders);
-  for (const p of newlyMatched) {
-    const order = orders.find(o => o.id === p.orderId)!;
+  for (const p of parcels) {
+    const order = orders.find(o => o.id === p.orderId);
     const peers = learn(parcels.filter(other => other.id !== p.id), orders);
-    const q = quantities(order);
-    const rate = q && peers.rates.find(r => r.warehouse === p.warehouse && r.service === p.service && r.mix === mixKey(q) && r.state === (p.warehouse === 'us' ? order.region : ''));
-    if (rate && p.rateBaselinePence === null) p.rateBaselinePence = gbpMinor(rate.postage + rate.pickPack, p.currency, p.gbpPerUsd);
+    const q = order && quantities(order);
+    const rate = q && peers.rates.find(r => r.warehouse === p.warehouse && r.service === p.service && r.mix === mixKey(q) && r.state === (p.warehouse === 'us' ? order!.region : ''));
+    const fallback = order ? estimateOrder({ ...order, fulfillments: [], fulfillmentStatus: 'UNFULFILLED', country: p.warehouse === 'uk' ? 'GB' : p.warehouse === 'us' ? 'US' : null, market: p.warehouse === 'uk' ? 'UK' : p.warehouse === 'us' ? 'US' : 'unknown' }, [], peers, { ...settings, jjGbpPerUsd: p.gbpPerUsd }) : null;
+    p.rateBaselinePence = rate ? gbpMinor(rate.postage + rate.pickPack, p.currency, p.gbpPerUsd) : fallback && ['exact','ladder'].includes(fallback.source) ? fallback.costPence : null;
     p.flags = parcelFlags(p, order, peers);
     await db.query('UPDATE pulse.fulfilment_parcels SET flags=$2,rate_baseline_pence=$3 WHERE id=$1', [p.id, JSON.stringify(p.flags), p.rateBaselinePence]);
   }
@@ -76,9 +76,19 @@ async function rebuild(db:Database,mode:SourceMode,orders:Order[],parcels:Parcel
   await saveEstimates(db,mode,orders,parcels,model,settings,now);
   return model;
 }
-export async function refreshFulfilment(db:Database,mode:SourceMode,now=new Date()) {
+export async function refreshFulfilment(db:Database,mode:SourceMode,now=new Date(),changedOrders?:Order[]) {
   await db.transaction(async tx=>{
     await lock(tx,mode);
+    if (changedOrders) {
+      // Use accepted stored facts: an older poll may have been rejected by the order upsert.
+      changedOrders=(await tx.query<{data:Order}>("SELECT data FROM pulse.shopify_records WHERE mode=$1 AND kind='order' AND source_id=ANY($2::text[])",[mode,changedOrders.map(o=>o.id)])).rows.map(r=>r.data);
+      const affected=await tx.query<{affected:boolean}>(`SELECT EXISTS (SELECT 1 FROM pulse.fulfilment_parcels WHERE mode=$1 AND (order_id=ANY($2::text[]) OR order_number=ANY($3::text[]))) AS affected`,[mode,changedOrders.map(o=>o.id),changedOrders.flatMap(o=>o.orderNumber?[o.orderNumber]:[])]);
+      if (!affected.rows[0]!.affected) {
+        const [model,settings]=await Promise.all([readModel(tx,mode),readSettings(tx)]);
+        await saveEstimates(tx,mode,changedOrders,[],model,settings.values,now);
+        return;
+      }
+    }
     const [orders,parcels,settings]=await Promise.all([fulfilmentOrders(tx,mode),readParcels(tx,mode),readSettings(tx)]);
     await rebuild(tx,mode,orders,parcels,settings.values,now);
   });
@@ -100,15 +110,8 @@ export async function confirmImport(db:Database,mode:SourceMode,rows:ParcelRow[]
     const id=randomUUID();
     await tx.query(`INSERT INTO pulse.fulfilment_uploads (id,mode,source_id,file_name,row_count,saved_count,despatch_from,despatch_to,uploaded_at,gbp_per_usd,coverage_week) VALUES ($1::text::uuid,$2,$1::text,$3,$4,$5,$6,$7,$8,$9,$10)`,[id,mode,fileName,rows.length,fresh.length,dates[0],dates.at(-1),now,rate,coverageWeek??null]);
     const pending:Parcel[]=fresh.map(r=>{const o=r.orderId?orders.find(o=>o.id===r.orderId):undefined;const before = o ? estimateOrder(o,stored,oldModel,settings.values) : null; return {...r,id:'',gbpPerUsd:rate,uploadId:id,replacedEstimatePence:before && before.source !== 'actual' ? before.costPence : null,rateBaselinePence:null,flags:[]};});
-    // Evaluate same-file anomalies against peers with the parcel itself left out.
+    // Rebuild reviews every parcel after insertion, with each parcel left out of its peers.
     for (const p of pending) {
-      const o=p.orderId?orders.find(o=>o.id===p.orderId):undefined;
-      const baselineModel=oldModel.warehouses[p.warehouse as 'uk'|'us']?oldModel:learn([...stored,...pending.filter(r=>r!==p)],orders);
-      const q=o&&quantities(o);
-      const rateRow=q&&baselineModel.rates.find(r=>r.warehouse===p.warehouse&&r.service===p.service&&r.mix===mixKey(q)&&r.state===(p.warehouse==='us'?o!.region:''));
-      const fallback = o ? estimateOrder({ ...o, fulfillments: [], fulfillmentStatus: 'UNFULFILLED', country: p.warehouse === 'uk' ? 'GB' : p.warehouse === 'us' ? 'US' : null, market: p.warehouse === 'uk' ? 'UK' : p.warehouse === 'us' ? 'US' : 'unknown' }, [], baselineModel, settings.values) : null;
-      p.rateBaselinePence=rateRow?gbpMinor(rateRow.postage+rateRow.pickPack,p.currency,p.gbpPerUsd):fallback && ['exact','ladder'].includes(fallback.source) ? fallback.costPence : null;
-      p.flags=parcelFlags(p,o,baselineModel);
       const added=await tx.query<{id:string}>(`INSERT INTO pulse.fulfilment_parcels (mode,source_id,fetched_at,order_number,order_id,despatched_at,warehouse,centre,service,carrier,country,boxed_grams,currency,postage_minor,pick_pack_minor,customer_paid_pence,gbp_per_usd,upload_id,replaced_estimate_pence,rate_baseline_pence,flags)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING id::text`,[mode,`${p.orderNumber}:${p.despatchedAt}`,now,p.orderNumber,p.orderId,p.despatchedAt,p.warehouse,p.centre,p.service,p.carrier,p.country,p.boxedGrams,p.currency,p.postageMinor,p.pickPackMinor,p.customerPaidPence,rate,id,p.replacedEstimatePence,p.rateBaselinePence,JSON.stringify(p.flags)]);
       p.id=added.rows[0]!.id;
@@ -127,15 +130,24 @@ export async function confirmImport(db:Database,mode:SourceMode,rows:ParcelRow[]
   });
 }
 export async function fulfilmentSummary(db:Database,mode:SourceMode,now:Date) {
-  const [parcels,uploads,orders,model]=await Promise.all([readParcels(db,mode),readUploads(db,mode),fulfilmentOrders(db,mode),readModel(db,mode)]);
+  const [parcels,uploads,count,model]=await Promise.all([readParcels(db,mode),readUploads(db,mode),db.query<{count:string}>("SELECT count(*) FROM pulse.shopify_records WHERE mode=$1 AND kind='order'",[mode]),readModel(db,mode)]);
   const month=ukToday(now).slice(0,7);
   const averages=(['uk','us'] as const).map(w=>{
     const rows=parcels.filter(p=>p.warehouse===w&&despatchDay(p).startsWith(month));
     return {warehouse:w,count:rows.length,currency:w==='uk'?'GBP':'USD',exportedMinor:rows.length?rows.reduce((s,p)=>s+p.postageMinor+p.pickPackMinor,0)/rows.length:null,gbpPence:rows.length?rows.reduce((s,p)=>s+actualPence(p)!,0)/rows.length:null};
   });
-  const needs=parcels.flatMap(p=>p.flags.map(flag=>({id:`parcel:${p.id}:${flag}`,title:flag,why:`Order #${p.orderNumber} · ${p.centre} · ${p.service}`,link:'/fulfilment'})));
+  const unknown = new Map<string,{title:string;spelling:string;count:number}>();
+  const needs=parcels.flatMap(p=>p.flags.flatMap(flag=>{
+    if (flag === 'Unknown service' || flag === 'Unknown fulfilment centre') {
+      const spelling=flag === 'Unknown service' ? p.service : p.centre;
+      const key=JSON.stringify([flag,spelling]), group=unknown.get(key) ?? {title:flag,spelling,count:0};
+      group.count++; unknown.set(key,group); return [];
+    }
+    return [{id:`parcel:${p.id}:${flag}`,title:flag,why:`Order #${p.orderNumber} · ${p.centre} · ${p.service}`,link:'/fulfilment'}];
+  }));
+  for (const [key,group] of unknown) needs.push({id:`unknown:${key}`,title:group.title,why:`${group.spelling} · ${group.count} ${group.count === 1 ? 'parcel' : 'parcels'}`,link:'/fulfilment'});
   if (weeklyReminder(now,uploads)) needs.unshift({id:'jj-weekly',title:"Upload last week's J&J export",why:'Monday 09:00 UK: confirm a complete export for the previous Monday–Sunday.',link:'/fulfilment'});
-  return {mode,averages,lastUpload:uploads[0]??null,unmatched:parcels.filter(p=>!p.orderId),needs,model,recent:parcels.slice(-20).reverse().map(p=>({...p,actualPence:actualPence(p)})),orderCount:orders.length};
+  return {mode,averages,lastUpload:uploads[0]??null,unmatched:parcels.filter(p=>!p.orderId),needs,model,recent:parcels.slice(-20).reverse().map(p=>({...p,actualPence:actualPence(p)})),orderCount:Number(count.rows[0]!.count)};
 }
 export async function readEstimates(db:Database,mode:SourceMode):Promise<(Estimate&{orderId:string})[]> {
   return (await db.query<any>('SELECT * FROM pulse.fulfilment_estimates WHERE mode=$1',[mode])).rows.map(r=>({orderId:r.order_id,costPence:r.cost_pence===null?null:Number(r.cost_pence),source:r.source,warehouse:r.warehouse,service:r.service,guess:r.guess}));

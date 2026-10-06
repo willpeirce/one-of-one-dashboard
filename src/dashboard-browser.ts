@@ -1,5 +1,7 @@
+import { checksHtml, liveHtml, needsHtml, storePanelsHtml } from './shopify/presentation.js';
 import type { DashboardSnapshot, Detail, DialModel, HeroMetric, HeroPeriod, Period, RingModel, SheetModel, State, TestModel, Zone } from './dashboard-types.js';
 import { createDatePicker } from './dashboard-dates.js';
+import { rangeLabel } from './hero-range.js';
 
 const states: Record<State, [string, string]> = {
   good: ['Good', '✓'], warn: ['Watch', '!'], decide: ['Decide', '◆'], alarm: ['Alarm', '✕'],
@@ -59,14 +61,14 @@ let openDetail: HTMLElement | undefined;
 let openTemplateId: string | undefined;
 
 function renderDial(element: HTMLElement, data: DialModel): void {
-  const { v, min, max, z } = data, activeZone = zoneIndex(v, z), state = data.cap ?? zoneOf(v, z), format = formatLike(data.t);
+  const { v, min, max, z } = data, activeZone = zoneIndex(v, z), state = data.cap ?? zoneOf(v, z), format = data.t === 'No data' ? (value: number) => String(Math.round(value)) : formatLike(data.t);
   let svg = `<span class="well"><svg viewBox="0 0 100 64" aria-hidden="true"><path d="${arc(Math.PI, 0)}" fill="none" stroke="var(--line)" stroke-width="7"/>`;
   z.forEach(([start, end, status], index) => {
     const a = angle(start, min, max) - (index ? 0.035 : 0), b = angle(end, min, max) + (index < z.length - 1 ? 0.035 : 0);
-    if (a > b) svg += `<path d="${arc(a, b)}" fill="none" stroke="${colour[status]}" stroke-width="7" stroke-opacity="${index === activeZone ? 1 : 0.28}"/>`;
+    if (a > b) svg += `<path d="${arc(a, b)}" fill="none" stroke="${colour[data.cap === 'info' ? 'info' : status]}" stroke-width="7" stroke-opacity="${index === activeZone ? 1 : 0.28}"/>`;
   });
   const [x, y] = point(angle(v, min, max), 40);
-  svg += `<circle cx="${x}" cy="${y}" r="5" fill="var(--ink)" stroke="var(--pointer-ring)" stroke-width="2.5"/><text x="50" y="52" text-anchor="middle" font-family="var(--disp)" font-size="15" font-weight="700" fill="var(--ink)">${esc(data.t)}</text><text x="10" y="62" text-anchor="middle" font-size="7.5" fill="var(--muted)">${esc(format(min))}</text><text x="90" y="62" text-anchor="middle" font-size="7.5" fill="var(--muted)">${esc(format(max))}</text></svg></span>`;
+  svg += `${data.t === 'No data' ? '' : `<circle cx="${x}" cy="${y}" r="5" fill="var(--ink)" stroke="var(--pointer-ring)" stroke-width="2.5"/>`}<text x="50" y="52" text-anchor="middle" font-family="var(--disp)" font-size="15" font-weight="700" fill="var(--ink)">${esc(data.t)}</text><text x="10" y="62" text-anchor="middle" font-size="7.5" fill="var(--muted)">${esc(format(min))}</text><text x="90" y="62" text-anchor="middle" font-size="7.5" fill="var(--muted)">${esc(format(max))}</text></svg></span>`;
   element.innerHTML = `${svg}<span class="dl">${esc(data.l)}</span><span class="ds">${esc(data.s)}</span>${chip(state)}`;
   element.dataset.state = state;
   element.setAttribute('aria-label', `${data.l}: ${data.t}, ${states[state][0]}`);
@@ -101,6 +103,7 @@ function statChip(element: HTMLElement, state: State): void {
 
 const animations = new WeakMap<HTMLElement, number>();
 function metricNumber(element: HTMLElement, data: HeroMetric, animate: boolean): void {
+  if (data.unavailable) { animations.set(element, (animations.get(element) ?? 0) + 1); element.textContent = 'No data'; return; }
   const show = (value: number): void => { element.textContent = (data.pre ?? '') + (data.dp ? value.toFixed(data.dp) : Math.round(value).toLocaleString('en-GB')) + (data.suf ?? ''); };
   const generation = (animations.get(element) ?? 0) + 1;
   animations.set(element, generation);
@@ -137,7 +140,9 @@ function renderHero(hero: HeroPeriod, animate = false): void {
   get('#sub1').textContent = hero.sub1;
   for (const key of ['net', 'orders', 'cr', 'spend', 'roas', 'margin'] as const) {
     const element = get(`#hero .tile[data-k="${key}"]`), metric = hero[key];
-    get('.per', element).textContent = hero.per;
+    element.dataset.mode = metric.mode;
+    if (metric.mode === 'live') element.querySelector('.sample-label')?.remove();
+    get('.per', element).textContent = `${hero.per} · ${metric.unavailable ? 'unavailable' : metric.mode === 'live' ? 'live' : 'sample'}`;
     metricNumber(get('.sv', element), metric, animate);
     get('.ss', element).textContent = metric.ss;
     element.dataset.state = metric.state;
@@ -151,6 +156,12 @@ function renderHero(hero: HeroPeriod, animate = false): void {
     const element = get(`#hero [data-k="${key}"]`);
     element.dataset.dial = JSON.stringify(hero[key]);
     renderDial(element, hero[key]);
+  }
+  if (hero.business) for (const [kind, widgetId, valueKey, subKey] of [['email','w039','t0269','t0270'], ['refill','w037','t0266','t0267']] as const) {
+    const model = hero.business[kind], element = document.querySelector<HTMLElement>(`[data-model-id="${widgetId}"]`);
+    all(`[data-sample-text="${valueKey}"]`).forEach(e => { e.textContent = String(model.count); });
+    all(`[data-sample-text="${subKey}"]`).forEach(e => { e.textContent = `${rangeLabel(hero.from, hero.to)} · Shopify ${hero.net.mode}`; });
+    if (element) details.set(element, { state: 'info', title: kind === 'email' ? 'Email · Shopify' : 'Refill Pack', detail: model.detail });
   }
   renderHealth();
 }
@@ -206,6 +217,7 @@ function renderHealth(): void {
   all('.tile[data-state],.dcard[data-state],.tcard[data-state]').forEach((element) => {
     const state = element.dataset.state ?? '';
     if (!(state in total)) return;
+    if (snapshot.shopify && element.dataset.mode === 'sample' && !element.hasAttribute('data-ingested-shopify') && !element.closest('#shopify-needs') && !element.closest('#hero')) return;
     total[state as keyof Tally] += 1;
     const panel = element.closest<HTMLElement>('[data-panel]')?.dataset.panel ?? '';
     const icon = element.querySelector('.src use')?.getAttribute('href')?.slice(1) ?? '';
@@ -215,12 +227,12 @@ function renderHealth(): void {
     byGroup[group][state as keyof Tally] += 1;
   });
   const health = Math.round(100 * score(total));
-  const rows = all('.dcard[data-state]'), alarmCount = rows.filter((row) => row.dataset.state === 'alarm').length, decisions = rows.filter((row) => row.dataset.state === 'decide').length;
+  const rows = snapshot.shopify ? all('#shopify-needs .dcard[data-state]') : all('.dcard[data-state]'), alarmCount = rows.filter((row) => row.dataset.state === 'alarm').length, decisions = rows.filter((row) => row.dataset.state === 'decide').length;
   const reviewCount = all('#reviews .rv').length;
-  get('#counts').innerHTML = `<span class="pk health"><b>${health}</b> health</span>` + ([['alarm', alarmCount, alarmCount === 1 ? 'alarm' : 'alarms'], ['decide', decisions, decisions === 1 ? 'decision' : 'decisions'], ['warn', total.warn, 'to watch'], ['good', total.good, 'good']] as const).map(([state, count, label]) => `<span class="pk" style="--c:${colour[state]}"><i>${states[state][1]}</i><b>${count}</b> ${label}</span>`).join('') + (reviewCount ? `<button class="pk" type="button" data-rv style="--c:var(--decide)"><i>★</i><b>${reviewCount}</b> new ${reviewCount === 1 ? 'review' : 'reviews'}</button>` : '');
+  get('#counts').innerHTML = `<span class="pk health"><b>${health}</b> health</span>` + ([['alarm', alarmCount, alarmCount === 1 ? 'alarm' : 'alarms'], ['decide', decisions, decisions === 1 ? 'decision' : 'decisions'], ['warn', total.warn, 'to watch'], ['good', total.good, 'good']] as const).map(([state, count, label]) => `<span class="pk" style="--c:${colour[state]}"><i>${states[state][1]}</i><b>${count}</b> ${label}</span>`).join('') + (reviewCount ? `<button class="pk" type="button" data-rv style="--c:var(--decide)"><i>★</i><b>${reviewCount}</b> ${snapshot.shopify ? 'sample ' : 'new '}${reviewCount === 1 ? 'review' : 'reviews'}</button>` : '');
   get('#rvcount').textContent = reviewCount ? `◆ ${reviewCount} waiting` : '✓ All caught up';
   get('#rvcount').className = `chip ${reviewCount ? 'decide' : 'good'}`;
-  get('#subrv').textContent = reviewCount ? ` ${reviewCount} new ${reviewCount === 1 ? 'review' : 'reviews'} to check.` : '';
+  get('#subrv').textContent = reviewCount ? ` ${reviewCount} ${snapshot.shopify ? 'sample' : 'new'} ${reviewCount === 1 ? 'review' : 'reviews'} to check.` : '';
   get('#deckcount').textContent = `${alarmCount} ${alarmCount === 1 ? 'alarm' : 'alarms'} · ${decisions} ${decisions === 1 ? 'decision' : 'decisions'}`;
   const radarPoint = (index: number, radius: number): [number, number] => [rounded(160 + radius * Math.cos(-Math.PI / 2 + index * 2 * Math.PI / groups.length)), rounded(150 + radius * Math.sin(-Math.PI / 2 + index * 2 * Math.PI / groups.length))];
   const polygon = (points: [number, number][]): string => points.map((p) => p.join(',')).join(' ');
@@ -228,17 +240,18 @@ function renderHealth(): void {
   for (const scale of [0.25, 0.5, 0.75, 1]) svg += `<polygon points="${polygon(groups.map((_, index) => radarPoint(index, 108 * scale)))}" fill="none" stroke="var(--line)" stroke-width="1"/>`;
   groups.forEach((_, index) => { const [x, y] = radarPoint(index, 108); svg += `<line x1="160" y1="150" x2="${x}" y2="${y}" stroke="var(--line)" stroke-width="1"/>`; });
   svg += `<text x="160" y="172" text-anchor="middle" font-family="var(--disp)" font-size="64" font-weight="800" fill="var(--ink)" fill-opacity=".18">${health}</text><text x="160" y="190" text-anchor="middle" font-family="var(--disp)" font-size="11" font-weight="700" letter-spacing="1.5" fill="var(--ink)" fill-opacity=".45">HEALTH</text>`;
-  const scores = groups.map(([key]) => score(byGroup[key] ?? emptyTally())), points = groups.map((_, index) => radarPoint(index, 108 * scores[index]!));
+  const measured = (key: string) => { const g = byGroup[key]; return !!g && g.good + g.warn + g.alarm > 0; };
+  const scores = groups.map(([key]) => measured(key) ? score(byGroup[key]!) : 0), points = groups.map((_, index) => radarPoint(index, 108 * scores[index]!));
   svg += `<polygon points="${polygon(points)}" fill="var(--accent)" fill-opacity=".28" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round"/>`;
   points.forEach(([x, y]) => { svg += `<circle cx="${x}" cy="${y}" r="4.5" fill="var(--accent)" stroke="var(--pointer-ring)" stroke-width="2"/>`; });
   const described: string[] = [];
-  groups.forEach(([, name], index) => {
+  groups.forEach(([key, name], index) => {
     const [x, y] = radarPoint(index, 132), percent = Math.round(scores[index]! * 100);
-    svg += `<text x="${x}" y="${y}" text-anchor="${Math.abs(x - 160) < 2 ? 'middle' : x > 160 ? 'start' : 'end'}" font-family="var(--disp)" font-size="13" font-weight="600" fill="var(--ink)">${name}<tspan x="${x}" dy="14" font-size="11" font-weight="500" fill="var(--muted)">${percent}%</tspan></text>`;
-    described.push(`${name} ${percent}%`);
+    svg += `<text x="${x}" y="${y}" text-anchor="${Math.abs(x - 160) < 2 ? 'middle' : x > 160 ? 'start' : 'end'}" font-family="var(--disp)" font-size="13" font-weight="600" fill="var(--ink)">${name}<tspan x="${x}" dy="14" font-size="11" font-weight="500" fill="var(--muted)">${measured(key) ? percent + '%' : 'Unknown'}</tspan></text>`;
+    described.push(`${name} ${measured(key) ? percent + '%' : 'unknown'}`);
   });
   get('#radar').innerHTML = `${svg}</svg>`;
-  get('#radar').setAttribute('aria-label', `Sample health ${health}. ${described.join(', ')}.`);
+  get('#radar').setAttribute('aria-label', `Shopify health ${health}. ${described.join(', ')}.`);
 }
 
 function miniChart(detail: Detail, dial?: SheetDetail['dial']): string {
@@ -273,8 +286,14 @@ function showDetail(element: HTMLElement, reopen = true): void {
   get('#sh-dl').hidden = false;
   get('#sh-why').textContent = data.detail.why;
   get('#sh-rule').textContent = data.detail.rule;
-  get('#sh-src').textContent = `${data.detail.src} · sample data`;
+  get('#sh-src').textContent = `${data.detail.src}${/sample|live|Not built/.test(data.detail.src) ? '' : ' · sample data'}`;
   get('#sh-chart').innerHTML = miniChart(data.detail, data.dial);
+  if (element.matches('#hero [data-k="orders"]') && activeHero().business) {
+    const rows = activeHero().business!.orderDays;
+    const high = Math.max(1, ...rows.map(r => r.total));
+    const colors = { UK: '--good', US: '--info', EU: '--warn', TikTok: '--decide', unknown: '--muted' };
+    get('#sh-chart').innerHTML = `<div class="orders-bars" role="img" aria-label="Orders by UK day, UK, US, EU and TikTok separately. Spike days are marked in the chart above.">${rows.map(r => `<span title="${esc(r.day)}: UK ${r.UK}, US ${r.US}, EU ${r.EU}, TikTok ${r.TikTok}, unknown ${r.unknown}, total ${r.total}" class="order-bar">${Object.entries(colors).map(([k, c]) => `<i style="height:${40 * r[k as keyof typeof colors] / high}px;background:var(${c})"></i>`).join('')}${r.detailAvailable ? '' : `<i style="height:${40*r.total/high}px;background:var(--muted)"></i>`}</span>`).join('')}</div><p class="note">UK · US · EU · TikTok · unknown. TikTok is counted once. ${rows.length > 31 ? 'Scroll for every UK day.' : ''}</p>` + miniChart(data.detail, data.dial);
+  }
   get('#sh-extra').innerHTML = data.detail.extra?.length ? `<dl class="xdl">${data.detail.extra.map(([key, value]) => `<dt>${esc(key)}</dt><dd>${esc(value)}</dd>`).join('')}</dl>` : '';
   if (reopen && !sheet.open) sheet.showModal();
 }
@@ -332,6 +351,10 @@ function updateSnapshot(next: DashboardSnapshot, initial = false): void {
   all('[data-model-id]').forEach((element) => {
     const widget = snapshot.widgets[element.dataset.modelId ?? ''];
     if (!widget) return;
+    element.dataset.mode = widget.mode;
+    element.dataset.source = widget.source.join(' ');
+    if (element.hasAttribute('data-ingested-shopify')) element.querySelector('.sample-label')?.remove();
+    if (element.hasAttribute('data-ingested-shopify') && element.dataset.src !== 'stock') element.dataset.src = 'shopify';
     element.dataset[widget.kind] = JSON.stringify(widget.value);
     if (widget.kind === 'dial') renderDial(element, widget.value);
     else if (widget.kind === 'ring') renderRing(element, widget.value);
@@ -340,11 +363,23 @@ function updateSnapshot(next: DashboardSnapshot, initial = false): void {
       const data: SheetModel = widget.value;
       details.set(element, { state: data.state, title: data.title, detail: data });
     } else if (widget.kind === 'detail') {
-      const state = (element.dataset.state ?? 'info') as State;
+      const state = element.hasAttribute('data-ingested-shopify') ? 'info' : (element.dataset.state ?? 'info') as State;
+      element.dataset.state = state;
       details.set(element, { state, title: element.querySelector('.sl')?.textContent ?? '', detail: widget.value });
       statChip(element, state);
     }
   });
+  if (snapshot.shopify) {
+    get('#shopify-needs').innerHTML = needsHtml(snapshot.shopify);
+    const watchdogsOpen = get('#shopify-checks details').hasAttribute('open');
+    get('#shopify-checks').innerHTML = checksHtml(snapshot.shopify);
+    if (watchdogsOpen) get('#shopify-checks details').setAttribute('open', '');
+    get('[data-sp="live"]').innerHTML = liveHtml(snapshot.shopify);
+    get('#shopify-panels').innerHTML = storePanelsHtml(snapshot.shopify);
+    all('[data-custom-detail]').forEach(element => details.set(element, { state: 'info', title: element.querySelector('.sl')?.textContent ?? '', detail: JSON.parse(element.dataset.customDetail!) as Detail }));
+    all('.tile[data-mode="sample"]').filter(e => !e.closest('#hero')).forEach(element => { if (!element.querySelector('.sample-label')) element.insertAdjacentHTML('beforeend', '<small class="sample-label">Sample data</small>'); });
+    if (snapshot.banner) get('.sample-banner').textContent = snapshot.banner;
+  }
   all('.tile[data-src]').forEach(watermark);
   all('.spark[data-spark]').forEach((element) => renderSpark(element, (element.dataset.spark ?? '').split(',').map(Number)));
   all('#reviews .stars').forEach((element) => {

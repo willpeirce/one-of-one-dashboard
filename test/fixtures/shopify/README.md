@@ -27,3 +27,11 @@ being tax-exclusive. The refund reference does not explicitly state that basis;
 Shopify's developer-community [inclusive-tax report](https://community.shopify.dev/t/bug-shipping-refund-doesnt-include-tax-but-line-item-does/24741)
 and [exclusive-tax example](https://community.shopify.dev/t/how-to-refund-tax/29399)
 corroborate the two cases. Live report agreement remains a check after keys arrive.
+
+## Stage 1b card envelopes
+
+`card-orders.json`, `card-sessions.json` and `card-channels.json` contain 400 days of **invented** API-shaped history through 30 September 2026. Regenerate with `python scripts/generate-shopify-cards-fixtures.py` from the repository root. IDs are fake; no production orders, channel counts, stock totals, reviewer names or reviews were copied. The fixed values are a fixture scenario, not One of One's figures. The sample worker opts into these; the small source-unit fixtures stay independent.
+
+`channels.json` is an invented ShopifyQL `tableData` envelope with day/sales_channel/orders columns. Subscription fixtures now use the 2026-10 top-level `uri`. New live queries request channel information, payment times, discount-code signals and allocated fulfilment lines without adding personal fields. The wider history intentionally covers the country-tagging guard dates and spike days; stock fixture coverage remains sparse so unavailable products/multiplier inputs show unknown.
+
+Review regression fixtures are hand-written, invented API envelopes: `order-zero-total-paid.json` has PAID status and no money transactions; `orders-null-channel.json` has one draft-source order and two unmapped-source orders, all with null channel information; `channels-null-channel.json` is the matching ShopifyQL report. Their order/line ids are invented, and their quantities/channel totals are test scenarios. Tests vary transaction times and report totals to cover unknowns, genuine shortages and recovery.

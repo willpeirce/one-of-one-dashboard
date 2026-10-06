@@ -74,11 +74,12 @@ export interface TestModel {
 
 export interface SampleProvenance {
   source: SourceId[];
-  mode: 'sample';
+  mode: 'sample' | 'live';
 }
 
 export interface HeroMetric extends SampleProvenance {
   n: number;
+  unavailable?: boolean;
   state: State;
   d: Detail;
   ss: string;
@@ -103,6 +104,11 @@ export interface HeroPeriod {
   margin: HeroMetric;
   ukcpo: DialModel & SampleProvenance;
   uscpo: DialModel & SampleProvenance;
+  business?: {
+    email: { count: number; detail: Detail };
+    refill: { count: number; detail: Detail };
+    orderDays: { day: string; UK: number; US: number; EU: number; TikTok: number; unknown: number; total: number; detailAvailable: boolean }[];
+  };
 }
 
 export type DashboardWidget = SampleProvenance & (
@@ -129,4 +135,6 @@ export interface DashboardSnapshot {
   widgets: Record<string, DashboardWidget>;
   textValues: Record<string, SampleText>;
   sourceHealth?: SourceHealth[];
+  shopify?: import('./shopify/dashboard.js').ShopifyDashboard;
+  banner?: string;
 }

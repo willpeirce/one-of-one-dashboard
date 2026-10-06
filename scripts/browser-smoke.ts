@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import type { AuthenticationResponseJSON } from '@simplewebauthn/server';
 import { chromium, type BrowserContext, type Page } from 'playwright';
+import { rangeLabel } from '../src/hero-range.js';
 
 let step = 'read test configuration';
 
@@ -9,6 +10,7 @@ const viewports = [{ width: 390, height: 844 }, { width: 1280, height: 960 }];
 type Period = typeof periods[number];
 interface HeroMetric {
   n?: number;
+  unavailable?: boolean;
   t?: string;
   pre?: string;
   suf?: string;
@@ -52,7 +54,7 @@ async function assertHeroModel(page: Page, metrics: HeroPeriod): Promise<void> {
     const metric = metrics[key];
     assert.ok(metric && typeof metric !== 'string' && !Array.isArray(metric));
     if (typeof metric.n === 'number') {
-      expected[key] = (metric.pre ?? '') + (metric.dp ? metric.n.toFixed(metric.dp) : Math.round(metric.n).toLocaleString('en-GB')) + (metric.suf ?? '');
+      expected[key] = metric.unavailable ? 'No data' : (metric.pre ?? '') + (metric.dp ? metric.n.toFixed(metric.dp) : Math.round(metric.n).toLocaleString('en-GB')) + (metric.suf ?? '');
     } else {
       assert.equal(typeof metric.t, 'string');
       expected[key] = metric.t!;
@@ -65,6 +67,7 @@ async function assertHeroModel(page: Page, metrics: HeroPeriod): Promise<void> {
   }), expected);
   assert.equal(await page.locator('#eyebrow').textContent(), metrics.eyebrow);
   assert.equal(await page.locator('#sub1').textContent(), metrics.sub1);
+  for (const key of ['t0267', 't0270']) assert.ok((await page.locator(`[data-sample-text="${key}"]`).textContent())?.startsWith(`${rangeLabel(metrics.from, metrics.to)} · Shopify `));
   for (const key of Object.keys(expected)) {
     assert.equal(await page.locator(`#hero [data-k="${key}"]`).count(), 1);
   }
@@ -118,7 +121,7 @@ async function rangeModel(context: BrowserContext, from: string, to: string): Pr
 
 async function selectCalendarDay(page: Page, date: string): Promise<void> {
   const day = page.locator(`#pkcal [data-date="${date}"]`);
-  for (let moves = 0; !await day.count() && moves < 12; moves += 1) {
+  for (let moves = 0; !await day.count() && moves < 18; moves += 1) {
     const first = await page.locator('#pkcal [data-date]').first().getAttribute('data-date');
     assert.ok(first);
     const direction = date < first ? '-1' : '1';
@@ -211,7 +214,7 @@ async function checkDatePicker(page: Page, context: BrowserContext, snapshot: Da
   await page.locator('#pickbtn').click();
   step = `${scope}: bounded calendar navigation`;
   const previous = page.locator('#picker [data-nav="-1"]');
-  for (let moves = 0; await previous.isEnabled() && moves < 12; moves += 1) await previous.click();
+  for (let moves = 0; await previous.isEnabled() && moves < 18; moves += 1) await previous.click();
   step = `${scope}: earliest month disabled`;
   assert.equal(await previous.isDisabled(), true);
   step = `${scope}: earliest day arrow clamp`;
@@ -220,7 +223,7 @@ async function checkDatePicker(page: Page, context: BrowserContext, snapshot: Da
   assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('data-date')), snapshot.bounds.min);
   step = `${scope}: navigate to latest month`;
   const next = page.locator('#picker [data-nav="1"]');
-  for (let moves = 0; await next.isEnabled() && moves < 12; moves += 1) await next.click();
+  for (let moves = 0; await next.isEnabled() && moves < 18; moves += 1) await next.click();
   step = `${scope}: latest month disabled`;
   assert.equal(await next.isDisabled(), true);
   step = `${scope}: latest day arrow clamp`;
@@ -426,6 +429,7 @@ async function run(): Promise<void> {
         const appearance = await assertDarkAppearance(page, true);
         if (dashboardAppearance) assert.equal(appearance, dashboardAppearance);
         dashboardAppearance = appearance;
+        if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/pulse-stage1b-${viewport.width}-${preference}.png` });
         await showAccountMenu(page);
         assert.equal(await page.locator('#hero').isVisible(), true);
         assert.equal(await page.getByRole('button', { name: 'Sign out', exact: true }).isVisible(), true);

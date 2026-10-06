@@ -29,7 +29,9 @@ function assertSampleHero(hero: HeroPeriod, from: string, to: string): void {
     assert.ok(metric.source.every((source) => ['shopify', 'meta', 'google-ads', 'github-hq'].includes(source)));
     assert.ok(Number.isFinite('n' in metric ? metric.n : metric.v), `${key} must have a finite value`);
     assert.ok(metric.d.src.length > 0, `${key} must explain its source`);
-    assert.ok(metric.d.hist && metric.d.hist.length > 0, `${key} must include its detail history`);
+    if (['net','orders','cr'].includes(key)) assert.ok(metric.d.hist && metric.d.hist.length > 0, `${key} must include its ingested detail history`);
+    else if ('n' in metric) assert.equal(metric.unavailable, true, `${key} must not mix example ad/cost figures with ingested Shopify`);
+    else assert.equal(metric.t, 'No data');
   }
 }
 
@@ -92,7 +94,7 @@ test('hero range API protects sessions, validates fixed errors and serves labell
       '?from=2026-09-00&to=2026-09-20', '?from=2026-09-21&to=2026-09-20',
       `?from=${future}&to=${future}`,
       '?from=2025-09-29&to=2026-09-30',
-      '?from=2025-12-31&to=2026-01-01', '?from=2026-09-30&to=2026-10-01',
+      '?from=2025-08-01&to=2025-08-02', '?from=2026-09-30&to=2026-10-01',
       '?from=2026-09-08&from=2026-09-09&to=2026-09-20',
       '?from=2026-09-08&to=2026-09-20&to=2026-09-21',
       '?from[]=2026-09-08&to=2026-09-20',
@@ -129,19 +131,19 @@ test('hero range API protects sessions, validates fixed errors and serves labell
     const weekResponse = await get('?from=2026-09-23&to=2026-09-29');
     assert.equal(weekResponse.statusCode, 200);
     const week = weekResponse.json<HeroPeriod>();
-    assert.equal(week.net.n, 13_319);
-    assert.equal(week.orders.n, 269);
-    assert.equal(week.spend.n, 8_596);
-    assert.equal(Number(week.ukcpo.v.toFixed(2)), 26.65);
-    assert.equal(Number(week.uscpo.v.toFixed(2)), 34.27);
+    assert.equal(week.net.n, 466.34);
+    assert.equal(week.orders.n, 7);
+    assert.equal(week.spend.unavailable, true);
+    assert.equal(week.ukcpo.t, 'No data');
+    assert.equal(week.uscpo.t, 'No data');
     const dashboardResponse = await app.inject({ url: '/api/dashboard', headers: { cookie } });
     assert.equal(dashboardResponse.statusCode, 200);
     const snapshot = dashboardResponse.json<DashboardSnapshot>();
     assert.deepEqual(Object.keys(snapshot.hero).sort(), ['30d', '7d', 'today', 'yday']);
-    assert.deepEqual(week, snapshot.hero['7d']);
+    assert.deepEqual({ ...week, short: snapshot.hero['7d'].short, eyebrow: snapshot.hero['7d'].eyebrow }, snapshot.hero['7d']);
     const monthResponse = await get('?from=2026-08-31&to=2026-09-29');
     assert.equal(monthResponse.statusCode, 200);
-    assert.deepEqual(monthResponse.json(), snapshot.hero['30d']);
+    assert.deepEqual({ ...monthResponse.json<HeroPeriod>(), short: snapshot.hero['30d'].short, eyebrow: snapshot.hero['30d'].eyebrow }, snapshot.hero['30d']);
   });
 
   await t.test('saved tripwire settings also control a custom range without fetching a source', async () => {

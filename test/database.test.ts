@@ -90,7 +90,7 @@ test('all migrations leave public empty, repeat without losing rows and reject c
   await Promise.all([migrate(db), migrate(db)]);
   await assertPublicHasNoTables(db);
   assert.equal((await db.query('SELECT * FROM pulse.audit_log')).rows.length, 1);
-  assert.equal((await db.query('SELECT * FROM pulse_private.schema_migrations')).rows.length, 4);
+  assert.equal((await db.query('SELECT * FROM pulse_private.schema_migrations')).rows.length, 5);
   await db.query("UPDATE pulse_private.schema_migrations SET checksum = 'changed'");
   await assert.rejects(migrate(db), (error: unknown) => {
     assert.ok(error instanceof MigrationError);

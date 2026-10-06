@@ -71,7 +71,7 @@ const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const shortDate = (date: string): string => `${Number(date.slice(-2))} ${months[Number(date.slice(5, 7)) - 1]}`;
 const weekdayDate = (date: string): string => `${weekdays[new Date(`${date}T00:00:00Z`).getUTCDay()]} ${shortDate(date)}`;
-function rangeLabel(from: string, to: string): string {
+export function rangeLabel(from: string, to: string): string {
   if (from === to) return shortDate(from);
   if (from.slice(0, 7) === to.slice(0, 7)) return `${Number(from.slice(-2))}–${shortDate(to)}`;
   if (from.slice(0, 4) === to.slice(0, 4)) return `${shortDate(from)}–${shortDate(to)}`;

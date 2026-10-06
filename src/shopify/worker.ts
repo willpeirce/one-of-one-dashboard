@@ -7,16 +7,19 @@ import { nextCursor, ShopifyClient, type ShopifyReader } from './client.js';
 import { ShopifyError, Transport, type TransportOptions } from './http.js';
 import { SampleShopify } from './sample.js';
 import { ShopifyStore } from './store.js';
+import { channelKey, reportRows } from './model.js';
+import { paidOrder } from './metrics.js';
 import { webhookTopics } from './webhooks.js';
 
-type Job = 'backfill' | 'poll' | 'inventory' | 'sessions' | 'subscriptions' | 'reconcile';
-const intervals: Record<Job, number> = { backfill: 0, poll: 300_000, inventory: 300_000, sessions: 300_000, subscriptions: 3_600_000, reconcile: 86_400_000 };
+type Job = 'backfill' | 'poll' | 'inventory' | 'sessions' | 'subscriptions' | 'reconcile' | 'session_history';
+const intervals: Record<Job, number> = { backfill: 0, poll: 300_000, inventory: 300_000, sessions: 300_000, subscriptions: 3_600_000, reconcile: 86_400_000, session_history: 0 };
 export function backfillWindow(now: Date, allOrders: boolean) {
   return { from: addDays(ukToday(now), -(allOrders ? 399 : 59)), olderFrom: addDays(ukToday(now), -399), olderTo: addDays(ukToday(now), -60) };
 }
 export function sessionQuery(from: string, to: string): string {
   return `FROM sessions SHOW sessions, sessions_with_cart_additions, sessions_that_reached_checkout, sessions_that_completed_checkout GROUP BY day, session_country, session_region, landing_page_path, session_device_type, referrer_source SINCE ${from} UNTIL ${to}`;
 }
+export function channelQuery(from: string, to: string): string { return `FROM sales SHOW orders GROUP BY day, sales_channel SINCE ${from} UNTIL ${to} ORDER BY day`; }
 function salesQuery(from: string, to: string): string { return `FROM sales SHOW orders, net_sales GROUP BY day SINCE ${from} UNTIL ${to} ORDER BY day`; }
 export function ukDayStart(day: string): Date {
   return new Date(nextNight(new Date(`${addDays(day, -1)}T12:00:00Z`)).getTime() - 60_000);
@@ -42,7 +45,7 @@ export class ShopifyWorker {
     options: TransportOptions & { reader?: ShopifyReader; clock?: () => Date; fallback?: DailySessionFallback } = {}) {
     this.mode = env.SHOPIFY_CLIENT_ID?.trim() && env.SHOPIFY_CLIENT_SECRET?.trim() ? 'live' : 'sample';
     this.clock = options.clock ?? (() => this.mode === 'sample' ? new Date(appConfig.shopify.sampleNow) : new Date());
-    this.client = options.reader ?? (this.mode === 'sample' ? new SampleShopify() : new ShopifyClient(new Transport({ ...options, log: options.log ?? (entry => console.info(JSON.stringify(entry))) }), env, origin));
+    this.client = options.reader ?? (this.mode === 'sample' ? new SampleShopify(true) : new ShopifyClient(new Transport({ ...options, log: options.log ?? (entry => console.info(JSON.stringify(entry))) }), env, origin));
     this.fallback = options.fallback ?? new RoutineSessions(new Transport({ ...options, log: options.log ?? (entry => console.info(JSON.stringify(entry))) }), env);
     this.store = new ShopifyStore(db, this.mode);
   }
@@ -78,7 +81,7 @@ export class ShopifyWorker {
     for (const job of due.rows) {
       try {
         const state = await this.execute(job.name, job.state, job.last_success_at);
-        const next = state.continuing ? new Date(now.getTime() + 1000) : job.name === 'backfill' ? new Date('9999-01-01T00:00:00Z') : job.name === 'reconcile' ? nextNight(now) : new Date(now.getTime() + intervals[job.name]);
+        const next = state.continuing ? new Date(now.getTime() + 1000) : ['backfill', 'session_history'].includes(job.name) ? new Date('9999-01-01T00:00:00Z') : job.name === 'reconcile' ? nextNight(now) : new Date(now.getTime() + intervals[job.name]);
         await this.db.query(`UPDATE pulse.shopify_jobs SET state = $3, next_run_at = $4, last_success_at = $5, failures = 0 WHERE mode = $1 AND name = $2`, [this.mode, job.name, JSON.stringify(state), next, now]);
       } catch (error) {
         failed = true;
@@ -129,6 +132,38 @@ export class ShopifyWorker {
       last_success_at = CASE WHEN $1 = 'healthy' THEN $2 ELSE last_success_at END,
       consecutive_failures = CASE WHEN $1 = 'healthy' THEN 0 ELSE consecutive_failures + 1 END, updated_at = $2 WHERE source = 'shopify'`, [failed ? 'error' : 'healthy', this.clock()]);
   }
+
+  private async reconcileChannels(from: string, to: string, now: Date): Promise<void> {
+    const table = await this.client.report(channelQuery(from, to));
+    const expected = new Map<string, number>();
+    for (const row of reportRows(table)) {
+      if (typeof row.day !== 'string' || row.day < from || row.day > to || typeof row.sales_channel !== 'string' || !Number.isInteger(Number(row.orders)) || Number(row.orders) < 0) throw new ShopifyError('invalid');
+      const channel = channelKey(row.sales_channel);
+      expected.set(channel, (expected.get(channel) ?? 0) + Number(row.orders));
+    }
+    const { records } = await this.store.facts();
+    const counts = new Map<string, number>();
+    for (const { kind, data } of records) if (kind === 'order' && paidOrder(data) && data.day >= from && data.day <= to) {
+      const channel = channelKey(data.channel ?? 'Unknown');
+      counts.set(channel, (counts.get(channel) ?? 0) + 1);
+    }
+    // Replace only after the complete report parses. A failed report retains the last good check.
+    await this.db.transaction(async tx => {
+      const store = new ShopifyStore(tx, this.mode);
+      await tx.query("DELETE FROM pulse.shopify_notices WHERE mode = $1 AND kind = 'channel_short'", [this.mode]);
+      const unknown = counts.get('unknown') ?? 0;
+      const unmatched = [...expected].filter(([channel]) => channel === 'unknown' || !counts.has(channel));
+      for (const [channel, reported] of expected) {
+        if (unknown > 0 && unmatched.some(([name]) => name === channel)) continue;
+        const stored = counts.get(channel) ?? 0;
+        if (stored < reported) await store.notice('channel_short', `channel:${channel}`, now, { channel, stored, reported, from, to });
+      }
+      // Unknown source orders can account for report-only channels, without guessing which.
+      const reported = unmatched.reduce((n, [, count]) => n + count, 0);
+      if (unknown > 0 && unknown < reported) await store.notice('channel_short', 'channel:unknown', now,
+        { channel: `Unknown / unmatched (${unmatched.map(([channel]) => channel).join(', ')})`, stored: unknown, reported, from, to });
+    });
+  }
   private async execute(name: Job, state: any, lastSuccess: Date | null): Promise<any> {
     const now = this.clock(), day = ukToday(now);
     const checkpoint = await this.db.query<{ state: any }>(`SELECT state FROM pulse.shopify_jobs WHERE mode = $1 AND name = 'backfill'`, [this.mode]);
@@ -169,12 +204,24 @@ export class ShopifyWorker {
       await this.store.orders(result.nodes, now);
       const after = nextCursor(result);
       if (after && after === state.after) throw new ShopifyError('invalid');
-      return { query, after, continuing: Boolean(after) };
+      const reportFrom = state.continuing ? state.reportFrom : addDays(day, -7);
+      const reportTo = state.continuing ? state.reportTo : addDays(day, -1);
+      if (name === 'reconcile' && !after) await this.reconcileChannels(reportFrom, reportTo, now);
+      return { query, after, reportFrom, reportTo, continuing: Boolean(after) };
+    }
+    if (name === 'session_history') {
+      if (!checkpoint.rows[0]?.state.ordersDone) return { continuing: true };
+      const first = checkpoint.rows[0].state.from;
+      const date = state.day ?? addDays(day, -2);
+      if (date < first) return { done: true };
+      const from = this.mode === 'sample' ? first : date;
+      await this.store.sessions(await this.client.report(sessionQuery(from, date)), now);
+      return this.mode === 'sample' ? { done: true } : { day: addDays(date, -1), continuing: true };
     }
     if (name === 'inventory') { await this.store.inventory(await this.client.inventory(), now); return {}; }
     if (name === 'sessions') {
       // Re-read yesterday too: late report corrections and geo guard updates must replace previous totals.
-      try { await this.store.sessions(await this.client.report(sessionQuery(addDays(day, -1), day)), now); return { cadence: 'five_minutes' }; }
+      try { await this.store.sessions(await this.client.report(sessionQuery(addDays(day, -1), day)), now); await this.store.clearNotice('sessions'); return { cadence: 'five_minutes' }; }
       catch (error) {
         if (!(error instanceof ShopifyError) || error.code !== 'denied') throw error;
         await this.notice('reports_unavailable', 'sessions');
@@ -190,10 +237,10 @@ export class ShopifyWorker {
     const subscriptions: any[] = []; let after: string | null = null;
     do { const result = await this.client.subscriptions(after); subscriptions.push(...result.nodes); const next = nextCursor(result); if (next && next === after) throw new ShopifyError('invalid'); after = next; } while (after);
     for (const topic of Object.values(webhookTopics)) {
-      if (!subscriptions.some(s => s.topic === topic && s.endpoint?.callbackUrl === uri.href)) {
+      if (!subscriptions.some(s => s.topic === topic && s.uri === uri.href)) {
         await this.client.subscribe(topic, uri.href);
-        await this.notice('webhook_recreated', `subscription:${topic}`);
-      }
+        if (state.checked) await this.notice('webhook_recreated', `subscription:${topic}`);
+      } else await this.store.clearNotice(`subscription:${topic}`);
     }
     return { checked: Object.keys(webhookTopics).length };
   }

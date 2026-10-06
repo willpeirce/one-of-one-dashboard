@@ -6,7 +6,10 @@ const page = 'pageInfo { hasNextPage endCursor }';
 const money = 'shopMoney { amount currencyCode }';
 const lineFields = `id sku quantity product { id } taxLines { priceSet { ${money} } }`;
 export const orderFields = (address: boolean) => `
-  id createdAt updatedAt cancelledAt test displayFinancialStatus currencyCode taxesIncluded
+  id createdAt updatedAt cancelledAt test displayFinancialStatus displayFulfillmentStatus currencyCode taxesIncluded
+  sourceName channelInformation { channelDefinition { channelName } }
+  transactions(first: 250) { kind status processedAt }
+  discountCodes
   subtotalPriceSet { ${money} }
   totalTaxSet { ${money} } totalShippingPriceSet { ${money} }
   customer { id }
@@ -14,7 +17,7 @@ export const orderFields = (address: boolean) => `
   customAttributes { key value }
   lineItems(first: 100) { nodes { ${lineFields} } ${page} }
   refunds { id createdAt refundLineItems(first: 100) { nodes { quantity subtotalSet { ${money} } totalTaxSet { ${money} } } ${page} } }
-  fulfillments(first: 100) { id status createdAt updatedAt location { id } }
+  fulfillments(first: 250) { id status createdAt updatedAt location { id } fulfillmentLineItems(first: 100) { nodes { quantity lineItem { id } } ${page} } }
   customerJourneySummary { firstVisit { landingPage utmParameters { source medium campaign } } lastVisit { landingPage utmParameters { source medium campaign } } }
 `;
 export interface Page<T = any> { nodes: T[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } }
@@ -70,6 +73,18 @@ export class ShopifyClient implements ShopifyReader {
       if (next === after) throw new ShopifyError('invalid');
       order.lineItems.nodes.push(...data.order.lineItems.nodes); order.lineItems.pageInfo = data.order.lineItems.pageInfo; after = next;
     }
+    if (order.fulfillments.length >= 250) throw new ShopifyError('invalid');
+    for (const fulfillment of order.fulfillments) {
+      if (!fulfillment.fulfillmentLineItems) continue;
+      let cursor = nextCursor(fulfillment.fulfillmentLineItems);
+      while (cursor) {
+        const data = await this.#graphql(`query PulseFulfilledLines($id: ID!, $after: String!) { fulfillment(id: $id) { fulfillmentLineItems(first: 100, after: $after) { nodes { quantity lineItem { id } } ${page} } } }`, { id: fulfillment.id, after: cursor });
+        const next = nextCursor(data.fulfillment.fulfillmentLineItems);
+        if (next === cursor) throw new ShopifyError('invalid');
+        fulfillment.fulfillmentLineItems.nodes.push(...data.fulfillment.fulfillmentLineItems.nodes);
+        fulfillment.fulfillmentLineItems.pageInfo = data.fulfillment.fulfillmentLineItems.pageInfo; cursor = next;
+      }
+    }
     for (const refund of order.refunds) {
       let cursor = nextCursor(refund.refundLineItems);
       while (cursor) {
@@ -112,13 +127,13 @@ export class ShopifyClient implements ShopifyReader {
     return data.shopifyqlQuery.tableData;
   }
   async subscriptions(after: string | null): Promise<Page> {
-    const data = await this.#graphql(`query PulseSubscriptions($after: String) { webhookSubscriptions(first: 100, after: $after) { nodes { id topic endpoint { ... on WebhookHttpEndpoint { callbackUrl } } } ${page} } }`, { after });
+    const data = await this.#graphql(`query PulseSubscriptions($after: String) { webhookSubscriptions(first: 100, after: $after) { nodes { id topic uri } ${page} } }`, { after });
     return data.webhookSubscriptions;
   }
   async subscribe(topic: string, uri: string): Promise<void> {
     const target = new URL(appConfig.shopify.webhookPath, this.origin);
     if (uri !== target.href || target.protocol !== 'https:' || target.hostname.endsWith('.replit.dev') || ['localhost', '127.0.0.1', '[::1]'].includes(target.hostname) || !['ORDERS_CREATE', 'ORDERS_UPDATED', 'ORDERS_CANCELLED', 'REFUNDS_CREATE', 'FULFILLMENTS_CREATE', 'FULFILLMENTS_UPDATE', 'INVENTORY_LEVELS_UPDATE'].includes(topic)) throw new ShopifyError('invalid');
-    const data = await this.#graphql('mutation PulseSubscribe($topic: WebhookSubscriptionTopic!, $input: WebhookSubscriptionInput!) { webhookSubscriptionCreate(topic: $topic, webhookSubscription: $input) { webhookSubscription { id } userErrors { field message } } }', { topic, input: { callbackUrl: uri, format: 'JSON', includeFields: topic.startsWith('ORDERS_') ? ['id', 'admin_graphql_api_id'] : topic === 'INVENTORY_LEVELS_UPDATE' ? ['inventory_item_id', 'location_id'] : ['id', 'order_id'] } });
+    const data = await this.#graphql('mutation PulseSubscribe($topic: WebhookSubscriptionTopic!, $input: WebhookSubscriptionInput!) { webhookSubscriptionCreate(topic: $topic, webhookSubscription: $input) { webhookSubscription { id } userErrors { field message } } }', { topic, input: { uri, format: 'JSON', includeFields: topic.startsWith('ORDERS_') ? ['id', 'admin_graphql_api_id'] : topic === 'INVENTORY_LEVELS_UPDATE' ? ['inventory_item_id', 'location_id'] : ['id', 'order_id'] } });
     if (data.webhookSubscriptionCreate.userErrors.length || !data.webhookSubscriptionCreate.webhookSubscription) throw new ShopifyError('graphql');
   }
 }

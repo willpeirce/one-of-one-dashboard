@@ -53,9 +53,21 @@ export function cleanOrder(raw: any) {
   const warehouses = raw.fulfillments.map((f: any) => f.location?.id).filter((id: unknown) => Object.values(appConfig.shopify.locations).some(l => l.id === id));
   const country = /^[A-Z]{2}$/.test(raw.shippingAddress?.countryCodeV2 ?? '') ? raw.shippingAddress.countryCodeV2 : null;
   const market = country === 'GB' ? 'UK' : country === 'US' ? 'US' : country && appConfig.shopify.euCountries.some(c => c === country) ? 'EU' : country ? 'unknown' : raw.currencyCode === 'USD' || warehouses.includes(appConfig.shopify.locations.us.id) ? 'US' : raw.currencyCode === 'GBP' || warehouses.includes(appConfig.shopify.locations.uk.id) ? 'UK' : 'unknown';
+  const transactions = Array.isArray(raw.transactions) ? raw.transactions : [];
+  const paidAt = transactions.length < 250 ? transactions
+    .filter((t: any) => t.status === 'SUCCESS' && ['SALE', 'CAPTURE'].includes(t.kind) && t.processedAt != null)
+    .map((t: any) => instant(t.processedAt)).sort().at(-1)
+    // Zero-total and manually paid orders need no money transaction.
+    ?? (raw.displayFinancialStatus === 'PAID' ? instant(raw.createdAt) : null) : null;
+  const sourceChannels = new Map([['web', 'Online Store'], ['pos', 'Point of Sale'], ['shopify_draft_order', 'Draft Orders']]);
+  const channelName = raw.channelInformation?.channelDefinition?.channelName;
+  const channel = typeof channelName === 'string' && channelName.trim() ? channelName.slice(0, 100) : sourceChannels.get(raw.sourceName) ?? 'Unknown';
   return {
     id: gid('Order', raw.id), createdAt: instant(raw.createdAt), updatedAt: instant(raw.updatedAt), day: ukToday(new Date(raw.createdAt)),
     cancelledAt: raw.cancelledAt ? instant(raw.cancelledAt) : null, test: raw.test === true,
+    channel, paidAt,
+    fulfillmentStatus: raw.displayFulfillmentStatus ?? 'unknown',
+    discountSignals: (raw.discountCodes ?? []).filter((c: string) => ['SHIPPINGONME', 'REFILLSHIP'].includes(c)),
     financialStatus: ['PAID', 'PARTIALLY_REFUNDED', 'REFUNDED', 'PARTIALLY_PAID', 'PENDING', 'AUTHORIZED', 'VOIDED', 'EXPIRED'].includes(raw.displayFinancialStatus) ? raw.displayFinancialStatus : 'unknown',
     currency: /^[A-Z]{3}$/.test(raw.currencyCode) ? raw.currencyCode : null,
     taxesIncluded: raw.taxesIncluded, itemTaxPence, itemsAfterDiscountsPence,
@@ -68,7 +80,7 @@ export function cleanOrder(raw: any) {
     // Theme test attributes only. Arbitrary note attributes are not stored.
     giftTest: ['A', 'B'].includes(raw.customAttributes?.find((a: any) => a.key === '__gift_test')?.value) ? raw.customAttributes.find((a: any) => a.key === '__gift_test').value : null,
     refunds,
-    fulfillments: raw.fulfillments.map((f: any) => ({ id: gid('Fulfillment', f.id), status: ['SUCCESS', 'CANCELLED', 'ERROR', 'FAILURE', 'OPEN', 'PENDING'].includes(f.status) ? f.status : 'unknown', createdAt: instant(f.createdAt), updatedAt: instant(f.updatedAt), locationId: warehouses.includes(f.location?.id) ? f.location.id : null })),
+    fulfillments: raw.fulfillments.map((f: any) => ({ id: gid('Fulfillment', f.id), status: ['SUCCESS', 'CANCELLED', 'ERROR', 'FAILURE', 'OPEN', 'PENDING'].includes(f.status) ? f.status : 'unknown', createdAt: instant(f.createdAt), updatedAt: instant(f.updatedAt), locationId: warehouses.includes(f.location?.id) ? f.location.id : null, lines: f.fulfillmentLineItems && !f.fulfillmentLineItems.pageInfo.hasNextPage ? f.fulfillmentLineItems.nodes.map((l: any) => ({ lineId: gid('LineItem', l.lineItem.id), quantity: l.quantity })) : null })),
     firstVisit: journey(raw.customerJourneySummary?.firstVisit), lastVisit: journey(raw.customerJourneySummary?.lastVisit),
   };
 }
@@ -97,12 +109,12 @@ export function cleanSessions(table: any) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || ukToday(new Date(`${day}T12:00:00Z`)) !== day) throw new ShopifyError('invalid');
     const carts = count(row.sessions_with_cart_additions);
     if (row.landing_page_path === '/pages/inside' && String(row.session_device_type).toLowerCase() === 'desktop' && String(row.referrer_source).toLowerCase() === 'google' && carts === 0) continue;
-    const total = days.get(day) ?? { day, sessions: 0, carts: 0, checkouts: 0, completed: 0, uk: 0, us: 0, missouri: 0 };
+    const total = days.get(day) ?? { day, sessions: 0, carts: 0, checkouts: 0, completed: 0, uk: 0, us: 0, missouri: 0, ukCarts: 0, usCarts: 0, ukCheckouts: 0, usCheckouts: 0, ukCompleted: 0, usCompleted: 0 };
     const sessions = count(row.sessions);
     total.sessions += sessions; total.carts += carts; total.checkouts += count(row.sessions_that_reached_checkout); total.completed += count(row.sessions_that_completed_checkout);
-    if (['United Kingdom', 'GB'].includes(String(row.session_country))) total.uk += sessions;
+    if (['United Kingdom', 'GB'].includes(String(row.session_country))) { total.uk += sessions; total.ukCarts += carts; total.ukCheckouts += count(row.sessions_that_reached_checkout); total.ukCompleted += count(row.sessions_that_completed_checkout); }
     if (['United States', 'US'].includes(String(row.session_country))) {
-      total.us += sessions;
+      total.us += sessions; total.usCarts += carts; total.usCheckouts += count(row.sessions_that_reached_checkout); total.usCompleted += count(row.sessions_that_completed_checkout);
       if (['Missouri', 'MO'].includes(String(row.session_region))) total.missouri += sessions;
     }
     days.set(day, total);
@@ -117,3 +129,12 @@ export function cleanSales(table: any) {
     return { day, orders: count(r.orders), netSalesPence: Math.round(Number(r.net_sales) * 100), provenance: 'shopifyql', market: 'unknown' };
   });
 }
+
+export type Order = Omit<ReturnType<typeof cleanOrder>, 'lines' | 'refunds' | 'fulfillments'> & {
+  lines: { id: string; productId: string | null; sku: string | null; quantity: number }[];
+  refunds: { id: string; createdAt: string; itemsPence: number; taxPence: number }[];
+  fulfillments: { id: string; status: string; createdAt: string; updatedAt: string; locationId: string | null; lines: { lineId: string; quantity: number }[] | null }[];
+};
+export type Inventory = Omit<NonNullable<ReturnType<typeof cleanInventory>>, 'quantities'> & { quantities: { name: string; quantity: number }[] };
+export interface Sessions { day: string; sessions: number; carts: number; checkouts: number; completed: number; uk: number; us: number; missouri: number; ukCarts: number; usCarts: number; ukCheckouts: number; usCheckouts: number; ukCompleted: number; usCompleted: number; marketReliable: boolean; provenance?: string; partial?: boolean }
+export function channelKey(name: string): string { return name.trim().toLowerCase().replace(/\s+/g, ' '); }

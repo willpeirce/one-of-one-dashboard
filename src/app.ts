@@ -1,5 +1,8 @@
 import Fastify from 'fastify';
 import { appConfig } from './config.js';
+import { applyShopifyDashboard, readWatchdogContext } from './shopify/dashboard.js';
+import { shopifyHero } from './shopify/metrics.js';
+import { updateObservation, evaluateWatchdogs } from './shopify/watchdogs.js';
 import { ShopifyWorker } from './shopify/worker.js';
 import { registerShopifyWebhooks } from './shopify/webhooks.js';
 import cookie from '@fastify/cookie';
@@ -11,8 +14,8 @@ import { readSourceHealth, syncSourceHealth } from './sources.js';
 import { loginPage, sourceHealthPage, auditPage } from './views.js';
 import type { RuntimeConfig } from './runtime.js';
 import { dashboardPage } from './dashboard-view.js';
-import { getSampleDashboard, getSampleHero } from './sample-dashboard.js';
-import { HeroRangeError, validateHeroRange } from './hero-range.js';
+import { getSampleDashboard } from './sample-dashboard.js';
+import { HeroRangeError, validateHeroRange, ukToday } from './hero-range.js';
 import { registerDashboardEvents } from './events.js';
 import { readSettings, saveSettings, SettingsValidationError, SettingsConflictError } from './settings.js';
 import { settingsPage } from './settings-view.js';
@@ -27,6 +30,22 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   const shopify = new ShopifyWorker(db, sourceEnv, config.origin, shopifyOptions);
   await shopify.initialize();
   if (shopify.mode === 'sample') await shopify.tick();
+  const sourceNow = () => shopifyOptions.clock?.() ?? (shopify.mode === 'sample' ? new Date(appConfig.shopify.sampleNow) : new Date());
+  async function runWatchdogs() {
+    const facts = await shopify.store.facts();
+    const [settings, health, context] = await Promise.all([readSettings(db), readSourceHealth(db), readWatchdogContext(db, facts)]);
+    const now = sourceNow();
+    const observation = await updateObservation(db, shopify.mode, facts, now);
+    const checks = evaluateWatchdogs(facts, now, settings.values, observation, context.holidays, health);
+    await db.query('UPDATE pulse.shopify_watchdog_state SET data = data || $2::jsonb WHERE mode = $1', [shopify.mode, JSON.stringify({ checks, evaluatedAt: now.toISOString() })]);
+  }
+  await runWatchdogs();
+  let observationRun: Promise<unknown> | undefined;
+  const observationTimer = setInterval(() => {
+    if (!observationRun) observationRun = runWatchdogs().catch(() => {}).finally(() => { observationRun = undefined; });
+  }, 60_000);
+  observationTimer.unref();
+  app.addHook('onClose', async () => { clearInterval(observationTimer); await observationRun; });
   app.addHook('onReady', async () => { shopify.start(); });
   app.addHook('onClose', async () => { await shopify.stop(); });
   app.addHook('onRequest', async (request, reply) => {
@@ -68,7 +87,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   });
   async function snapshot() {
     const [settings, sourceHealth] = await Promise.all([readSettings(db), readSourceHealth(db)]);
-    return { ...getSampleDashboard(settings.values), generatedAt: new Date().toISOString(), sourceHealth };
+    return applyShopifyDashboard({ ...getSampleDashboard(settings.values), generatedAt: new Date().toISOString(), sourceHealth }, db, await shopify.store.facts(), settings.values, sourceHealth, sourceNow());
   }
   const events = registerDashboardEvents(app, auth, snapshot);
   app.get('/', async (request, reply) => {
@@ -85,7 +104,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     if (Object.keys(query).some((key) => key !== 'from' && key !== 'to')) throw new HeroRangeError();
     const { from, to } = validateHeroRange(query.from, query.to);
     const settings = await readSettings(db);
-    return getSampleHero(from, to, settings.values);
+    return shopifyHero(await shopify.store.facts(), ukToday(sourceNow()), from, to, settings.values);
   });
   app.get('/sources', async (request, reply) => {
     if (!await auth.session(request)) return reply.redirect('/login');

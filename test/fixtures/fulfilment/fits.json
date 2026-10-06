@@ -1,0 +1,10 @@
+[
+  {"warehouse":"uk","a":1,"b":0,"grams":300,"pickPack":130},
+  {"warehouse":"uk","a":2,"b":0,"grams":400,"pickPack":160},
+  {"warehouse":"uk","a":0,"b":1,"grams":350,"pickPack":130},
+  {"warehouse":"uk","a":1,"b":2,"grams":600,"pickPack":190},
+  {"warehouse":"us","a":1,"b":0,"grams":300,"pickPack":130},
+  {"warehouse":"us","a":2,"b":0,"grams":400,"pickPack":160},
+  {"warehouse":"us","a":0,"b":1,"grams":350,"pickPack":130},
+  {"warehouse":"us","a":1,"b":2,"grams":600,"pickPack":190}
+]

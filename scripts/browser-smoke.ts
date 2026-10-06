@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import type { AuthenticationResponseJSON } from '@simplewebauthn/server';
 import { chromium, type BrowserContext, type Page } from 'playwright';
 import { rangeLabel } from '../src/hero-range.js';
@@ -593,6 +594,49 @@ async function run(): Promise<void> {
     await settingsPage.goto('/audit');
     assert.match(await settingsPage.locator('#audit-log').innerText(), /blendedMetaTripwireGbp/);
     await settingsPage.close();
+
+    step = 'check fulfilment costs at phone and desktop widths';
+    const fulfilmentPage = await context.newPage();
+    const inventedExport = await readFile(new URL('../test/fixtures/fulfilment/sample.csv', import.meta.url));
+    for (const viewport of viewports) {
+      await fulfilmentPage.setViewportSize(viewport);
+      await fulfilmentPage.goto('/fulfilment');
+      await fulfilmentPage.locator('#export-file').waitFor();
+      step = `check fulfilment banner at ${viewport.width}px`;
+      assert.match(await fulfilmentPage.locator('.sample-banner').innerText(), /Sample data/);
+      step = `check fulfilment averages at ${viewport.width}px`;
+      assert.match(await fulfilmentPage.locator('.fulfilment-glance').innerText(), /USD as exported/);
+      step = `preview fulfilment CSV at ${viewport.width}px`;
+      const before = await (await context.request.get('/api/fulfilment')).json() as { recent: unknown[]; lastUpload: { id: string } };
+      await fulfilmentPage.locator('#export-file').setInputFiles({ name: 'invented.csv', mimeType: 'text/csv', buffer: inventedExport });
+      await fulfilmentPage.locator('#confirm-upload').waitFor({ state: 'visible' });
+      step = `check parsed fulfilment rows at ${viewport.width}px`;
+      assert.match(await fulfilmentPage.locator('#coverage-copy').innerText(), /including days with no despatches/);
+      assert.equal(await fulfilmentPage.locator('#complete-week').isChecked(), false);
+      assert.equal(await fulfilmentPage.locator('#upload-preview tbody tr').count(), 40);
+      assert.match(await fulfilmentPage.locator('#upload-preview').innerText(), /Unmatched order numbers: 99999999/);
+      assert.match(await fulfilmentPage.locator('#upload-preview').innerText(), /Unknown service/);
+      assert.match(await fulfilmentPage.locator('#upload-status').innerText(), /Nothing saved/);
+      const after = await (await context.request.get('/api/fulfilment')).json() as typeof before;
+      assert.equal(after.lastUpload.id, before.lastUpload.id);
+      step = `check fulfilment page width at ${viewport.width}px`;
+      if (process.env.PULSE_SCREENSHOT_DIR) await fulfilmentPage.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/fulfilment-screen-${viewport.width}.png` });
+      assert.equal(await fulfilmentPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      if (process.env.PULSE_SCREENSHOT_DIR) await fulfilmentPage.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/fulfilment-preview-${viewport.width}.png` });
+      await fulfilmentPage.locator('#cancel-upload').click();
+      assert.match(await fulfilmentPage.locator('#upload-status').innerText(), /Cancelled/);
+      await fulfilmentPage.locator('#model-open').click();
+      assert.equal(await fulfilmentPage.locator('#model-detail').isVisible(), true);
+      assert.match(await fulfilmentPage.locator('#model-detail').innerText(), /Estimate replaced/);
+      if (process.env.PULSE_SCREENSHOT_DIR) await fulfilmentPage.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/fulfilment-detail-${viewport.width}.png` });
+      await fulfilmentPage.locator('#model-close').click();
+    }
+    step = 'confirm an idempotent fulfilment re-upload in the browser';
+    await fulfilmentPage.locator('#export-file').setInputFiles({ name: 'invented.csv', mimeType: 'text/csv', buffer: inventedExport });
+    await fulfilmentPage.locator('#confirm-upload').waitFor({ state: 'visible' });
+    await fulfilmentPage.locator('#confirm-upload').click();
+    await fulfilmentPage.waitForFunction(() => document.querySelector('#upload-status')?.textContent?.includes('Saved 0 parcels; skipped 40 duplicates'));
+    await fulfilmentPage.close();
 
     step = 'keep a custom date range unchanged during a Settings SSE update';
     await applyCalendarRange(page, '2026-09-20', '2026-09-24');

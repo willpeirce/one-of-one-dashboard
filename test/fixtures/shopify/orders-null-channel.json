@@ -68,7 +68,8 @@
           "channelInformation": null,
           "sourceName": "shopify_draft_order",
           "displayFulfillmentStatus": "FULFILLED",
-          "transactions": []
+          "transactions": [],
+          "name": "#990102"
         },
         {
           "id": "gid://shopify/Order/990103",
@@ -136,7 +137,8 @@
           "channelInformation": null,
           "sourceName": "unmapped_app",
           "displayFulfillmentStatus": "FULFILLED",
-          "transactions": []
+          "transactions": [],
+          "name": "#990103"
         },
         {
           "id": "gid://shopify/Order/990104",
@@ -204,7 +206,8 @@
           "channelInformation": null,
           "sourceName": "unmapped_app",
           "displayFulfillmentStatus": "FULFILLED",
-          "transactions": []
+          "transactions": [],
+          "name": "#990104"
         }
       ],
       "pageInfo": {

@@ -119,6 +119,7 @@ export const appConfig = {
   judgeme: { publishEnabled: false },
   ugc: { workingOrigin: 'https://creators.oneofonehq.com', originConfirmed: false },
   fulfilment: {
+    knownServices: { uk: ['DPD', 'DPD Next Day', 'Royal Mail Tracked 48', 'Royal Mail Tracked48'], us: ['Ground Advantage', 'USPS Ground Advantage'] },
     uk: { name: 'Northampton', timezone: 'Europe/London', dispatchCutoff: '16:00', carriers: ['DPD', 'Royal Mail Tracked 48'] },
     us: { name: 'Grove City, Ohio', timezone: 'America/New_York', dispatchCutoff: '15:00', carriers: ['Ground Advantage'] },
   },

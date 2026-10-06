@@ -1,3 +1,4 @@
+import { glance } from './fulfilment/view.js';
 import { checksHtml, liveHtml, needsHtml, storePanelsHtml } from './shopify/presentation.js';
 import type { DashboardSnapshot, Detail, DialModel, HeroMetric, HeroPeriod, Period, RingModel, SheetModel, State, TestModel, Zone } from './dashboard-types.js';
 import { createDatePicker } from './dashboard-dates.js';
@@ -371,6 +372,7 @@ function updateSnapshot(next: DashboardSnapshot, initial = false): void {
   });
   if (snapshot.shopify) {
     get('#shopify-needs').innerHTML = needsHtml(snapshot.shopify);
+    if (snapshot.fulfilment) { get('#fulfilment-glance').innerHTML = glance(snapshot.fulfilment); }
     const watchdogsOpen = get('#shopify-checks details').hasAttribute('open');
     get('#shopify-checks').innerHTML = checksHtml(snapshot.shopify);
     if (watchdogsOpen) get('#shopify-checks details').setAttribute('open', '');

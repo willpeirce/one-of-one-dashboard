@@ -6,7 +6,7 @@ const page = 'pageInfo { hasNextPage endCursor }';
 const money = 'shopMoney { amount currencyCode }';
 const lineFields = `id sku quantity variant { id } product { id } taxLines { priceSet { ${money} } }`;
 export const orderFields = (address: boolean) => `
-  id createdAt updatedAt cancelledAt test displayFinancialStatus displayFulfillmentStatus currencyCode taxesIncluded
+  id name createdAt updatedAt cancelledAt test displayFinancialStatus displayFulfillmentStatus currencyCode taxesIncluded
   sourceName channelInformation { channelDefinition { channelName } }
   transactions(first: 250) { kind status processedAt }
   discountCodes

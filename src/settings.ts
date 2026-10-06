@@ -15,6 +15,7 @@ export interface Settings {
   cppUsTargetGbp: number;
   paymentFeePercent: number | null;
   startingCogs: { sku: string; unitCostGbp: number | null }[];
+  jjGbpPerUsd: number;
   flatFulfilmentUkGbp: number | null;
   flatFulfilmentUsGbp: number | null;
   dispatchCutoffUk: string;
@@ -68,6 +69,7 @@ export function defaultSettings(): Settings {
     cppUsTargetGbp: 19.30,
     paymentFeePercent: null,
     startingCogs: appConfig.shopify.stockProducts.flatMap((product) => 'sku' in product ? [{ sku: product.sku, unitCostGbp: null }] : []),
+    jjGbpPerUsd: 0.754,
     flatFulfilmentUkGbp: null,
     flatFulfilmentUsGbp: null,
     dispatchCutoffUk: appConfig.fulfilment.uk.dispatchCutoff,
@@ -176,6 +178,7 @@ export function validateSettings(input: unknown): Settings {
       const parsed = object(row, ['sku', 'unitCostGbp'], path);
       return { sku: text(parsed.sku, `${path}.sku`, 64), unitCostGbp: number(parsed.unitCostGbp, `${path}.unitCostGbp`, 100_000, true) };
     }, (row) => row.sku),
+    jjGbpPerUsd: (() => { const rate = value.jjGbpPerUsd; if (typeof rate !== 'number' || !Number.isFinite(rate) || rate <= 0 || rate > 100 || Math.abs(rate * 1e6 - Math.round(rate * 1e6)) > 1e-6) return invalid('jjGbpPerUsd'); return rate; })(),
     flatFulfilmentUkGbp: number(value.flatFulfilmentUkGbp, 'flatFulfilmentUkGbp', 100_000, true),
     flatFulfilmentUsGbp: number(value.flatFulfilmentUsGbp, 'flatFulfilmentUsGbp', 100_000, true),
     dispatchCutoffUk: cutoff(value.dispatchCutoffUk, 'dispatchCutoffUk'),

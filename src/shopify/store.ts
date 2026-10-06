@@ -1,3 +1,4 @@
+import { refreshFulfilment } from '../fulfilment/store.js';
 import type { Database } from '../db.js';
 import { ukToday } from '../hero-range.js';
 import type { SourceMode } from '../sources.js';
@@ -18,6 +19,7 @@ export class ShopifyStore {
     await this.db.transaction(async tx => {
       const store = new ShopifyStore(tx, this.mode);
       for (const raw of rows) { const order = cleanOrder(raw); await store.put('order', order.id, order, fetched, new Date(order.updatedAt)); }
+      await refreshFulfilment(tx, this.mode, fetched);
     });
   }
   async inventory(rows: any[], fetched: Date): Promise<void> {

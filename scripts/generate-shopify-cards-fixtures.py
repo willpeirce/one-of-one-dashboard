@@ -18,6 +18,7 @@ for index in range(400):
     o = copy.deepcopy(order)
     ident = 910000 + index
     o['id'] = f'gid://shopify/Order/{ident}'
+    o['name'] = f'#{ident}'
     o['customer'] = {'id': f'gid://shopify/Customer/{ident}'}
     o['createdAt'] = o['updatedAt'] = day + 'T09:00:00Z'
     o['transactions'] = [{'kind':'SALE','status':'SUCCESS','processedAt':o['createdAt']}]

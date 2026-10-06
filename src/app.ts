@@ -1,3 +1,6 @@
+import { registerFulfilment, seedFulfilment } from './fulfilment/routes.js';
+import { fulfilmentSummary, refreshFulfilment } from './fulfilment/store.js';
+import { ImportError } from './fulfilment/parser.js';
 import Fastify from 'fastify';
 import { appConfig } from './config.js';
 import { applyShopifyDashboard, readWatchdogContext } from './shopify/dashboard.js';
@@ -39,6 +42,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     const checks = evaluateWatchdogs(facts, now, settings.values, observation, context.holidays, health);
     await db.query('UPDATE pulse.shopify_watchdog_state SET data = data || $2::jsonb WHERE mode = $1', [shopify.mode, JSON.stringify({ checks, evaluatedAt: now.toISOString() })]);
   }
+  await seedFulfilment(db, shopify.mode, sourceNow());
   await runWatchdogs();
   let observationRun: Promise<unknown> | undefined;
   const observationTimer = setInterval(() => {
@@ -66,6 +70,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   });
   await registerShopifyWebhooks(app, db, sourceEnv, () => shopify.triggerInbox());
   app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof ImportError) return reply.code(400).send({ error: error.message });
     if (error instanceof HeroRangeError) return reply.code(400).send({ error: 'Invalid date range.' });
     if (error instanceof SettingsValidationError) {
       return reply.code(400).send({ error: error.message, fields: error.fields });
@@ -87,9 +92,13 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   });
   async function snapshot() {
     const [settings, sourceHealth] = await Promise.all([readSettings(db), readSourceHealth(db)]);
-    return applyShopifyDashboard({ ...getSampleDashboard(settings.values), generatedAt: new Date().toISOString(), sourceHealth }, db, await shopify.store.facts(), settings.values, sourceHealth, sourceNow());
+    const result = await applyShopifyDashboard({ ...getSampleDashboard(settings.values), generatedAt: new Date().toISOString(), sourceHealth }, db, await shopify.store.facts(), settings.values, sourceHealth, sourceNow());
+    result.fulfilment = await fulfilmentSummary(db, shopify.mode, sourceNow());
+    result.shopify?.needs.push(...result.fulfilment.needs.map(n => ({ ...n, state: 'warn' as const, source: 'j-and-j' as const })));
+    return result;
   }
   const events = registerDashboardEvents(app, auth, snapshot);
+  registerFulfilment(app, db, auth, shopify.mode, sourceNow, () => events.publish());
   app.get('/', async (request, reply) => {
     if (!await auth.session(request)) return reply.redirect('/login');
     return reply.type('text/html; charset=utf-8').send(dashboardPage(await snapshot()));
@@ -126,7 +135,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     const credentialId = await auth.session(request);
     if (!credentialId) return reply.code(401).send({ error: 'Sign in to continue.' });
     const saved = await saveSettings(db, request.body, credentialId);
-    if (saved.changedFields.length) await events.publish();
+    if (saved.changedFields.length) { await refreshFulfilment(db, shopify.mode, sourceNow()); await events.publish(); }
     return saved;
   });
   app.get('/audit', async (request, reply) => {
@@ -139,8 +148,8 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   });
   // Fixed paths only; the server never exposes repository or environment files.
   const assets = [
-    ...['browser.js', 'dashboard.js', 'settings.js'].map(name => [name, 'text/javascript; charset=utf-8'] as const),
-    ...['styles.css', 'dashboard.css', 'settings.css', 'fonts.css'].map(name => [name, 'text/css; charset=utf-8'] as const),
+    ...['browser.js', 'dashboard.js', 'settings.js', 'fulfilment.js'].map(name => [name, 'text/javascript; charset=utf-8'] as const),
+    ...['styles.css', 'dashboard.css', 'settings.css', 'fulfilment.css', 'fonts.css'].map(name => [name, 'text/css; charset=utf-8'] as const),
     ...['logo.png', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'].map(name => [name, 'image/png'] as const),
     ...['outfit', 'plus-jakarta-sans'].flatMap(name => [
       [`fonts/${name}-latin-wght-normal.woff2`, 'font/woff2'] as const,

@@ -99,3 +99,5 @@ The exported `costOrder` helper uses variant history (SKU when needed), the obse
 Settings shows observed costs, sample/live source labels and last-seen dates alongside editable fallback rows, including after SKU edits. Source health shows known/missing stock-variant counts and the last observed change. Invented sample fixtures include a missing cost and a change from 28 to 30 September. Tests cover the query/access failure, history/idempotency/concurrency, temporal selection, fallback/unknown/mixed totals, live rendering and inventory-webhook refresh; browser checks include Costs & dispatch at phone width. Validation results are recorded in the change PR.
 
 Local validation: typecheck, all 118 tests on PGlite, production build, browser checks and secret scanning pass. CI verifies the pushed revision against real PostgreSQL.
+
+PR #10 review fix: an observed Shopify variant with a null cost says “Shopify · live: no cost set · last seen …” (or sample data), while “Not in Shopify” is reserved for SKUs with no history row. Rendering and browser regressions cover the distinction.

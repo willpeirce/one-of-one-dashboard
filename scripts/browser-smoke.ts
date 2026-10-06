@@ -548,6 +548,7 @@ async function run(): Promise<void> {
     await settingsPage.setViewportSize(viewports[0]!);
     await settingsPage.locator('summary').filter({ hasText: 'Costs & dispatch' }).click();
     assert.match(await settingsPage.locator('[data-settings-list="startingCogs"]').innerText(), /Shopify · sample data: £3\.45/);
+    assert.match(await settingsPage.locator('[data-settings-list="startingCogs"]').innerText(), /Shopify · sample data: no cost set · last seen/);
     assert.match(await settingsPage.locator('[data-settings-list="startingCogs"]').innerText(), /Not in Shopify/);
     assert.match(await settingsPage.locator('[data-settings-list="startingCogs"]').innerText(), /fallback/);
     assert.equal(await settingsPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);

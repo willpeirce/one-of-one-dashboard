@@ -63,7 +63,7 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
   const costLabels: Record<string, string> = Object.create(null);
   for (const c of shopifyCosts) if (c.sku) {
     const seen = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(c.last_seen_at));
-    const amount = c.amount_pence === null ? 'Not in Shopify' : `${c.currency === 'GBP' ? '£' : c.currency + ' '}${(Number(c.amount_pence)/100).toFixed(2)}`;
+    const amount = c.amount_pence === null ? 'no cost set' : `${c.currency === 'GBP' ? '£' : c.currency + ' '}${(Number(c.amount_pence)/100).toFixed(2)}`;
     costLabels[c.sku] = `Shopify · ${mode === 'sample' ? 'sample data' : 'live'}: ${amount} · last seen ${seen}`;
   }
   const goals = section('Goals & overheads', 'The targets behind your business.', `<div class="settings-grid">${fields([

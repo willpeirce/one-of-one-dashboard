@@ -89,6 +89,13 @@ test('Settings and Source health show observed live costs and provenance, never 
   assert.match(html,/Shopify · live: £4\.21 · last seen 30 Sept 2026/); assert.match(html,/Not in Shopify/); assert.match(html,/fallback/);
   assert.match(html,/name="startingCogs.0.unitCostGbp"[^>]+value=""/);
   assert.match(sourceHealthPage([],await store.summary(),await store.costSummary()),/1 stock variants with a cost · 0 without/);
+  await store.inventory([{ ...await stock(), unitCost:null }], new Date('2026-10-01T12:00:00Z'));
+  const noCost = settingsPage(snapshot,await store.latestCosts(),'live');
+  assert.match(noCost,/Shopify · live: no cost set · last seen 1 Oct 2026/);
+  assert.ok(!noCost.includes('Shopify · live: Not in Shopify'));
+  const labels = [...noCost.matchAll(/<p class="setting-help" data-shopify-cost>([^<]*)<\/p>/g)].map(m=>m[1]);
+  assert.equal(labels[0],'Shopify · live: no cost set · last seen 1 Oct 2026');
+  assert.equal(labels[1],'Not in Shopify');
 });
 
 test('inventory webhook refreshes cost history through the existing worker job', async t => {

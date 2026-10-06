@@ -8,7 +8,8 @@ Updated in every pull request.
 | 0b | Real screen on sample data, live updates, Settings, home-screen app | merged 4 Oct 2026; logo/date follow-up merged and published 5 Oct; home-screen icon follow-up merged 5 Oct | no source keys needed | Will saw the published dark look and white logo and added the app to his home screen, 5 Oct |
 | 1a | Shopify token manager, backfill, webhooks and polls | PR #7 merged and published 5 Oct; sessions fix PR #8 merged | configured for the 5 Oct live check | sessions column and sales query checked; full report agreement awaits 1b |
 | 1b | Shopify cards, watchdogs and 5 Oct follow-ups | PR #9 merged 6 Oct 2026 | Shopify already configured; no new Shopify key | fixture checks; live checks below remain |
-| Change | Shopify unit-cost history and Settings fallback | `costs-from-shopify`; review pending, not a stage | no new keys or scopes | read access to unitCost not checked live |
+| Change | Shopify unit-cost history and Settings fallback | PR #10 merged 6 Oct 2026; not a stage | no new keys or scopes | read access to unitCost checked live 6 Oct 2026 |
+| Change | J&J CSV imports, parcel actuals and learned estimates | `fulfilment-import`; change PR, not a stage | no new keys | fixture/browser checks; first live export awaits Will |
 | 1c | New reviews (Judge.me) | next, split from 1b; Publish flag remains off | `JUDGEME_API_TOKEN` needed for 1c | no |
 | 2 | Meta | not started | no | no |
 | 3 | Google Ads | not started | no | no |
@@ -19,7 +20,7 @@ Updated in every pull request.
 
 ## Next step
 
-Review the small `costs-from-shopify` change, based on latest main `117f748` after merged part 1b. No part 1c or stage 2 has merged. After Publish, run `npm run migrate` in the Shell as usual. Needs from Will for this change: nothing new. No deployment is performed by the builder. New reviews remains the next stage work in part 1c.
+Review the `fulfilment-import` change, based on latest main `54bbdbf` after merged PR #10. After Publish, run `npm run migrate` in the Shell. The order-number backfill re-fetch takes a while; Shopify may read backfilling until it finishes. Check J&J GBP per USD against each invoice and change it when it moves (0.754 on INV27164). Upload the 5 Oct export as the first live file. No deployment is performed by the builder. New reviews remains the next stage work in part 1c.
 
 **Part 1b built:** Shopify hero sales/orders/conversion and range detail (AOV, upgrades, channel/market bars and spike labels), Live scoreboard, checkout, stock/cover/run-out, Refill Pack and Shopify-side Email use the ingested records, live or labelled sample. Recently updated orders created before the backfill's order boundary are excluded from every window-based metric, stock rate and watchdog; Source health reports all stored records and explains this distinction. Ads/cost-dependent hero values are unavailable until their stages; surviving other-source examples are labelled individually and do not affect Shopify health.
 
@@ -101,3 +102,21 @@ Settings shows observed costs, sample/live source labels and last-seen dates alo
 Local validation: typecheck, all 118 tests on PGlite, production build, browser checks and secret scanning pass. CI verifies the pushed revision against real PostgreSQL.
 
 PR #10 review fix: an observed Shopify variant with a null cost says “Shopify · live: no cost set · last seen …” (or sample data), while “Not in Shopify” is reserved for SKUs with no history row. Rendering and browser regressions cover the distinction.
+
+
+## Change: J&J fulfilment import
+
+Authenticated Fulfilment costs is available from the account menu and Store panel. It shows UK/US monthly average cost as exported and in GBP, the last upload/error, preview-and-confirm CSV upload, unmatched numbers/unknown services/centres, all Needs you items, model explanation, rate changes and recent estimate/actual comparisons. The existing five visible Needs you risks include fulfilment items; Show more contains the remainder. Sample mode uses 40 invented parcels across both warehouses, one unmatched row, one unknown service and one postage outlier; live mode starts empty and never uses these figures.
+
+Migration 007 creates mode-isolated uploads/parcels/rates/models/estimates in `pulse`, adds the J&J invoice conversion Setting, and resets the Shopify order backfill once for order numbers without changing earlier migrations. Charges remain in GBP/USD minor units as exported and net of VAT; each upload/parcel keeps its own conversion rate. Confirmation is atomic and idempotent. Additional parcels add to actual order cost; later order ingestion matches previously unmatched rows. Source selection and per-order costs are exposed for later margin work, and refresh on orders, model and relevant Settings changes. Unknown facts stay unknown. There is no margin arithmetic, VAT setting, source-system write or key change.
+
+Known services come from config; unknown services/centres stay visible. New surcharges can only be inferred from high pick/pack cost, because the supplied export does not itemise them. UK postage uses the usual-service mean; US postage uses fitted 500 g boxed-weight bands. Component SKU counts come from Shopify's line projection; the export cannot allocate components between multiple parcels, so each uses the order mix. Weekly coverage uses one confirmed file spanning the week, or Will's explicit complete-week declaration at confirmation (including days with no despatches); multiple partial files are not combined. These decisions and the task's overrides of plan 8.2 are recorded in DECISIONS; specs are unchanged. Push delivery, stage-6 backup scheduling, supplier uploads/planning and margin tiles remain in their stages.
+
+Needs from Will: after Publish, `npm run migrate` in the Shell; allow the order-number backfill to complete. Check J&J GBP per USD on every invoice (0.754 on INV27164) and change the Setting when needed. Upload the 5 Oct export first, check its matched/unmatched rows and any unknown service/centre spellings, then confirm. No new keys or scopes.
+
+Fulfilment change local validation: typecheck, all 128 tests on PGlite, production build, phone/desktop browser checks (390px/1280px, preview/cancel/confirm/detail and complete-week coverage control) and Gitleaks working-tree/full-history scans pass. The mockup and fulfilment screen/detail were visually inspected at both widths. CI checks the same code against real PostgreSQL; results are recorded in the change PR. No live export agreement is claimed.
+
+
+PR #11 review fixes recognise the real ExportOrders service spellings and FedEx IOSS variants. Refresh replaces flags and baselines on all parcels, unknown spellings produce one Needs item per spelling with a count, and invalid cells identify their row/column without reflecting values. Summary uses an order count query; order batches unrelated to invoices reuse the saved model and update only their estimates. Per-mode summary caching remains deferred.
+
+Review-fix local validation: typecheck, all 132 tests on PGlite, production build, phone/desktop browser checks and Gitleaks pass. New regressions cover real services, unknown-service training exclusion, safe physical CSV row/column diagnostics, stale flags/baselines and the ingestion shortcut with rejected older polls. CI verifies the pushed head against real PostgreSQL; results are recorded in PR #11.

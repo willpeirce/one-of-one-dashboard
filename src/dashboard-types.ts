@@ -137,4 +137,5 @@ export interface DashboardSnapshot {
   sourceHealth?: SourceHealth[];
   shopify?: import('./shopify/dashboard.js').ShopifyDashboard;
   banner?: string;
+  fulfilment?: import('./fulfilment/view.js').Summary;
 }

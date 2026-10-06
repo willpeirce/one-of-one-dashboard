@@ -63,6 +63,7 @@ export function cleanOrder(raw: any) {
   const channelName = raw.channelInformation?.channelDefinition?.channelName;
   const channel = typeof channelName === 'string' && channelName.trim() ? channelName.slice(0, 100) : sourceChannels.get(raw.sourceName) ?? 'Unknown';
   return {
+    orderNumber: typeof raw.name === 'string' && /^#[0-9]{1,20}$/.test(raw.name) ? raw.name.slice(1).replace(/^0+(?=\d)/, '') : null,
     id: gid('Order', raw.id), createdAt: instant(raw.createdAt), updatedAt: instant(raw.updatedAt), day: ukToday(new Date(raw.createdAt)),
     cancelledAt: raw.cancelledAt ? instant(raw.cancelledAt) : null, test: raw.test === true,
     channel, paidAt,

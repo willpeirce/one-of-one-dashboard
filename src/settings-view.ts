@@ -13,6 +13,7 @@ type Field = {
   type?: 'text' | 'number' | 'time' | 'date' | 'checkbox';
   nullable?: boolean;
   integer?: boolean;
+  step?: string;
   min?: number;
   max?: number;
   hint?: string;
@@ -31,7 +32,7 @@ function field(definition: Field, value: unknown, prefix = ''): string {
   }
   const input = definition.options
     ? `<select ${attributes}>${definition.options.map((option) => `<option value="${escapeHtml(option.value)}"${option.value === value ? ' selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}</select>`
-    : `<input ${attributes} type="${type}" value="${escapeHtml(value === null || value === undefined ? '' : String(value))}"${definition.nullable ? ' data-nullable="true" placeholder="Not set"' : ' required'}${type === 'number' ? ` min="${definition.min ?? 0}" step="${definition.integer ? '1' : '0.01'}"${definition.max === undefined ? '' : ` max="${definition.max}"`}` : ''}${type === 'text' ? ' maxlength="160" autocomplete="off"' : ''}>`;
+    : `<input ${attributes} type="${type}" value="${escapeHtml(value === null || value === undefined ? '' : String(value))}"${definition.nullable ? ' data-nullable="true" placeholder="Not set"' : ' required'}${type === 'number' ? ` min="${definition.min ?? 0}" step="${definition.step ?? (definition.integer ? '1' : '0.01')}"${definition.max === undefined ? '' : ` max="${definition.max}"`}` : ''}${type === 'text' ? ' maxlength="160" autocomplete="off"' : ''}>`;
   return `<div class="setting-field"><label for="${id}">${escapeHtml(definition.label)}</label>${input}${hint}</div>`;
 }
 
@@ -78,6 +79,7 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     number('blendedMetaTripwireGbp', 'Blended Meta tripwire (£)', { min: 0.01 }),
   ], values)}</div>`);
   const costs = section('Costs & dispatch', 'Shopify unit costs first; starting costs are the fallback.', `<div class="settings-grid">${fields([
+    number('jjGbpPerUsd', 'J&J GBP per USD', { step: '0.000001', min: 0.000001, max: 100, hint: 'Check each invoice. New uploads retain this rate; earlier parcels keep theirs.' }),
     number('flatFulfilmentUkGbp', 'UK flat fulfilment cost (£)', { nullable: true }),
     number('flatFulfilmentUsGbp', 'US flat fulfilment cost (£)', { nullable: true }),
     { key: 'dispatchCutoffUk', label: 'Northampton dispatch cut-off', type: 'time', hint: 'Europe/London local time.' },

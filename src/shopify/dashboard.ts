@@ -9,7 +9,7 @@ import { blankObservation, evaluateWatchdogs, type Check, type Observation } fro
 
 export interface ShopifyDashboard {
   mode: 'sample' | 'live'; checks: Check[]; stock: StockCover[];
-  needs: { id: string; state: State; title: string; why: string; link: string }[];
+  needs: { id: string; state: State; title: string; why: string; link: string; source?: 'j-and-j' }[];
   live: { lastOrder: string; dispatch: string; carts: string };
   detail: Record<string, Detail>;
 }
@@ -109,7 +109,7 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
   for (const n of facts.noticeDetails) if (['reports_unavailable', 'address_unavailable'].includes(n.kind)) needs.push({ id: n.source_id, state: 'warn', title: n.kind === 'reports_unavailable' ? 'Shopify reports unavailable' : 'Address access unavailable', why: n.kind === 'reports_unavailable' ? 'ShopifyQL was denied. Sessions may be daily routine data or unavailable; older order detail needs read_all_orders. Check granted Level 2 access.' : 'Order markets use currency/warehouse fallback. Check the app’s address permission; no personal address is stored.', link: `https://admin.shopify.com/store/${appConfig.shopify.storeDomain.split('.')[0]}/settings/apps` });
   needs.sort((a, b) => Number(b.state === 'alarm') - Number(a.state === 'alarm'));
   // Direct Judge.me and advertising examples remain explicitly separate until their parts land.
-  snapshot.banner = `${stamp}. Advertising, costs, reviews and other stages: sample data; ads-dependent hero values unavailable.`;
+  snapshot.banner = `${stamp}. Advertising, reviews and other stages: sample data; fulfilment uses separately labelled J&J uploads; ads-dependent hero values unavailable.`;
   snapshot.shopify = { mode: facts.mode, checks, stock, needs, detail: detailData,
     live: { lastOrder: last ? `${Math.max(0, Math.floor((now.getTime() - Date.parse(last.paidAt!)) / 60_000))} min` : 'Unknown', dispatch: checks.find(c => c.id === 'dispatch')!.why, carts: 'Open carts unavailable · session funnel is not a live cart count' } };
   return snapshot;

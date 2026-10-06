@@ -90,7 +90,7 @@ test('all migrations leave public empty, repeat without losing rows and reject c
   await Promise.all([migrate(db), migrate(db)]);
   await assertPublicHasNoTables(db);
   assert.equal((await db.query('SELECT * FROM pulse.audit_log')).rows.length, 1);
-  assert.equal((await db.query('SELECT * FROM pulse_private.schema_migrations')).rows.length, 6);
+  assert.equal((await db.query('SELECT * FROM pulse_private.schema_migrations')).rows.length, 7);
   await db.query("UPDATE pulse_private.schema_migrations SET checksum = 'changed'");
   await assert.rejects(migrate(db), (error: unknown) => {
     assert.ok(error instanceof MigrationError);
@@ -287,4 +287,27 @@ test('owner is singleton, credential deletion revokes sessions, and SQL values r
   const injection = "test'); DROP TABLE pulse.audit_log; --";
   await db.query('INSERT INTO pulse.audit_log (event) VALUES ($1)', [injection]);
   assert.deepEqual((await db.query('SELECT event FROM pulse.audit_log')).rows, [{ event: injection }]);
+});
+
+test('fulfilment migration adds invoice rate and resets the order-number backfill once, preserving its window', async t => {
+  const db = await createTestDatabase({ migrate: false }); t.after(() => db.close());
+  await db.query('CREATE SCHEMA pulse_private; CREATE TABLE pulse_private.schema_migrations (name text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())');
+  // Build the previous release without changing its recorded checksums.
+  const { readdir } = await import('node:fs/promises');
+  for (const name of (await readdir(new URL('../migrations/', import.meta.url))).filter(n => /^00[1-6]_/.test(n)).sort()) {
+    const sql = await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8');
+    await db.query(sql);
+    await db.query('INSERT INTO pulse_private.schema_migrations (name,checksum) VALUES ($1,$2)', [name, createHash('sha256').update(sql).digest('hex')]);
+  }
+  const { defaultSettings, readSettings } = await import('../src/settings.js');
+  const { jjGbpPerUsd: _rate, ...previous } = defaultSettings();
+  await db.query('INSERT INTO pulse.settings (values) VALUES ($1)', [JSON.stringify(previous)]);
+  await db.query(`INSERT INTO pulse.shopify_jobs (mode,name,state,next_run_at) VALUES ('live','backfill','{"from":"2026-01-01","after":"sample-cursor","ordersDone":true}',now())`);
+  await migrate(db);
+  const state = (await db.query<{state:any}>("SELECT state FROM pulse.shopify_jobs WHERE mode='live' AND name='backfill'")).rows[0]!.state;
+  assert.deepEqual(state, { from:'2026-01-01', after:null });
+  assert.equal((await readSettings(db)).values.jjGbpPerUsd, .754);
+  await db.query(`UPDATE pulse.shopify_jobs SET state=state || '{"after":"new-cursor"}'::jsonb WHERE mode='live' AND name='backfill'`);
+  await migrate(db);
+  assert.equal((await db.query<{state:any}>("SELECT state FROM pulse.shopify_jobs WHERE mode='live' AND name='backfill'")).rows[0]!.state.after, 'new-cursor');
 });

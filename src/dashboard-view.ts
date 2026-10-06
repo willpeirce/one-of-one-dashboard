@@ -1,3 +1,4 @@
+import { glance } from './fulfilment/view.js';
 import type { DashboardSnapshot } from './dashboard-types.js';
 import { checksHtml, liveHtml, needsHtml, storePanelsHtml } from './shopify/presentation.js';
 import { dashboardTemplate } from './dashboard-template.js';
@@ -29,6 +30,9 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
     // Label surviving mockup examples individually when a live source sits beside them.
     content = content.replace(/(<(?:article|button|div)\b[^>]*data-mode="sample"[^>]*>)/g, '$1<span class="sample-label">Sample data</span>');
   }
+  if (snapshot.fulfilment) {
+    content = content.replace('<div id="shopify-panels">', `<div id="fulfilment-glance">${glance(snapshot.fulfilment)}</div><div id="shopify-panels">`);
+  }
   if (snapshot.banner) content = content.replace(/(<p class="sample-banner"[^>]*>)[\s\S]*?<\/p>/, `$1${escapeHtml(snapshot.banner)}</p>`);
   content = content.replace(/type="button" disabled(?= title=)/g, 'type="button" disabled data-unbuilt');
   // Labels are already HTML-escaped with the snapshot bindings above.
@@ -41,7 +45,7 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
   content = content.replace(/<span class="avatar"[\s\S]*?<\/span><\/span>/, `<details class="account-menu" id="account-menu">
     <summary class="avatar" aria-label="Account menu">W</summary>
     <nav class="account-links" aria-label="Account">
-      <a href="/sources">Source health</a><a href="/settings">Settings</a><a href="/audit">Audit log</a>
+      <a href="/fulfilment">Fulfilment costs</a><a href="/sources">Source health</a><a href="/settings">Settings</a><a href="/audit">Audit log</a>
       <button type="button" id="sign-out" disabled>Sign out</button>
     </nav>
   </details>`);
@@ -62,6 +66,7 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
   <link rel="icon" href="/assets/icon-192.png" type="image/png">
   <link rel="stylesheet" href="/assets/fonts.css">
   <link rel="stylesheet" href="/assets/dashboard.css">
+  <link rel="stylesheet" href="/assets/fulfilment.css">
   <script type="module" src="/assets/browser.js"></script>
   <script type="module" src="/assets/dashboard.js"></script>
 </head>

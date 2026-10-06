@@ -94,7 +94,9 @@ test('401 renews once; read client allows only fixed queries and owned subscript
   assert.equal('graphql' in client, false);
   await assert.rejects(client.subscribe('ORDERS_CREATE', 'https://other.example.test/webhooks/shopify'));
   await assert.rejects(client.subscribe('PRODUCTS_CREATE', 'https://pulse.example.test/webhooks/shopify'));
-  assert.ok(!/\b(name|email|phone|address1|address2|city)\b/.test(orderFields(true)));
+  assert.match(orderFields(true), /^\s*id name createdAt/);
+  // Order.name is the order number; keep rejecting names on every nested projection.
+  assert.ok(!/\b(name|email|phone|address1|address2|city)\b/.test(orderFields(true).replace(/^(\s*id) name\b/, '$1')));
   assert.ok(!orderFields(false).includes('shippingAddress'));
 });
 

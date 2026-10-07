@@ -90,7 +90,7 @@ test('all migrations leave public empty, repeat without losing rows and reject c
   await Promise.all([migrate(db), migrate(db)]);
   await assertPublicHasNoTables(db);
   assert.equal((await db.query('SELECT * FROM pulse.audit_log')).rows.length, 1);
-  assert.equal((await db.query('SELECT * FROM pulse_private.schema_migrations')).rows.length, 7);
+  assert.equal((await db.query('SELECT * FROM pulse_private.schema_migrations')).rows.length, 8);
   await db.query("UPDATE pulse_private.schema_migrations SET checksum = 'changed'");
   await assert.rejects(migrate(db), (error: unknown) => {
     assert.ok(error instanceof MigrationError);
@@ -310,4 +310,21 @@ test('fulfilment migration adds invoice rate and resets the order-number backfil
   await db.query(`UPDATE pulse.shopify_jobs SET state=state || '{"after":"new-cursor"}'::jsonb WHERE mode='live' AND name='backfill'`);
   await migrate(db);
   assert.equal((await db.query<{state:any}>("SELECT state FROM pulse.shopify_jobs WHERE mode='live' AND name='backfill'")).rows[0]!.state.after, 'new-cursor');
+});
+
+
+test('008 copies legacy week coverage to dates and removes the Monday constraint',async t=>{
+  const db=await createTestDatabase({migrate:false});t.after(()=>db.close());
+  const {readdir}=await import('node:fs/promises');
+  const directory=new URL('../migrations/',import.meta.url);
+  await db.query('CREATE SCHEMA pulse_private');
+  for (const file of (await readdir(directory)).filter(f=>/^00[1-7]_.*\.sql$/.test(f)).sort()) await db.query(await readFile(new URL(file,directory),'utf8'));
+  await db.query(`INSERT INTO pulse.fulfilment_uploads (id,mode,source_id,file_name,row_count,saved_count,despatch_from,despatch_to,uploaded_at,gbp_per_usd,coverage_week)
+    VALUES ($1,'sample','invented','invented.csv',1,1,'2026-09-29','2026-10-01',now(),0.8,'2026-09-28'),
+    ($2,'sample','invented-null','invented-null.csv',1,1,'2026-09-29','2026-10-01',now(),0.8,null)`,[randomUUID(),randomUUID()]);
+  await db.query(await readFile(new URL('008_fulfilment_coverage_range.sql',directory),'utf8'));
+  const result=await db.query<{coverage_from:string|null;coverage_to:string|null}>('SELECT coverage_from::text,coverage_to::text FROM pulse.fulfilment_uploads ORDER BY source_id');
+  assert.deepEqual(result.rows,[{coverage_from:'2026-09-28',coverage_to:'2026-10-04'},{coverage_from:null,coverage_to:null}]);
+  await db.query("UPDATE pulse.fulfilment_uploads SET coverage_from='2026-09-29',coverage_to='2026-09-30'");
+  assert.equal((await db.query("SELECT column_name FROM information_schema.columns WHERE table_schema='pulse' AND table_name='fulfilment_uploads' AND column_name='coverage_week'")).rows.length,0);
 });

@@ -9,7 +9,7 @@ Updated in every pull request.
 | 1a | Shopify token manager, backfill, webhooks and polls | PR #7 merged and published 5 Oct; sessions fix PR #8 merged | configured for the 5 Oct live check | sessions column and sales query checked; full report agreement awaits 1b |
 | 1b | Shopify cards, watchdogs and 5 Oct follow-ups | PR #9 merged 6 Oct 2026 | Shopify already configured; no new Shopify key | fixture checks; live checks below remain |
 | Change | Shopify unit-cost history and Settings fallback | PR #10 merged 6 Oct 2026; not a stage | no new keys or scopes | read access to unitCost checked live 6 Oct 2026 |
-| Change | J&J CSV imports, parcel actuals and learned estimates | `fulfilment-import`; change PR, not a stage | no new keys | fixture/browser checks; first live export awaits Will |
+| Change | J&J CSV imports, parcel actuals and learned estimates | PR #11 merged 6 Oct; service/cadence fix on `fix-fulfilment-services-cadence` | no new keys | first live export checked 6 Oct; service recognition/review/cadence fix awaits Publish |
 | 1c | New reviews (Judge.me) | next, split from 1b; Publish flag remains off | `JUDGEME_API_TOKEN` needed for 1c | no |
 | 2 | Meta | not started | no | no |
 | 3 | Google Ads | not started | no | no |
@@ -20,7 +20,7 @@ Updated in every pull request.
 
 ## Next step
 
-Review the `fulfilment-import` change, based on latest main `54bbdbf` after merged PR #10. After Publish, run `npm run migrate` in the Shell. The order-number backfill re-fetch takes a while; Shopify may read backfilling until it finishes. Check J&J GBP per USD against each invoice and change it when it moves (0.754 on INV27164). Upload the 5 Oct export as the first live file. No deployment is performed by the builder. New reviews remains the next stage work in part 1c.
+Review the small `fix-fulfilment-services-cadence` PR from latest main. After Publish, run `npm run migrate` in the Shell (migration 008). Then open Needs you: the startup rebuild should have cleared the 25%-off cards on formerly unknown services and both Unknown service items; remaining cards are real outliers against learned rates. The Monday reminder is gone; the monthly reminder starts Monday 2 November at 09:00 UK unless complete confirmed coverage already covers October. Upload monthly with the invoice, plus once after change events (new series/box sizes, carrier rates, peak surcharges, carrier/service, J&J prices or warehouse). Check the invoice conversion in Settings against each invoice. No deployment is performed by the builder. New reviews remains the next stage work in part 1c.
 
 **Part 1b built:** Shopify hero sales/orders/conversion and range detail (AOV, upgrades, channel/market bars and spike labels), Live scoreboard, checkout, stock/cover/run-out, Refill Pack and Shopify-side Email use the ingested records, live or labelled sample. Recently updated orders created before the backfill's order boundary are excluded from every window-based metric, stock rate and watchdog; Source health reports all stored records and explains this distinction. Ads/cost-dependent hero values are unavailable until their stages; surviving other-source examples are labelled individually and do not affect Shopify health.
 
@@ -120,3 +120,8 @@ Fulfilment change local validation: typecheck, all 128 tests on PGlite, producti
 PR #11 review fixes recognise the real ExportOrders service spellings and FedEx IOSS variants. Refresh replaces flags and baselines on all parcels, unknown spellings produce one Needs item per spelling with a count, and invalid cells identify their row/column without reflecting values. Summary uses an order count query; order batches unrelated to invoices reuse the saved model and update only their estimates. Per-mode summary caching remains deferred.
 
 Review-fix local validation: typecheck, all 132 tests on PGlite, production build, phone/desktop browser checks and Gitleaks pass. New regressions cover real services, unknown-service training exclusion, safe physical CSV row/column diagnostics, stale flags/baselines and the ingestion shortcut with rejected older polls. CI verifies the pushed head against real PostgreSQL; results are recorded in PR #11.
+
+
+## Fulfilment service/cadence fix
+
+Sample and live imports recognise USPS GroundAdvantage and DPD V2 Parcel Two Day; service comparisons and learned grouping ignore spaces and case while parcels keep the export spelling. Unknown services have null rate baselines and only service/centre/destination review checks. Startup refreshes every stored mode after migrations. Complete-period declarations use the file's despatch endpoints and migration 008's coverage dates. Confirmed complete uploads together must cover the previous month to clear the first-working-day 09:00 UK reminder. Sample exports retain an invented unknown service and add the recognised USPS spelling; no live figures or order numbers are added. Validation: typecheck, all 136 tests on PGlite, production build, Chromium phone/desktop checks (including the checkbox text from the fixture range) and secret scanning pass locally. CI checks the pushed revision against real PostgreSQL. No live data validation is claimed.

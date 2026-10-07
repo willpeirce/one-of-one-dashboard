@@ -43,6 +43,8 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     await db.query('UPDATE pulse.shopify_watchdog_state SET data = data || $2::jsonb WHERE mode = $1', [shopify.mode, JSON.stringify({ checks, evaluatedAt: now.toISOString() })]);
   }
   await seedFulfilment(db, shopify.mode, sourceNow());
+  const parcelModes=await db.query<{mode:'sample'|'live'}>('SELECT DISTINCT mode FROM pulse.fulfilment_parcels');
+  for (const {mode} of parcelModes.rows) await refreshFulfilment(db,mode,sourceNow());
   await runWatchdogs();
   let observationRun: Promise<unknown> | undefined;
   const observationTimer = setInterval(() => {

@@ -8,5 +8,5 @@
 .settings-wrap:has(.fulfilment-upload){grid-template-columns:minmax(0,1fr)}
 .fulfilment-glance,.fulfilment-upload,#upload-preview{min-width:0}
 .settings-wrap:has(.fulfilment-upload)>.sample-banner{white-space:normal}
-.fulfilment-upload #complete-week{display:inline-block;margin:0 8px 0 0;vertical-align:middle}
+.fulfilment-upload #complete-period{display:inline-block;margin:0 8px 0 0;vertical-align:middle}
 #coverage-label{line-height:1.6;margin:14px 0}

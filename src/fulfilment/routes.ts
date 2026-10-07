@@ -1,4 +1,3 @@
-import { priorWeek } from './model.js';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import type { FastifyInstance } from 'fastify';
@@ -21,7 +20,7 @@ export async function seedFulfilment(db:Database,mode:SourceMode,now:Date) {
 export function registerFulfilment(app:FastifyInstance,db:Database,auth:Auth,mode:SourceMode,clock:()=>Date,publish:()=>Promise<unknown>) {
   // Preview projections stay in memory for 15 minutes and belong to the signed-in device.
   // Raw CSV and unknown column cells are never persisted.
-  const pending=new Map<string,{rows:ParcelRow[];fileName:string;rate:number;credential:string;expires:number;week:string}>();
+  const pending=new Map<string,{rows:ParcelRow[];fileName:string;rate:number;credential:string;expires:number}>();
   app.addHook('onClose',async()=>pending.clear());
   app.get('/fulfilment',async(request,reply)=>{
     if(!await auth.session(request))return reply.redirect('/login');
@@ -40,8 +39,8 @@ export function registerFulfilment(app:FastifyInstance,db:Database,auth:Auth,mod
     const rows=parseExport(body.csv), settings=await readSettings(db), token=randomUUID();
     for(const [key,value] of pending)if(value.expires<=Date.now()||value.credential===credential)pending.delete(key);
     if(pending.size>=10)throw new ImportError('Too many pending previews. Try again shortly.');
-    pending.set(token,{rows,fileName:body.fileName,rate:settings.values.jjGbpPerUsd,credential,expires:Date.now()+15*60_000,week:priorWeek(clock()).from});
-    return {...await previewImport(db,mode,rows,settings.values.jjGbpPerUsd),token,gbpPerUsd:settings.values.jjGbpPerUsd,week:priorWeek(clock())};
+    pending.set(token,{rows,fileName:body.fileName,rate:settings.values.jjGbpPerUsd,credential,expires:Date.now()+15*60_000});
+    return {...await previewImport(db,mode,rows,settings.values.jjGbpPerUsd),token,gbpPerUsd:settings.values.jjGbpPerUsd};
   });
   app.post('/api/fulfilment/confirm',async(request,reply)=>{
     const credential=await auth.session(request);
@@ -49,7 +48,7 @@ export function registerFulfilment(app:FastifyInstance,db:Database,auth:Auth,mod
     const token=(request.body as {token?:unknown})?.token;
     const preview=typeof token==='string'?pending.get(token):undefined;
     if(!preview||preview.credential!==credential||preview.expires<=Date.now())throw new ImportError('Preview the file again before confirming.');
-    const result=await confirmImport(db,mode,preview.rows,preview.fileName,preview.rate,clock(),credential,(request.body as {completeLastWeek?:unknown}).completeLastWeek === true ? preview.week : undefined);
+    const result=await confirmImport(db,mode,preview.rows,preview.fileName,preview.rate,clock(),credential,(request.body as {completePeriod?:unknown}).completePeriod === true);
     pending.delete(token as string);await publish().catch(() => {});return result;
   });
 }

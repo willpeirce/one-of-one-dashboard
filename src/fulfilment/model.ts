@@ -58,8 +58,10 @@ export function despatchDay(p: ParcelRow): string {
   return ukToday(new Date(instant));
 }
 
+export const normaliseService = (service: string) => service.replace(/\s/g, '').toLowerCase();
+
 export function knownService(_warehouse: Warehouse, service: string): boolean {
-  return Object.values(appConfig.fulfilment.knownServices).flat().some(s => s.toLowerCase() === service.toLowerCase()) || /^FedEx\b.*\bIOSS\b/i.test(service);
+  return Object.values(appConfig.fulfilment.knownServices).flat().some(s => normaliseService(s) === normaliseService(service)) || /^FedEx\b.*\bIOSS\b/i.test(service);
 }
 // Pivoted normal equations; dependent SKU columns get a deterministic zero coefficient.
 // This is ordinary least squares, with no invented product weights or ridge prior.
@@ -94,7 +96,7 @@ export function learn(parcels: readonly Parcel[], orders: readonly Order[]): Mod
   });
   const groups = new Map<string,typeof usable>();
   for (const row of usable) {
-    const key=JSON.stringify([row.p.warehouse,row.p.service,mixKey(row.q),row.p.warehouse==='us'?row.o.region:'']);
+    const key=JSON.stringify([row.p.warehouse,normaliseService(row.p.service),mixKey(row.q),row.p.warehouse==='us'?row.o.region:'']);
     groups.set(key,[...(groups.get(key)??[]),row]);
   }
   const rates: Rate[] = [...groups.values()].map(rows=>({warehouse:rows[0]!.p.warehouse,service:rows[0]!.p.service,mix:mixKey(rows[0]!.q),state:rows[0]!.p.warehouse==='us'?rows[0]!.o.region!:'',postage:mean(rows.map(r=>r.p.postageMinor)),pickPack:mean(rows.map(r=>r.p.pickPackMinor)),count:rows.length,lastSeen:rows.map(r=>r.p.despatchedAt).sort().at(-1)!}));
@@ -102,9 +104,9 @@ export function learn(parcels: readonly Parcel[], orders: readonly Order[]): Mod
   for (const w of ['uk','us'] as const) {
     const all=usable.filter(r=>r.p.warehouse===w);
     if (!all.length) continue;
-    const counts=new Map<string,number>(); all.forEach(r=>counts.set(r.p.service,(counts.get(r.p.service)??0)+1));
-    const service=[...counts].sort((a,b)=>b[1]-a[1] || a[0].localeCompare(b[0]))[0]![0];
-    const usual=all.filter(r=>r.p.service===service), bands=new Map<number,typeof usual>();
+    const counts=new Map<string,number>(); all.forEach(r=>counts.set(normaliseService(r.p.service),(counts.get(normaliseService(r.p.service))??0)+1));
+    const serviceKey=[...counts].sort((a,b)=>b[1]-a[1] || a[0].localeCompare(b[0]))[0]![0];
+    const usual=all.filter(r=>normaliseService(r.p.service)===serviceKey), service=usual[0]!.p.service, bands=new Map<number,typeof usual>();
     usual.forEach(r=>{const b=bandFor(r.p.boxedGrams);bands.set(b,[...(bands.get(b)??[]),r]);});
     warehouses[w]={service,ladder:leastSquares(all.map(r=>({x:{items:r.items},y:r.p.pickPackMinor}))),weight:leastSquares(all.map(r=>({x:r.q,y:r.p.boxedGrams/1000}))),flatPostage:mean(usual.map(r=>r.p.postageMinor)),bands:[...bands].map(([band,rows])=>({band,postage:mean(rows.map(r=>r.p.postageMinor)),count:rows.length}))};
   }
@@ -123,7 +125,7 @@ export function estimateOrder(order: Order, parcels: readonly Parcel[], model: M
   if (!m) { const flat=warehouse==='uk'?settings.flatFulfilmentUkGbp:settings.flatFulfilmentUsGbp; return result(flat===null?'unknown':'flat',flat===null?null:Math.round(flat*100)); }
   const q=quantities(order);
   if (!q) return result('unknown',null,m.service);
-  const exact=model.rates.find(r=>r.warehouse===warehouse&&r.service===m.service&&r.mix===mixKey(q)&&r.state===(warehouse==='us'?order.region:''));
+  const exact=model.rates.find(r=>r.warehouse===warehouse&&normaliseService(r.service)===normaliseService(m.service)&&r.mix===mixKey(q)&&r.state===(warehouse==='us'?order.region:''));
   if (exact) return result('exact',gbpMinor(exact.postage+exact.pickPack,warehouse==='us'?'USD':'GBP',settings.jjGbpPerUsd),m.service,false);
   const items=Object.values(q).reduce((a,b)=>a+b,0);
   let postage=m.flatPostage;
@@ -141,6 +143,7 @@ export function parcelFlags(p: Parcel, order: Order | undefined, model: Model): 
   if (p.warehouse==='unknown') flags.push('Unknown fulfilment centre');
   const expected=destination(order?.country??p.country);
   if (expected!=='unknown'&&p.warehouse!==expected) flags.push('Wrong warehouse for destination');
+  if (!knownService(p.warehouse,p.service)) return flags;
   const actual=actualPence(p);
   if (actual!==null&&p.rateBaselinePence!==null&&p.rateBaselinePence>0&&Math.abs(actual-p.rateBaselinePence)/p.rateBaselinePence>.25) flags.push('Cost more than 25% off its rate');
   const q=order&&quantities(order), m=p.warehouse==='unknown'?undefined:model.warehouses[p.warehouse];
@@ -150,14 +153,19 @@ export function parcelFlags(p: Parcel, order: Order | undefined, model: Model): 
   }
   return flags;
 }
-export function priorWeek(now: Date): { from:string; to:string } {
-  const today=ukToday(now), weekday=new Date(today+'T12:00:00Z').getUTCDay(), monday=addDays(today,-((weekday+6)%7));
-  return {from:addDays(monday,-7),to:addDays(monday,-1)};
-}
-export function weeklyReminder(now: Date, uploads: readonly { despatchFrom:string;despatchTo:string;coverageWeek?:string|null }[]): boolean {
-  const today=ukToday(now), weekday=new Date(today+'T12:00:00Z').getUTCDay(), monday=addDays(today,-((weekday+6)%7));
+export function monthlyReminder(now: Date, uploads: readonly { coverageFrom:string|null; coverageTo:string|null }[]): boolean {
+  const today=ukToday(now), first=today.slice(0,7)+'-01';
+  let workingDay=first;
+  while ([0,6].includes(new Date(workingDay+'T12:00:00Z').getUTCDay())) workingDay=addDays(workingDay,1);
   const hour=Number(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',hour:'2-digit',hourCycle:'h23'}).format(now));
-  if (today===monday&&hour<9) return false;
-  const from=addDays(monday,-7), to=addDays(monday,-1);
-  return !uploads.some(u=>u.coverageWeek===from || u.despatchFrom.slice(0,10)<=from&&u.despatchTo.slice(0,10)>=to);
+  if (today<workingDay || today===workingDay&&hour<9) return false;
+  const to=addDays(first,-1), from=to.slice(0,7)+'-01';
+  let uncovered=from;
+  const ranges=uploads.filter((u):u is {coverageFrom:string;coverageTo:string}=>u.coverageFrom!==null&&u.coverageTo!==null).sort((a,b)=>a.coverageFrom.localeCompare(b.coverageFrom));
+  for (const range of ranges) {
+    if (range.coverageFrom>uncovered) break;
+    if (range.coverageTo>=uncovered) uncovered=addDays(range.coverageTo,1);
+    if (uncovered>to) return false;
+  }
+  return true;
 }

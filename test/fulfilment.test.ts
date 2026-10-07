@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { createHmac, randomBytes } from 'node:crypto';
 import test from 'node:test';
 import { parseExport, columns, ImportError, type ParcelRow } from '../src/fulfilment/parser.js';
-import { actualPence, knownService, despatchDay, emptyModel, estimateOrder, learn, leastSquares, mixKey, parcelFlags, quantities, warehouseFor, weeklyReminder, type Parcel } from '../src/fulfilment/model.js';
+import { actualPence, knownService, despatchDay, emptyModel, estimateOrder, learn, leastSquares, mixKey, parcelFlags, quantities, warehouseFor, monthlyReminder, type Parcel } from '../src/fulfilment/model.js';
 import { confirmImport, previewImport, readEstimates, readParcels, readUploads, refreshFulfilment, fulfilmentSummary } from '../src/fulfilment/store.js';
 import { cleanOrder, type Order } from '../src/shopify/model.js';
 import { orderFields } from '../src/shopify/client.js';
@@ -93,19 +93,15 @@ test('USD actual conversion retains upload rate when current setting changes; GB
   assert.throws(()=>validateSettings({...settings,jjGbpPerUsd:0}));
 });
 
-test('each parcel Needs you rule and Monday 09:00 prompt including UK clock changes and covering week',async()=>{
+test('each parcel Needs you rule excludes rate checks for unknown services',async()=>{
   const o=await order(),p=parcel(parseExport(csv())[0]!,o.id),m=learn([p],[o]);
-  assert.deepEqual(parcelFlags({...p,service:'Invented Service'},o,m),['Unknown service']);
+  assert.deepEqual(parcelFlags({...p,service:'Invented Service',rateBaselinePence:1,postageMinor:10000,pickPackMinor:10000},o,m),['Unknown service']);
   assert.ok(parcelFlags({...p,warehouse:'us',service:'Ground Advantage'},o,m).includes('Wrong warehouse for destination'));
   assert.ok(parcelFlags({...p,warehouse:'unknown'},o,m).includes('Unknown fulfilment centre'));
   assert.ok(parcelFlags({...p,rateBaselinePence:100,postageMinor:150},o,m).includes('Cost more than 25% off its rate'));
   assert.ok(parcelFlags({...p,pickPackMinor:1000},o,m).includes('Possible new surcharge'));
   assert.ok(!parcelFlags({...p,rateBaselinePence:400,postageMinor:339},o,m).includes('Cost more than 25% off its rate'));
-  assert.equal(weeklyReminder(new Date('2026-10-05T07:59:00Z'),[]),false);assert.equal(weeklyReminder(new Date('2026-10-05T08:00:00Z'),[]),true);
-  assert.equal(weeklyReminder(new Date('2026-10-26T08:59:00Z'),[]),false);assert.equal(weeklyReminder(new Date('2026-10-26T09:00:00Z'),[]),true);
-  assert.equal(weeklyReminder(new Date('2026-10-06T12:00:00Z'),[{despatchFrom:'2026-09-28 14:00:00',despatchTo:'2026-10-04 14:00:00'}]),false);
-  assert.equal(weeklyReminder(new Date('2026-10-06T12:00:00Z'),[{despatchFrom:'2026-09-29 14:00:00',despatchTo:'2026-10-04 14:00:00'}]),true);
-  assert.equal(weeklyReminder(new Date('2026-10-06T12:00:00Z'),[{despatchFrom:'2026-09-28 14:00:00',despatchTo:'2026-10-02 14:00:00',coverageWeek:'2026-09-28'}]),false);
+
 });
 
 test('confirmation matches and adds second parcels, records MAE, refreshes new orders, isolates modes and reuploads idempotently',async t=>{
@@ -148,7 +144,9 @@ test('authenticated upload API requires preview and confirmation, never persists
   const response=await app.inject({method:'POST',url:'/api/fulfilment/preview',headers,payload:{fileName:'invented.csv',csv:raw}});assert.equal(response.statusCode,200,response.body);assert.ok(!response.body.includes(privateMarker));
   assert.equal((await readParcels(db,'sample')).length,count);
   assert.equal((await app.inject({method:'POST',url:'/api/fulfilment/confirm',headers:{...headers,origin:'https://wrong.example.test'},payload:{token:response.json().token}})).statusCode,403);
-  const saved=await app.inject({method:'POST',url:'/api/fulfilment/confirm',headers,payload:{token:response.json().token}});assert.equal(saved.statusCode,200,saved.body);assert.equal(saved.json().saved,1);
+  const saved=await app.inject({method:'POST',url:'/api/fulfilment/confirm',headers,payload:{token:response.json().token,completePeriod:true,coverageFrom:'2000-01-01',coverageTo:'2099-12-31'}});assert.equal(saved.statusCode,200,saved.body);assert.equal(saved.json().saved,1);
+  const uploaded=(await readUploads(db,'sample')).find(u=>u.id===saved.json().uploadId)!;
+  assert.equal(uploaded.coverageFrom,'2026-09-30');assert.equal(uploaded.coverageTo,'2026-09-30');
   assert.ok(!JSON.stringify(await readParcels(db,'sample')).includes(privateMarker));
   assert.match((await app.inject({url:'/fulfilment',headers})).body,/Sample data/);
 });
@@ -166,15 +164,15 @@ test('stored USD parcels keep earlier invoice rates and concurrent confirmations
   assert.equal((await readEstimates(db,'live'))[0]!.costPence,800);
   assert.equal((await fulfilmentSummary(db,'live',now)).averages[1]!.gbpPence,800);
   assert.equal((await readUploads(db,'live'))[0]!.gbpPerUsd,.8);
-  const complete=await confirmImport(db,'live',row,'invented-us.csv',.5,now,undefined,'2026-09-28');
-  assert.equal(complete.saved,0);assert.equal((await readUploads(db,'live')).filter(u=>u.coverageWeek==='2026-09-28').length,1);
-  const repeated=await confirmImport(db,'live',row,'invented-us.csv',.5,now,undefined,'2026-09-28');assert.equal(repeated.uploadId,null);
-  await assert.rejects(confirmImport(db,'live',row,'invented-us.csv',.5,now,undefined,'2026-09-21'),ImportError);
+  const complete=await confirmImport(db,'live',row,'invented-us.csv',.5,now,undefined,true);
+  assert.equal(complete.saved,0);assert.equal((await readUploads(db,'live')).filter(u=>u.coverageFrom==='2026-09-30'&&u.coverageTo==='2026-09-30').length,1);
+  const repeated=await confirmImport(db,'live',row,'invented-us.csv',.5,now,undefined,true);assert.equal(repeated.uploadId,null);
+
 });
 
 
 test('real ExportOrders services train, including FedEx IOSS, while unknown carriers stay excluded',async()=>{
-  const services=['Royal Mail Tracked 48','DPD V2 Parcel Next Day','DPD Two Day','USPS Ground Advantage','UPS Ground','FedEx International Connect Plus IOSS','FedEx IOSS Economy'];
+  const services=['Royal Mail Tracked 48','DPD V2 Parcel Next Day','DPD Two Day','DPD V2 Parcel Two Day','USPS GroundAdvantage','USPS Ground Advantage','UPS Ground','FedEx International Connect Plus IOSS','FedEx IOSS Economy'];
   const orders:Order[]=[],parcels:Parcel[]=[];
   for (const [i,service] of [...services,'Invented Service','FedEx Invented Service'].entries()) {
     const us=service.startsWith('USPS') || service.startsWith('UPS'),o=await order(String(992000+i),us);
@@ -185,7 +183,7 @@ test('real ExportOrders services train, including FedEx IOSS, while unknown carr
   }
   const model=learn(parcels,orders);
   assert.equal(model.rates.reduce((n,r)=>n+r.count,0),services.length);
-  for (const service of services) assert.ok(model.rates.some(r=>r.service===service));
+  for (const service of services) assert.ok(model.rates.some(r=>r.service.replace(/\s/g,'').toLowerCase()===service.replace(/\s/g,'').toLowerCase()));
 });
 
 test('bad CSV cells name physical 1-based row and allowlisted column without exposing values',()=>{
@@ -242,4 +240,49 @@ test('order ingest without affected parcels updates estimates without relearning
   const estimates=await readEstimates(db,'live');
   await store.orders([{...raw,updatedAt:'2020-01-01T00:00:00Z',shippingAddress:{countryCodeV2:'US',provinceCode:'CA'}}],new Date(now.getTime()+120000));
   assert.deepEqual(await readEstimates(db,'live'),estimates);
+});
+
+
+test('service comparison ignores spaces and case and combines rate rows without changing parcels',async()=>{
+  for (const service of ['USPS GroundAdvantage','USPS Ground Advantage',' usps  groundadvantage ','dpd v2 parcel two day','DPD V2 Parcel Two Day']) assert.equal(knownService('us',service),true);
+  assert.equal(knownService('us','Invented Experimental'),false);
+  const o=await order('995001',true),p=parcel(parseExport(csv({'Postage Method':'USPS GroundAdvantage','Fulfilment Centre':'Columbus'}))[0]!,o.id);
+  const other={...p,id:'second',service:'usps ground advantage'};
+  const model=learn([p,other],[o]);assert.equal(model.rates.length,1);assert.equal(model.rates[0]!.count,2);
+  assert.equal(p.service,'USPS GroundAdvantage');assert.equal(other.service,'usps ground advantage');
+});
+
+test('monthly reminder starts at first working day 09:00 UK and requires complete gap-free month coverage',()=>{
+  assert.equal(monthlyReminder(new Date('2026-10-01T07:59:59Z'),[]),false);
+  assert.equal(monthlyReminder(new Date('2026-10-01T08:00:00Z'),[]),true);
+  // November starts on Sunday; August starts on Saturday. Bank holidays are ignored.
+  for (const instant of ['2026-11-01T12:00:00Z','2026-11-02T08:59:59Z','2026-08-01T12:00:00Z','2026-08-02T12:00:00Z','2026-08-03T07:59:59Z']) assert.equal(monthlyReminder(new Date(instant),[]),false);
+  for (const instant of ['2026-11-02T09:00:00Z','2026-08-03T08:00:00Z']) assert.equal(monthlyReminder(new Date(instant),[]),true);
+  const at=new Date('2026-11-02T09:00:00Z');
+  assert.equal(monthlyReminder(at,[{coverageFrom:'2026-10-01',coverageTo:'2026-10-31'}]),false);
+  assert.equal(monthlyReminder(at,[{coverageFrom:'2026-10-01',coverageTo:'2026-10-30'}]),true);
+  assert.equal(monthlyReminder(at,[{coverageFrom:'2026-10-01',coverageTo:'2026-10-15'},{coverageFrom:'2026-10-16',coverageTo:'2026-10-31'}]),false);
+  assert.equal(monthlyReminder(at,[{coverageFrom:'2026-10-01',coverageTo:'2026-10-15'},{coverageFrom:'2026-10-17',coverageTo:'2026-10-31'}]),true);
+  assert.equal(monthlyReminder(at,[{coverageFrom:null,coverageTo:null}]),true);
+  assert.equal(monthlyReminder(new Date('2027-01-01T09:00:00Z'),[]),true);
+});
+
+test('startup rebuild clears stale flags and unknown baselines in every stored mode without re-upload',async t=>{
+  const db=await createTestDatabase();t.after(()=>db.close());
+  for (const mode of ['sample','live'] as const) {
+    const o=await order('995002'),store=new ShopifyStore(db,mode);await store.put('order',o.id,o,now);
+    const rows=['Royal Mail Tracked 48','DPD V2 Parcel Two Day','Invented Experimental'].map((service,i)=>parseExport(csv({'Postage Method':service,'Despatched':`2026-09-30 ${14+i}:00:00`,'Postage Charge':i===2?'99.00':'3.20','Line Total':i===2?'199.0000':'4.8000'}))[0]!);
+    await confirmImport(db,mode,rows,'invented-startup.csv',.754,now);
+    const unknown=(await readParcels(db,mode)).find(p=>p.service==='Invented Experimental')!;
+    assert.equal(unknown.rateBaselinePence,null);assert.deepEqual(unknown.flags,['Unknown service']);
+    await db.query('UPDATE pulse.fulfilment_parcels SET flags=$2,rate_baseline_pence=1 WHERE mode=$1',[mode,JSON.stringify(['Unknown service','Cost more than 25% off its rate','Possible new surcharge'])]);
+  }
+  const config=readRuntime({NODE_ENV:'test',DATABASE_URL:'postgresql://localhost/pulse_test',APP_ORIGIN:'https://pulse.example.test'});
+  const app=await createApp(db,config);t.after(()=>app.close());
+  for (const mode of ['sample','live'] as const) {
+    const rows=await readParcels(db,mode);
+    assert.deepEqual(rows.find(p=>p.service==='Invented Experimental')!.flags,['Unknown service']);
+    assert.equal(rows.find(p=>p.service==='Invented Experimental')!.rateBaselinePence,null);
+    assert.ok(!rows.find(p=>p.service==='DPD V2 Parcel Two Day')!.flags.includes('Unknown service'));
+  }
 });

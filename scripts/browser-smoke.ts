@@ -611,9 +611,10 @@ async function run(): Promise<void> {
       await fulfilmentPage.locator('#export-file').setInputFiles({ name: 'invented.csv', mimeType: 'text/csv', buffer: inventedExport });
       await fulfilmentPage.locator('#confirm-upload').waitFor({ state: 'visible' });
       step = `check parsed fulfilment rows at ${viewport.width}px`;
-      assert.match(await fulfilmentPage.locator('#coverage-copy').innerText(), /including days with no despatches/);
-      assert.equal(await fulfilmentPage.locator('#complete-week').isChecked(), false);
-      assert.equal(await fulfilmentPage.locator('#upload-preview tbody tr').count(), 40);
+      const fixtureDates = inventedExport.toString().trim().split('\n').slice(1).map(row=>row.split(',')[0]!.slice(0,10)).sort();
+      assert.equal(await fulfilmentPage.locator('#coverage-copy').innerText(), `This is the complete export for ${fixtureDates[0]} to ${fixtureDates.at(-1)}, including days with no despatches.`);
+      assert.equal(await fulfilmentPage.locator('#complete-period').isChecked(), false);
+      assert.equal(await fulfilmentPage.locator('#upload-preview tbody tr').count(), 41);
       assert.match(await fulfilmentPage.locator('#upload-preview').innerText(), /Unmatched order numbers: 99999999/);
       assert.match(await fulfilmentPage.locator('#upload-preview').innerText(), /Unknown service/);
       assert.match(await fulfilmentPage.locator('#upload-status').innerText(), /Nothing saved/);
@@ -635,7 +636,7 @@ async function run(): Promise<void> {
     await fulfilmentPage.locator('#export-file').setInputFiles({ name: 'invented.csv', mimeType: 'text/csv', buffer: inventedExport });
     await fulfilmentPage.locator('#confirm-upload').waitFor({ state: 'visible' });
     await fulfilmentPage.locator('#confirm-upload').click();
-    await fulfilmentPage.waitForFunction(() => document.querySelector('#upload-status')?.textContent?.includes('Saved 0 parcels; skipped 40 duplicates'));
+    await fulfilmentPage.waitForFunction(() => document.querySelector('#upload-status')?.textContent?.includes('Saved 0 parcels; skipped 41 duplicates'));
     await fulfilmentPage.close();
 
     step = 'keep a custom date range unchanged during a Settings SSE update';

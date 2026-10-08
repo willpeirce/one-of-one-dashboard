@@ -18,6 +18,7 @@ async function main(): Promise<void> {
     }
     await app.listen({ host: config.host, port: config.port });
     console.info('One of One Pulse is listening.');
+    void app.startBackgroundWork();
   } catch (error) {
     // Cleanup must not replace the original migration or system code.
     await db.close().catch(() => {});

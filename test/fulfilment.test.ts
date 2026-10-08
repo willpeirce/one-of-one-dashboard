@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { createHmac, randomBytes } from 'node:crypto';
 import test from 'node:test';
 import { parseExport, columns, ImportError, type ParcelRow } from '../src/fulfilment/parser.js';
-import { actualPence, knownService, despatchDay, emptyModel, estimateOrder, learn, leastSquares, mixKey, parcelFlags, quantities, warehouseFor, monthlyReminder, type Parcel } from '../src/fulfilment/model.js';
+import { actualPence, knownService, despatchDay, emptyModel, estimateOrder, learn, leaveOneOutModels, gbpMinor, normaliseService, leastSquares, mixKey, parcelFlags, quantities, warehouseFor, monthlyReminder, type Parcel } from '../src/fulfilment/model.js';
 import { confirmImport, previewImport, readEstimates, readParcels, readUploads, refreshFulfilment, fulfilmentSummary } from '../src/fulfilment/store.js';
 import { cleanOrder, type Order } from '../src/shopify/model.js';
 import { orderFields } from '../src/shopify/client.js';
@@ -279,10 +279,80 @@ test('startup rebuild clears stale flags and unknown baselines in every stored m
   }
   const config=readRuntime({NODE_ENV:'test',DATABASE_URL:'postgresql://localhost/pulse_test',APP_ORIGIN:'https://pulse.example.test'});
   const app=await createApp(db,config);t.after(()=>app.close());
+  await app.listen({host:'127.0.0.1',port:0});
+  await app.startBackgroundWork();
   for (const mode of ['sample','live'] as const) {
     const rows=await readParcels(db,mode);
     assert.deepEqual(rows.find(p=>p.service==='Invented Experimental')!.flags,['Unknown service']);
     assert.equal(rows.find(p=>p.service==='Invented Experimental')!.rateBaselinePence,null);
     assert.ok(!rows.find(p=>p.service==='DPD V2 Parcel Two Day')!.flags.includes('Unknown service'));
   }
+});
+
+
+function review(p:Parcel,o:Order|undefined,model:ReturnType<typeof learn>) {
+  const q=o&&quantities(o);
+  const rate=q&&model.rates.find(r=>r.warehouse===p.warehouse&&normaliseService(r.service)===normaliseService(p.service)&&r.mix===mixKey(q)&&r.state===(p.warehouse==='us'?o!.region:''));
+  const fallback=o?estimateOrder({...o,fulfillments:[],fulfillmentStatus:'UNFULFILLED',country:p.warehouse==='uk'?'GB':p.warehouse==='us'?'US':null,market:p.warehouse==='uk'?'UK':p.warehouse==='us'?'US':'unknown'},[],model,{...settings,jjGbpPerUsd:p.gbpPerUsd}):null;
+  const baseline=!knownService(p.warehouse,p.service)?null:rate?gbpMinor(rate.postage+rate.pickPack,p.currency,p.gbpPerUsd):fallback&&['exact','ladder'].includes(fallback.source)?fallback.costPence:null;
+  return {baseline,flags:parcelFlags({...p,rateBaselinePence:baseline},o,model)};
+}
+
+test('bounded leave-one-out baselines and flags equal the original fixture refits',async()=>{
+  const {orders,parcels}=await fits();
+  parcels.push({...parcels[0]!,id:'invented-outlier',pickPackMinor:1400,gbpPerUsd:.8});
+  parcels.push({...parcels[4]!,id:'invented-alias',service:'groundadvantage',postageMinor:1600});
+  parcels.push({...parcels[0]!,id:'invented-unknown',service:'Invented Experimental'});
+  parcels.push({...parcels[0]!,id:'invented-unmatched',orderId:null});
+  const peersFor=leaveOneOutModels(parcels,orders);
+  for (const p of parcels) {
+    const o=orders.find(o=>o.id===p.orderId);
+    assert.deepEqual(review(p,o,peersFor(p)),review(p,o,learn(parcels.filter(other=>other.id!==p.id),orders)),p.id);
+  }
+  // Exercise service-count ties, singleton groups and disappearing SKU columns.
+  for (const p of parcels) {
+    const subset=parcels.filter(other=>other.warehouse===p.warehouse).slice(0,2);
+    if (!subset.includes(p)) continue;
+    assert.deepEqual(review(p,orders.find(o=>o.id===p.orderId),leaveOneOutModels(subset,orders)(p)),review(p,orders.find(o=>o.id===p.orderId),learn(subset.filter(other=>other.id!==p.id),orders)));
+  }
+});
+
+test('transaction reads are serial and one bulk update persists every parcel review and match',async t=>{
+  const db=await createTestDatabase();t.after(()=>db.close());
+  const {orders,parcels}=await fits();
+  parcels.push({...parcels[0]!,id:'invented-unmatched',orderNumber:'998002',orderId:null});
+  parcels.push({...parcels[0]!,id:'invented-unknown',orderNumber:'998003',orderId:null,service:'Invented Experimental'});
+  const store=new ShopifyStore(db,'live');for (const o of orders) await store.put('order',o.id,o,now);
+  let updates=0;
+  const serial=(connection:typeof db):typeof db=>({
+    ...connection,
+    query:async(text,values)=>{
+      assert.equal(busy,false,'a transaction client must have only one query in flight');
+      busy=true;
+      if (text.startsWith('UPDATE pulse.fulfilment_parcels')) updates++;
+      try { return await connection.query(text,values); } finally {busy=false;}
+    },
+    transaction:fn=>connection.transaction(tx=>fn(serial(tx))),
+  });
+  let busy=false;
+  const tracked={...db,transaction:<T>(fn:(tx:typeof db)=>Promise<T>)=>db.transaction(tx=>fn(serial(tx)))};
+  await confirmImport(tracked,'live',parcels,'invented-fits.csv',.754,now);
+  assert.equal(updates,1);
+  const stored=await readParcels(db,'live');
+  for (const p of stored) {
+    const expected=review(p,orders.find(o=>o.id===p.orderId),learn(stored.filter(other=>other.id!==p.id),orders));
+    assert.equal(p.rateBaselinePence,expected.baseline);assert.deepEqual(p.flags,expected.flags);
+  }
+  assert.equal(stored.length,parcels.length);
+  const before=await readEstimates(db,'live');
+  updates=0;
+  await db.query("UPDATE pulse.fulfilment_parcels SET flags='[\"Unknown service\"]',rate_baseline_pence=1,order_id=null WHERE mode='live'");
+  await refreshFulfilment(tracked,'live',now);
+  assert.equal(updates,1);
+  assert.deepEqual(await readEstimates(db,'live'),before);
+  assert.deepEqual(await readParcels(db,'live'),stored);
+  // The unaffected ingest branch also uses serial model/settings reads.
+  const raw=(await fixture('order')).data.order;raw.id='gid://shopify/Order/998001';raw.name='#998001';
+  await new ShopifyStore(tracked,'live').orders([raw],now);
+  assert.equal(updates,1);
 });

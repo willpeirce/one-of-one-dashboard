@@ -70,6 +70,10 @@ export function leastSquares(rows: { x: Record<string,number>; y: number }[]): F
   const keys = [...new Set(rows.flatMap(r => Object.keys(r.x)))].sort();
   const vectors = rows.map(r => [1,...keys.map(k => r.x[k] ?? 0)]), n = keys.length + 1;
   const a = Array.from({length:n},(_,i) => [...Array.from({length:n},(_,j) => vectors.reduce((s,x) => s+x[i]!*x[j]!,0)), rows.reduce((s,r,k) => s+vectors[k]![i]!*r.y,0)]);
+  return solveFit(a, keys, rows.length);
+}
+function solveFit(a: number[][], keys: string[], count: number): Fit {
+  const n = keys.length + 1;
   let pivot = 0; const pivots: number[] = [];
   for (let col=0; col<n && pivot<n; col++) {
     let best=pivot;
@@ -83,7 +87,7 @@ export function leastSquares(rows: { x: Record<string,number>; y: number }[]): F
   }
   const b=Array<number>(n).fill(0);
   pivots.forEach((col,i) => b[col]=a[i]![n]!);
-  return { base:b[0]!, coefficients:Object.fromEntries(keys.map((k,i)=>[k,b[i+1]!])), count:rows.length };
+  return { base:b[0]!, coefficients:Object.fromEntries(keys.map((k,i)=>[k,b[i+1]!])), count };
 }
 export const predict = (fit: Fit, q: Record<string,number>) => fit.base + Object.entries(q).reduce((s,[k,v]) => s+v*(fit.coefficients[k] ?? 0),0);
 const mean = (a: number[]) => a.reduce((s,n)=>s+n,0)/a.length;
@@ -97,7 +101,8 @@ export function learn(parcels: readonly Parcel[], orders: readonly Order[]): Mod
   const groups = new Map<string,typeof usable>();
   for (const row of usable) {
     const key=JSON.stringify([row.p.warehouse,normaliseService(row.p.service),mixKey(row.q),row.p.warehouse==='us'?row.o.region:'']);
-    groups.set(key,[...(groups.get(key)??[]),row]);
+    if (!groups.has(key)) groups.set(key,[]);
+    groups.get(key)!.push(row);
   }
   const rates: Rate[] = [...groups.values()].map(rows=>({warehouse:rows[0]!.p.warehouse,service:rows[0]!.p.service,mix:mixKey(rows[0]!.q),state:rows[0]!.p.warehouse==='us'?rows[0]!.o.region!:'',postage:mean(rows.map(r=>r.p.postageMinor)),pickPack:mean(rows.map(r=>r.p.pickPackMinor)),count:rows.length,lastSeen:rows.map(r=>r.p.despatchedAt).sort().at(-1)!}));
   const warehouses: Model['warehouses'] = {};
@@ -107,10 +112,92 @@ export function learn(parcels: readonly Parcel[], orders: readonly Order[]): Mod
     const counts=new Map<string,number>(); all.forEach(r=>counts.set(normaliseService(r.p.service),(counts.get(normaliseService(r.p.service))??0)+1));
     const serviceKey=[...counts].sort((a,b)=>b[1]-a[1] || a[0].localeCompare(b[0]))[0]![0];
     const usual=all.filter(r=>normaliseService(r.p.service)===serviceKey), service=usual[0]!.p.service, bands=new Map<number,typeof usual>();
-    usual.forEach(r=>{const b=bandFor(r.p.boxedGrams);bands.set(b,[...(bands.get(b)??[]),r]);});
+    usual.forEach(r=>{const b=bandFor(r.p.boxedGrams);if (!bands.has(b)) bands.set(b,[]);bands.get(b)!.push(r);});
     warehouses[w]={service,ladder:leastSquares(all.map(r=>({x:{items:r.items},y:r.p.pickPackMinor}))),weight:leastSquares(all.map(r=>({x:r.q,y:r.p.boxedGrams/1000}))),flatPostage:mean(usual.map(r=>r.p.postageMinor)),bands:[...bands].map(([band,rows])=>({band,postage:mean(rows.map(r=>r.p.postageMinor)),count:rows.length}))};
   }
   return {rates,warehouses};
+}
+// Sufficient statistics let us subtract one training row without refitting its peers.
+// Cost is linear in parcels for a fixed SKU/service vocabulary, including large groups.
+function fitWithout(rows: { x: Record<string,number>; y: number }[]) {
+  const keys = [...new Set(rows.flatMap(r => Object.keys(r.x)))].sort();
+  const uses = keys.map(k => rows.filter(r => Object.hasOwn(r.x,k)).length);
+  const n = keys.length + 1;
+  const sums = Array.from({length:n}, () => Array<number>(n+1).fill(0));
+  for (const r of rows) {
+    const x = [1,...keys.map(k => r.x[k] ?? 0)];
+    for (let i=0;i<n;i++) {
+      for (let j=0;j<n;j++) sums[i]![j]! += x[i]! * x[j]!;
+      sums[i]![n]! += x[i]! * r.y;
+    }
+  }
+  return (excluded?: {x:Record<string,number>;y:number}): Fit => {
+    const count = rows.length - (excluded ? 1 : 0);
+    if (!count) return {base:0,coefficients:{},count:0};
+    const indices = [0,...keys.flatMap((k,i) => uses[i]! - (excluded && Object.hasOwn(excluded.x,k) ? 1 : 0) > 0 ? [i+1] : [])];
+    const x = excluded ? [1,...keys.map(k => excluded.x[k] ?? 0)] : Array<number>(n).fill(0);
+    const a = indices.map(i => [...indices.map(j => sums[i]![j]! - x[i]!*x[j]!), sums[i]![n]! - x[i]!*(excluded?.y ?? 0)]);
+    return solveFit(a, indices.slice(1).map(i => keys[i-1]!), count);
+  };
+}
+export function leaveOneOutModels(parcels: readonly Parcel[], orders: readonly Order[]): (parcel: Parcel) => Model {
+  const byId = new Map(orders.map(o => [o.id,o]));
+  const usable = parcels.flatMap(p => {
+    const o = p.orderId ? byId.get(p.orderId) : undefined, q = o && quantities(o);
+    return o && q && p.warehouse !== 'unknown' && knownService(p.warehouse,p.service) && (p.warehouse !== 'us' || o.region)
+      ? [{p,o,q,items:Object.values(q).reduce((a,b)=>a+b,0)}] : [];
+  });
+  const byParcel = new Map(usable.map(r => [r.p.id,r]));
+  const key = (w: Warehouse, service: string, mix: string, state: string) => JSON.stringify([w,normaliseService(service),mix,state]);
+  const groups = new Map<string,{rate:Rate;postage:number;pickPack:number}>();
+  for (const r of usable) {
+    const k=key(r.p.warehouse,r.p.service,mixKey(r.q),r.p.warehouse==='us'?r.o.region!:'');
+    let g=groups.get(k);
+    if (!g) {
+      g={rate:{warehouse:r.p.warehouse,service:r.p.service,mix:mixKey(r.q),state:r.p.warehouse==='us'?r.o.region!:'',postage:0,pickPack:0,count:0,lastSeen:r.p.despatchedAt},postage:0,pickPack:0};
+      groups.set(k,g);
+    }
+    g.rate.count++;g.postage+=r.p.postageMinor;g.pickPack+=r.p.pickPackMinor;
+  }
+  const warehouses = new Map((['uk','us'] as const).map(w => {
+    const rows=usable.filter(r=>r.p.warehouse===w);
+    const services = new Map<string,{service:string;count:number;postage:number;bands:Map<number,{count:number;postage:number}>}>();
+    for (const {p} of rows) {
+      const k=normaliseService(p.service);
+      if (!services.has(k)) services.set(k,{service:p.service,count:0,postage:0,bands:new Map()});
+      const service=services.get(k)!;service.count++;service.postage+=p.postageMinor;
+      const b=bandFor(p.boxedGrams),band=service.bands.get(b)??{count:0,postage:0};
+      band.count++;band.postage+=p.postageMinor;service.bands.set(b,band);
+    }
+    return [w,{rows:rows.length,services,ladder:fitWithout(rows.map(r=>({x:{items:r.items},y:r.p.pickPackMinor}))),weight:fitWithout(rows.map(r=>({x:r.q,y:r.p.boxedGrams/1000})))}] as const;
+  }));
+  return p => {
+    const model=emptyModel(), excluded=byParcel.get(p.id), o=p.orderId?byId.get(p.orderId):undefined, q=o&&quantities(o);
+    if (p.warehouse==='unknown') return model;
+    const w=warehouses.get(p.warehouse)!;
+    const counts=[...w.services].map(([k,s])=>({k,s,count:s.count-(excluded&&normaliseService(p.service)===k?1:0)})).filter(s=>s.count>0).sort((a,b)=>b.count-a.count||a.k.localeCompare(b.k));
+    const usual=counts[0];
+    if (usual) {
+      const subtract=!!excluded&&normaliseService(p.service)===usual.k;
+      model.warehouses[p.warehouse]={service:usual.s.service,
+        ladder:w.ladder(excluded?{x:{items:excluded.items},y:p.pickPackMinor}:undefined),
+        weight:w.weight(excluded?{x:excluded.q,y:p.boxedGrams/1000}:undefined),
+        flatPostage:(usual.s.postage-(subtract?p.postageMinor:0))/usual.count,
+        bands:[...usual.s.bands].flatMap(([band,b])=>{
+          const remove=subtract&&bandFor(p.boxedGrams)===band, count=b.count-(remove?1:0);
+          return count?[{band,count,postage:(b.postage-(remove?p.postageMinor:0))/count}]:[];
+        })};
+    }
+    // Only these two groups can be read by the parcel baseline/fallback calculation.
+    if (q) for (const service of new Set([normaliseService(p.service),usual?.k].filter((k):k is string=>!!k))) {
+      const k=key(p.warehouse,service,mixKey(q),p.warehouse==='us'?o!.region??'':'');
+      const g=groups.get(k);if (!g) continue;
+      const remove=!!excluded&&k===key(p.warehouse,p.service,mixKey(excluded.q),p.warehouse==='us'?excluded.o.region!:'');
+      const count=g.rate.count-(remove?1:0);
+      if (count) model.rates.push({...g.rate,count,postage:(g.postage-(remove?p.postageMinor:0))/count,pickPack:(g.pickPack-(remove?p.pickPackMinor:0))/count});
+    }
+    return model;
+  };
 }
 export function estimateOrder(order: Order, parcels: readonly Parcel[], model: Model, settings: Settings): Estimate {
   const actuals=parcels.filter(p=>p.orderId===order.id);

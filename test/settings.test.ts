@@ -1,11 +1,18 @@
 import assert from 'node:assert/strict';
 import { randomUUID, randomBytes } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import {
   defaultSettings, readSettings, saveSettings, validateSettings, SettingsConflictError,
   SettingsValidationError, SETTINGS_KEY_NAMES, type Settings,
 } from '../src/settings.js';
 import { createTestDatabase } from './helpers/database.js';
+
+test('Meta ownership retains more campaigns than the bounded manual collections', () => {
+  const metaOwners = Array.from({ length: 51 }, (_, index) => ({ campaignId: String(900000001000 + index), owner: 'ours' as const }));
+  assert.deepEqual(validateSettings({ ...defaultSettings(), metaOwners }).metaOwners, metaOwners);
+  assert.throws(() => validateSettings({ ...defaultSettings(), overheads: Array.from({ length: 51 }, (_, index) => ({ name: `Invented overhead ${index}`, monthlyGbp: 0, startMonth: '', endMonth: '' })) }), SettingsValidationError);
+});
 
 test('settings initialize once with specified defaults, unknowns unset and no default-change audit', async (t) => {
   const db = await createTestDatabase();
@@ -19,7 +26,7 @@ test('settings initialize once with specified defaults, unknowns unset and no de
   assert.equal(first.values.cppUsBreakEvenGbp, 22.70);
   assert.equal(first.values.blendedMetaTripwireGbp, 28);
   assert.equal(first.values.safetyWeeks, 3);
-  assert.equal(first.values.monthlyOverheadsGbp, null);
+  assert.deepEqual(first.values.overheads, []);
   assert.equal(first.values.paymentFeePercent, null);
   assert.equal(first.values.markersPerKit, null);
   assert.equal(first.values.pencilsPerKit, null);
@@ -38,7 +45,7 @@ test('changed settings persist across service instances and audit every field wi
   const initial = await readSettings(db);
   const values: Settings = structuredClone(initial.values);
   values.goalOrdersPerDay = 150;
-  values.monthlyOverheadsGbp = 2_500;
+  values.overheads = [{ name: 'Sample workspace', monthlyGbp: 250, startMonth: '', endMonth: '' }];
   values.cppUkTargetGbp = 16;
   values.creatorRules.assetCapGbp = 250;
   values.startingCogs[0]!.unitCostGbp = 7.50;
@@ -49,7 +56,7 @@ test('changed settings persist across service instances and audit every field wi
   assert.equal(result.version, 1);
   assert.deepEqual(result.values, values);
   assert.deepEqual(result.changedFields.sort(), [
-    'goalOrdersPerDay', 'monthlyOverheadsGbp', 'cppUkTargetGbp', 'creatorRules.assetCapGbp',
+    'goalOrdersPerDay', 'overheads', 'cppUkTargetGbp', 'creatorRules.assetCapGbp',
     'startingCogs.0.unitCostGbp', 'keyExpiryDates.0.keyName', 'keyExpiryDates.0.expiresOn',
     'waitingContacts.0.business', 'waitingContacts.0.role',
   ].sort());
@@ -71,7 +78,7 @@ test('changed settings persist across service instances and audit every field wi
   `)).rows, [{ column_name: 'audit_id' }, { column_name: 'field' }]);
 });
 
-test('the database audit CHECK covers exactly every Settings key and preserves field path limits', async (t) => {
+test('the database audit CHECK covers every Settings key plus named retired keys and preserves field path limits', async (t) => {
   const db = await createTestDatabase();
   t.after(() => db.close());
   const checks = await db.query<{ definition: string }>(`
@@ -85,7 +92,8 @@ test('the database audit CHECK covers exactly every Settings key and preserves f
   const allowedKeys = [...checks.rows[0]!.definition.matchAll(/'([a-zA-Z][a-zA-Z0-9]*)'/g)]
     .map((match) => match[1]!);
   const settingsKeys = Object.keys(defaultSettings()).sort();
-  assert.deepEqual(allowedKeys.sort(), settingsKeys);
+  const retiredSettingsKeys = ['monthlyOverheadsGbp'];
+  assert.deepEqual(allowedKeys.sort(), [...settingsKeys, ...retiredSettingsKeys].sort());
 
   const insert = (field: string) => db.query(`
     WITH entry AS (
@@ -93,7 +101,8 @@ test('the database audit CHECK covers exactly every Settings key and preserves f
     )
     INSERT INTO pulse.settings_changes (audit_id, field) SELECT id, $1 FROM entry
   `, [field]);
-  for (const key of settingsKeys) assert.equal((await insert(key)).rowCount, 1);
+  for (const key of [...settingsKeys, ...retiredSettingsKeys]) assert.equal((await insert(key)).rowCount, 1);
+  assert.equal((await insert('overheads.0.monthlyGbp')).rowCount, 1);
   assert.equal((await insert('startingCogs.0.unitCostGbp')).rowCount, 1);
   assert.equal((await insert(`brand.${'a'.repeat(154)}`)).rowCount, 1);
   const auditCount = (await db.query('SELECT * FROM pulse.audit_log')).rowCount;
@@ -169,6 +178,136 @@ test('unchanged saves do not bump version or write audit; stale editors cannot o
   assert.equal((await db.query('SELECT * FROM pulse.audit_log')).rowCount, 1);
 });
 
+test('overheads validate trimmed unique names, calendar months, penny amounts and the list limit', () => {
+  const defaults = defaultSettings();
+  const overhead = { name: '  Sample subscriptions  ', monthlyGbp: 123.45 };
+  assert.deepEqual(validateSettings({ ...defaults, overheads: [overhead] }).overheads, [
+    { name: 'Sample subscriptions', monthlyGbp: 123.45, startMonth: '', endMonth: '' },
+  ]);
+  assert.deepEqual(validateSettings({ ...defaults, overheads: [
+    { name: 'Sample zero cost', monthlyGbp: 0, startMonth: '2026-02', endMonth: '2026-02' },
+    { name: 'Sample maximum', monthlyGbp: 1_000_000, startMonth: '2026-03', endMonth: '' },
+  ] }).overheads.map((row) => row.monthlyGbp), [0, 1_000_000]);
+  const valid = { name: 'Sample subscription', monthlyGbp: 10, startMonth: '', endMonth: '' };
+  const invalidLists: unknown[] = [
+    null, {}, [{ ...valid, name: '' }], [{ ...valid, name: '   ' }], [{ ...valid, name: 'a'.repeat(61) }],
+    [{ ...valid, name: null }], [{ ...valid, monthlyGbp: -1 }], [{ ...valid, monthlyGbp: 1_000_000.01 }],
+    [{ ...valid, monthlyGbp: 0.001 }], [{ ...valid, monthlyGbp: '10' }], [{ ...valid, monthlyGbp: Infinity }],
+    [{ ...valid, startMonth: '2026-00' }], [{ ...valid, startMonth: '2026-13' }],
+    [{ ...valid, startMonth: '2026-2' }], [{ ...valid, endMonth: '2026-02-01' }],
+    [{ ...valid, startMonth: '2026-03', endMonth: '2026-02' }], [{ ...valid, startMonth: null }],
+    [valid, { ...valid, name: '  SAMPLE SUBSCRIPTION  ' }],
+    Array.from({ length: 51 }, (_, index) => ({ ...valid, name: `Sample item ${index}` })),
+    [{ ...valid, unknown: true }], [{ name: valid.name }],
+  ];
+  for (const overheads of invalidLists) {
+    assert.throws(() => validateSettings({ ...defaults, overheads }), SettingsValidationError);
+  }
+  const { overheads: _overheads, ...legacy } = defaults;
+  assert.throws(() => validateSettings({ ...legacy, monthlyOverheadsGbp: 10 }), SettingsValidationError);
+});
+
+test('legacy overhead values read before migration and normalize before save audit comparison', async (t) => {
+  const db = await createTestDatabase();
+  t.after(() => db.close());
+  const { overheads: _overheads, ...legacy } = defaultSettings();
+  // All amounts and item names in these cases are invented.
+  for (const monthlyOverheadsGbp of [123.45, null, 0]) {
+    await db.query(`
+      INSERT INTO pulse.settings (values, version) VALUES ($1, 4)
+      ON CONFLICT (singleton) DO UPDATE SET values = EXCLUDED.values, version = EXCLUDED.version
+    `, [JSON.stringify({ ...legacy, monthlyOverheadsGbp })]);
+    const expected = typeof monthlyOverheadsGbp === 'number' && monthlyOverheadsGbp > 0
+      ? [{ name: 'Overheads', monthlyGbp: monthlyOverheadsGbp, startMonth: '', endMonth: '' }] : [];
+    const read = await readSettings(db);
+    assert.deepEqual(read.values.overheads, expected);
+    assert.ok(!Object.hasOwn(read.values, 'monthlyOverheadsGbp'));
+    assert.equal(read.version, 4);
+    const saved = await saveSettings(db, { ...read, values: { ...read.values, goalOrdersPerDay: 101 } }, randomUUID());
+    assert.deepEqual(saved.changedFields, ['goalOrdersPerDay']);
+    assert.equal(saved.version, 5);
+    assert.deepEqual((await readSettings(db)).values.overheads, expected);
+    const stored = (await db.query<{ values: Record<string, unknown> }>('SELECT values FROM pulse.settings')).rows[0]!.values;
+    assert.ok(!Object.hasOwn(stored, 'monthlyOverheadsGbp'));
+  }
+  assert.deepEqual((await db.query('SELECT field FROM pulse.settings_changes')).rows, [
+    { field: 'goalOrdersPerDay' }, { field: 'goalOrdersPerDay' }, { field: 'goalOrdersPerDay' },
+  ]);
+});
+
+test('the old valid overhead limit survives reads before and after migration while new saves stay strict', async (t) => {
+  const db = await createTestDatabase();
+  t.after(() => db.close());
+  const { overheads: _overheads, ...legacy } = defaultSettings();
+  // This deliberately large amount is invented to exercise the retired scalar's limit.
+  await db.query('INSERT INTO pulse.settings (values, version) VALUES ($1, 4)', [
+    JSON.stringify({ ...legacy, monthlyOverheadsGbp: 2_000_000.01 }),
+  ]);
+  const before = await readSettings(db);
+  assert.deepEqual(before.values.overheads, [
+    { name: 'Overheads', monthlyGbp: 2_000_000.01, startMonth: '', endMonth: '' },
+  ]);
+  assert.throws(() => validateSettings(before.values), SettingsValidationError);
+  await assert.rejects(saveSettings(db, { version: before.version, values: before.values }, randomUUID()), SettingsValidationError);
+  assert.deepEqual(await readSettings(db), before);
+
+  await db.query(await readFile(new URL('../migrations/011_monthly_overheads.sql', import.meta.url), 'utf8'));
+  const migrated = (await db.query<{ values: Record<string, unknown> }>('SELECT values FROM pulse.settings')).rows[0]!.values;
+  assert.ok(!Object.hasOwn(migrated, 'monthlyOverheadsGbp'));
+  assert.deepEqual(migrated.overheads, before.values.overheads);
+  assert.deepEqual(await readSettings(db), before);
+  await assert.rejects(saveSettings(db, {
+    version: before.version, values: { ...before.values, goalOrdersPerDay: 101 },
+  }, randomUUID()), SettingsValidationError);
+
+  const corrected = { ...before.values, overheads: [{ ...before.values.overheads[0]!, monthlyGbp: 1_000_000 }] };
+  const saved = await saveSettings(db, { version: before.version, values: corrected }, randomUUID());
+  assert.deepEqual(saved.changedFields, ['overheads.0.monthlyGbp']);
+  assert.equal(saved.version, 5);
+  assert.deepEqual((await readSettings(db)).values, corrected);
+  assert.equal((await db.query('SELECT * FROM pulse.settings_changes')).rowCount, 1);
+
+  // The stored compatibility exception is limited to the migration's exact row shape.
+  for (const row of [
+    { ...before.values.overheads[0]!, name: 'Sample renamed item' },
+    { ...before.values.overheads[0]!, startMonth: '2026-01' },
+    { ...before.values.overheads[0]!, endMonth: '2026-12' },
+  ]) {
+    await db.query('UPDATE pulse.settings SET values = $1', [JSON.stringify({ ...corrected, overheads: [row] })]);
+    await assert.rejects(readSettings(db), SettingsValidationError);
+  }
+});
+
+test('overhead row additions and removals audit the list, while edits audit field paths without values', async (t) => {
+  const db = await createTestDatabase();
+  t.after(() => db.close());
+  const credentialId = randomUUID();
+  let snapshot = await readSettings(db);
+  const first = { name: 'Sample subscription', monthlyGbp: 31, startMonth: '', endMonth: '' };
+  let saved = await saveSettings(db, { version: snapshot.version, values: { ...snapshot.values, overheads: [first] } }, credentialId);
+  assert.deepEqual(saved.changedFields, ['overheads']);
+  snapshot = saved;
+  saved = await saveSettings(db, { version: snapshot.version, values: { ...snapshot.values, overheads: [
+    { ...first, monthlyGbp: 62, startMonth: '2026-09', endMonth: '2026-12' },
+  ] } }, credentialId);
+  assert.deepEqual(saved.changedFields, ['overheads.0.monthlyGbp', 'overheads.0.startMonth', 'overheads.0.endMonth']);
+  snapshot = saved;
+  saved = await saveSettings(db, { version: snapshot.version, values: { ...snapshot.values, overheads: [
+    ...snapshot.values.overheads, { ...first, name: 'Sample workspace' },
+  ] } }, credentialId);
+  assert.deepEqual(saved.changedFields, ['overheads']);
+  snapshot = saved;
+  saved = await saveSettings(db, { version: snapshot.version, values: { ...snapshot.values, overheads: [] } }, credentialId);
+  assert.deepEqual(saved.changedFields, ['overheads']);
+  const rows = (await db.query('SELECT field FROM pulse.settings_changes ORDER BY audit_id')).rows;
+  assert.deepEqual(rows, [
+    { field: 'overheads' }, { field: 'overheads.0.monthlyGbp' }, { field: 'overheads.0.startMonth' },
+    { field: 'overheads.0.endMonth' }, { field: 'overheads' }, { field: 'overheads' },
+  ]);
+  assert.ok(!JSON.stringify(rows).includes('Sample subscription'));
+  assert.deepEqual((await readSettings(db)).values.overheads, []);
+});
+
 test('a failed audit insertion rolls back the settings, version and all audit rows', async (t) => {
   const db = await createTestDatabase();
   t.after(() => db.close());
@@ -176,7 +315,7 @@ test('a failed audit insertion rolls back the settings, version and all audit ro
   await db.query(`
     CREATE FUNCTION pulse.reject_second_setting() RETURNS trigger LANGUAGE plpgsql AS $$
     BEGIN
-      IF NEW.field = 'monthlyOverheadsGbp' THEN RAISE EXCEPTION 'Audit insert rejected'; END IF;
+      IF NEW.field = 'overheads' THEN RAISE EXCEPTION 'Audit insert rejected'; END IF;
       RETURN NEW;
     END;
     $$;
@@ -185,7 +324,7 @@ test('a failed audit insertion rolls back the settings, version and all audit ro
   `);
   await assert.rejects(saveSettings(db, {
     version: initial.version,
-    values: { ...initial.values, goalOrdersPerDay: 120, monthlyOverheadsGbp: 1_000 },
+    values: { ...initial.values, goalOrdersPerDay: 120, overheads: [{ name: 'Sample workspace', monthlyGbp: 100, startMonth: '', endMonth: '' }] },
   }, randomUUID()));
   assert.deepEqual(await readSettings(db), initial);
   assert.equal((await db.query('SELECT * FROM pulse.audit_log')).rowCount, 0);
@@ -196,14 +335,14 @@ test('settings reject unknown fields, secret inputs, invalid types, duplicates a
   const defaults = defaultSettings();
   const cases: unknown[] = [
     null, [], {}, { ...defaults, unknown: true }, { ...defaults, goalOrdersPerDay: '100' },
-    { ...defaults, goalOrdersPerDay: 1.5 }, { ...defaults, monthlyOverheadsGbp: -1 },
+    { ...defaults, goalOrdersPerDay: 1.5 }, { ...defaults, overheads: [{ name: 'Sample workspace', monthlyGbp: -1 }] },
     { ...defaults, paymentFeePercent: 101 }, { ...defaults, seasonalMultiplier: 0 },
     { ...defaults, markersPerKit: 2.5 }, { ...defaults, dispatchCutoffUk: '24:00' },
     { ...defaults, cppUkTargetGbp: defaults.cppUkBreakEvenGbp + 1 },
     { ...defaults, cppUsTargetGbp: defaults.cppUsBreakEvenGbp + 1 },
     { ...defaults, goalNetMarginPercent: Number.NaN },
     { ...defaults, blendedMetaTripwireGbp: Infinity },
-    { ...defaults, monthlyOverheadsGbp: 0.001 },
+    { ...defaults, overheads: [{ name: 'Sample workspace', monthlyGbp: 0.001 }] },
     { ...defaults, brand: 'kinda-rare' }, { ...defaults, morningSummaryEnabled: 'true' },
     { ...defaults, creatorRules: { ...defaults.creatorRules, rawNotes: 'not permitted' } },
     { ...defaults, creatorRules: { ...defaults.creatorRules, briefPaymentPercent: 60 } },

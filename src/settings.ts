@@ -1,5 +1,6 @@
 import { appConfig } from './config.js';
 import type { Database } from './db.js';
+import type { OverheadItem } from './overheads.js';
 import { sourceDefinitions } from './sources.js';
 
 export const SETTINGS_KEY_NAMES = Object.freeze(sourceDefinitions.flatMap((source) => [...source.requiredKeys]));
@@ -8,7 +9,7 @@ type KeyName = (typeof SETTINGS_KEY_NAMES)[number];
 export interface Settings {
   goalOrdersPerDay: number;
   goalNetMarginPercent: number;
-  monthlyOverheadsGbp: number | null;
+  overheads: OverheadItem[];
   cppUkBreakEvenGbp: number;
   cppUkTargetGbp: number;
   cppUsBreakEvenGbp: number;
@@ -66,7 +67,7 @@ export function defaultSettings(): Settings {
   return {
     goalOrdersPerDay: 100,
     goalNetMarginPercent: 20,
-    monthlyOverheadsGbp: null,
+    overheads: [],
     cppUkBreakEvenGbp: 18.56,
     cppUkTargetGbp: 15.78,
     cppUsBreakEvenGbp: 22.70,
@@ -152,13 +153,19 @@ function date(value: unknown, field: string): string {
   return value;
 }
 
+function optionalMonth(value: unknown, field: string): string {
+  if (value === undefined || value === '') return '';
+  if (typeof value !== 'string' || !/^\d{4}-(?:0[1-9]|1[0-2])$/.test(value)) return invalid(field);
+  return value;
+}
+
 function cutoff(value: unknown, field: string): string {
   if (typeof value !== 'string' || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value)) return invalid(field);
   return value;
 }
 
-function list<T>(value: unknown, field: string, parse: (row: unknown, path: string) => T, identity: (row: T) => string): T[] {
-  if (!Array.isArray(value) || value.length > 50) return invalid(field);
+function list<T>(value: unknown, field: string, parse: (row: unknown, path: string) => T, identity: (row: T) => string, maxItems = 50): T[] {
+  if (!Array.isArray(value) || value.length > maxItems) return invalid(field);
   const rows = value.map((row, index) => parse(row, `${field}.${index}`));
   const names = rows.map((row) => identity(row).toLowerCase());
   if (new Set(names).size !== names.length) return invalid(field);
@@ -173,14 +180,25 @@ function accountId(value: unknown, field: string, google = false): string {
   return id;
 }
 
-export function validateSettings(input: unknown): Settings {
+function validatedSettings(input: unknown, legacyOverhead = false): Settings {
   const defaults = defaultSettings();
   const value = object(input, Object.keys(defaults), '');
   const rules = object(value.creatorRules, Object.keys(defaults.creatorRules), 'creatorRules');
   const settings: Settings = {
     goalOrdersPerDay: requiredNumber(value.goalOrdersPerDay, 'goalOrdersPerDay', 100_000, true, 1),
     goalNetMarginPercent: requiredNumber(value.goalNetMarginPercent, 'goalNetMarginPercent', 100),
-    monthlyOverheadsGbp: number(value.monthlyOverheadsGbp, 'monthlyOverheadsGbp', 10_000_000, true),
+    overheads: list(value.overheads, 'overheads', (row, path) => {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) return invalid(path);
+      const source = object(row, Object.keys(row), path);
+      const parsed = object({ startMonth: '', endMonth: '', ...source }, ['name', 'monthlyGbp', 'startMonth', 'endMonth'], path);
+      if (typeof parsed.name !== 'string') return invalid(`${path}.name`);
+      const name = parsed.name.trim();
+      if (name.length < 1 || name.length > 60) return invalid(`${path}.name`);
+      const startMonth = optionalMonth(parsed.startMonth, `${path}.startMonth`);
+      const endMonth = optionalMonth(parsed.endMonth, `${path}.endMonth`);
+      if (startMonth && endMonth && endMonth < startMonth) return invalid(`${path}.endMonth`);
+      return { name, monthlyGbp: requiredNumber(parsed.monthlyGbp, `${path}.monthlyGbp`, legacyOverhead ? 10_000_000 : 1_000_000), startMonth, endMonth };
+    }, (row) => row.name),
     cppUkBreakEvenGbp: requiredNumber(value.cppUkBreakEvenGbp, 'cppUkBreakEvenGbp', 100_000),
     cppUkTargetGbp: requiredNumber(value.cppUkTargetGbp, 'cppUkTargetGbp', 100_000),
     cppUsBreakEvenGbp: requiredNumber(value.cppUsBreakEvenGbp, 'cppUsBreakEvenGbp', 100_000),
@@ -211,7 +229,7 @@ export function validateSettings(input: unknown): Settings {
       const parsed = object(row, ['campaignId', 'owner'], path);
       if (typeof parsed.campaignId !== 'string' || !/^\d{1,24}$/.test(parsed.campaignId)) return invalid(`${path}.campaignId`);
       return { campaignId: parsed.campaignId, owner: choice(parsed.owner, `${path}.owner`, ['ours', 'freelancer'] as const) };
-    }, (row) => row.campaignId),
+    }, (row) => row.campaignId, 10_000),
     expectedGoogleCampaigns: list(value.expectedGoogleCampaigns, 'expectedGoogleCampaigns', (row, path) => {
       const parsed = object(row, ['campaignId'], path);
       const campaignId = accountId(parsed.campaignId, `${path}.campaignId`);
@@ -252,8 +270,13 @@ export function validateSettings(input: unknown): Settings {
   return settings;
 }
 
+export function validateSettings(input: unknown): Settings {
+  return validatedSettings(input);
+}
+
 function changedFields(previous: unknown, next: unknown, path = ''): string[] {
   if (JSON.stringify(previous) === JSON.stringify(next)) return [];
+  if (path === 'overheads' && Array.isArray(previous) && Array.isArray(next) && previous.length !== next.length) return [path];
   if ((previous && typeof previous === 'object') || (next && typeof next === 'object')) {
     const before = (previous ?? {}) as Record<string, unknown>;
     const after = (next ?? {}) as Record<string, unknown>;
@@ -261,6 +284,22 @@ function changedFields(previous: unknown, next: unknown, path = ''): string[] {
       .flatMap((key) => changedFields(before[key], after[key], path ? `${path}.${key}` : key));
   }
   return [path];
+}
+
+function storedSettings(input: unknown): Settings {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return validateSettings(input);
+  const stored = input as Record<string, unknown>;
+  if (!Object.hasOwn(stored, 'overheads') && !Object.hasOwn(stored, 'monthlyOverheadsGbp')) return validateSettings(stored);
+  const { monthlyOverheadsGbp, ...values } = stored;
+  const overheads = Object.hasOwn(stored, 'overheads') ? stored.overheads
+    : typeof monthlyOverheadsGbp === 'number' && monthlyOverheadsGbp > 0
+      ? [{ name: 'Overheads', monthlyGbp: monthlyOverheadsGbp, startMonth: '', endMonth: '' }] : [];
+  const row = Array.isArray(overheads) && overheads.length === 1 ? overheads[0] as Record<string, unknown> | null : null;
+  // The retired scalar allowed more than a new item. Preserve its exact converted
+  // shape on reads; every save still uses the new item limit.
+  const legacyOverhead = !!row && typeof row === 'object' && row.name === 'Overheads'
+    && row.startMonth === '' && row.endMonth === '';
+  return validatedSettings({ ...values, overheads }, legacyOverhead);
 }
 
 async function ensureSettings(db: Database): Promise<void> {
@@ -271,7 +310,7 @@ export async function readSettings(db: Database): Promise<SettingsSnapshot> {
   await ensureSettings(db);
   const { rows } = await db.query<{ version: number; values: Settings }>('SELECT version, values FROM pulse.settings WHERE singleton = true');
   if (!rows[0]) throw new Error('Settings are unavailable');
-  return { version: rows[0].version, values: validateSettings(rows[0].values) };
+  return { version: rows[0].version, values: storedSettings(rows[0].values) };
 }
 
 export async function saveSettings(db: Database, input: unknown, credentialId: string): Promise<SettingsSaveResult> {
@@ -286,7 +325,7 @@ export async function saveSettings(db: Database, input: unknown, credentialId: s
     const row = current.rows[0];
     if (!row) throw new Error('Settings are unavailable');
     if (row.version !== version) throw new SettingsConflictError();
-    const fields = changedFields(validateSettings(row.values), values);
+    const fields = changedFields(storedSettings(row.values), values);
     if (fields.length === 0) return { version, values, changedFields: [] };
     await transaction.query('UPDATE pulse.settings SET values = $1, version = version + 1, updated_at = now() WHERE singleton = true', [JSON.stringify(values)]);
     for (const field of fields) {

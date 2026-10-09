@@ -98,7 +98,10 @@ svg.ic{width:1.1em;height:1.1em;fill:none;stroke:currentColor;stroke-width:2;str
 .radar{width:100%;max-width:300px;justify-self:center}
 .radar svg{width:100%;height:auto;display:block;overflow:visible}
 
-.four{display:grid;grid-template-columns:1.35fr 1fr 1fr 1fr;gap:12px} .four .sv.big{font-size:clamp(30px,2.6vw,40px)}
+.four{display:grid;grid-template-columns:1.35fr 1fr 1fr;gap:12px}
+.four [data-k="net"]{grid-row:span 2;justify-content:center}
+.four [data-k="net"] .spark{height:64px;margin-block:16px}
+.four .sv.big{font-size:clamp(30px,2.6vw,40px)}
 .quad{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
 .tile{position:relative;overflow:hidden;background:var(--glass);border:1px solid var(--line);border-radius:var(--r2);padding:14px 16px;display:flex;flex-direction:column;gap:3px;align-items:flex-start;text-align:left;cursor:pointer;min-width:0;color:var(--ink);transition:transform .15s ease,background .15s ease}
 .tile:hover{background:var(--glass-2);transform:translateY(-1px)}
@@ -355,13 +358,13 @@ button.pk{cursor:pointer;font:inherit;font-family:var(--disp);font-size:13px;fon
   .rvm{flex-direction:row;align-items:center;justify-content:space-between;flex-wrap:wrap} .rvm .acts{margin-left:auto}}
 
 /* Application navigation and clearly labelled sample mode. */
-.sample-banner{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 18px;padding:9px 15px;border:1px solid var(--line);border-radius:var(--r3);background:var(--glass);font-size:12px;color:var(--ink-2)}
-.sample-banner strong{text-transform:uppercase;letter-spacing:.09em;color:var(--ink)}
 .sample-section-note{font-size:12px;color:var(--muted)}
 .account-menu{position:relative}.account-menu summary{list-style:none;cursor:pointer}.account-menu summary::-webkit-details-marker{display:none}
 .account-links{position:absolute;right:0;top:45px;display:grid;gap:5px;min-width:180px;padding:12px;background:var(--sheet);border:1px solid var(--line);border-radius:var(--r3);box-shadow:var(--shadow)}
 .account-links a,.account-links button{padding:9px 12px;text-align:left;border:0;border-radius:10px;background:transparent;color:var(--ink);font:inherit;font-size:13px;text-decoration:none;cursor:pointer;white-space:nowrap}
 .account-links a:hover,.account-links button:hover{background:var(--glass-2)}
+.menu-count{display:inline-grid;place-items:center;min-width:20px;height:20px;margin-left:7px;padding:0 5px;border-radius:999px;background:var(--glass-3);color:var(--ink);font-size:11px;font-weight:700}
+.menu-count[hidden]{display:none}
 .app-links{display:flex;flex-wrap:wrap;gap:14px;margin-top:15px;font-size:12px}.app-links a{color:var(--ink-2)}
 #update-status{font-size:11px;color:var(--muted)}
 button[disabled]{cursor:not-allowed}.act[disabled]{opacity:.5}
@@ -372,18 +375,11 @@ button[disabled]{cursor:not-allowed}.act[disabled]{opacity:.5}
 
 /* Keep the mockup layout; source labels stay legible beside live Shopify cards. */
 .sample-label{display:block;color:var(--muted);font-size:10px;margin-top:3px}
-.pulse-watchdogs{position:relative;font-size:11px}
-.pulse-watchdogs>summary{cursor:pointer;font-size:11px}
-.pulse-watchdogs>div{position:absolute;z-index:20;top:100%;left:0;width:min(80vw,480px);max-height:70vh;overflow:auto;padding:16px}
-.pulse-watchdogs p{margin:8px 0}
 #shopify-needs{display:contents}
 #shopify-needs>details{padding:12px}
 #shopify-panels{margin-bottom:12px}
-@media(max-width:760px){#shopify-checks{max-width:100%}.pulse-watchdogs>summary{white-space:normal;padding:6px;font-size:10px}.pulse-watchdogs>div{position:fixed;top:80px;left:5vw;width:90vw}}
 .orders-bars{display:flex;align-items:flex-end;gap:3px;overflow:auto;max-width:100%;height:65px;margin-bottom:8px}
 .order-bar{display:flex;flex-direction:column-reverse;justify-content:flex-start;min-width:8px;flex:1}
 .order-bar i{display:block;width:100%}
 .pulse-need .rhead{grid-template-columns:auto auto minmax(0,1fr) auto}
 @media(max-width:760px){.pulse-need .rhead{grid-template-columns:auto 1fr}.pulse-need .rhead>div{grid-column:1/-1}.pulse-need .rhead .acts{justify-content:flex-start}.pulse-need .rhead .src{width:32px;height:32px}}
-
-#shopify-checks{margin:0 0 12px;position:relative;z-index:10}.pulse-watchdogs>div{background:var(--sky);border:1px solid var(--line);backdrop-filter:blur(20px)}

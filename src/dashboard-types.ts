@@ -103,6 +103,7 @@ export interface HeroPeriod {
   spend: HeroMetric;
   roas: HeroMetric;
   margin: HeroMetric;
+  profit: HeroMetric;
   ukcpo: DialModel & SampleProvenance;
   uscpo: DialModel & SampleProvenance;
   business?: {
@@ -139,4 +140,5 @@ export interface DashboardSnapshot {
   shopify?: import('./shopify/dashboard.js').ShopifyDashboard;
   banner?: string;
   fulfilment?: import('./fulfilment/view.js').Summary;
+  metaCampaigns?: { unconfirmedCount: number };
 }

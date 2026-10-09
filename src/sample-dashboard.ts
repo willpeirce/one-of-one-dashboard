@@ -2,6 +2,7 @@ import type { DashboardSnapshot, DialModel, HeroPeriod, Period } from './dashboa
 import type { Settings } from './settings.js';
 import { addDays, buildHeroRange, validateHeroRange } from './hero-range.js';
 import { sampleDays, SAMPLE_START, SAMPLE_TODAY } from './sample-days.js';
+import { greetingAt } from './greeting.js';
 
 /**
  * Server-only presentation fixtures ported from docs/spec/mockup.html. These are
@@ -4510,6 +4511,7 @@ export function getSampleDashboard(settings?: Settings): DashboardSnapshot {
   const hero = Object.fromEntries(Object.entries(samplePresets).map(([period, range]) => [period, getSampleHero(range.from, range.to, settings)])) as Record<Period, HeroPeriod>;
   const snapshot: DashboardSnapshot = { ...structuredClone(fixture), hero,
     bounds: { min: SAMPLE_START, max: SAMPLE_TODAY, today: SAMPLE_TODAY }, generatedAt: new Date().toISOString() };
+  snapshot.textValues.t0033!.value = greetingAt(new Date());
   const bar = settings?.blendedMetaTripwireGbp;
   if (bar !== undefined) applyBlendedBar(snapshot, bar);
   return snapshot;

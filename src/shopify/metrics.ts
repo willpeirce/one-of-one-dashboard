@@ -58,7 +58,7 @@ export function dailyRows(facts: Facts, today: string): DailyMetrics[] {
   return [...byDay.values()].map(row => ({ ...row, net: row.net / 100 }));
 }
 
-export function shopifyHero(facts: Facts, today: string, from: string, to: string, settings: Settings, name?: string, preparedRows?: DailyMetrics[], adInputs?: AdHeroInputs): HeroPeriod {
+export function shopifyHero(facts: Facts, today: string, from: string, to: string, settings: Settings, name?: string, preparedRows?: DailyMetrics[], adInputs?: AdHeroInputs, now = new Date()): HeroPeriod {
   const data = dataset(facts, today);
   if (from < data.min || to > today) throw new HeroRangeError();
   const rows = preparedRows ?? dailyRows(facts, today);
@@ -104,7 +104,7 @@ export function shopifyHero(facts: Facts, today: string, from: string, to: strin
   hero.cr.ss = !sessionComplete ? 'Sessions unavailable for part of this range' : !marketReliable ? 'Market conversion unknown · geo guard' : `UK ${ukSessions ? (100 * count('UK') / ukSessions).toFixed(1) + '%' : 'unknown'} · US ${usSessions ? (100 * count('US') / usSessions).toFixed(1) + '%' : 'unknown'}`;
   hero.cr.d.why = `Orders divided by clean Shopify sessions. ${hero.cr.ss}. Only the specified /pages/inside desktop/Google/no-cart phantom traffic is removed. ${sessions.some(s => s.provenance === 'routine_daily') ? 'Routine daily fallback: conversion is daily, not live.' : ''}`;
   const inputs=adInputs ?? {spend:facts.mode==='sample'?sampleSpend(from,to):{mode:'live' as const,rows:[],sources:[],days:[]},costs:[],estimates:[]};
-  applySpend(hero,data.orders,settings,today,inputs);
+  applySpend(hero,data.orders,settings,today,{ ...inputs, now: inputs.now ?? now });
   const periodEmail = orders.filter(o => emailFlow(o) !== null);
   const refill = orders.filter(isRefill);
   const emailNet = data.orders.filter(o => emailFlow(o) !== null).reduce((n, o) => n + orderNet(o, from, to), 0) / 100;

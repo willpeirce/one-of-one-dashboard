@@ -26,6 +26,7 @@ const assets = [
   ['src/styles.css', 'styles.css'],
   ['src/dashboard.css', 'dashboard.css'],
   ['src/settings.css', 'settings.css'],
+  ['src/pull-refresh.css', 'pull-refresh.css'],
   ['src/fulfilment/style.css', 'fulfilment.css'],
   ['docs/spec/logo.png', 'logo.png'],
   ['public/fonts.css', 'fonts.css'],

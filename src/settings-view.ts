@@ -1,5 +1,8 @@
 import { SETTINGS_KEY_NAMES, type SettingsSnapshot } from './settings.js';
 import type { ShopifyCost } from './shopify/costs.js';
+import { ukToday } from './hero-range.js';
+import { monthlyOverheadTotal } from './overheads.js';
+import type { MetaCampaignView } from './ad-spend/model.js';
 
 function escapeHtml(value: string | number): string {
   return String(value).replace(/[&<>"']/g, (character) => ({
@@ -10,13 +13,14 @@ function escapeHtml(value: string | number): string {
 type Field = {
   key: string;
   label: string;
-  type?: 'text' | 'number' | 'time' | 'date' | 'checkbox';
+  type?: 'text' | 'number' | 'time' | 'date' | 'month' | 'checkbox';
   nullable?: boolean;
   optional?: boolean;
   integer?: boolean;
   step?: string;
   min?: number;
   max?: number;
+  maxlength?: number;
   hint?: string;
   options?: readonly { value: string; label: string }[];
 };
@@ -33,7 +37,7 @@ function field(definition: Field, value: unknown, prefix = ''): string {
   }
   const input = definition.options
     ? `<select ${attributes}>${definition.options.map((option) => `<option value="${escapeHtml(option.value)}"${option.value === value ? ' selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}</select>`
-    : `<input ${attributes} type="${type}" value="${escapeHtml(value === null || value === undefined ? '' : String(value))}"${definition.nullable ? ' data-nullable="true" placeholder="Not set"' : definition.optional ? '' : ' required'}${type === 'number' ? ` min="${definition.min ?? 0}" step="${definition.step ?? (definition.integer ? '1' : '0.01')}"${definition.max === undefined ? '' : ` max="${definition.max}"`}` : ''}${type === 'text' ? ' maxlength="160" autocomplete="off"' : ''}>`;
+    : `<input ${attributes} type="${type}" value="${escapeHtml(value === null || value === undefined ? '' : String(value))}"${definition.nullable ? ' data-nullable="true" placeholder="Not set"' : definition.optional ? '' : ' required'}${type === 'number' ? ` min="${definition.min ?? 0}" step="${definition.step ?? (definition.integer ? '1' : '0.01')}"${definition.max === undefined ? '' : ` max="${definition.max}"`}` : ''}${type === 'text' ? ` maxlength="${definition.maxlength ?? 160}" autocomplete="off"` : ''}${type === 'month' ? ' data-month-input pattern="[0-9]{4}-(0[1-9]|1[0-2])" maxlength="7" placeholder="YYYY-MM" autocomplete="off"' : ''}>`;
   return `<div class="setting-field"><label for="${id}">${escapeHtml(definition.label)}</label>${input}${hint}</div>`;
 }
 
@@ -41,15 +45,16 @@ function fields(definitions: readonly Field[], values: object, prefix = ''): str
   return definitions.map((definition) => field(definition, (values as Record<string, unknown>)[definition.key], prefix)).join('');
 }
 
-function collection(key: string, label: string, definitions: readonly Field[], rows: readonly Record<string, unknown>[], note: string, costs?: Record<string, string>): string {
+function collection(key: string, label: string, definitions: readonly Field[], rows: readonly object[], note: string, costs?: Record<string, string>, options: { maxRows?: number; footer?: string; heading?: string } = {}): string {
   const row = (value: Record<string, unknown>, index: number | string) => `<fieldset class="setting-row"><legend>${escapeHtml(label)} <span data-row-number>${typeof index === 'number' ? index + 1 : ''}</span></legend><div class="setting-row-fields">${fields(definitions, value, `${key}.${index}`)}</div>${costs ? `<p class="setting-help" data-shopify-cost>${escapeHtml(costs[String(value.sku)] ?? 'Not in Shopify')}</p>` : ''}<button class="btn setting-remove" type="button" data-remove-row aria-label="Remove ${escapeHtml(label.toLowerCase())}">Remove</button></fieldset>`;
-  return `<section class="setting-collection" data-settings-list="${key}" aria-labelledby="${key}-heading">
-    <h3 id="${key}-heading">${escapeHtml(label)} <span class="setting-count" data-list-count>${rows.length}</span></h3>
+  return `<section class="setting-collection" data-settings-list="${key}"${options.maxRows === undefined ? '' : ` data-list-max="${options.maxRows}"`} aria-labelledby="${key}-heading">
+    <h3 id="${key}-heading">${escapeHtml(options.heading ?? label)} <span class="setting-count" data-list-count>${rows.length}</span></h3>
     <p class="setting-help">${escapeHtml(note)}</p>
-    <div data-list-rows${costs ? ` data-shopify-cost-map="${escapeHtml(JSON.stringify(costs))}"` : ''}>${rows.map((value, index) => row(value, index)).join('')}</div>
+    <div data-list-rows${costs ? ` data-shopify-cost-map="${escapeHtml(JSON.stringify(costs))}"` : ''}>${rows.map((value, index) => row(value as Record<string, unknown>, index)).join('')}</div>
     <p class="setting-empty" data-list-empty${rows.length ? ' hidden' : ''}>None added yet.</p>
     <template data-list-template>${row({}, '__index__')}</template>
-    <button class="btn setting-add" type="button" data-add-row>Add ${escapeHtml(label.toLowerCase())}</button>
+    <button class="btn setting-add" type="button" data-add-row${options.maxRows !== undefined && rows.length >= options.maxRows ? ' disabled' : ''}>Add ${escapeHtml(label.toLowerCase())}</button>
+    ${options.footer ?? ''}
   </section>`;
 }
 
@@ -60,7 +65,24 @@ function section(title: string, description: string, content: string, open = fal
 const number = (key: string, label: string, extra: Partial<Field> = {}): Field => ({ key, label, type: 'number', ...extra });
 const checkbox = (key: string, label: string): Field => ({ key, label, type: 'checkbox' });
 
-export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly ShopifyCost[] = [], mode: 'sample' | 'live' = 'sample'): string {
+function campaignOwners(campaigns: readonly MetaCampaignView[]): string {
+  const newest = [...campaigns].sort((a, b) => Date.parse(b.createdAt ?? b.firstSeen) - Date.parse(a.createdAt ?? a.firstSeen));
+  const date = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', day: 'numeric', month: 'short', year: 'numeric' });
+  const row = (campaign: MetaCampaignView) => {
+    const id = `meta-owner-${campaign.id}`;
+    const created = campaign.createdAt ? `<time datetime="${escapeHtml(campaign.createdAt)}">${escapeHtml(date.format(new Date(campaign.createdAt)))}</time>` : 'not provided';
+    return `<div class="setting-campaign" data-meta-campaign="${escapeHtml(campaign.id)}" data-saved-owner="${campaign.owner}" data-confirmed="${campaign.confirmed}">
+      <div class="setting-campaign-detail"><h4>${escapeHtml(campaign.name)}</h4><p class="setting-help">${escapeHtml(campaign.status.replaceAll('_', ' ').toLowerCase())} · Created ${created} · ${campaign.mode === 'sample' ? 'sample data' : 'live'}</p>${campaign.confirmed ? '' : '<span class="setting-campaign-new" data-campaign-new>New, check owner</span>'}</div>
+      <div class="setting-field"><label for="${escapeHtml(id)}">Owner</label><select id="${escapeHtml(id)}" data-campaign-owner aria-label="Owner for ${escapeHtml(campaign.name)}"><option value="ours"${campaign.owner === 'ours' ? ' selected' : ''}>Ours</option><option value="freelancer"${campaign.owner === 'freelancer' ? ' selected' : ''}>Freelancer</option></select></div>
+      <button class="btn" type="button" data-save-campaign aria-label="Save owner for ${escapeHtml(campaign.name)}">Save</button>
+    </div>`;
+  };
+  const active = newest.filter((campaign) => campaign.status === 'ACTIVE');
+  const inactive = newest.filter((campaign) => campaign.status !== 'ACTIVE');
+  return `<section class="setting-collection" aria-labelledby="metaOwners-heading"><h3 id="metaOwners-heading">Meta campaigns <span class="setting-count">${campaigns.length}</span></h3><p class="setting-help">Campaigns appear automatically. New campaigns count as Ours until you check the owner. Save each row to confirm it; this saves a local rule and does not change Meta.</p><div class="setting-campaigns">${active.map(row).join('')}</div>${inactive.length ? `<details class="setting-campaign-inactive"><summary>Show ${inactive.length} inactive</summary><div class="setting-campaigns">${inactive.map(row).join('')}</div></details>` : ''}${campaigns.length ? '' : '<p class="setting-empty">Campaigns will appear after the next Meta ad spend sync.</p>'}</section>`;
+}
+
+export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly ShopifyCost[] = [], mode: 'sample' | 'live' = 'sample', now = new Date(), metaCampaigns: readonly MetaCampaignView[] = []): string {
   const values = snapshot.values;
   const costLabels: Record<string, string> = Object.create(null);
   for (const c of shopifyCosts) if (c.sku) {
@@ -71,9 +93,16 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
   const goals = section('Goals & overheads', 'The targets behind your business.', `<div class="settings-grid">${fields([
     number('goalOrdersPerDay', 'Order goal per day', { integer: true, min: 1 }),
     number('goalNetMarginPercent', 'Net margin goal (%)', { max: 100 }),
-    number('monthlyOverheadsGbp', 'Monthly overheads (£)', { nullable: true }),
     number('paymentFeePercent', 'Payment fee rate (%)', { nullable: true, max: 100 }),
-  ], values)}</div>`, true);
+  ], values)}</div>${collection('overheads', 'Overhead', [
+    { key: 'name', label: 'Name', maxlength: 60 },
+    number('monthlyGbp', 'Monthly amount (£)', { max: 1_000_000 }),
+    { key: 'startMonth', label: 'Start month (optional)', type: 'month', optional: true },
+    { key: 'endMonth', label: 'End month (optional)', type: 'month', optional: true },
+  ], values.overheads, 'Add each fixed monthly cost as its own item. Blank months apply to all months.', undefined, {
+    heading: 'Overheads', maxRows: 50,
+    footer: `<p class="setting-overheads-total" data-overheads-total>Total this month: £${monthlyOverheadTotal(values.overheads, ukToday(now).slice(0, 7)).toFixed(2)}</p><p class="setting-help">Each item is spread evenly over the days of its month.</p>`,
+  })}`, true);
   const advertising = section('Cost per purchase', 'UK and US targets, plus the blended Meta tripwire.', `<div class="settings-grid">${fields([
     number('cppUkBreakEvenGbp', 'UK break-even cost (£)'), number('cppUkTargetGbp', 'UK target cost (£)', { hint: 'At or below the UK break-even cost.' }),
     number('cppUsBreakEvenGbp', 'US break-even cost (£)'), number('cppUsTargetGbp', 'US target cost (£)', { hint: 'At or below the US break-even cost.' }),
@@ -101,10 +130,7 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     {key:'googleCustomerId',label:'Google customer ID',optional:true,hint:'Dashes are removed when saved.'},
     {key:'googleLoginCustomerId',label:'Google login customer ID (manager, optional)',optional:true},
     {key:'tiktokAdvertiserId',label:'TikTok advertiser ID',optional:true},
-  ], values)}</div>${collection('metaOwners', 'Meta campaign', [
-    { key: 'campaignId', label: 'Campaign ID' },
-    { key: 'owner', label: 'Owner', options: [{ value: 'ours', label: 'Ours' }, { value: 'freelancer', label: 'Freelancer' }] },
-  ], values.metaOwners, 'Map each campaign to its owner. This saves a local rule; it does not change Meta.')}${collection('expectedGoogleCampaigns', 'Google campaign', [
+  ], values)}</div>${campaignOwners(metaCampaigns)}${collection('expectedGoogleCampaigns', 'Google campaign', [
     { key: 'campaignId', label: 'Campaign ID' },
   ], values.expectedGoogleCampaigns, 'Campaign IDs expected to report on complete days. This does not enable a campaign.')}`);
   const creators = section('Creator negotiation', 'Your rules for agreeing an asset and its usage.', `<div class="settings-grid">${fields([
@@ -156,8 +182,9 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
   <main class="wrap settings-wrap" id="main">
     <div class="settings-intro"><p class="eyebrow">Your business, your rules</p><h1>Settings</h1><p>Real business settings, saved in Pulse. Dashboard figures remain labelled sample data while source feeds are being built.</p></div>
     <form id="settings-form" data-version="${snapshot.version}" method="post" action="/api/settings">
+      <input type="hidden" id="saved-meta-owner-rules" value="${escapeHtml(JSON.stringify(values.metaOwners))}">
       <fieldset id="settings-fields"><legend class="settings-sr-only">Business settings</legend>${goals}${advertising}${costs}${stock}${campaigns}${creators}${dates}${preferences}</fieldset>
-      <div class="settings-savebar glass"><div><p id="settings-message" role="status" aria-live="polite">Changes save only when you choose Save settings.</p><p class="setting-help">Unknown costs can stay blank. Saving adds an audit entry.</p></div><button class="btn settings-save" id="settings-save" type="submit" disabled>Save settings</button></div>
+      <div class="settings-savebar glass"><div><p id="settings-message" role="status" aria-live="polite">Choose Save settings for these fields, or Save beside a campaign owner.</p><p class="setting-help">Unknown costs can stay blank. Saving adds an audit entry.</p></div><button class="btn settings-save" id="settings-save" type="submit" disabled>Save settings</button></div>
     </form>
     <p id="auth-message" role="status" aria-live="polite"></p>
     <noscript><p>Enable JavaScript to save settings or sign out.</p></noscript>

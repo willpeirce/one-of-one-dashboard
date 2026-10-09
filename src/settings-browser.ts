@@ -1,5 +1,23 @@
+import { ukToday } from './hero-range.js';
+import { monthlyOverheadTotal, type OverheadItem } from './overheads.js';
+import { installPullToRefresh, reloadPageForRefresh } from './pull-refresh.js';
+
 type SettingInput = HTMLInputElement | HTMLSelectElement;
 type JsonObject = { [key: string]: unknown };
+
+function enhanceMonthInputs(root: HTMLElement | DocumentFragment): void {
+  root.querySelectorAll<HTMLInputElement>('[data-month-input]').forEach((input) => {
+    const probe = document.createElement('input');
+    probe.type = 'month';
+    probe.value = 'not-a-month';
+    if (probe.type !== 'month' || probe.value !== '') {
+      input.type = 'text';
+      input.placeholder = 'YYYY-MM';
+      input.pattern = '[0-9]{4}-(0[1-9]|1[0-2])';
+      input.maxLength = 7;
+    }
+  });
+}
 
 function inputValue(input: SettingInput): string | number | boolean | null {
   if (input instanceof HTMLInputElement && input.type === 'checkbox') return input.checked;
@@ -42,8 +60,33 @@ function initializeSettings(form: HTMLFormElement): void {
   const fieldset = document.querySelector<HTMLFieldSetElement>('#settings-fields')!;
   const message = document.querySelector<HTMLElement>('#settings-message')!;
   const lists = Array.from(form.querySelectorAll<HTMLElement>('[data-settings-list]'));
+  const campaignRows = Array.from(form.querySelectorAll<HTMLElement>('[data-meta-campaign]'));
+  const ownerRules = form.querySelector<HTMLInputElement>('#saved-meta-owner-rules')!;
+  let savedMetaOwners = JSON.parse(ownerRules.value) as { campaignId: string; owner: 'ours' | 'freelancer' }[];
+  let savedValues: JsonObject;
   let pending = false;
   let dirty = false;
+  let mainDirty = false;
+
+  function updateDirty(): void {
+    dirty = mainDirty || campaignRows.some((row) => row.querySelector<HTMLSelectElement>('[data-campaign-owner]')!.value !== row.dataset.savedOwner);
+  }
+  function showOverheadsTotal(): void {
+    const list = form.querySelector<HTMLElement>('[data-settings-list="overheads"]');
+    const total = list?.querySelector<HTMLElement>('[data-overheads-total]');
+    if (!list || !total) return;
+    const items = Array.from(list.querySelectorAll<HTMLElement>('[data-list-rows] > .setting-row')).flatMap((row): OverheadItem[] => {
+      const value = (key: string) => row.querySelector<HTMLInputElement>(`[data-setting-path$=".${key}"]`)?.value ?? '';
+      const monthlyGbp = Number(value('monthlyGbp'));
+      const startMonth = value('startMonth');
+      const endMonth = value('endMonth');
+      const monthIsValid = (month: string) => month === '' || /^[0-9]{4}-(0[1-9]|1[0-2])$/.test(month);
+      if (!Number.isFinite(monthlyGbp) || monthlyGbp < 0 || monthlyGbp > 1_000_000 || !monthIsValid(startMonth) || !monthIsValid(endMonth)) return [];
+      return [{ name: value('name'), monthlyGbp, startMonth, endMonth }];
+    });
+    total.textContent = `Total this month: £${monthlyOverheadTotal(items, ukToday().slice(0, 7)).toFixed(2)}`;
+  }
+
   function showShopifyCosts(): void {
     const list = form.querySelector<HTMLElement>('[data-shopify-cost-map]');
     if (!list) return;
@@ -55,11 +98,13 @@ function initializeSettings(form: HTMLFormElement): void {
     }
   }
 
-  function markDirty(): void {
+  function markDirty(event?: Event): void {
     if (pending) return;
-    dirty = true;
+    if (!(event?.target instanceof Element && event.target.closest('[data-meta-campaign]'))) mainDirty = true;
+    updateDirty();
     showShopifyCosts();
-    message.textContent = 'You have unsaved changes.';
+    showOverheadsTotal();
+    message.textContent = dirty ? 'You have unsaved changes.' : 'All changes saved.';
     message.removeAttribute('data-error');
   }
 
@@ -77,15 +122,21 @@ function initializeSettings(form: HTMLFormElement): void {
         input.id = `setting-${path.replaceAll('.', '-')}`;
         row.querySelector<HTMLLabelElement>(`label[for="${oldId}"]`)?.setAttribute('for', input.id);
       });
+      enhanceMonthInputs(row);
     });
     list.querySelector('[data-list-count]')!.textContent = String(rows.length);
     list.querySelector<HTMLElement>('[data-list-empty]')!.hidden = rows.length > 0;
+    const maxRows = list.dataset.listMax;
+    if (maxRows) list.querySelector<HTMLButtonElement>('[data-add-row]')!.disabled = rows.length >= Number(maxRows);
   }
 
-  function addRow(list: HTMLElement): void {
+  function addRow(list: HTMLElement): boolean {
+    const maxRows = list.dataset.listMax;
+    if (maxRows && list.querySelector('[data-list-rows]')!.children.length >= Number(maxRows)) return false;
     const template = list.querySelector<HTMLTemplateElement>('[data-list-template]')!;
     list.querySelector('[data-list-rows]')!.append(template.content.cloneNode(true));
     numberRows(list);
+    return true;
   }
 
   form.addEventListener('click', (event) => {
@@ -93,9 +144,23 @@ function initializeSettings(form: HTMLFormElement): void {
     if (!(target instanceof Element)) return;
     const add = target.closest<HTMLButtonElement>('[data-add-row]');
     const remove = target.closest<HTMLButtonElement>('[data-remove-row]');
-    if (add) {
+    const campaignSave = target.closest<HTMLButtonElement>('[data-save-campaign]');
+    if (campaignSave) {
+      if (pending) return;
+      const row = campaignSave.closest<HTMLElement>('[data-meta-campaign]')!;
+      const campaignId = row.dataset.metaCampaign!;
+      const owner = row.querySelector<HTMLSelectElement>('[data-campaign-owner]')!.value;
+      const values = structuredClone(savedValues);
+      const owners = structuredClone(savedMetaOwners);
+      const existing = owners.find((rule) => rule.campaignId === campaignId);
+      if (owner !== 'ours' && owner !== 'freelancer') return;
+      if (existing) existing.owner = owner;
+      else owners.push({ campaignId, owner });
+      values.metaOwners = owners;
+      saveValues(values, row);
+    } else if (add) {
       const list = add.closest<HTMLElement>('[data-settings-list]')!;
-      addRow(list);
+      if (!addRow(list)) return;
       list.querySelector<HTMLElement>('[data-list-rows] > .setting-row:last-child input, [data-list-rows] > .setting-row:last-child select')?.focus();
       markDirty();
     } else if (remove) {
@@ -108,7 +173,7 @@ function initializeSettings(form: HTMLFormElement): void {
   });
   form.addEventListener('input', (event) => {
     if (event.target instanceof HTMLElement) event.target.removeAttribute('aria-invalid');
-    markDirty();
+    markDirty(event);
   });
   form.addEventListener('change', markDirty);
   form.addEventListener('invalid', (event) => {
@@ -116,7 +181,8 @@ function initializeSettings(form: HTMLFormElement): void {
   }, true);
 
   function readValues(): JsonObject {
-    const values: JsonObject = {};
+    // Only each campaign's Save confirms its owner. Keep rules for missing campaigns too.
+    const values: JsonObject = { metaOwners: structuredClone(savedMetaOwners) };
     form.querySelectorAll<SettingInput>('[data-setting-path]').forEach((input) => {
       if (!input.closest('[data-settings-list]')) setPath(values, input.dataset.settingPath!, inputValue(input));
     });
@@ -146,17 +212,16 @@ function initializeSettings(form: HTMLFormElement): void {
       else input.value = value === null || value === undefined ? '' : String(value);
     });
     showShopifyCosts();
+    showOverheadsTotal();
   }
 
-  form.addEventListener('submit', (event) => {
-    event.preventDefault();
+  function saveValues(values: JsonObject, campaign?: HTMLElement): void {
     if (pending) return;
-    const values = readValues();
     const version = Number(form.dataset.version);
     pending = true;
     save.disabled = true;
     fieldset.disabled = true;
-    message.textContent = 'Saving settings…';
+    message.textContent = campaign ? 'Saving campaign owner…' : 'Saving settings…';
     message.removeAttribute('data-error');
     form.querySelectorAll('[aria-invalid]').forEach((input) => input.removeAttribute('aria-invalid'));
     void (async () => {
@@ -185,9 +250,22 @@ function initializeSettings(form: HTMLFormElement): void {
         } else {
           const result = await response.json() as { version: number; values: JsonObject };
           form.dataset.version = String(result.version);
-          showValues(result.values);
-          dirty = false;
-          message.textContent = 'Settings saved.';
+          savedValues = structuredClone(result.values);
+          savedMetaOwners = structuredClone(result.values.metaOwners) as typeof savedMetaOwners;
+          ownerRules.value = JSON.stringify(savedMetaOwners);
+          if (campaign) {
+            const owner = savedMetaOwners.find((rule) => rule.campaignId === campaign.dataset.metaCampaign)!.owner;
+            campaign.dataset.savedOwner = owner;
+            campaign.dataset.confirmed = 'true';
+            campaign.querySelector('[data-campaign-new]')?.remove();
+          } else {
+            showValues(result.values);
+            mainDirty = false;
+          }
+          updateDirty();
+          message.textContent = campaign
+            ? dirty ? 'Campaign owner saved. Your other edits are still here.' : 'Campaign owner saved.'
+            : dirty ? 'Settings saved. Save each changed campaign owner.' : 'Settings saved.';
           return;
         }
         message.dataset.error = 'true';
@@ -200,6 +278,11 @@ function initializeSettings(form: HTMLFormElement): void {
         fieldset.disabled = false;
       }
     })();
+  }
+
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    saveValues(readValues());
   });
 
   window.addEventListener('beforeunload', (event) => {
@@ -207,6 +290,19 @@ function initializeSettings(form: HTMLFormElement): void {
     event.preventDefault();
   });
 
+  enhanceMonthInputs(form);
+  lists.forEach((list) => {
+    enhanceMonthInputs(list.querySelector<HTMLTemplateElement>('[data-list-template]')!.content);
+    numberRows(list);
+  });
+  showOverheadsTotal();
+  savedValues = readValues();
+  const canRefresh = () => dirty || pending ? 'Save or discard your changes first' : true;
+  installPullToRefresh({
+    status: message,
+    refresh: (signal) => reloadPageForRefresh(signal, canRefresh),
+    canRefresh,
+  });
   save.disabled = false;
 }
 

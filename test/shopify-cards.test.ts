@@ -223,8 +223,10 @@ test('integrated live dashboard has no example Shopify values; mode changes cann
   const store=new ShopifyStore(db,'sample');await store.orders([(await fixture('order')).data.order],now);
   assert.equal((await new ShopifyStore(db,'live').facts()).records.length,0);
   const o=await order();o.paidAt=now.toISOString();o.fulfillmentStatus='UNFULFILLED';
-  const snap=await applyShopifyDashboard(getSampleDashboard(),db,facts([o]),settings,[],now);
+  const snap=await applyShopifyDashboard(getSampleDashboard(),db,facts([o]),settings,[],now,undefined,new Date('2026-10-09T17:00:00Z'));
   assert.equal(snap.textValues.t0026!.value, 'Wed 30 Sept, 13:00 UK');
+  assert.equal(snap.textValues.t0033!.value, 'Evening, Will.');
+  assert.equal(snap.textValues.t0035!.value, '');
   assert.match(snap.hero.today.sub1, /^1 order so far\./);
   assert.equal(snap.hero.today.net.mode,'live');assert.equal(snap.hero.today.net.n,66.62);assert.equal(snap.hero.today.spend.unavailable,true);
   assert.equal(snap.widgets.w037!.mode,'live');assert.match(snap.banner!,/Ad spend uses separately labelled source connections/);

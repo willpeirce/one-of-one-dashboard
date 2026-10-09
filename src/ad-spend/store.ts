@@ -9,8 +9,85 @@ import {
   microsDecimal,
   ownerFor,
   type AdSource,
+  type MetaCampaign,
+  type MetaCampaignView,
   type SpendRow,
 } from './model.js';
+export async function saveMetaCampaigns(
+  db: Database,
+  account: string,
+  campaigns: MetaCampaign[],
+  now: Date,
+): Promise<void> {
+  if (!campaigns.length) return;
+  const rows = [...new Map(campaigns.map((campaign) => [campaign.id, campaign])).values()];
+  await db.query(
+    `INSERT INTO pulse.meta_campaigns(campaign_id,account_id,name,status,created_at,first_seen,last_seen)
+    SELECT r.id,$1,r.name,r.status,r.created_at,$3,$3
+    FROM jsonb_to_recordset($2::jsonb) AS r(id text,name text,status text,created_at timestamptz)
+    ON CONFLICT (campaign_id) DO UPDATE SET account_id=EXCLUDED.account_id,name=EXCLUDED.name,
+      status=EXCLUDED.status,created_at=EXCLUDED.created_at,last_seen=EXCLUDED.last_seen`,
+    [
+      account,
+      JSON.stringify(rows.map(({ createdAt, ...row }) => ({ ...row, created_at: createdAt }))),
+      now,
+    ],
+  );
+}
+
+/** Invented source-shaped campaigns; only these sample ids can pick up saved local rules. */
+export function sampleMetaCampaigns(settings: Pick<Settings, 'metaOwners'>): MetaCampaignView[] {
+  const campaigns: Omit<MetaCampaignView, 'firstSeen' | 'lastSeen' | 'mode'>[] = [
+    {
+      id: '900000000601', name: 'Invented Aurora discovery', status: 'ACTIVE',
+      createdAt: '2026-09-01T08:00:00Z', owner: 'ours', confirmed: true,
+    },
+    {
+      id: '900000000602', name: 'Invented Cedar retargeting', status: 'PAUSED',
+      createdAt: '2026-09-12T09:00:00Z', owner: 'freelancer', confirmed: true,
+    },
+    {
+      id: '900000000603', name: 'Invented Lumen launch', status: 'ACTIVE',
+      createdAt: '2026-09-29T10:00:00Z', owner: 'ours', confirmed: false,
+    },
+  ];
+  return campaigns.map((campaign) => {
+    const saved = settings.metaOwners.find((rule) => rule.campaignId === campaign.id);
+    return {
+      ...campaign,
+      firstSeen: '2026-09-30T12:00:00.000Z', lastSeen: '2026-09-30T12:00:00.000Z',
+      owner: saved?.owner ?? campaign.owner,
+      confirmed: !!saved || campaign.confirmed,
+      mode: 'sample' as const,
+    };
+  }).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function readMetaCampaigns(
+  db: Database,
+  settings: Settings,
+  env: NodeJS.ProcessEnv,
+): Promise<MetaCampaignView[]> {
+  const account = settings.metaAdAccountId,
+    live = !!account && getSourceStates(env).find((state) => state.source === 'meta')!.mode === 'live';
+  if (!live) return sampleMetaCampaigns(settings);
+  const result = await db.query<{
+    campaign_id: string; name: string; status: string;
+    created_at: Date | string; first_seen: Date | string; last_seen: Date | string;
+  }>(
+    `SELECT campaign_id,name,status,created_at,first_seen,last_seen FROM pulse.meta_campaigns
+    WHERE account_id=$1 ORDER BY created_at DESC,campaign_id`,
+    [account],
+  );
+  return result.rows.map((row) => ({
+    id: row.campaign_id, name: row.name, status: row.status,
+    createdAt: new Date(row.created_at).toISOString(),
+    firstSeen: new Date(row.first_seen).toISOString(), lastSeen: new Date(row.last_seen).toISOString(),
+    owner: ownerFor('meta', row.campaign_id, settings),
+    confirmed: settings.metaOwners.some((rule) => rule.campaignId === row.campaign_id),
+    mode: 'live',
+  }));
+}
 export interface SpendJob {
   source: AdSource;
   account_id: string;
@@ -99,7 +176,7 @@ export async function spendFacts(
   from: string,
   to: string,
 ): Promise<SpendFacts> {
-  if (mode === 'sample') return sampleSpend(from, to);
+  if (mode === 'sample') return sampleSpend(from, to, settings);
   const states = getSourceStates(env),
     jobs = await readJobs(db);
   const sources = adSources.map((source) => {
@@ -157,9 +234,14 @@ export async function spendFacts(
   return { mode, rows, sources, days };
 }
 /** Invented daily spend, only returned alongside sample Shopify facts. */
-export function sampleSpend(from: string, to: string): SpendFacts {
+export function sampleSpend(
+  from: string,
+  to: string,
+  settings: Pick<Settings, 'metaOwners'> = { metaOwners: [] },
+): SpendFacts {
   const rows: SpendRow[] = [],
     days: SpendFacts['days'] = [];
+  const campaigns = sampleMetaCampaigns(settings);
   for (let day = from; day <= to; day = addDays(day, 1)) {
     for (const [source, owner, market, amount] of [
       ['meta', 'ours', 'uk', '48.20'],
@@ -169,20 +251,24 @@ export function sampleSpend(from: string, to: string): SpendFacts {
       ['google-ads', 'freelancer', 'uk', '70.00'],
       ['google-ads', 'freelancer', 'us', '30.00'],
       ['tiktok', 'freelancer', 'uk', '12.40'],
-    ] as const)
+    ] as const) {
+      const campaign = source === 'meta'
+        ? campaigns.find((row) => row.id === (owner === 'ours' ? '900000000601' : '900000000602'))!
+        : null;
       rows.push({
         source,
         accountId: `sample-${source}-account`,
-        campaignId: `sample-${source}-${owner}-${market}`,
-        campaignName: `Invented ${source} ${market.toUpperCase()}`,
+        campaignId: campaign?.id ?? `sample-${source}-${owner}-${market}`,
+        campaignName: campaign?.name ?? `Invented ${source} ${market.toUpperCase()}`,
         adSetId: source === 'meta' ? `sample-adset-${owner}-${market}` : null,
         adSetName: source === 'meta' ? 'Invented ad set' : null,
         market,
-        owner,
+        owner: campaign?.owner ?? owner,
         day,
         amount: microsDecimal(decimalMicros(amount)),
         currency: 'GBP',
       });
+    }
     for (const source of adSources) days.push({ source, day });
   }
   return {

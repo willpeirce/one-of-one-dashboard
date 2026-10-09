@@ -5,7 +5,7 @@ import { getSourceStates } from '../sources.js';
 import { AdError, accountFor, adSources, type AdSource } from './model.js';
 import { liveReader, type SpendReader } from './clients.js';
 import type { AdTransportOptions } from './http.js';
-import { readJobs, saveSpend } from './store.js';
+import { readJobs, saveMetaCampaigns, saveSpend } from './store.js';
 export interface SpendWorkerOptions extends AdTransportOptions {
   clock?: () => Date;
   readers?: Partial<Record<AdSource, SpendReader>>;
@@ -101,6 +101,8 @@ export class SpendWorker {
       });
     this.readers.set(readerScope, reader);
     try {
+      if (source === 'meta' && reader.readCampaigns)
+        await saveMetaCampaigns(this.db, account, await reader.readCampaigns(account), now);
       const from = addDays(today, -2),
         rows = await reader.read(account, from, today, settings);
       await saveSpend(this.db, source, account, from, today, rows, now);

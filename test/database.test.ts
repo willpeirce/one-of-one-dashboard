@@ -90,7 +90,7 @@ test('all migrations leave public empty, repeat without losing rows and reject c
   await Promise.all([migrate(db), migrate(db)]);
   await assertPublicHasNoTables(db);
   assert.equal((await db.query('SELECT * FROM pulse.audit_log')).rows.length, 1);
-  assert.equal((await db.query('SELECT * FROM pulse_private.schema_migrations')).rows.length, 10);
+  assert.equal((await db.query('SELECT * FROM pulse_private.schema_migrations')).rows.length, 12);
   await db.query("UPDATE pulse_private.schema_migrations SET checksum = 'changed'");
   await assert.rejects(migrate(db), (error: unknown) => {
     assert.ok(error instanceof MigrationError);
@@ -113,7 +113,7 @@ test('010 discovers a renamed audit field CHECK and preserves existing audit row
   const originalName = fieldCheck[0]!.conname.replaceAll('"', '""');
   await db.query(`
     ALTER TABLE pulse.settings_changes RENAME CONSTRAINT "${originalName}" TO invented_settings_fields;
-    DELETE FROM pulse_private.schema_migrations WHERE name LIKE '010_%';
+    DELETE FROM pulse_private.schema_migrations WHERE name LIKE '010_%' OR name LIKE '011_%';
     WITH entry AS (
       INSERT INTO pulse.audit_log (event) VALUES ('settings_changed') RETURNING id
     )
@@ -128,7 +128,7 @@ test('010 discovers a renamed audit field CHECK and preserves existing audit row
   await migrate(db);
 
   assert.deepEqual((await db.query(`
-    SELECT * FROM pulse_private.schema_migrations WHERE name NOT LIKE '010_%' ORDER BY name
+    SELECT * FROM pulse_private.schema_migrations WHERE name NOT LIKE '010_%' AND name NOT LIKE '011_%' ORDER BY name
   `)).rows, migrationHistory);
   assert.deepEqual((await db.query(`
     SELECT a.*, c.field FROM pulse.audit_log a
@@ -138,6 +138,76 @@ test('010 discovers a renamed audit field CHECK and preserves existing audit row
     SELECT conname FROM pg_constraint WHERE conrelid = 'pulse.settings_changes'::regclass
       AND conname = 'invented_settings_fields' AND contype = 'c'
   `)).rowCount, 1);
+});
+
+test('011 converts legacy overhead values, retains retired audit paths and discovers a renamed CHECK', async (t) => {
+  const db = await createTestDatabase();
+  t.after(() => db.close());
+  // Re-create the actual pre-011 CHECK without changing its migration ledger entry.
+  await db.query(await readFile(new URL('../migrations/010_settings_audit_fields.sql', import.meta.url), 'utf8'));
+  const fieldCheck = (await db.query<{ conname: string }>(`
+    SELECT c.conname FROM pg_constraint c
+    JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+    WHERE c.conrelid = 'pulse.settings_changes'::regclass
+      AND c.contype = 'c' AND a.attname = 'field'
+  `)).rows;
+  assert.equal(fieldCheck.length, 1);
+  const originalName = fieldCheck[0]!.conname.replaceAll('"', '""');
+  await db.query(`
+    ALTER TABLE pulse.settings_changes RENAME CONSTRAINT "${originalName}" TO invented_overhead_fields;
+    WITH entry AS (
+      INSERT INTO pulse.audit_log (event) VALUES ('settings_changed') RETURNING id
+    )
+    INSERT INTO pulse.settings_changes (audit_id, field) SELECT id, 'monthlyOverheadsGbp' FROM entry;
+  `);
+  await assert.rejects(db.query(`
+    WITH entry AS (
+      INSERT INTO pulse.audit_log (event) VALUES ('settings_changed') RETURNING id
+    )
+    INSERT INTO pulse.settings_changes (audit_id, field) SELECT id, 'overheads.0.monthlyGbp' FROM entry
+  `), (error: unknown) => {
+    assert.equal((error as { code?: string }).code, '23514');
+    return true;
+  });
+  const history = (await db.query("SELECT * FROM pulse_private.schema_migrations WHERE name NOT LIKE '011_%' ORDER BY name")).rows;
+  const audit = (await db.query(`
+    SELECT a.*, c.field FROM pulse.audit_log a
+    JOIN pulse.settings_changes c ON c.audit_id = a.id ORDER BY a.id
+  `)).rows;
+  // All amounts used here are invented sample figures.
+  for (const monthlyOverheadsGbp of [123.45, null, 0]) {
+    await db.query("DELETE FROM pulse_private.schema_migrations WHERE name LIKE '011_%'");
+    await db.query(`
+      INSERT INTO pulse.settings (values, version) VALUES ($1, 7)
+      ON CONFLICT (singleton) DO UPDATE SET values = EXCLUDED.values, version = EXCLUDED.version
+    `, [JSON.stringify({ monthlyOverheadsGbp, goalOrdersPerDay: 100 })]);
+    const updatedAt = (await db.query('SELECT updated_at FROM pulse.settings')).rows;
+    await migrate(db);
+    const settings = (await db.query<{ values: Record<string, unknown>; version: number }>('SELECT values, version FROM pulse.settings')).rows[0]!;
+    assert.deepEqual(settings.values, {
+      goalOrdersPerDay: 100,
+      overheads: typeof monthlyOverheadsGbp === 'number' && monthlyOverheadsGbp > 0
+        ? [{ name: 'Overheads', monthlyGbp: monthlyOverheadsGbp, startMonth: '', endMonth: '' }] : [],
+    });
+    assert.equal(settings.version, 7);
+    assert.deepEqual((await db.query('SELECT updated_at FROM pulse.settings')).rows, updatedAt);
+    assert.deepEqual((await db.query("SELECT * FROM pulse_private.schema_migrations WHERE name NOT LIKE '011_%' ORDER BY name")).rows, history);
+    assert.deepEqual((await db.query(`
+      SELECT a.*, c.field FROM pulse.audit_log a
+      JOIN pulse.settings_changes c ON c.audit_id = a.id ORDER BY a.id
+    `)).rows, audit);
+    assert.equal((await db.query(`
+      SELECT conname FROM pg_constraint WHERE conrelid = 'pulse.settings_changes'::regclass
+        AND conname = 'invented_overhead_fields' AND contype = 'c'
+    `)).rowCount, 1);
+  }
+  await db.query(`
+    WITH entry AS (
+      INSERT INTO pulse.audit_log (event) VALUES ('settings_changed') RETURNING id
+    )
+    INSERT INTO pulse.settings_changes (audit_id, field) SELECT id, 'overheads.0.monthlyGbp' FROM entry;
+  `);
+  assert.equal((await db.query('SELECT * FROM pulse.settings_changes')).rowCount, 2);
 });
 
 test('002 moves public data and preserves tables, indexes, constraints, sequences and foreign keys', async (t) => {

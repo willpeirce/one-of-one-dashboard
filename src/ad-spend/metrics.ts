@@ -3,12 +3,16 @@ import { addDays, dayCount } from '../hero-range.js';
 import type { Settings } from '../settings.js';
 import { costOrder, type ShopifyCost } from '../shopify/costs.js';
 import type { Order } from '../shopify/model.js';
+import { overheadsForPeriod, sampleOverheads } from '../overheads.js';
+import { profitAndMargin } from '../profit.js';
 import { adNames, decimalMicros, type AdSource } from './model.js';
 import type { SpendFacts } from './store.js';
 export interface AdHeroInputs {
   spend: SpendFacts;
   costs: ShopifyCost[];
   estimates: { orderId: string; costPence: number | null; source: string }[];
+  now?: Date;
+  market?: 'all' | 'uk' | 'us';
 }
 const pounds = (micros: bigint) => Number(micros) / 1_000_000;
 export function applySpend(
@@ -135,30 +139,44 @@ export function applySpend(
     settings.paymentFeePercent === null
       ? 0
       : Math.round(Math.max(0, hero.net.n) * settings.paymentFeePercent);
+  const marketView = inputs.market !== undefined && inputs.market !== 'all';
+  const overheads = overheadsForPeriod(
+    hero.net.mode === 'sample' ? sampleOverheads() : settings.overheads,
+    from, to, inputs.now ?? new Date(),
+  );
+  const overheadTotal = marketView ? 0 : overheads.total;
+  const overheadRows: [string, string][] = marketView
+    ? [['Overheads', 'Not deducted; overheads are not split by market']]
+    : [
+        ['Overheads', `£${overheads.total.toFixed(2)} · ${overheads.items.length} items, spread daily across each month${hero.net.mode === 'sample' ? ' · sample data' : ''}`],
+        ...overheads.items.slice(0, 8).map((item): [string, string] => [item.name, `£${item.total.toFixed(2)}`]),
+        ...(overheads.items.length > 8 ? [['and ' + (overheads.items.length - 8) + ' more', 'Included in the Overheads total'] as [string, string]] : []),
+      ];
   const omitted = [
     ...(missingLanded ? ['unknown landed costs'] : []),
     ...(missingFulfilment ? ['unknown fulfilment costs'] : []),
     ...(settings.paymentFeePercent === null ? ['payment fees'] : []),
     ...(periodOrders.length < hero.orders.n ? ['older order cost detail'] : []),
+    ...(!marketView && overheads.items.length === 0 ? ['overheads'] : []),
   ];
+  const result = profitAndMargin({
+    netSales: hero.net.n, shippingIncome: shippingNet / 100,
+    landedCost: landed / 100, fulfilment: fulfilment / 100,
+    paymentFees: fees / 100, adSpend: total, overheads: overheadTotal,
+  });
   hero.margin = {
     ...hero.margin,
     unavailableLabel: '—',
-    n:
-      hero.net.n > 0
-        ? (100 *
-            (hero.net.n + shippingNet / 100 - landed / 100 - fulfilment / 100 - fees / 100 - total)) /
-          hero.net.n
-        : 0,
+    n: result.margin,
     dp: 1,
     mode: spend.mode,
     source: ['shopify', ...sourceIds],
     unavailable: !available || hero.net.unavailable || total === 0 || hero.net.n <= 0,
     state: to === today ? 'sofar' : 'est',
-    ss: `Estimate${omitted.length ? `; left out: ${omitted.join(', ')}` : ''} · ${label}${to === today ? ' · so far' : ''}`,
+    ss: `Estimate${marketView ? ' before overheads' : ''}${omitted.length ? `; left out: ${omitted.join(', ')}` : ''} · ${label}${to === today ? ' · so far' : ''}`,
     d: {
-      why: 'Net sales plus shipping income net of tax, less available landed costs, fulfilment, payment fees and all counted ad spend, divided by net sales. Shipping income is added because fulfilment includes postage.',
-      rule: 'Shipping income is added net of tax because fulfilment includes postage; shipping refunds not yet deducted. Net sales remains the divisor and the payment-fee basis. Cancelled and test orders are excluded. Discounts are already deducted in Shopify net sales, so are not subtracted twice. Unknown costs are named and left out. Item refunds reduce sales on their UK day; no unobserved stock returns or fee refunds are assumed.',
+      why: `Net sales plus shipping income net of tax, less available landed costs, fulfilment, payment fees and all counted ad spend${marketView ? '' : ' and overheads'}, divided by net sales. ${marketView ? 'In this market view, overheads are not split by market and are not deducted.' : 'Margin is after overheads.'} Shipping income is added because fulfilment includes postage.`,
+      rule: `Monthly overhead items are spread evenly over each calendar month's days; today uses the elapsed fraction of the real UK day. ${marketView ? 'In this market view, overheads are not split by market and are not deducted.' : 'Margin is after overheads.'} Shipping income is added net of tax because fulfilment includes postage; shipping refunds not yet deducted. Net sales remains the divisor and the payment-fee basis. Cancelled and test orders are excluded. Discounts are already deducted in Shopify net sales, so are not subtracted twice. Unknown costs are named and left out. Item refunds reduce sales on their UK day; no unobserved stock returns or fee refunds are assumed.`,
       src: label,
       extra: [
         ...split,
@@ -177,9 +195,22 @@ export function applySpend(
             ? 'Not set; left out'
             : `£${(fees / 100).toFixed(2)} · Settings percentage of net sales`,
         ],
+        ...overheadRows,
         ['Discounts', 'Already deducted in net sales'],
         ['Left out', omitted.join(', ') || 'None of these components'],
       ],
+    },
+  };
+  hero.profit = {
+    ...hero.margin,
+    n: result.profit,
+    pre: '£',
+    suf: '',
+    dp: 2,
+    d: {
+      ...hero.margin.d,
+      why: `Net profit is net sales plus shipping income net of tax, less available landed costs, fulfilment, payment fees and all counted ad spend${marketView ? '' : ' and overheads'}. ${marketView ? 'This market view is before overheads; overheads are not split by market.' : 'Profit is after overheads.'} Shipping income is added because fulfilment includes postage. This is the same pound total used to calculate net margin.`,
+      extra: [...hero.margin.d.extra!, ['Net profit', `£${result.profit.toFixed(2)}`]],
     },
   };
   for (const [key, market] of [
@@ -221,12 +252,6 @@ export function spendNeeds(facts: SpendFacts, settings: Settings, today: string)
     }
   };
   for (const row of facts.rows) {
-    if (row.source === 'meta' && row.owner === 'unassigned')
-      add(
-        `ad-owner:${row.campaignId}`,
-        'Meta campaign not assigned: set its owner in Settings',
-        row.campaignName,
-      );
     if (row.market === 'unknown')
       add(
         `ad-market:${row.source}:${row.campaignId}`,

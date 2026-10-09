@@ -1,8 +1,10 @@
 import { glance } from './fulfilment/view.js';
-import { checksHtml, liveHtml, needsHtml, storePanelsHtml } from './shopify/presentation.js';
+import { liveHtml, needsHtml, storePanelsHtml } from './shopify/presentation.js';
 import type { DashboardSnapshot, Detail, DialModel, HeroMetric, HeroPeriod, Period, RingModel, SheetModel, State, TestModel, Zone } from './dashboard-types.js';
 import { createDatePicker } from './dashboard-dates.js';
 import { rangeLabel } from './hero-range.js';
+import { installPullToRefresh } from './pull-refresh.js';
+import { greetingAt } from './greeting.js';
 
 const states: Record<State, [string, string]> = {
   good: ['Good', '✓'], warn: ['Watch', '!'], decide: ['Decide', '◆'], alarm: ['Alarm', '✕'],
@@ -50,7 +52,7 @@ function watermark(element: HTMLElement): void {
   if (icon && !element.querySelector('.wm')) element.insertAdjacentHTML('afterbegin', `<svg class="ic wm" aria-hidden="true"><use href="#${icon}"/></svg>`);
 }
 
-interface SheetDetail { state: State; title: string; detail: Detail; dial?: Pick<DialModel, 'min' | 'max' | 'z' | 't'> }
+interface SheetDetail { state: State; title: string; detail: Detail; mode: 'sample' | 'live'; dial?: Pick<DialModel, 'min' | 'max' | 'z' | 't'> }
 const details = new WeakMap<HTMLElement, SheetDetail>();
 let selectedPeriod: Period | 'pick' = 'today';
 let pickedHero: HeroPeriod | undefined;
@@ -60,8 +62,9 @@ let selectedDeck = ['ads', 'store', 'growth', 'stock'].includes(location.hash.sl
 let snapshot: DashboardSnapshot;
 let openDetail: HTMLElement | undefined;
 let openTemplateId: string | undefined;
+let stream: EventSource | undefined;
 
-function renderDial(element: HTMLElement, data: DialModel): void {
+function renderDial(element: HTMLElement, data: DialModel, mode: 'sample' | 'live'): void {
   const { v, min, max, z } = data, activeZone = zoneIndex(v, z), state = data.cap ?? zoneOf(v, z), format = data.t === 'No data' ? (value: number) => String(Math.round(value)) : formatLike(data.t);
   let svg = `<span class="well"><svg viewBox="0 0 100 64" aria-hidden="true"><path d="${arc(Math.PI, 0)}" fill="none" stroke="var(--line)" stroke-width="7"/>`;
   z.forEach(([start, end, status], index) => {
@@ -73,16 +76,16 @@ function renderDial(element: HTMLElement, data: DialModel): void {
   element.innerHTML = `${svg}<span class="dl">${esc(data.l)}</span><span class="ds">${esc(data.s)}</span>${chip(state)}`;
   element.dataset.state = state;
   element.setAttribute('aria-label', `${data.l}: ${data.t}, ${states[state][0]}`);
-  details.set(element, { state, title: data.l, detail: data.d, dial: data });
+  details.set(element, { state, title: data.l, detail: data.d, mode, dial: data });
   watermark(element);
 }
 
-function renderRing(element: HTMLElement, data: RingModel): void {
+function renderRing(element: HTMLElement, data: RingModel, mode: 'sample' | 'live'): void {
   const state = data.z ? zoneOf(data.v, data.z) : data.state ?? 'info', circumference = 2 * Math.PI * 40;
   element.innerHTML = `<span class="well"><svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="40" fill="none" stroke="var(--line)" stroke-width="8"/><circle cx="50" cy="50" r="40" fill="none" stroke="${colour[state]}" stroke-width="8" stroke-linecap="round" transform="rotate(-90 50 50)" stroke-dasharray="${rounded(clamp(data.v / data.max, 0, 1) * circumference)} ${rounded(circumference)}"/><text x="50" y="56" text-anchor="middle" font-family="var(--disp)" font-size="17" font-weight="700" fill="var(--ink)">${esc(data.t)}</text></svg></span><span class="dl">${esc(data.l)}</span><span class="ds">${esc(data.s)}</span>${chip(state)}`;
   element.dataset.state = state;
   element.setAttribute('aria-label', `${data.l}: ${data.t}, ${states[state][0]}`);
-  details.set(element, { state, title: data.l, detail: data.d, ...(data.z ? { dial: { min: 0, max: data.max, z: data.z, t: data.t } } : {}) });
+  details.set(element, { state, title: data.l, detail: data.d, mode, ...(data.z ? { dial: { min: 0, max: data.max, z: data.z, t: data.t } } : {}) });
   watermark(element);
 }
 
@@ -139,7 +142,7 @@ function renderHero(hero: HeroPeriod, animate = false): void {
   get('#hero').dataset.from = hero.from; get('#hero').dataset.to = hero.to;
   get('#eyebrow').textContent = hero.eyebrow;
   get('#sub1').textContent = hero.sub1;
-  for (const key of ['net', 'orders', 'cr', 'spend', 'roas', 'margin'] as const) {
+  for (const key of ['net', 'orders', 'cr', 'spend', 'roas', 'margin', 'profit'] as const) {
     const element = get(`#hero .tile[data-k="${key}"]`), metric = hero[key];
     element.dataset.mode = metric.mode;
     element.dataset.source = metric.source.join(' ');
@@ -150,7 +153,7 @@ function renderHero(hero: HeroPeriod, animate = false): void {
     element.dataset.state = metric.state;
     element.dataset.detail = JSON.stringify(metric.d);
     statChip(element, metric.state);
-    details.set(element, { state: metric.state, title: get('.sl', element).textContent ?? '', detail: metric.d });
+    details.set(element, { state: metric.state, title: key === 'profit' ? 'Net profit' : key === 'margin' ? 'Net margin' : get('.sl', element).textContent ?? '', detail: metric.d, mode: metric.mode });
     const spark = element.querySelector<HTMLElement>('.spark');
     if (spark) renderSpark(spark, hero.spark, metric.d);
   }
@@ -159,13 +162,13 @@ function renderHero(hero: HeroPeriod, animate = false): void {
     element.dataset.dial = JSON.stringify(hero[key]);
     element.dataset.source = hero[key].source.join(' ');
     element.dataset.mode = hero[key].mode;
-    renderDial(element, hero[key]);
+    renderDial(element, hero[key], hero[key].mode);
   }
   if (hero.business) for (const [kind, widgetId, valueKey, subKey] of [['email','w039','t0269','t0270'], ['refill','w037','t0266','t0267']] as const) {
     const model = hero.business[kind], element = document.querySelector<HTMLElement>(`[data-model-id="${widgetId}"]`);
     all(`[data-sample-text="${valueKey}"]`).forEach(e => { e.textContent = String(model.count); });
     all(`[data-sample-text="${subKey}"]`).forEach(e => { e.textContent = `${rangeLabel(hero.from, hero.to)} · Shopify ${hero.net.mode}`; });
-    if (element) details.set(element, { state: 'info', title: kind === 'email' ? 'Email · Shopify' : 'Refill Pack', detail: model.detail });
+    if (element) details.set(element, { state: 'info', title: kind === 'email' ? 'Email · Shopify' : 'Refill Pack', detail: model.detail, mode: hero.net.mode });
   }
   renderHealth();
 }
@@ -290,7 +293,7 @@ function showDetail(element: HTMLElement, reopen = true): void {
   get('#sh-dl').hidden = false;
   get('#sh-why').textContent = data.detail.why;
   get('#sh-rule').textContent = data.detail.rule;
-  get('#sh-src').textContent = `${data.detail.src}${/sample|live|Not built/.test(data.detail.src) ? '' : ' · sample data'}`;
+  get('#sh-src').textContent = `${data.detail.src} · ${data.mode === 'sample' ? 'sample data' : 'live'}`;
   get('#sh-chart').innerHTML = miniChart(data.detail, data.dial);
   if (element.matches('#hero [data-k="orders"]') && activeHero().business) {
     const rows = activeHero().business!.orderDays;
@@ -360,30 +363,35 @@ function updateSnapshot(next: DashboardSnapshot, initial = false): void {
     if (element.hasAttribute('data-ingested-shopify')) element.querySelector('.sample-label')?.remove();
     if (element.hasAttribute('data-ingested-shopify') && element.dataset.src !== 'stock') element.dataset.src = 'shopify';
     element.dataset[widget.kind] = JSON.stringify(widget.value);
-    if (widget.kind === 'dial') renderDial(element, widget.value);
-    else if (widget.kind === 'ring') renderRing(element, widget.value);
+    if (widget.kind === 'dial') renderDial(element, widget.value, widget.mode);
+    else if (widget.kind === 'ring') renderRing(element, widget.value, widget.mode);
     else if (widget.kind === 'test') renderTest(element, widget.value);
     else if (widget.kind === 'sheet') {
       const data: SheetModel = widget.value;
-      details.set(element, { state: data.state, title: data.title, detail: data });
+      details.set(element, { state: data.state, title: data.title, detail: data, mode: widget.mode });
     } else if (widget.kind === 'detail') {
       const state = element.hasAttribute('data-ingested-shopify') ? 'info' : (element.dataset.state ?? 'info') as State;
       element.dataset.state = state;
-      details.set(element, { state, title: element.querySelector('.sl')?.textContent ?? '', detail: widget.value });
+      details.set(element, { state, title: element.querySelector('.sl')?.textContent ?? '', detail: widget.value, mode: widget.mode });
       statChip(element, state);
     }
   });
   if (snapshot.shopify) {
     get('#shopify-needs').innerHTML = needsHtml(snapshot.shopify);
     if (snapshot.fulfilment) { get('#fulfilment-glance').innerHTML = glance(snapshot.fulfilment); }
-    const watchdogsOpen = get('#shopify-checks details').hasAttribute('open');
-    get('#shopify-checks').innerHTML = checksHtml(snapshot.shopify);
-    if (watchdogsOpen) get('#shopify-checks details').setAttribute('open', '');
     get('[data-sp="live"]').innerHTML = liveHtml(snapshot.shopify);
     get('#shopify-panels').innerHTML = storePanelsHtml(snapshot.shopify);
-    all('[data-custom-detail]').forEach(element => details.set(element, { state: 'info', title: element.querySelector('.sl')?.textContent ?? '', detail: JSON.parse(element.dataset.customDetail!) as Detail }));
+    all('[data-custom-detail]').forEach(element => details.set(element, { state: 'info', title: element.querySelector('.sl')?.textContent ?? '', detail: JSON.parse(element.dataset.customDetail!) as Detail, mode: snapshot.shopify!.mode }));
     all('.tile[data-mode="sample"]').filter(e => !e.closest('#hero')).forEach(element => { if (!element.querySelector('.sample-label')) element.insertAdjacentHTML('beforeend', '<small class="sample-label">Sample data</small>'); });
-    if (snapshot.banner) get('.sample-banner').textContent = snapshot.banner;
+  }
+  updateGreeting();
+  for (const [id, count, label] of [
+    ['source-health-count', snapshot.shopify?.checks.filter(check => check.status === 'tripped').length ?? 0, 'failing checks'],
+    ['settings-count', snapshot.metaCampaigns?.unconfirmedCount ?? 0, 'campaigns to confirm'],
+  ] as const) {
+    const badge = get(`#${id}`);
+    badge.textContent = String(count); badge.hidden = count === 0;
+    badge.setAttribute('aria-label', `${count} ${label}`);
   }
   all('.tile[data-src]').forEach(watermark);
   all('.spark[data-spark]').forEach((element) => renderSpark(element, (element.dataset.spark ?? '').split(',').map(Number)));
@@ -403,13 +411,60 @@ function updateSnapshot(next: DashboardSnapshot, initial = false): void {
   const healthLabels = { waiting_for_keys: 'waiting for keys', not_implemented: 'client not built', healthy: 'connected', error: 'source unavailable' };
   get('#feeds').innerHTML = (snapshot.sourceHealth ?? []).map((row) => `<span><i style="background:var(--info)"></i>${esc(row.name)} · ${row.source === 'shopify' && row.status === 'not_implemented' ? 'first sync pending' : healthLabels[row.status]}</span>`).join('') + '<a href="/sources">Connection details</a>';
   document.documentElement.dataset.updatedAt = snapshot.generatedAt;
-  get('#update-status').textContent = `Connected · updated ${new Date(snapshot.generatedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Europe/London' })} UK`;
+  get('#update-status').textContent = `Updated ${new Date(snapshot.generatedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Europe/London' })}`;
   if (get<HTMLDialogElement>('#sheet').open) {
     const scroll = get('#sheet').scrollTop;
     if (openDetail) showDetail(openDetail, false);
     else if (openTemplateId) showTemplate(openTemplateId, get('#sh-title').textContent ?? '', false);
     get('#sheet').scrollTop = scroll;
   }
+}
+
+function updateGreeting(): void {
+  get('#greeting').textContent = greetingAt(new Date());
+}
+setInterval(updateGreeting, 60_000);
+
+function connectUpdates(): void {
+  if (stream && stream.readyState !== EventSource.CLOSED) return;
+  const connection = new EventSource('/api/events');
+  stream = connection;
+  connection.addEventListener('dashboard', (event: MessageEvent<string>) => {
+    try {
+      const next = JSON.parse(event.data) as DashboardSnapshot;
+      if (next.schemaVersion === 1 && next.mode === 'sample') updateSnapshot(next);
+    } catch { get('#update-status').textContent = 'Could not refresh, showing the last data'; }
+  });
+  connection.addEventListener('error', () => { get('#update-status').textContent = 'Reconnecting · showing the last data'; });
+  connection.addEventListener('signed-out', () => { connection.close(); window.location.assign('/login'); });
+  connection.addEventListener('unavailable', () => { get('#update-status').textContent = 'Reconnecting · showing the last data'; });
+}
+
+async function refreshDashboard(signal: AbortSignal): Promise<void> {
+  const picked = selectedPeriod === 'pick' && pickedHero
+    ? { from: pickedHero.from, to: pickedHero.to, generation: rangeGeneration } : undefined;
+  const read = async <T>(path: string): Promise<T> => {
+    const response = await fetch(path, { signal, credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' } });
+    if (response.status === 401) { window.location.assign('/login'); throw new Error('Sign in to continue'); }
+    if (!response.ok) throw new Error('Refresh unavailable');
+    return await response.json() as T;
+  };
+  const next = await read<DashboardSnapshot>('/api/dashboard');
+  if (next.schemaVersion !== 1 || next.mode !== 'sample') throw new Error('Refresh unavailable');
+  const hero = picked
+    ? await read<HeroPeriod>(`/api/hero?${new URLSearchParams({ from: picked.from, to: picked.to })}`) : undefined;
+  if (hero && (hero.from !== picked!.from || hero.to !== picked!.to)) throw new Error('Refresh unavailable');
+  signal.throwIfAborted();
+  const previousSnapshot = snapshot, previousPicked = pickedHero;
+  if (hero && selectedPeriod === 'pick' && rangeGeneration === picked!.generation
+    && pickedHero?.from === picked!.from && pickedHero.to === picked!.to) pickedHero = hero;
+  try { updateSnapshot(next); }
+  catch (error) {
+    pickedHero = previousPicked;
+    updateSnapshot(previousSnapshot);
+    throw error;
+  }
+  connectUpdates();
 }
 
 function boot(): void {
@@ -467,17 +522,9 @@ function boot(): void {
   const sheet = get<HTMLDialogElement>('#sheet');
   get('#sh-x').addEventListener('click', () => sheet.close());
   sheet.addEventListener('click', (event) => { if (event.target === sheet) sheet.close(); });
-  const stream = new EventSource('/api/events');
-  stream.addEventListener('dashboard', (event: MessageEvent<string>) => {
-    try {
-      const next = JSON.parse(event.data) as DashboardSnapshot;
-      if (next.schemaVersion === 1 && next.mode === 'sample') updateSnapshot(next);
-    } catch { get('#update-status').textContent = 'Could not refresh · showing the last sample snapshot'; }
-  });
-  stream.addEventListener('error', () => { get('#update-status').textContent = 'Reconnecting · showing the last sample snapshot'; });
-  stream.addEventListener('signed-out', () => { stream.close(); window.location.assign('/login'); });
-  stream.addEventListener('unavailable', () => { get('#update-status').textContent = 'Reconnecting · showing the last sample snapshot'; });
-  window.addEventListener('pagehide', () => stream.close(), { once: true });
+  connectUpdates();
+  installPullToRefresh({ refresh: refreshDashboard, status: get('#update-status') });
+  window.addEventListener('pagehide', () => stream?.close(), { once: true });
   window.addEventListener('pageshow', (event) => { if (event.persisted) window.location.reload(); });
   document.documentElement.dataset.dashboardReady = 'true';
 }

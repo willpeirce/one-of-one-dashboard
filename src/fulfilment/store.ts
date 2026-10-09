@@ -5,7 +5,7 @@ import type { SourceMode } from '../sources.js';
 import { readSettings, type Settings } from '../settings.js';
 import type { Order } from '../shopify/model.js';
 import { type ParcelRow, ImportError } from './parser.js';
-import { type Parcel, type Model, type Estimate, emptyModel, learn, quantities, mixKey, estimateOrder, actualPence, gbpMinor, parcelFlags, knownService, normaliseService, monthlyReminder, despatchDay } from './model.js';
+import { type Parcel, type Model, type Estimate, emptyModel, learn, leaveOneOutModels, warehouseFor, quantities, mixKey, estimateOrder, actualPence, gbpMinor, parcelFlags, knownService, normaliseService, monthlyReminder, despatchDay } from './model.js';
 
 export interface Upload {
   id: string; fileName:string; rowCount:number; savedCount:number; despatchFrom:string; despatchTo:string;
@@ -43,7 +43,17 @@ export async function previewImport(db:Database,mode:SourceMode,rows:ParcelRow[]
   return {rows:projected,warehouses:Object.fromEntries(['uk','us','unknown'].map(w=>[w,{rows:rows.filter(r=>r.warehouse===w).length,...sum(rows.filter(r=>r.warehouse===w))}])),matched:[...new Set(projected.filter(r=>r.orderId).map(r=>r.orderNumber))],unmatched:[...new Set(projected.filter(r=>!r.orderId).map(r=>r.orderNumber))],duplicates:projected.filter(r=>r.duplicate).length};
 }
 async function saveEstimates(db:Database,mode:SourceMode,orders:Order[],parcels:Parcel[],model:Model,settings:Settings,now:Date) {
-  const rows = orders.map(o => { const e = estimateOrder(o, parcels, model, settings); return { order_id: o.id, cost_pence: e.costPence, source: e.source, warehouse: e.warehouse, service: e.service, guess: e.guess }; });
+  const actuals = new Map<string,Parcel[]>();
+  for (const p of parcels) if (p.orderId) {
+    if (!actuals.has(p.orderId)) actuals.set(p.orderId,[]);
+    actuals.get(p.orderId)!.push(p);
+  }
+  const rateKey = (warehouse:string,service:string,mix:string,state:string|null) => JSON.stringify([warehouse,normaliseService(service),mix,state]);
+  const rates = new Map(model.rates.map(r=>[rateKey(r.warehouse,r.service,r.mix,r.state),r]));
+  const rows = orders.map(o => {
+    const warehouse=warehouseFor(o), w=warehouse==='unknown'?undefined:model.warehouses[warehouse], q=quantities(o);
+    const rate=w&&q?rates.get(rateKey(warehouse,w.service,mixKey(q),warehouse==='us'?o.region:'')):undefined;
+    const e = estimateOrder(o, actuals.get(o.id) ?? [], {...model,rates:rate?[rate]:[]}, settings); return { order_id: o.id, cost_pence: e.costPence, source: e.source, warehouse: e.warehouse, service: e.service, guess: e.guess }; });
   // A full backfill can contain tens of thousands of orders; use bounded bulk writes.
   for (let i = 0; i < rows.length; i += 1000) {
     await db.query(`INSERT INTO pulse.fulfilment_estimates (mode,order_id,cost_pence,source,warehouse,service,guess,updated_at)
@@ -53,21 +63,28 @@ async function saveEstimates(db:Database,mode:SourceMode,orders:Order[],parcels:
   }
 }
 async function rebuild(db:Database,mode:SourceMode,orders:Order[],parcels:Parcel[],settings:Settings,now:Date):Promise<Model> {
+  const byId = new Map(orders.map(o => [o.id,o]));
+  const byNumber = new Map<string, Order | undefined>();
+  for (const o of orders) if (o.orderNumber) byNumber.set(o.orderNumber, byNumber.has(o.orderNumber) ? undefined : o);
   for (const p of parcels) {
-    const order=matchOrder(p.orderNumber,orders);
-    if (order&&p.orderId!==order.id) {p.orderId=order.id;await db.query('UPDATE pulse.fulfilment_parcels SET order_id=$1 WHERE id=$2',[order.id,p.id]);}
+    const order = byNumber.get(p.orderNumber);
+    if (order) p.orderId = order.id;
   }
   const model=learn(parcels,orders);
+  const peersFor = leaveOneOutModels(parcels, orders);
   for (const p of parcels) {
-    const order = orders.find(o => o.id === p.orderId);
-    const peers = learn(parcels.filter(other => other.id !== p.id), orders);
+    const order = p.orderId ? byId.get(p.orderId) : undefined;
+    const peers = peersFor(p);
     const q = order && quantities(order);
     const rate = q && peers.rates.find(r => r.warehouse === p.warehouse && normaliseService(r.service) === normaliseService(p.service) && r.mix === mixKey(q) && r.state === (p.warehouse === 'us' ? order!.region : ''));
     const fallback = order ? estimateOrder({ ...order, fulfillments: [], fulfillmentStatus: 'UNFULFILLED', country: p.warehouse === 'uk' ? 'GB' : p.warehouse === 'us' ? 'US' : null, market: p.warehouse === 'uk' ? 'UK' : p.warehouse === 'us' ? 'US' : 'unknown' }, [], peers, { ...settings, jjGbpPerUsd: p.gbpPerUsd }) : null;
     p.rateBaselinePence = !knownService(p.warehouse,p.service) ? null : rate ? gbpMinor(rate.postage + rate.pickPack, p.currency, p.gbpPerUsd) : fallback && ['exact','ladder'].includes(fallback.source) ? fallback.costPence : null;
     p.flags = parcelFlags(p, order, peers);
-    await db.query('UPDATE pulse.fulfilment_parcels SET flags=$2,rate_baseline_pence=$3 WHERE id=$1', [p.id, JSON.stringify(p.flags), p.rateBaselinePence]);
   }
+  if (parcels.length) await db.query(`UPDATE pulse.fulfilment_parcels AS p
+    SET order_id=r.order_id, flags=r.flags, rate_baseline_pence=r.baseline
+    FROM jsonb_to_recordset($2::jsonb) AS r(id bigint,order_id text,flags jsonb,baseline bigint)
+    WHERE p.mode=$1 AND p.id=r.id`, [mode, JSON.stringify(parcels.map(p => ({id:p.id,order_id:p.orderId,flags:p.flags,baseline:p.rateBaselinePence})))]);
   await db.query('DELETE FROM pulse.fulfilment_rates WHERE mode=$1',[mode]);
   const rates = model.rates.map(r => ({ warehouse:r.warehouse,service:r.service,sku_mix:r.mix,state:r.state,mean_postage_minor:r.postage,mean_pick_pack_minor:r.pickPack,count:r.count,last_seen:r.lastSeen }));
   for (let i = 0; i < rates.length; i += 1000) await db.query(`INSERT INTO pulse.fulfilment_rates (mode,warehouse,service,sku_mix,state,mean_postage_minor,mean_pick_pack_minor,count,last_seen)
@@ -84,12 +101,15 @@ export async function refreshFulfilment(db:Database,mode:SourceMode,now=new Date
       changedOrders=(await tx.query<{data:Order}>("SELECT data FROM pulse.shopify_records WHERE mode=$1 AND kind='order' AND source_id=ANY($2::text[])",[mode,changedOrders.map(o=>o.id)])).rows.map(r=>r.data);
       const affected=await tx.query<{affected:boolean}>(`SELECT EXISTS (SELECT 1 FROM pulse.fulfilment_parcels WHERE mode=$1 AND (order_id=ANY($2::text[]) OR order_number=ANY($3::text[]))) AS affected`,[mode,changedOrders.map(o=>o.id),changedOrders.flatMap(o=>o.orderNumber?[o.orderNumber]:[])]);
       if (!affected.rows[0]!.affected) {
-        const [model,settings]=await Promise.all([readModel(tx,mode),readSettings(tx)]);
+        const model=await readModel(tx,mode);
+        const settings=await readSettings(tx);
         await saveEstimates(tx,mode,changedOrders,[],model,settings.values,now);
         return;
       }
     }
-    const [orders,parcels,settings]=await Promise.all([fulfilmentOrders(tx,mode),readParcels(tx,mode),readSettings(tx)]);
+    const orders=await fulfilmentOrders(tx,mode);
+    const parcels=await readParcels(tx,mode);
+    const settings=await readSettings(tx);
     await rebuild(tx,mode,orders,parcels,settings.values,now);
   });
 }
@@ -101,7 +121,9 @@ export async function confirmImport(db:Database,mode:SourceMode,rows:ParcelRow[]
     await tx.query('SELECT singleton FROM pulse.settings WHERE singleton=true FOR SHARE');
     const settings=await readSettings(tx);
     if (settings.values.jjGbpPerUsd!==rate) throw new ImportError('The invoice rate changed. Preview the file again.');
-    const [orders,stored,oldModel]=await Promise.all([fulfilmentOrders(tx,mode),readParcels(tx,mode),readModel(tx,mode)]);
+    const orders=await fulfilmentOrders(tx,mode);
+    const stored=await readParcels(tx,mode);
+    const oldModel=await readModel(tx,mode);
     const preview=previewRows(rows,orders,stored), fresh=preview.filter(r=>!r.duplicate);
     const dates=rows.map(r=>r.despatchedAt).sort();
     const coverageFrom=completePeriod?dates[0]!.slice(0,10):null, coverageTo=completePeriod?dates.at(-1)!.slice(0,10):null;

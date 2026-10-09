@@ -1,5 +1,6 @@
 import { registerFulfilment, seedFulfilment } from './fulfilment/routes.js';
 import { fulfilmentSummary, refreshFulfilment } from './fulfilment/store.js';
+import { errorCode } from './diagnostics.js';
 import { ImportError } from './fulfilment/parser.js';
 import Fastify from 'fastify';
 import { appConfig } from './config.js';
@@ -23,6 +24,10 @@ import { registerDashboardEvents } from './events.js';
 import { readSettings, saveSettings, SettingsValidationError, SettingsConflictError } from './settings.js';
 import { settingsPage } from './settings-view.js';
 
+declare module 'fastify' {
+  interface FastifyInstance { startBackgroundWork(): Promise<void> }
+}
+
 export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: NodeJS.ProcessEnv = {}, shopifyOptions: ConstructorParameters<typeof ShopifyWorker>[3] = {}) {
   // Request/error logging is deliberately off: authentication bodies contain private material.
   const app = Fastify({ logger: false, bodyLimit: 32_768, trustProxy: false, requestTimeout: 15_000 });
@@ -43,15 +48,38 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     await db.query('UPDATE pulse.shopify_watchdog_state SET data = data || $2::jsonb WHERE mode = $1', [shopify.mode, JSON.stringify({ checks, evaluatedAt: now.toISOString() })]);
   }
   await seedFulfilment(db, shopify.mode, sourceNow());
-  const parcelModes=await db.query<{mode:'sample'|'live'}>('SELECT DISTINCT mode FROM pulse.fulfilment_parcels');
-  for (const {mode} of parcelModes.rows) await refreshFulfilment(db,mode,sourceNow());
-  await runWatchdogs();
   let observationRun: Promise<unknown> | undefined;
-  const observationTimer = setInterval(() => {
-    if (!observationRun) observationRun = runWatchdogs().catch(() => {}).finally(() => { observationRun = undefined; });
-  }, 60_000);
-  observationTimer.unref();
-  app.addHook('onClose', async () => { clearInterval(observationTimer); await observationRun; });
+  let observationTimer: ReturnType<typeof setInterval> | undefined;
+  let startupRun: Promise<void> | undefined;
+  function observe(): Promise<unknown> {
+    if (!observationRun) observationRun = runWatchdogs().catch(error => {
+      console.error(`Watchdog observation failed (code: ${errorCode(error)}).`);
+    }).finally(() => { observationRun = undefined; });
+    return observationRun;
+  }
+  // Called by server.ts after listen resolves; repeated calls share the same run.
+  function startBackgroundWork(): Promise<void> {
+    if (startupRun) return startupRun;
+    observationTimer = setInterval(() => { void observe(); }, 60_000);
+    observationTimer.unref();
+    startupRun = (async () => {
+      const parcelModes = await db.query<{mode:'sample'|'live'}>('SELECT DISTINCT mode FROM pulse.fulfilment_parcels');
+      for (const {mode} of parcelModes.rows) {
+        await refreshFulfilment(db, mode, sourceNow()).catch(error => {
+          console.error(`Startup fulfilment rebuild failed (code: ${errorCode(error)}).`);
+        });
+      }
+      await observe();
+    })().catch(error => {
+      console.error(`Startup background work failed (code: ${errorCode(error)}).`);
+    });
+    return startupRun;
+  }
+  app.addHook('onClose', async () => {
+    if (observationTimer) clearInterval(observationTimer);
+    await startupRun;
+    await observationRun;
+  });
   app.addHook('onReady', async () => { shopify.start(); });
   app.addHook('onClose', async () => { await shopify.stop(); });
   app.addHook('onRequest', async (request, reply) => {
@@ -169,5 +197,6 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   const cleanup = setInterval(() => { void auth.cleanup().catch(() => {}); }, 60 * 60 * 1000);
   cleanup.unref();
   app.addHook('onClose', async () => { clearInterval(cleanup); });
+  app.decorate('startBackgroundWork', startBackgroundWork);
   return app;
 }

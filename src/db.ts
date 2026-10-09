@@ -50,8 +50,11 @@ function transactionalConnection(client: pg.PoolClient): Database {
 }
 
 export function openPostgres(databaseUrl: string): Database {
+  const url = new URL(databaseUrl);
+  // Keep local non-TLS databases working; pin TLS URLs to pg's current verification.
+  if (url.searchParams.has('sslmode') && url.searchParams.get('sslmode') !== 'disable') url.searchParams.set('sslmode', 'verify-full');
   const pool = new pg.Pool({
-    connectionString: databaseUrl,
+    connectionString: url.toString(),
     application_name: 'one-of-one-pulse',
     connectionTimeoutMillis: 10_000,
     idleTimeoutMillis: 30_000,

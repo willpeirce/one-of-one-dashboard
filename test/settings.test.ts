@@ -71,6 +71,84 @@ test('changed settings persist across service instances and audit every field wi
   `)).rows, [{ column_name: 'audit_id' }, { column_name: 'field' }]);
 });
 
+test('the database audit CHECK covers exactly every Settings key and preserves field path limits', async (t) => {
+  const db = await createTestDatabase();
+  t.after(() => db.close());
+  const checks = await db.query<{ definition: string }>(`
+    SELECT pg_get_constraintdef(c.oid) AS definition
+    FROM pg_constraint c
+    JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+    WHERE c.conrelid = 'pulse.settings_changes'::regclass
+      AND c.contype = 'c' AND a.attname = 'field'
+  `);
+  assert.equal(checks.rows.length, 1);
+  const allowedKeys = [...checks.rows[0]!.definition.matchAll(/'([a-zA-Z][a-zA-Z0-9]*)'/g)]
+    .map((match) => match[1]!);
+  const settingsKeys = Object.keys(defaultSettings()).sort();
+  assert.deepEqual(allowedKeys.sort(), settingsKeys);
+
+  const insert = (field: string) => db.query(`
+    WITH entry AS (
+      INSERT INTO pulse.audit_log (event) VALUES ('settings_changed') RETURNING id
+    )
+    INSERT INTO pulse.settings_changes (audit_id, field) SELECT id, $1 FROM entry
+  `, [field]);
+  for (const key of settingsKeys) assert.equal((await insert(key)).rowCount, 1);
+  assert.equal((await insert('startingCogs.0.unitCostGbp')).rowCount, 1);
+  assert.equal((await insert(`brand.${'a'.repeat(154)}`)).rowCount, 1);
+  const auditCount = (await db.query('SELECT * FROM pulse.audit_log')).rowCount;
+  for (const field of [
+    '', 'unknownSetting', 'brand.', '.brand', '1brand', 'brand..child', 'brand.bad_path',
+    `brand.${'a'.repeat(155)}`,
+  ]) {
+    await assert.rejects(insert(field), (error: unknown) => {
+      assert.equal((error as { code?: string }).code, '23514');
+      return true;
+    });
+  }
+  assert.equal((await db.query('SELECT * FROM pulse.audit_log')).rowCount, auditCount);
+});
+
+test('fulfilment exchange rate and every ad account ID save with one value-free audit row each', async (t) => {
+  const db = await createTestDatabase();
+  t.after(() => db.close());
+  const credentialId = randomUUID();
+  // These sample account identifiers and exchange rate are invented.
+  const edits = [
+    { field: 'jjGbpPerUsd', value: 0.812345, stored: 0.812345 },
+    { field: 'metaAdAccountId', value: '9000000001', stored: '9000000001' },
+    { field: 'googleCustomerId', value: '900-000-0002', stored: '9000000002' },
+    { field: 'googleLoginCustomerId', value: '9000000003', stored: '9000000003' },
+    { field: 'tiktokAdvertiserId', value: '9000000004', stored: '9000000004' },
+  ] as const;
+  let snapshot = await readSettings(db);
+  for (const { field, value, stored } of edits) {
+    const result = await saveSettings(db, {
+      version: snapshot.version, values: { ...snapshot.values, [field]: value },
+    }, credentialId);
+    assert.equal(result.version, snapshot.version + 1);
+    assert.deepEqual(result.changedFields, [field]);
+    assert.equal(result.values[field], stored);
+    snapshot = await readSettings(db);
+    assert.deepEqual(snapshot, { version: result.version, values: result.values });
+    const audit = await db.query<{ event: string; credential_id: string; field: string }>(`
+      SELECT a.event, a.credential_id, c.field FROM pulse.audit_log a
+      JOIN pulse.settings_changes c ON c.audit_id = a.id WHERE c.field = $1
+    `, [field]);
+    assert.deepEqual(audit.rows, [{ event: 'settings_changed', credential_id: credentialId, field }]);
+  }
+  const audit = await db.query(`
+    SELECT a.*, c.field FROM pulse.audit_log a
+    JOIN pulse.settings_changes c ON c.audit_id = a.id ORDER BY a.id
+  `);
+  assert.equal(audit.rowCount, edits.length);
+  const serializedAudit = JSON.stringify(audit.rows);
+  for (const { value, stored } of edits) {
+    assert.ok(!serializedAudit.includes(String(value)));
+    assert.ok(!serializedAudit.includes(String(stored)));
+  }
+});
+
 test('unchanged saves do not bump version or write audit; stale editors cannot overwrite a newer save', async (t) => {
   const db = await createTestDatabase();
   t.after(() => db.close());

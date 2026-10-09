@@ -5,6 +5,51 @@ import { createApp } from '../src/app.js';
 import { ConfigError, readRuntime } from '../src/runtime.js';
 import { createTestDatabase } from './helpers/database.js';
 import type { Database } from '../src/db.js';
+import { readSettings } from '../src/settings.js';
+
+test('unexpected Settings database errors log only SQLSTATE and retain the fixed browser response', async t => {
+  const db = await createTestDatabase();
+  const marker = randomBytes(32).toString('hex');
+  let rejectAudit = false;
+  const faultDb: Database = {
+    ...db,
+    transaction: fn => db.transaction(async tx => fn({
+      ...tx,
+      query: (sql, values) => {
+        if (rejectAudit && sql.includes('INSERT INTO pulse.settings_changes')) {
+          throw Object.assign(new Error(marker), { code: '23514', detail: marker });
+        }
+        return tx.query(sql, values);
+      },
+    })),
+  };
+  const config = readRuntime({ DATABASE_URL: 'postgresql://localhost/pulse_test', APP_ORIGIN: 'https://pulse.example.test' });
+  const app = await createApp(faultDb, config);
+  t.after(async () => { await app.close(); await db.close(); });
+  const secret = (await db.query<{ value: Uint8Array }>('SELECT value FROM pulse_private.app_secrets WHERE name = $1', ['session_hmac'])).rows[0]!;
+  const token = randomBytes(32).toString('base64url');
+  const credentialId = randomBytes(32).toString('base64url');
+  const hash = createHmac('sha256', Buffer.from(secret.value)).update(token).digest('hex');
+  await db.query('INSERT INTO pulse_private.credentials(id, public_key) VALUES ($1, $2)', [credentialId, randomBytes(32)]);
+  await db.query("INSERT INTO pulse_private.sessions(token_hash, credential_id, expires_at) VALUES ($1, $2, now() + interval '30 days')", [hash, credentialId]);
+  const before = await readSettings(db);
+  const logs: string[] = [];
+  t.mock.method(console, 'error', (message: string) => logs.push(message));
+  rejectAudit = true;
+  const response = await app.inject({
+    method: 'POST', url: '/api/settings',
+    headers: { origin: config.origin, 'content-type': 'application/json', cookie: `__Host-pulse_session=${token}` },
+    payload: { version: before.version, values: { ...before.values, metaAdAccountId: '9000000000' } },
+  });
+  assert.equal(response.statusCode, 500);
+  assert.deepEqual(response.json(), { error: 'The service is temporarily unavailable.' });
+  assert.deepEqual(logs, ['Settings save failed (code: 23514).']);
+  assert.ok(!JSON.stringify(logs).includes(marker));
+  assert.ok(!JSON.stringify(logs).includes(token));
+  assert.ok(!JSON.stringify(logs).includes('9000000000'));
+  assert.deepEqual(await readSettings(db), before);
+  assert.equal((await db.query('SELECT * FROM pulse.settings_changes')).rowCount, 0);
+});
 
 test('service and authentication boundaries against the database', async t => {
   const db = await createTestDatabase();

@@ -134,7 +134,7 @@ export function applySpend(
     ...(missingLanded ? ['unknown landed costs'] : []),
     ...(missingFulfilment ? ['unknown fulfilment costs'] : []),
     ...(settings.paymentFeePercent === null ? ['payment fees'] : []),
-    ...(periodOrders.length === 0 && hero.orders.n > 0 ? ['older order cost detail'] : []),
+    ...(periodOrders.length < hero.orders.n ? ['older order cost detail'] : []),
   ];
   hero.margin = {
     ...hero.margin,
@@ -148,7 +148,7 @@ export function applySpend(
     source: ['shopify', ...sourceIds],
     unavailable: !available || hero.net.unavailable || total === 0 || hero.net.n <= 0,
     state: to === today ? 'sofar' : 'est',
-    ss: `Estimate${omitted.length ? `; left out: ${omitted.join(', ')}` : ''} · ${label}${to===today?' · so far':''}`,
+    ss: `Estimate${omitted.length ? `; left out: ${omitted.join(', ')}` : ''} · ${label}${to === today ? ' · so far' : ''}`,
     d: {
       why: 'Net sales less available landed costs, fulfilment, payment fees and all counted ad spend, divided by net sales.',
       rule: 'Discounts are already deducted in Shopify net sales, so are not subtracted twice. Unknown costs are named and left out. Refunds reduce sales on their UK day; no unobserved stock returns or fee refunds are assumed.',
@@ -180,18 +180,21 @@ export function applySpend(
   ] as const) {
     const count = periodOrders.filter((o) => o.market === market.toUpperCase()).length,
       cost = pounds(sum((r) => r.market === market)),
-      value = count ? cost / count : null;
+      value =
+        count && periodOrders.length >= hero.orders.n && !hero.orders.unavailable
+          ? cost / count
+          : null;
     hero[key] = {
       ...hero[key],
       v: value ?? 0,
       t: available && value !== null ? `£${value.toFixed(2)}` : '—',
       l: `${market.toUpperCase()} cost per order`,
-      s: `${label} · bar £${settings.blendedMetaTripwireGbp}`,
+      s: `${label}${periodOrders.length < hero.orders.n ? '; older order market detail unavailable' : ''} · bar £${settings.blendedMetaTripwireGbp}`,
       source: ['shopify', ...sourceIds],
       mode: spend.mode,
       cap: to === today ? 'sofar' : 'info',
       d: {
-        why: `${market.toUpperCase()} spend £${cost.toFixed(2)} ÷ ${count} Shopify orders. £${unknown.toFixed(2)} unknown-market spend is not split.`,
+        why: `${market.toUpperCase()} spend £${cost.toFixed(2)} ÷ ${count} Shopify orders. £${unknown.toFixed(2)} unknown-market spend is not split.${periodOrders.length < hero.orders.n ? ' Older order market detail is unavailable; no denominator is guessed.' : ''}`,
         rule: 'Meta + Google + TikTok spend in this market ÷ Shopify orders in this market. CAC awaits stage 2: stored Shopify facts do not identify first orders.',
         src: label,
         extra: split,

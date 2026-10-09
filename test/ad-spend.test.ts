@@ -489,6 +489,7 @@ test('totals reconcile owners, partial sources label honestly, foreign and unkno
   o.day = '2026-09-30';
   o.market = 'UK';
   const h = hero();
+  h.orders.n = 1;
   applySpend(h, [o], s, '2026-10-09', { spend, costs: [], estimates: [] });
   assert.equal(h.spend.n, 550.2);
   assert.match(h.spend.ss, /Meta only; Google and TikTok waiting for keys/);
@@ -508,6 +509,11 @@ test('totals reconcile owners, partial sources label honestly, foreign and unkno
     spendNeeds(spend, s, '2026-10-09').filter((n) => n.id.startsWith('ad-currency')).length,
     1,
   );
+  const partialHistory = hero();
+  applySpend(partialHistory, [o], s, '2026-10-09', { spend, costs: [], estimates: [] });
+  assert.equal(partialHistory.ukcpo.t, '—');
+  assert.match(partialHistory.ukcpo.d.why, /no denominator is guessed/);
+  assert.match(partialHistory.margin.ss, /older order cost detail/);
   const empty = hero();
   empty.net.n = 0;
   applySpend(empty, [], s, '2026-10-09', { spend, costs: [], estimates: [] });

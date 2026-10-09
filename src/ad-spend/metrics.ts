@@ -112,13 +112,18 @@ export function applySpend(
       extra: split,
     },
   };
-  const periodOrders = orders.filter((o) => o.day >= from && o.day <= to);
+  const periodOrders = orders.filter(
+    (o) => o.day >= from && o.day <= to && !o.test && !o.cancelledAt,
+  );
   let landed = 0,
     missingLanded = 0,
     fulfilment = 0,
-    missingFulfilment = 0;
+    missingFulfilment = 0,
+    shippingNet = 0;
   const byOrder = new Map(estimates.map((e) => [e.orderId, e]));
   for (const o of periodOrders) {
+    const shippingTax = Math.max(0, o.taxPence - o.itemTaxPence);
+    shippingNet += Math.max(0, o.shippingPence - (o.taxesIncluded ? shippingTax : 0));
     const cost = costOrder(o, costs, settings);
     landed += cost.lines.reduce((s, l) => s + (l.costPence ?? 0), 0);
     if (cost.costPence === null) missingLanded++;
@@ -141,7 +146,9 @@ export function applySpend(
     unavailableLabel: '—',
     n:
       hero.net.n > 0
-        ? (100 * (hero.net.n - landed / 100 - fulfilment / 100 - fees / 100 - total)) / hero.net.n
+        ? (100 *
+            (hero.net.n + shippingNet / 100 - landed / 100 - fulfilment / 100 - fees / 100 - total)) /
+          hero.net.n
         : 0,
     dp: 1,
     mode: spend.mode,
@@ -150,8 +157,8 @@ export function applySpend(
     state: to === today ? 'sofar' : 'est',
     ss: `Estimate${omitted.length ? `; left out: ${omitted.join(', ')}` : ''} · ${label}${to === today ? ' · so far' : ''}`,
     d: {
-      why: 'Net sales less available landed costs, fulfilment, payment fees and all counted ad spend, divided by net sales.',
-      rule: 'Discounts are already deducted in Shopify net sales, so are not subtracted twice. Unknown costs are named and left out. Refunds reduce sales on their UK day; no unobserved stock returns or fee refunds are assumed.',
+      why: 'Net sales plus shipping income net of tax, less available landed costs, fulfilment, payment fees and all counted ad spend, divided by net sales. Shipping income is added because fulfilment includes postage.',
+      rule: 'Shipping income is added net of tax because fulfilment includes postage; shipping refunds not yet deducted. Net sales remains the divisor and the payment-fee basis. Cancelled and test orders are excluded. Discounts are already deducted in Shopify net sales, so are not subtracted twice. Unknown costs are named and left out. Item refunds reduce sales on their UK day; no unobserved stock returns or fee refunds are assumed.',
       src: label,
       extra: [
         ...split,
@@ -159,6 +166,7 @@ export function applySpend(
           'Landed costs',
           `£${(landed / 100).toFixed(2)}${missingLanded ? `; unknown costs on ${missingLanded} orders left out` : ''}`,
         ],
+        ['Shipping charged', `£${(shippingNet / 100).toFixed(2)} · net of tax`],
         [
           'Fulfilment',
           `£${(fulfilment / 100).toFixed(2)}${missingFulfilment ? `; ${missingFulfilment} unknown orders left out` : ''}`,

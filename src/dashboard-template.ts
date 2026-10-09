@@ -76,7 +76,7 @@ export const dashboardTemplate = `
         <span class="sv big" data-n="{{sample:t0004}}" data-dp="1" data-suf="%" data-sample-attributes="{&quot;data-n&quot;:&quot;t0004&quot;}"><span data-sample-text="t0046">{{sample:t0046}}</span></span>
         <span class="ss"><span data-sample-text="t0047">{{sample:t0047}}</span></span>
       </button>
-      <button class="tile solid stat" data-k="spend" data-state="sofar" data-g="hero" data-source="meta google-ads" data-mode="sample">
+      <button class="tile solid stat" data-k="spend" data-state="sofar" data-g="hero" data-source="meta google-ads tiktok" data-mode="sample">
         <span class="sl"><span data-sample-text="t0048">{{sample:t0048}}</span><span class="per"><span data-sample-text="t0049">{{sample:t0049}}</span></span></span>
         <span class="sv big" data-n="{{sample:t0005}}" data-pre="£" data-sample-attributes="{&quot;data-n&quot;:&quot;t0005&quot;}"><span data-sample-text="t0050">{{sample:t0050}}</span></span>
         <span class="ss"><span data-sample-text="t0051">{{sample:t0051}}</span></span>
@@ -325,7 +325,7 @@ export const dashboardTemplate = `
       <button class="tile stat" data-state="good" data-src="meta" data-detail="{{widget:w027}}" data-source="meta" data-mode="sample" data-model-id="w027">
         <span class="sl"><span data-sample-text="t0251">{{sample:t0251}}</span></span><span class="sv"><span data-sample-text="t0252">{{sample:t0252}}</span></span><span class="ss"><span data-sample-text="t0253">{{sample:t0253}}</span></span>
       </button>
-      <button class="tile stat" data-state="good" data-src="meta" data-detail="{{widget:w028}}" data-source="meta google-ads" data-mode="sample" data-model-id="w028">
+      <button class="tile stat" data-state="good" data-src="meta" data-detail="{{widget:w028}}" data-source="meta google-ads tiktok" data-mode="sample" data-model-id="w028">
         <span class="sl"><span data-sample-text="t0254">{{sample:t0254}}</span></span><span class="sv"><span data-sample-text="t0255">{{sample:t0255}}</span></span><span class="ss"><span data-sample-text="t0256">{{sample:t0256}}</span></span>
       </button>
     </div>

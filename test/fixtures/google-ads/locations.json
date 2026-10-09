@@ -1,0 +1,16 @@
+[
+  {
+    "results": [
+      {
+        "campaign": {
+          "id": "900000000202"
+        },
+        "campaignCriterion": {
+          "location": {
+            "geoTargetConstant": "geoTargetConstants/900001"
+          }
+        }
+      }
+    ]
+  }
+]

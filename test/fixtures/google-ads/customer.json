@@ -1,0 +1,12 @@
+[
+  {
+    "results": [
+      {
+        "customer": {
+          "resourceName": "customers/9000000000",
+          "currencyCode": "GBP"
+        }
+      }
+    ]
+  }
+]

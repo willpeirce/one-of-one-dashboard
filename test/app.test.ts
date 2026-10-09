@@ -128,7 +128,7 @@ test('service and authentication boundaries against the database', async t => {
       assert.equal(sample.statusCode, 200);
       assert.equal(sample.headers['cache-control'], 'no-store');
       assert.equal(sample.json().mode, 'sample');
-      assert.equal(sample.json().sourceHealth.length, 10);
+      assert.equal(sample.json().sourceHealth.length, 11);
       const settings = (await restarted.inject({ url: '/api/settings', headers: { cookie } })).json();
       const saved = await restarted.inject({
         method: 'POST', url: '/api/settings', headers: { ...headers, cookie },

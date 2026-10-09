@@ -12,6 +12,7 @@ type Field = {
   label: string;
   type?: 'text' | 'number' | 'time' | 'date' | 'checkbox';
   nullable?: boolean;
+  optional?: boolean;
   integer?: boolean;
   step?: string;
   min?: number;
@@ -32,7 +33,7 @@ function field(definition: Field, value: unknown, prefix = ''): string {
   }
   const input = definition.options
     ? `<select ${attributes}>${definition.options.map((option) => `<option value="${escapeHtml(option.value)}"${option.value === value ? ' selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}</select>`
-    : `<input ${attributes} type="${type}" value="${escapeHtml(value === null || value === undefined ? '' : String(value))}"${definition.nullable ? ' data-nullable="true" placeholder="Not set"' : ' required'}${type === 'number' ? ` min="${definition.min ?? 0}" step="${definition.step ?? (definition.integer ? '1' : '0.01')}"${definition.max === undefined ? '' : ` max="${definition.max}"`}` : ''}${type === 'text' ? ' maxlength="160" autocomplete="off"' : ''}>`;
+    : `<input ${attributes} type="${type}" value="${escapeHtml(value === null || value === undefined ? '' : String(value))}"${definition.nullable ? ' data-nullable="true" placeholder="Not set"' : definition.optional ? '' : ' required'}${type === 'number' ? ` min="${definition.min ?? 0}" step="${definition.step ?? (definition.integer ? '1' : '0.01')}"${definition.max === undefined ? '' : ` max="${definition.max}"`}` : ''}${type === 'text' ? ' maxlength="160" autocomplete="off"' : ''}>`;
   return `<div class="setting-field"><label for="${id}">${escapeHtml(definition.label)}</label>${input}${hint}</div>`;
 }
 
@@ -95,13 +96,17 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
   ], values)}</div>${collection('supplierLeadTimes', 'Supplier lead time', [
     { key: 'supplier', label: 'Supplier business' }, number('days', 'Lead time (days)', { nullable: true, integer: true }),
   ], values.supplierLeadTimes, 'Starting supplier lead times. Freight and confirmed arrival dates come with uploads.')}`);
-  const campaigns = section('Campaign maps', 'Ownership and expected markets for future source feeds.', `${collection('metaOwners', 'Meta campaign', [
+  const campaigns = section('Ad spend', 'Read-only spend connections and campaign ownership.', `<div class="settings-grid">${fields([
+    {key:'metaAdAccountId',label:'Meta ad account ID',optional:true,hint:'Digits only, without act_. Blank waits for keys and account setup.'},
+    {key:'googleCustomerId',label:'Google customer ID',optional:true,hint:'Dashes are removed when saved.'},
+    {key:'googleLoginCustomerId',label:'Google login customer ID (manager, optional)',optional:true},
+    {key:'tiktokAdvertiserId',label:'TikTok advertiser ID',optional:true},
+  ], values)}</div>${collection('metaOwners', 'Meta campaign', [
     { key: 'campaignId', label: 'Campaign ID' },
-    { key: 'owner', label: 'Owner', options: [{ value: 'unassigned', label: 'Unassigned' }, { value: 'ours', label: 'Ours' }, { value: 'freelancer', label: 'Freelancer' }] },
+    { key: 'owner', label: 'Owner', options: [{ value: 'ours', label: 'Ours' }, { value: 'freelancer', label: 'Freelancer' }] },
   ], values.metaOwners, 'Map each campaign to its owner. This saves a local rule; it does not change Meta.')}${collection('expectedGoogleCampaigns', 'Google campaign', [
-    { key: 'name', label: 'Campaign name' },
-    { key: 'market', label: 'Market', options: [{ value: 'UK', label: 'UK' }, { value: 'US', label: 'US' }, { value: 'EU', label: 'EU' }] },
-  ], values.expectedGoogleCampaigns, 'The campaigns you expect to serve, with their markets. This does not enable a campaign.')}`);
+    { key: 'campaignId', label: 'Campaign ID' },
+  ], values.expectedGoogleCampaigns, 'Campaign IDs expected to report on complete days. This does not enable a campaign.')}`);
   const creators = section('Creator negotiation', 'Your rules for agreeing an asset and its usage.', `<div class="settings-grid">${fields([
     number('assetCapGbp', 'Maximum fee per asset (£)'),
     number('minimumUsageMonths', 'Minimum usage (months)', { integer: true }),

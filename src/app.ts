@@ -1,3 +1,7 @@
+import { SpendWorker, type SpendWorkerOptions } from './ad-spend/worker.js';
+import { spendFacts, spendHealth } from './ad-spend/store.js';
+import { readEstimates } from './fulfilment/store.js';
+import { dataset } from './shopify/metrics.js';
 import { registerFulfilment, seedFulfilment } from './fulfilment/routes.js';
 import { fulfilmentSummary, refreshFulfilment } from './fulfilment/store.js';
 import { errorCode } from './diagnostics.js';
@@ -28,7 +32,7 @@ declare module 'fastify' {
   interface FastifyInstance { startBackgroundWork(): Promise<void> }
 }
 
-export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: NodeJS.ProcessEnv = {}, shopifyOptions: ConstructorParameters<typeof ShopifyWorker>[3] = {}) {
+export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: NodeJS.ProcessEnv = {}, shopifyOptions: ConstructorParameters<typeof ShopifyWorker>[3] = {}, adOptions:SpendWorkerOptions = {}) {
   // Request/error logging is deliberately off: authentication bodies contain private material.
   const app = Fastify({ logger: false, bodyLimit: 32_768, trustProxy: false, requestTimeout: 15_000 });
   await app.register(cookie);
@@ -48,6 +52,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     await db.query('UPDATE pulse.shopify_watchdog_state SET data = data || $2::jsonb WHERE mode = $1', [shopify.mode, JSON.stringify({ checks, evaluatedAt: now.toISOString() })]);
   }
   await seedFulfilment(db, shopify.mode, sourceNow());
+  const ads=new SpendWorker(db,sourceEnv,adOptions);
   let observationRun: Promise<unknown> | undefined;
   let observationTimer: ReturnType<typeof setInterval> | undefined;
   let startupRun: Promise<void> | undefined;
@@ -60,6 +65,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   // Called by server.ts after listen resolves; repeated calls share the same run.
   function startBackgroundWork(): Promise<void> {
     if (startupRun) return startupRun;
+    ads.start();
     observationTimer = setInterval(() => { void observe(); }, 60_000);
     observationTimer.unref();
     startupRun = (async () => {
@@ -77,6 +83,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   }
   app.addHook('onClose', async () => {
     if (observationTimer) clearInterval(observationTimer);
+    await ads.stop();
     await startupRun;
     await observationRun;
   });
@@ -120,9 +127,15 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     if (await auth.session(request)) return reply.redirect('/');
     return reply.type('text/html; charset=utf-8').send(loginPage(Boolean(config.setupCode)));
   });
+  async function heroInputs(facts:Awaited<ReturnType<typeof shopify.store.facts>>,settings:Awaited<ReturnType<typeof readSettings>>['values']) {
+    const today=ukToday(sourceNow());
+    return {spend:await spendFacts(db,settings,sourceEnv,shopify.mode,dataset(facts,today).min,today),costs:await shopify.store.costHistory(),estimates:await readEstimates(db,shopify.mode)};
+  }
   async function snapshot() {
     const [settings, sourceHealth] = await Promise.all([readSettings(db), readSourceHealth(db)]);
-    const result = await applyShopifyDashboard({ ...getSampleDashboard(settings.values), generatedAt: new Date().toISOString(), sourceHealth }, db, await shopify.store.facts(), settings.values, sourceHealth, sourceNow());
+    const facts=await shopify.store.facts();
+    const adInputs=await heroInputs(facts,settings.values);
+    const result = await applyShopifyDashboard({ ...getSampleDashboard(settings.values), generatedAt: new Date().toISOString(), sourceHealth }, db, facts, settings.values, sourceHealth, sourceNow(), adInputs);
     result.fulfilment = await fulfilmentSummary(db, shopify.mode, sourceNow());
     result.shopify?.needs.push(...result.fulfilment.needs.map(n => ({ ...n, state: 'warn' as const, source: 'j-and-j' as const })));
     return result;
@@ -143,11 +156,12 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     if (Object.keys(query).some((key) => key !== 'from' && key !== 'to')) throw new HeroRangeError();
     const { from, to } = validateHeroRange(query.from, query.to);
     const settings = await readSettings(db);
-    return shopifyHero(await shopify.store.facts(), ukToday(sourceNow()), from, to, settings.values);
+    const facts=await shopify.store.facts();
+    return shopifyHero(facts, ukToday(sourceNow()), from, to, settings.values,undefined,undefined,await heroInputs(facts,settings.values));
   });
   app.get('/sources', async (request, reply) => {
     if (!await auth.session(request)) return reply.redirect('/login');
-    return reply.type('text/html; charset=utf-8').send(sourceHealthPage(await readSourceHealth(db), await shopify.store.summary(), await shopify.store.costSummary()));
+    return reply.type('text/html; charset=utf-8').send(sourceHealthPage(await readSourceHealth(db), await shopify.store.summary(), await shopify.store.costSummary(),await spendHealth(db,sourceEnv,(await readSettings(db)).values)));
   });
   app.get('/api/shopify', async (request, reply) => {
     if (!await auth.session(request)) return reply.code(401).send({ error: 'Sign in to continue.' });

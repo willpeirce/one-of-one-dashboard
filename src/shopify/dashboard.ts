@@ -1,3 +1,4 @@
+import { spendNeeds, type AdHeroInputs } from '../ad-spend/metrics.js';
 import type { Database } from '../db.js';
 import { addDays, ukToday } from '../hero-range.js';
 import type { DashboardSnapshot, Detail, DialModel, Period, State } from '../dashboard-types.js';
@@ -20,7 +21,7 @@ export async function readWatchdogContext(db: Database, facts: Facts) {
   ]);
   return { observation: observations.rows[0]?.data ?? blankObservation(), holidays: holidays.rows };
 }
-export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Database, facts: Facts, settings: Settings, health: SourceHealth[], now: Date): Promise<DashboardSnapshot> {
+export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Database, facts: Facts, settings: Settings, health: SourceHealth[], now: Date, adInputs?:AdHeroInputs): Promise<DashboardSnapshot> {
   const today = ukToday(now), data = dataset(facts, today);
   const context = await readWatchdogContext(db, facts);
   const checks = evaluateWatchdogs(facts, now, settings, context.observation, context.holidays, health);
@@ -32,11 +33,12 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
   };
   // The unstarted live backfill still renders all four periods as unavailable.
   for (const [key, [from, to, name]] of Object.entries(ranges)) {
-    if (from >= data.min) snapshot.hero[key as Period] = shopifyHero(facts, today, from, to, settings, name, preparedRows);
+    if (from >= data.min) snapshot.hero[key as Period] = shopifyHero(facts, today, from, to, settings, name, preparedRows, adInputs);
     else {
-      const hero = shopifyHero(facts, today, today, today, settings, name, preparedRows);
+      const hero = shopifyHero(facts, today, today, today, settings, name, preparedRows, adInputs);
       hero.from = from; hero.to = to; hero.short = name; hero.eyebrow = `${from}–${to} · history unavailable`;
-      for (const metric of [hero.net, hero.orders, hero.cr]) { metric.unavailable = true; metric.ss = 'History unavailable for this range'; }
+      for (const metric of [hero.net, hero.orders, hero.cr, hero.spend, hero.roas, hero.margin]) { metric.unavailable = true; metric.ss = 'History unavailable for this range'; }
+      for(const dial of [hero.ukcpo,hero.uscpo]){dial.t='—';dial.s='History unavailable for this range';}
       snapshot.hero[key as Period] = hero;
     }
   }
@@ -45,7 +47,7 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
   const initial = snapshot.hero.today;
   for (const [key, rawKey, displayKey, subKey] of [['net','t0001','t0038','t0039'],['orders','t0003','t0042','t0043'],['cr','t0004','t0046','t0047'],['spend','t0005','t0050','t0051'],['roas','t0006','t0054','t0055'],['margin','t0007','t0058','t0059']] as const) {
     const metric = initial[key];
-    const display = metric.unavailable ? 'No data' : `${metric.pre ?? ''}${metric.dp ? metric.n.toFixed(metric.dp) : Math.round(metric.n).toLocaleString('en-GB')}${metric.suf ?? ''}`;
+    const display = metric.unavailable ? metric.unavailableLabel ?? 'No data' : `${metric.pre ?? ''}${metric.dp ? metric.n.toFixed(metric.dp) : Math.round(metric.n).toLocaleString('en-GB')}${metric.suf ?? ''}`;
     for (const [k, value] of [[rawKey,String(metric.n)],[displayKey,display],[subKey,metric.ss]]) snapshot.textValues[k!] = { source: metric.source, mode: metric.mode, value: value! };
   }
   for (const [key, value] of [['t0032',initial.eyebrow],['t0034',initial.sub1],['t0035',' Shopify checks and sample previews are shown separately.'],['t0002',initial.spark.join(',')]]) snapshot.textValues[key!] = { source: ['shopify'], mode: facts.mode, value: value! };
@@ -107,9 +109,10 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
   for (const row of stock) if (row.cover !== null && row.cover < 60) needs.push({ id: `stock:${row.productId}:${row.locationId}`, state: row.cover < 21 ? 'alarm' : 'warn', title: row.name, why: `${Math.floor(row.cover)} days of cover; run-out ${row.runOut}. Series 1 kits are not restocked.`, link: `https://admin.shopify.com/store/${appConfig.shopify.storeDomain.split('.')[0]}/products/${row.productId.split('/').at(-1)}` });
   for (const row of stock) if (row.available !== null && row.required !== null && row.available < row.required) needs.push({ id: `attach:${row.productId}:${row.locationId}`, state: 'warn', title: row.name, why: `${row.available} available; ${Math.ceil(row.required)} needed at the measured attach rate for remaining kits. Source-owned stock only; TikTok gift stock awaits its source.`, link: `https://admin.shopify.com/store/${appConfig.shopify.storeDomain.split('.')[0]}/products/${row.productId.split('/').at(-1)}` });
   for (const n of facts.noticeDetails) if (['reports_unavailable', 'address_unavailable'].includes(n.kind)) needs.push({ id: n.source_id, state: 'warn', title: n.kind === 'reports_unavailable' ? 'Shopify reports unavailable' : 'Address access unavailable', why: n.kind === 'reports_unavailable' ? 'ShopifyQL was denied. Sessions may be daily routine data or unavailable; older order detail needs read_all_orders. Check granted Level 2 access.' : 'Order markets use currency/warehouse fallback. Check the app’s address permission; no personal address is stored.', link: `https://admin.shopify.com/store/${appConfig.shopify.storeDomain.split('.')[0]}/settings/apps` });
+  if(adInputs)needs.push(...spendNeeds(adInputs.spend,settings,today));
   needs.sort((a, b) => Number(b.state === 'alarm') - Number(a.state === 'alarm'));
   // Direct Judge.me and advertising examples remain explicitly separate until their parts land.
-  snapshot.banner = `${stamp}. Advertising, reviews and other stages: sample data; fulfilment uses separately labelled J&J uploads; ads-dependent hero values unavailable.`;
+  snapshot.banner = `${stamp}. Ad spend uses separately labelled source connections; reviews and other stages: sample data; fulfilment uses separately labelled J&J uploads.`;
   snapshot.shopify = { mode: facts.mode, checks, stock, needs, detail: detailData,
     live: { lastOrder: last ? `${Math.max(0, Math.floor((now.getTime() - Date.parse(last.paidAt!)) / 60_000))} min` : 'Unknown', dispatch: checks.find(c => c.id === 'dispatch')!.why, carts: 'Open carts unavailable · session funnel is not a live cart count' } };
   return snapshot;

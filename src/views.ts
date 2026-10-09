@@ -73,20 +73,21 @@ const healthLabels: Record<SourceHealth['status'], string> = {
   error: 'Source unavailable',
 };
 
-export function sourceHealthPage(rows: readonly SourceHealth[], shopify?: Awaited<ReturnType<ShopifyStore['summary']>>, costs?: Awaited<ReturnType<ShopifyStore['costSummary']>>): string {
-  return page('Source health', `<p class="sample-banner"><strong>sample data</strong> · ${shopify ? 'Shopify cards use ingested data; other sources remain labelled samples.' : 'No source data has been imported.'}</p>
+export function sourceHealthPage(rows: readonly SourceHealth[], shopify?: Awaited<ReturnType<ShopifyStore['summary']>>, costs?: Awaited<ReturnType<ShopifyStore['costSummary']>>, ads?:Awaited<ReturnType<typeof import('./ad-spend/store.js').spendHealth>>): string {
+  return page('Source health', `<p class="sample-banner"><strong>sample data</strong> · ${shopify ? 'Shopify cards use ingested data; ad spend uses its own source connections; deferred examples remain labelled samples.' : 'No source data has been imported.'}</p>
     <h1>Source health</h1>
     ${shopify ? `<section aria-label="Shopify imports"><h2>Shopify imports · ${shopify.sample ? 'sample data' : 'live'}</h2><p>${shopify.counts.order ?? 0} orders · ${shopify.counts.inventory ?? 0} inventory rows · ${shopify.counts.sessions ?? 0} session days · ${shopify.counts.sales ?? 0} older sales days · ${shopify.pendingWebhooks} webhooks pending.</p><p>Shopify cards and watchdogs are on Home. New reviews follow in part 1c. Import counts include older records retained for replay; window-based cards exclude them.</p>${shopify.notices.length ? `<p>Needs attention: ${shopify.notices.map(n => escapeHtml(n.replaceAll('_', ' '))).join(' · ')}</p>` : ''}</section>` : ''}
     ${costs ? `<p>Shopify unit costs: ${costs.known} stock variants with a cost · ${costs.missing} without · last cost change ${costs.changed ? timestamp(costs.changed) : 'none observed'}. ${shopify?.sample ? 'Sample data.' : 'Live.'}</p>` : ''}
-    <p>Live mode means all required keys are present. Shopify imports automatically. The remaining source clients arrive in their stages.</p>
+    ${ads?`<section aria-label="Ad spend imports"><h2>Ad spend</h2>${ads.map(a=>`<p>${escapeHtml(a.source==='meta'?'Meta':a.source==='google-ads'?'Google':'TikTok')} · ${escapeHtml(a.status)}${a.fetchedAt?` · fetched ${escapeHtml(a.fetchedAt)}`:''}${a.source==='google-ads'?' · Google can lag about 3 hours · hours re-aligned to UK time':a.source==='tiktok'?' · hours re-aligned to UK time':''}</p>`).join('')}<p>Account IDs belong in Settings &gt; Ad spend. Each source connects independently. No ad platform changes are made.</p></section>`:''}
+    <p>Shopify imports when its keys are present. Ad spend also needs its account ID in Settings. Other source clients arrive in their stages.</p>
     <div class="table-scroll" role="region" aria-label="Source health table, scroll horizontally if needed" tabindex="0">
       <table id="source-health">
         <caption>Source connections · times shown in UK time</caption>
         <thead><tr><th scope="col">Source</th><th scope="col">Mode</th><th scope="col">Health</th><th scope="col">Last success</th><th scope="col">Required keys</th></tr></thead>
         <tbody>${rows.map((row) => `<tr>
           <th scope="row">${escapeHtml(row.name)}</th>
-          <td>${row.mode === 'sample' ? 'Sample' : 'Live'}</td>
-          <td>${escapeHtml(row.source === 'shopify' && row.status === 'not_implemented' ? 'First sync pending' : healthLabels[row.status])}</td>
+          <td>${(ads?.find(a=>a.source===row.source)?.live??row.mode==='live') ? 'Live' : 'Sample'}</td>
+          <td>${escapeHtml(ads?.find(a=>a.source===row.source)?.status??(row.source === 'shopify' && row.status === 'not_implemented' ? 'First sync pending' : healthLabels[row.status]))}</td>
           <td>${timestamp(row.lastSuccessAt)}</td>
           <td class="key-names">${row.requiredKeys.map((key) => `<code>${escapeHtml(key)}</code>`).join('<br>')}</td>
         </tr>`).join('')}</tbody>

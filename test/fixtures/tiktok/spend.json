@@ -1,0 +1,25 @@
+{
+  "code": 0,
+  "message": "OK",
+  "request_id": "sample-request",
+  "data": {
+    "list": [
+      {
+        "dimensions": {
+          "campaign_id": "900000000301",
+          "stat_time_hour": "2026-09-29 23:00:00"
+        },
+        "metrics": {
+          "campaign_name": "Invented campaign - UK",
+          "spend": "12.40"
+        }
+      }
+    ],
+    "page_info": {
+      "page": 1,
+      "page_size": 1000,
+      "total_number": 1,
+      "total_page": 1
+    }
+  }
+}

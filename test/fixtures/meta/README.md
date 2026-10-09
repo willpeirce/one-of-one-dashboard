@@ -1,0 +1,1 @@
+These are invented API response projections. Every identifier beginning with 900 is deliberately fabricated, and every campaign/ad-set name is marked Invented. Amounts are sample data, never captured from an account. OAuth access tokens are generated at runtime in tests.

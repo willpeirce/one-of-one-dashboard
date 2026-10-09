@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { defaultSettings } from '../src/settings.js';
 import { appConfig } from '../src/config.js';
 import { getSourceStates, readSourceHealth, sourceDefinitions, syncSourceHealth } from '../src/sources.js';
 import { createTestDatabase } from './helpers/database.js';
@@ -11,6 +12,7 @@ test('every planned source is registered once, using only its section 1 key name
     shopify: ['SHOPIFY_CLIENT_ID', 'SHOPIFY_CLIENT_SECRET'],
     meta: ['META_ACCESS_TOKEN'],
     'google-ads': ['GOOGLE_ADS_CLIENT_ID', 'GOOGLE_ADS_CLIENT_SECRET', 'GOOGLE_ADS_REFRESH_TOKEN'],
+    tiktok: ['TIKTOK_ACCESS_TOKEN'],
     mailchimp: ['MAILCHIMP_API_KEY'],
     'github-hq': ['GITHUB_HQ_TOKEN'],
     gorgias: ['GORGIAS_DOMAIN', 'GORGIAS_EMAIL', 'GORGIAS_API_KEY'],
@@ -72,10 +74,9 @@ test('.env.example contains every required name and no values', async () => {
 test('public config keeps the stock exclusions, owner split and unresolved mappings explicit', () => {
   const stockIds: readonly string[] = appConfig.shopify.stockProducts.map(({ id }) => id);
   assert.ok(appConfig.shopify.tiktokOrderOnlyProductIds.every((id) => !stockIds.includes(id)));
-  assert.equal(appConfig.meta.campaigns.filter(({ owner }) => owner === 'ours').length, 4);
-  assert.equal(appConfig.meta.campaigns.filter(({ owner }) => owner === 'freelancer').length, 3);
-  assert.equal(appConfig.googleAds.expectedCampaigns.filter(({ market }) => market === 'US').length, 2);
-  assert.ok(appConfig.googleAds.expectedCampaigns.filter(({ market }) => market === 'US').every(({ confirmed }) => !confirmed));
+  const defaults=defaultSettings();
+  assert.equal(defaults.metaAdAccountId,'');assert.equal(defaults.googleCustomerId,'');assert.equal(defaults.googleLoginCustomerId,'');assert.equal(defaults.tiktokAdvertiserId,'');
+  assert.deepEqual(defaults.metaOwners,[]);assert.deepEqual(defaults.expectedGoogleCampaigns,[]);
   assert.equal(appConfig.mailchimp.unresolvedUtmEmails.length, 2);
   assert.ok(appConfig.mailchimp.unresolvedUtmEmails.every(({ flowId }) => flowId === '3354'));
   assert.equal(appConfig.judgeme.publishEnabled, false);
@@ -97,7 +98,7 @@ test('source health persists rows without credentials and resets freshness only 
   assert.equal(live.mode, 'live');
   assert.equal(live.status, 'not_implemented');
   assert.equal(live.lastSuccessAt, null);
-  assert.equal((await readSourceHealth(db)).filter(({ mode }) => mode === 'sample').length, 9);
+  assert.equal((await readSourceHealth(db)).filter(({ mode }) => mode === 'sample').length, sourceDefinitions.length-1);
 
   await db.query(`UPDATE pulse.source_health
     SET last_success_at = '2026-09-30T12:00:00Z', last_attempt_at = '2026-09-30T13:00:00Z',

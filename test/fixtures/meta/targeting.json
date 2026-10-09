@@ -1,0 +1,10 @@
+{
+  "id": "900000000102",
+  "targeting": {
+    "geo_locations": {
+      "countries": [
+        "US"
+      ]
+    }
+  }
+}

@@ -106,13 +106,16 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     }
   });
   await registerShopifyWebhooks(app, db, sourceEnv, () => shopify.triggerInbox());
-  app.setErrorHandler((error, _request, reply) => {
+  app.setErrorHandler((error, request, reply) => {
     if (error instanceof ImportError) return reply.code(400).send({ error: error.message });
     if (error instanceof HeroRangeError) return reply.code(400).send({ error: 'Invalid date range.' });
     if (error instanceof SettingsValidationError) {
       return reply.code(400).send({ error: error.message, fields: error.fields });
     }
     if (error instanceof SettingsConflictError) return reply.code(409).send({ error: error.message });
+    if (request.method === 'POST' && request.routeOptions.url === '/api/settings') {
+      console.error(`Settings save failed (code: ${errorCode(error)}).`);
+    }
     const code = error && typeof error === 'object' && 'statusCode' in error ? error.statusCode : undefined;
     const status = typeof code === 'number' && code >= 400 && code < 500 ? code : 500;
     reply.code(status).send({ error: status === 500 ? 'The service is temporarily unavailable.' : 'Invalid request.' });

@@ -90,7 +90,7 @@ test('all migrations leave public empty, repeat without losing rows and reject c
   await Promise.all([migrate(db), migrate(db)]);
   await assertPublicHasNoTables(db);
   assert.equal((await db.query('SELECT * FROM pulse.audit_log')).rows.length, 1);
-  assert.equal((await db.query('SELECT * FROM pulse_private.schema_migrations')).rows.length, 9);
+  assert.equal((await db.query('SELECT * FROM pulse_private.schema_migrations')).rows.length, 10);
   await db.query("UPDATE pulse_private.schema_migrations SET checksum = 'changed'");
   await assert.rejects(migrate(db), (error: unknown) => {
     assert.ok(error instanceof MigrationError);
@@ -98,6 +98,46 @@ test('all migrations leave public empty, repeat without losing rows and reject c
     assert.equal(error.code, 'UNKNOWN');
     return true;
   });
+});
+
+test('010 discovers a renamed audit field CHECK and preserves existing audit rows and migration history', async (t) => {
+  const db = await createTestDatabase();
+  t.after(() => db.close());
+  const fieldCheck = (await db.query<{ conname: string }>(`
+    SELECT c.conname FROM pg_constraint c
+    JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+    WHERE c.conrelid = 'pulse.settings_changes'::regclass
+      AND c.contype = 'c' AND a.attname = 'field'
+  `)).rows;
+  assert.equal(fieldCheck.length, 1);
+  const originalName = fieldCheck[0]!.conname.replaceAll('"', '""');
+  await db.query(`
+    ALTER TABLE pulse.settings_changes RENAME CONSTRAINT "${originalName}" TO invented_settings_fields;
+    DELETE FROM pulse_private.schema_migrations WHERE name LIKE '010_%';
+    WITH entry AS (
+      INSERT INTO pulse.audit_log (event) VALUES ('settings_changed') RETURNING id
+    )
+    INSERT INTO pulse.settings_changes (audit_id, field) SELECT id, 'goalOrdersPerDay' FROM entry;
+  `);
+  const migrationHistory = (await db.query('SELECT * FROM pulse_private.schema_migrations ORDER BY name')).rows;
+  const existingAudit = (await db.query(`
+    SELECT a.*, c.field FROM pulse.audit_log a
+    JOIN pulse.settings_changes c ON c.audit_id = a.id ORDER BY a.id
+  `)).rows;
+
+  await migrate(db);
+
+  assert.deepEqual((await db.query(`
+    SELECT * FROM pulse_private.schema_migrations WHERE name NOT LIKE '010_%' ORDER BY name
+  `)).rows, migrationHistory);
+  assert.deepEqual((await db.query(`
+    SELECT a.*, c.field FROM pulse.audit_log a
+    JOIN pulse.settings_changes c ON c.audit_id = a.id ORDER BY a.id
+  `)).rows, existingAudit);
+  assert.equal((await db.query(`
+    SELECT conname FROM pg_constraint WHERE conrelid = 'pulse.settings_changes'::regclass
+      AND conname = 'invented_settings_fields' AND contype = 'c'
+  `)).rowCount, 1);
 });
 
 test('002 moves public data and preserves tables, indexes, constraints, sequences and foreign keys', async (t) => {

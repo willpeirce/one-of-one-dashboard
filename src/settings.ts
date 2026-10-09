@@ -164,8 +164,8 @@ function cutoff(value: unknown, field: string): string {
   return value;
 }
 
-function list<T>(value: unknown, field: string, parse: (row: unknown, path: string) => T, identity: (row: T) => string): T[] {
-  if (!Array.isArray(value) || value.length > 50) return invalid(field);
+function list<T>(value: unknown, field: string, parse: (row: unknown, path: string) => T, identity: (row: T) => string, maxItems = 50): T[] {
+  if (!Array.isArray(value) || value.length > maxItems) return invalid(field);
   const rows = value.map((row, index) => parse(row, `${field}.${index}`));
   const names = rows.map((row) => identity(row).toLowerCase());
   if (new Set(names).size !== names.length) return invalid(field);
@@ -229,7 +229,7 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
       const parsed = object(row, ['campaignId', 'owner'], path);
       if (typeof parsed.campaignId !== 'string' || !/^\d{1,24}$/.test(parsed.campaignId)) return invalid(`${path}.campaignId`);
       return { campaignId: parsed.campaignId, owner: choice(parsed.owner, `${path}.owner`, ['ours', 'freelancer'] as const) };
-    }, (row) => row.campaignId),
+    }, (row) => row.campaignId, 10_000),
     expectedGoogleCampaigns: list(value.expectedGoogleCampaigns, 'expectedGoogleCampaigns', (row, path) => {
       const parsed = object(row, ['campaignId'], path);
       const campaignId = accountId(parsed.campaignId, `${path}.campaignId`);

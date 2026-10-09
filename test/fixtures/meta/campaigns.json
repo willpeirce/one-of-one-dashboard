@@ -1,0 +1,22 @@
+{
+  "data": [
+    {
+      "id": "900000000601",
+      "name": "Invented Aurora discovery",
+      "effective_status": "ACTIVE",
+      "created_time": "2026-09-01T08:00:00+0000"
+    },
+    {
+      "id": "900000000602",
+      "name": "Invented Cedar retargeting",
+      "effective_status": "PAUSED",
+      "created_time": "2026-09-12T09:00:00+0000"
+    },
+    {
+      "id": "900000000603",
+      "name": "Invented Lumen launch",
+      "effective_status": "ACTIVE",
+      "created_time": "2026-09-29T10:00:00+0000"
+    }
+  ]
+}

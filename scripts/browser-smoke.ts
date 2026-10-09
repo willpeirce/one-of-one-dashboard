@@ -35,6 +35,7 @@ interface HeroPeriod {
 interface DashboardSnapshot {
   hero: Record<Period, HeroPeriod>;
   bounds: { min: string; max: string; today: string };
+  shopify?: { checks: Array<{ id: string; status: string }> };
 }
 
 async function showAccountMenu(page: Page): Promise<void> {
@@ -55,7 +56,7 @@ async function dashboardSnapshot(context: BrowserContext): Promise<DashboardSnap
 
 async function assertHeroModel(page: Page, metrics: HeroPeriod): Promise<void> {
   const expected: Record<string, string> = {};
-  for (const key of ['net', 'orders', 'cr', 'spend', 'roas', 'margin', 'ukcpo', 'uscpo']) {
+  for (const key of ['net', 'orders', 'cr', 'spend', 'roas', 'margin', 'profit', 'ukcpo', 'uscpo']) {
     const metric = metrics[key];
     assert.ok(metric && typeof metric !== 'string' && !Array.isArray(metric));
     if (typeof metric.n === 'number') {
@@ -76,6 +77,13 @@ async function assertHeroModel(page: Page, metrics: HeroPeriod): Promise<void> {
   for (const key of Object.keys(expected)) {
     assert.equal(await page.locator(`#hero [data-k="${key}"]`).count(), 1);
   }
+  const margin = metrics.margin as HeroMetric, profit = metrics.profit as HeroMetric, net = metrics.net as HeroMetric;
+  assert.equal(profit.unavailable, margin.unavailable);
+  assert.equal(profit.ss, margin.ss);
+  if (!margin.unavailable && net.n && typeof margin.n === 'number' && typeof profit.n === 'number') {
+    assert.ok(Math.abs(profit.n - net.n * margin.n / 100) < 1e-8, 'Profit must equal the margin numerator in every preset and picked range');
+  }
+  assert.equal(await page.locator('#hero [data-k="profit"] .spark').count(), 0);
   const bars = await page.locator('#hero .spark svg rect').evaluateAll((elements) => elements.map((element) => ({
     width: Number(element.getAttribute('width')), height: Number(element.getAttribute('height')),
   })));
@@ -83,6 +91,111 @@ async function assertHeroModel(page: Page, metrics: HeroPeriod): Promise<void> {
   assert.ok(bars.every((bar) => bar.width > 0 && bar.height > 0), 'Every date-range spark bar must remain visible');
   const high = Math.max(1, ...metrics.spark);
   for (const [index, bar] of bars.entries()) assert.ok(Math.abs(bar.height - Math.max(3, 34 * metrics.spark[index]! / high)) <= 0.011);
+}
+
+async function assertHeroLayout(page: Page): Promise<void> {
+  const tiles = await page.locator('#hero .tile[data-k]').evaluateAll(elements => elements.map(element => {
+    const box = element.getBoundingClientRect();
+    return { key: element.getAttribute('data-k'), x: box.left, y: box.top, right: box.right, bottom: box.bottom };
+  }));
+  const margin = tiles.find(tile => tile.key === 'margin'), profit = tiles.find(tile => tile.key === 'profit');
+  assert.ok(margin && profit);
+  assert.ok(Math.abs(margin.y - profit.y) <= 1 && Math.abs(margin.bottom - profit.bottom) <= 1, 'Net margin and Net profit must sit side by side');
+  assert.ok(margin.right <= profit.x || profit.right <= margin.x);
+  for (const tile of tiles) {
+    const row = tiles.filter(other => other.y <= tile.y + 1 && other.bottom > tile.y + 1);
+    assert.ok(row.length >= 2, `Hero ${tile.key} must not sit alone on a row`);
+  }
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+}
+
+async function checkGreetingRollover(context: BrowserContext): Promise<void> {
+  const page = await context.newPage();
+  try {
+    // At 10:59 UTC this invented BST date is 11:59 in London.
+    await page.clock.install({ time: new Date('2026-10-09T10:58:59Z') });
+    await page.clock.pauseAt(new Date('2026-10-09T10:59:00Z'));
+    await page.goto('/');
+    await page.locator('html[data-dashboard-ready="true"]').waitFor();
+    assert.equal(await page.locator('#greeting').innerText(), 'Morning, Will.');
+    await page.clock.runFor(60_000);
+    assert.equal(await page.locator('#greeting').innerText(), 'Afternoon, Will.');
+  } finally { await page.close(); }
+}
+
+async function checkCampaignOwners(page: Page, context: BrowserContext, dashboard: Page): Promise<void> {
+  const scope = step;
+  const rows = page.locator('[data-meta-campaign]');
+  assert.equal(await rows.count(), 3);
+  assert.equal(await page.locator('[data-campaign-new]').count(), 1);
+  assert.equal(await page.locator('[data-settings-list="metaOwners"]').count(), 0);
+  assert.equal(await page.locator('input[name^="metaOwners."], input[name*="campaignId"]').count(), 0);
+  const unconfirmed = rows.filter({ has: page.locator('[data-campaign-new]') });
+  const campaignId = await unconfirmed.getAttribute('data-meta-campaign');
+  assert.ok(campaignId);
+  const campaign = page.locator(`[data-meta-campaign="${campaignId}"]`);
+  assert.equal(await campaign.locator('[data-campaign-owner]').inputValue(), 'ours');
+  const dates = await rows.locator('time').evaluateAll(elements => elements.map(element => element.getAttribute('datetime')));
+  assert.equal(dates.length, 3);
+  assert.ok(dates.every(date => date && Number.isFinite(Date.parse(date))));
+  assert.ok(Date.parse(dates[0]!) >= Date.parse(dates[1]!), 'Active campaigns are newest first');
+  assert.equal(await page.locator('.setting-campaign-inactive > summary').innerText(), 'Show 1 inactive');
+  assert.equal(await page.locator('.setting-campaign-inactive').getAttribute('open'), null);
+  await page.locator('.setting-campaign-inactive > summary').click();
+  assert.match(await page.locator('.setting-campaign-inactive [data-meta-campaign]').innerText(), /paused · Created.*sample data/is);
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    for (const row of await rows.all()) {
+      assert.equal(await row.locator('h4').isVisible(), true);
+      assert.equal(await row.locator('[data-campaign-owner]').isVisible(), true);
+      assert.equal(await row.locator('[data-save-campaign]').isVisible(), true);
+    }
+    if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/meta-campaign-settings-${viewport.width}.png` });
+  }
+  const readSettings = async () => await (await context.request.get('/api/settings')).json() as {
+    values: { blendedMetaTripwireGbp: number; metaOwners: Array<{ campaignId: string; owner: string }> };
+  };
+  const save = async (selector: string, message: string) => {
+    const response = page.waitForResponse(response => new URL(response.url()).pathname === '/api/settings' && response.request().method() === 'POST');
+    await page.locator(selector).click();
+    assert.equal((await response).status(), 200);
+    await page.waitForFunction(expected => document.querySelector('#settings-message')?.textContent === expected, message);
+  };
+  step = `${scope}: general Settings save does not confirm a campaign`;
+  await save('#settings-save', 'Settings saved.');
+  assert.equal(await campaign.locator('[data-campaign-new]').count(), 1);
+  assert.equal((await readSettings()).values.metaOwners.some(rule => rule.campaignId === campaignId), false);
+  const original = (await readSettings()).values.blendedMetaTripwireGbp;
+  const changed = original === 29 ? 30 : 29;
+  const costSection = page.locator('summary').filter({ hasText: 'Cost per purchase' });
+  await costSection.click();
+  const tripwire = page.locator('input[name="blendedMetaTripwireGbp"]');
+  await tripwire.fill(String(changed));
+  step = `${scope}: unchanged owner confirmation preserves other unsaved edits`;
+  await save(`[data-meta-campaign="${campaignId}"] [data-save-campaign]`, 'Campaign owner saved. Your other edits are still here.');
+  assert.equal(await campaign.locator('[data-campaign-new]').count(), 0);
+  assert.equal(await tripwire.inputValue(), String(changed));
+  assert.equal((await readSettings()).values.blendedMetaTripwireGbp, original);
+  assert.equal((await readSettings()).values.metaOwners.find(rule => rule.campaignId === campaignId)?.owner, 'ours');
+  await dashboard.waitForFunction(() => document.querySelector('#settings-count')?.hasAttribute('hidden'));
+  await save('#settings-save', 'Settings saved.');
+  assert.equal((await readSettings()).values.blendedMetaTripwireGbp, changed);
+  await tripwire.fill(String(original));
+  await save('#settings-save', 'Settings saved.');
+  step = `${scope}: owner dropdown edits require their own Save and persist after reload`;
+  await campaign.locator('[data-campaign-owner]').selectOption('freelancer');
+  await save('#settings-save', 'Settings saved. Save each changed campaign owner.');
+  assert.equal(await campaign.locator('[data-campaign-owner]').inputValue(), 'freelancer');
+  assert.equal((await readSettings()).values.metaOwners.find(rule => rule.campaignId === campaignId)?.owner, 'ours');
+  await save(`[data-meta-campaign="${campaignId}"] [data-save-campaign]`, 'Campaign owner saved.');
+  await page.reload();
+  await page.locator('summary').filter({ hasText: 'Ad spend' }).click();
+  assert.equal(await campaign.locator('[data-campaign-owner]').inputValue(), 'freelancer');
+  assert.equal(await page.locator('[data-campaign-new]').count(), 0);
+  await campaign.locator('[data-campaign-owner]').selectOption('ours');
+  await save(`[data-meta-campaign="${campaignId}"] [data-save-campaign]`, 'Campaign owner saved.');
+  assert.equal((await readSettings()).values.metaOwners.find(rule => rule.campaignId === campaignId)?.owner, 'ours');
 }
 
 async function assertHero(page: Page, snapshot: DashboardSnapshot, period: Period): Promise<void> {
@@ -404,6 +517,8 @@ async function checkPullToRefresh(browser: Browser, signedIn: BrowserContext, or
     step = `${scope}: full standalone pull keeps the selected preset`;
     await page.locator('#period [data-period="7d"]').click();
     const liveLabelSnapshot = await dashboardSnapshot(mobile);
+    assert.ok(liveLabelSnapshot.shopify && liveLabelSnapshot.shopify.checks.length >= 2);
+    liveLabelSnapshot.shopify.checks.forEach((check, index) => { check.status = index < 2 ? 'tripped' : 'pass'; });
     for (const period of periods) {
       liveLabelSnapshot.hero[period].net = { ...(liveLabelSnapshot.hero[period].net as HeroMetric), mode: 'live',
         d: { ...(liveLabelSnapshot.hero[period].net as HeroMetric).d!, src: 'Shopify' } };
@@ -431,6 +546,11 @@ async function checkPullToRefresh(browser: Browser, signedIn: BrowserContext, or
     await page.waitForFunction(() => /^Updated \d{2}:\d{2}$/.test(document.querySelector('#update-status')?.textContent ?? ''));
     assert.equal(await page.locator('#period [data-period="7d"]').getAttribute('aria-selected'), 'true');
     assert.equal(await page.locator('#picklbl').innerText(), 'Dates');
+    await showAccountMenu(page);
+    assert.equal(await page.locator('#source-health-count').innerText(), '2');
+    assert.equal(await page.locator('#source-health-count').isVisible(), true);
+    await hideAccountMenu(page);
+    assert.equal(await page.locator('.sample-banner, #shopify-checks').count(), 0);
 
     step = `${scope}: a live sheet cannot inherit the mixed snapshot sample label`;
     await page.locator('#hero [data-k="net"]').click();
@@ -723,8 +843,16 @@ async function run(): Promise<void> {
     await page.getByRole('button', { name: 'Add this device', exact: true }).click();
     await page.waitForURL(new URL('/', origin).href);
     await page.locator('html[data-dashboard-ready="true"]').waitFor();
-    assert.equal(await page.locator('.sample-banner').isVisible(), true);
-    assert.match(await page.locator('.sample-banner').innerText(), /sample data/i);
+    assert.equal(await page.locator('.sample-banner').count(), 0);
+    assert.equal(await page.locator('#shopify-checks').count(), 0);
+    assert.doesNotMatch(await page.locator('main').innerText(), /Shopify checks and sample previews are shown separately\./);
+    const currentUkHour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: 'numeric', hourCycle: 'h23' }).format(new Date()));
+    const greeting = currentUkHour >= 5 && currentUkHour < 12 ? 'Morning' : currentUkHour >= 12 && currentUkHour < 18 ? 'Afternoon' : 'Evening';
+    assert.equal(await page.locator('#greeting').innerText(), `${greeting}, Will.`);
+    assert.doesNotMatch(await page.locator('#shopify-needs').innerText(), /Meta campaign not assigned/i);
+    await showAccountMenu(page);
+    assert.equal(await page.locator('#settings-count').innerText(), '1');
+    await hideAccountMenu(page);
     const cookies = await context.cookies();
     const thirtyDaysFromNow = Date.now() / 1000 + 30 * 24 * 60 * 60;
     assert.ok(cookies.some((cookie) => cookie.httpOnly && cookie.sameSite === 'Strict'
@@ -747,6 +875,8 @@ async function run(): Promise<void> {
         assert.equal(await page.getByRole('button', { name: 'Sign out', exact: true }).isVisible(), true);
         await hideAccountMenu(page);
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+        await assertHeroLayout(page);
+        if (process.env.PULSE_SCREENSHOT_DIR) await page.locator('#hero').screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/hero-profit-${viewport.width}-${preference}.png` });
         await assertLocalFonts(page);
         await assertSampleTextStyles(page);
         await assertUnbuiltActions(page);
@@ -772,7 +902,7 @@ async function run(): Promise<void> {
         await page.locator('#hero [data-k="spend"]').click();
         step = 'check ad spend detail split';
         const spendSheet = (await page.locator('#sheet').textContent()) ?? '';
-        for (const split of ['Meta ours', 'Meta freelancer', 'Meta unassigned', 'Google', 'TikTok', 'Unknown market']) assert.ok(spendSheet.includes(split));
+        for (const split of ['Meta ours', 'Meta freelancer', 'Google', 'TikTok', 'Unknown market']) assert.ok(spendSheet.includes(split));
         step = 'check hourly realignment in spend sheet';
         assert.match(spendSheet, /hours re-aligned to UK time/);
         step = 'check Google lag in spend sheet';
@@ -806,6 +936,17 @@ async function run(): Promise<void> {
         assert.match(await page.locator('#sh-src').innerText(), /sample data/i);
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
         if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/margin-shipping-${viewport.width}.png` });
+        const marginBreakdown = await page.locator('#sh-extra dt, #sh-extra dd').allTextContents();
+        await page.locator('#sh-x').click();
+        step = `check Net profit uses the margin breakdown at ${viewport.width}px`;
+        await page.locator('#hero [data-k="profit"]').click();
+        assert.equal(await page.locator('#sh-title').innerText(), 'Net profit');
+        assert.deepEqual((await page.locator('#sh-extra dt, #sh-extra dd').allTextContents()).slice(0, -2), marginBreakdown);
+        assert.equal(await page.locator('#sh-extra dt').last().textContent(), 'Net profit');
+        assert.equal(await page.locator('#sh-extra dd').last().innerText(),
+          (snapshot.hero.today.profit as HeroMetric).d?.extra?.at(-1)?.[1]);
+        assert.match(await page.locator('#sh-extra dd').last().innerText(), /£/);
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
         await page.locator('#sh-x').click();
         step = `check date picker at ${viewport.width}px with ${preference} browser preference`;
         await checkDatePicker(page, context, snapshot, viewport.width);
@@ -908,7 +1049,8 @@ async function run(): Promise<void> {
       assert.equal(await settingsPage.locator(`input[name="${name}"]`).inputValue(), '');
       assert.equal(await settingsPage.locator(`input[name="${name}"]`).getAttribute('required'), null);
     }
-    assert.equal(await settingsPage.locator('[data-settings-list="metaOwners"] .setting-row').count(), 0);
+    step = 'check automatically listed campaigns and local owner confirmation';
+    await checkCampaignOwners(settingsPage, context, page);
     assert.equal(await settingsPage.locator('[data-settings-list="expectedGoogleCampaigns"] .setting-row').count(), 0);
     step = 'add named overheads, remove one and retain correctly numbered month fields';
     const overheads = settingsPage.locator('[data-settings-list="overheads"]');
@@ -988,6 +1130,7 @@ async function run(): Promise<void> {
     await settingsPage.goto('/audit');
     assert.match(await settingsPage.locator('#audit-log').innerText(), /blendedMetaTripwireGbp/);
     assert.match(await settingsPage.locator('#audit-log').innerText(), /overheads/);
+    assert.match(await settingsPage.locator('#audit-log').innerText(), /metaOwners/);
     await settingsPage.close();
 
     step = 'check fulfilment costs at phone and desktop widths';
@@ -1058,7 +1201,20 @@ async function run(): Promise<void> {
     await page.goto('/sources');
     await page.locator('#source-health tbody tr').last().waitFor();
     assert.equal(await page.locator('#source-health tbody tr').count(), 11);
-    assert.ok(await page.getByText('sample data', { exact: true }).count() >= 1);
+    step = 'check source and mode summary is the first Source health panel';
+    assert.equal(await page.locator('main section').first().getAttribute('id'), 'source-summary');
+    assert.match(await page.locator('#source-summary').innerText(), /Ad spend uses separately labelled source connections/);
+    assert.match(await page.locator('#source-summary').innerText(), /sample data/i);
+    const sourceChecks = (await dashboardSnapshot(context)).shopify!.checks;
+    const watchdogPanel = page.locator('#shopify-watchdogs');
+    step = 'check moved Source health watchdog list, passing count and time';
+    assert.equal(await watchdogPanel.locator('li').count(), sourceChecks.length);
+    assert.match(await watchdogPanel.innerText(), new RegExp(`${sourceChecks.filter(check => check.status === 'pass').length}.*${sourceChecks.length}.*passing`, 'i'));
+    const checkedAt = await watchdogPanel.locator('time').getAttribute('datetime');
+    assert.ok(checkedAt && Number.isFinite(Date.parse(checkedAt)));
+
+    step = 'check the UK greeting turns over while the sample dashboard stays open';
+    await checkGreetingRollover(context);
 
     step = 'check home-screen pull to refresh with trusted touch input';
     await checkPullToRefresh(browser, context, origin);
@@ -1150,7 +1306,7 @@ async function run(): Promise<void> {
     assert.equal(consoleErrors.length, 0);
     assert.equal(externalRequests, 0);
     await context.close();
-    console.log('Browser checks passed: passkeys and replay/origin/signature rejection; all hero presets and custom dates, bounded keyboard calendars, decks, search and details; named overhead Settings and margin shares; Settings persistence and SSE without replacing picked dates; standalone touch refresh, excluded controls, failure retention and unsaved edits; live sheet labels; source health and audit; local fonts and PWA; dark-only phone/desktop with both browser preferences and no external requests.');
+    console.log('Browser checks passed: passkeys and replay/origin/signature rejection; all hero presets and custom dates, paired margin/profit tiles and shared breakdown, bounded keyboard calendars, decks, search and details; named overhead Settings and margin shares; automatic campaign list, local confirmation and owner changes; Settings persistence and SSE without replacing picked dates; standalone touch refresh, menu counts, excluded controls, failure retention and unsaved edits; UK greeting rollover and moved source status; live sheet labels, audit, local fonts and PWA; dark-only phone/desktop with both browser preferences and no external requests.');
   } finally {
     await browser.close();
   }

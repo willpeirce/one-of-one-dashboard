@@ -8,6 +8,12 @@ import {
 } from '../src/settings.js';
 import { createTestDatabase } from './helpers/database.js';
 
+test('Meta ownership retains more campaigns than the bounded manual collections', () => {
+  const metaOwners = Array.from({ length: 51 }, (_, index) => ({ campaignId: String(900000001000 + index), owner: 'ours' as const }));
+  assert.deepEqual(validateSettings({ ...defaultSettings(), metaOwners }).metaOwners, metaOwners);
+  assert.throws(() => validateSettings({ ...defaultSettings(), overheads: Array.from({ length: 51 }, (_, index) => ({ name: `Invented overhead ${index}`, monthlyGbp: 0, startMonth: '', endMonth: '' })) }), SettingsValidationError);
+});
+
 test('settings initialize once with specified defaults, unknowns unset and no default-change audit', async (t) => {
   const db = await createTestDatabase();
   t.after(() => db.close());

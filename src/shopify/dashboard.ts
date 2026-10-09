@@ -5,6 +5,7 @@ import type { DashboardSnapshot, Detail, DialModel, Period, State } from '../das
 import type { Settings } from '../settings.js';
 import type { SourceHealth } from '../sources.js';
 import { appConfig } from '../config.js';
+import { greetingAt } from '../greeting.js';
 import { dailyRows, dataset, emailFlow, isRefill, isUpgrade, isKit, kitIds, orderNet, ratio, shopifyHero, stockCover, type Facts, type StockCover } from './metrics.js';
 import { blankObservation, evaluateWatchdogs, type Check, type Observation } from './watchdogs.js';
 
@@ -21,7 +22,7 @@ export async function readWatchdogContext(db: Database, facts: Facts) {
   ]);
   return { observation: observations.rows[0]?.data ?? blankObservation(), holidays: holidays.rows };
 }
-export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Database, facts: Facts, settings: Settings, health: SourceHealth[], now: Date, adInputs?:AdHeroInputs): Promise<DashboardSnapshot> {
+export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Database, facts: Facts, settings: Settings, health: SourceHealth[], now: Date, adInputs?:AdHeroInputs, greetingNow: Date = new Date()): Promise<DashboardSnapshot> {
   const today = ukToday(now), data = dataset(facts, today);
   const context = await readWatchdogContext(db, facts);
   const checks = evaluateWatchdogs(facts, now, settings, context.observation, context.holidays, health);
@@ -37,7 +38,7 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
     else {
       const hero = shopifyHero(facts, today, today, today, settings, name, preparedRows, adInputs, now);
       hero.from = from; hero.to = to; hero.short = name; hero.eyebrow = `${from}–${to} · history unavailable`;
-      for (const metric of [hero.net, hero.orders, hero.cr, hero.spend, hero.roas, hero.margin]) { metric.unavailable = true; metric.ss = 'History unavailable for this range'; }
+      for (const metric of [hero.net, hero.orders, hero.cr, hero.spend, hero.roas, hero.margin, hero.profit]) { metric.unavailable = true; metric.ss = 'History unavailable for this range'; }
       for(const dial of [hero.ukcpo,hero.uscpo]){dial.t='—';dial.s='History unavailable for this range';}
       snapshot.hero[key as Period] = hero;
     }
@@ -50,7 +51,7 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
     const display = metric.unavailable ? metric.unavailableLabel ?? 'No data' : `${metric.pre ?? ''}${metric.dp ? metric.n.toFixed(metric.dp) : Math.round(metric.n).toLocaleString('en-GB')}${metric.suf ?? ''}`;
     for (const [k, value] of [[rawKey,String(metric.n)],[displayKey,display],[subKey,metric.ss]]) snapshot.textValues[k!] = { source: metric.source, mode: metric.mode, value: value! };
   }
-  for (const [key, value] of [['t0032',initial.eyebrow],['t0034',initial.sub1],['t0035',' Shopify checks and sample previews are shown separately.'],['t0002',initial.spark.join(',')]]) snapshot.textValues[key!] = { source: ['shopify'], mode: facts.mode, value: value! };
+  for (const [key, value] of [['t0032',initial.eyebrow],['t0033',greetingAt(greetingNow)],['t0034',initial.sub1],['t0035',''],['t0002',initial.spark.join(',')]]) snapshot.textValues[key!] = { source: ['shopify'], mode: facts.mode, value: value! };
   snapshot.widgets.w001 = { source: initial.ukcpo.source, mode: initial.ukcpo.mode, kind: 'dial', value: initial.ukcpo };
   snapshot.widgets.w002 = { source: initial.uscpo.source, mode: initial.uscpo.mode, kind: 'dial', value: initial.uscpo };
   const stamp = facts.mode === 'sample' ? 'Shopify sample data' : 'Shopify live';

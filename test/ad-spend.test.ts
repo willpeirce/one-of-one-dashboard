@@ -78,7 +78,7 @@ test('API-shaped invented fixtures parse exact spend, owners and market names/ta
     );
   assert.equal(meta[0]!.amount, '48.200000');
   assert.equal(meta[0]!.owner, 'ours');
-  assert.equal(meta[1]!.owner, 'unassigned');
+  assert.equal(meta[1]!.owner, 'ours');
   assert.equal(meta[1]!.market, 'us');
   const google = parseGoogle(await fixture('google-ads', 'spend'), s.googleCustomerId, 'GBP', s, {
     '900000000202': ['US'],
@@ -99,7 +99,7 @@ test('API-shaped invented fixtures parse exact spend, owners and market names/ta
   assert.equal(marketFor(['Invented'], ['GB']), 'uk');
   assert.equal(marketFor(['Invented'], ['US']), 'us');
   assert.equal(marketFor(['Invented'], ['US', 'GB']), 'unknown');
-  assert.equal(ownerFor('meta', 'invented-missing', s), 'unassigned');
+  assert.equal(ownerFor('meta', 'invented-missing', s), 'ours');
   assert.equal(ownerFor('google-ads', 'invented-missing', s), 'freelancer');
 });
 
@@ -503,8 +503,9 @@ test('totals reconcile owners, partial sources label honestly, foreign and unkno
   assert.match(h.margin.ss, /left out/);
   assert.equal(
     spendNeeds(spend, s, '2026-10-09').filter((n) => n.id.startsWith('ad-owner')).length,
-    1,
+    0,
   );
+  assert.equal(spendNeeds(spend, s, '2026-10-09').filter((n) => n.id.startsWith('ad-market')).length, 1);
   assert.equal(
     spendNeeds(spend, s, '2026-10-09').filter((n) => n.id.startsWith('ad-currency')).length,
     1,

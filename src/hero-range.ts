@@ -1,5 +1,6 @@
 import type { Detail, HeroMetric, HeroPeriod, State, Zone } from './dashboard-types.js';
 import type { SourceId } from './sources.js';
+import { profitAndMargin } from './profit.js';
 
 const DAY = 86_400_000;
 const fields = ['net', 'o', 'uk', 'us', 'sess', 'ukS', 'ukM', 'usM', 'g', 'ours'] as const;
@@ -93,7 +94,7 @@ const metrics: Record<Metric, (totals: Totals) => number> = {
   cr: (t) => 100 * divide(t.o, t.sess),
   spend: (t) => t.spend,
   roas: (t) => divide(t.net, t.spend),
-  margin: (t) => t.net ? 100 * (1 - t.spend / t.net - 0.25) : 0,
+  margin: (t) => profitAndMargin({ netSales: t.net, landedCost: t.net * 0.25, adSpend: t.spend }).margin,
   ukcpo: (t) => divide(t.ukM, t.uk),
   uscpo: (t) => divide(t.usM, t.us),
 };
@@ -177,6 +178,7 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
   const cr = metrics.cr(t);
   const roas = metrics.roas(t);
   const margin = metrics.margin(t);
+  const profit = profitAndMargin({ netSales: t.net, landedCost: t.net * 0.25, adSpend: t.spend }).profit;
   const geoUnknown = selected.some((row) => row.date === '2026-09-22' || row.date === '2026-09-23');
   const marketRates = geoUnknown ? 'UK unknown · US unknown'
     : `UK ${rounded(100 * divide(t.uk, t.ukS), 1)}% · US ${rounded(100 * divide(t.us, t.usS), 1)}%`;
@@ -234,10 +236,17 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
       d: detail('roas', { hs: '×', rule: 'No bar yet. Break-even ROAS comes from costs.md: 1 ÷ (1 − non-ad cost share). Grey until then.',
         src: 'Shopify net sales ÷ Meta + Google + TikTok spend', why: `${money(t.net)} ÷ ${money(t.spend)} ${on} = ${roas.toFixed(2)}×.` }),
     }, ['shopify', 'meta', 'google-ads']),
-    margin: metric({ n: Math.round(margin), state: 'est', suf: '%', ss: 'sample estimate · costs model not built',
+    margin: metric({ n: margin, state: 'est', suf: '%', dp: 1, ss: 'sample estimate · costs model not built',
       d: detail('margin', { hs: '%', rule: `No bar until the costs are real. At ${roas.toFixed(2)}× ROAS the true number may be near zero.`,
         src: 'Shopify net sales and orders, knowledge/costs.md, Meta + Google + TikTok spend',
         why: `Sample only. Assumes non-ad costs at 25% of net sales until knowledge/costs.md is filled: 1 − ${money(t.spend)} ÷ ${money(t.net)} − 25% = ${Math.round(margin)}%.` }),
+    }, ['shopify', 'meta', 'google-ads', 'github-hq']),
+    profit: metric({ n: profit, state: 'est', pre: '£', dp: 2, ss: 'sample estimate · costs model not built',
+      d: { rule: 'Sample only. Assumes non-ad costs at 25% of net sales until known costs replace this preview.',
+        src: 'Shopify net sales and orders, knowledge/costs.md, Meta + Google + TikTok spend',
+        why: `Sample only. Net sales less ad spend and assumed non-ad costs of 25%: £${profit.toFixed(2)}. This is the same pound total used to calculate net margin.`,
+        extra: [['Net profit', `£${profit.toFixed(2)}`]],
+      },
     }, ['shopify', 'meta', 'google-ads', 'github-hq']),
     ukcpo: cpo('ukcpo', 'UK'), uscpo: cpo('uscpo', 'US'),
   };

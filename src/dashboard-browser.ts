@@ -1,9 +1,10 @@
 import { glance } from './fulfilment/view.js';
-import { checksHtml, liveHtml, needsHtml, storePanelsHtml } from './shopify/presentation.js';
+import { liveHtml, needsHtml, storePanelsHtml } from './shopify/presentation.js';
 import type { DashboardSnapshot, Detail, DialModel, HeroMetric, HeroPeriod, Period, RingModel, SheetModel, State, TestModel, Zone } from './dashboard-types.js';
 import { createDatePicker } from './dashboard-dates.js';
 import { rangeLabel } from './hero-range.js';
 import { installPullToRefresh } from './pull-refresh.js';
+import { greetingAt } from './greeting.js';
 
 const states: Record<State, [string, string]> = {
   good: ['Good', '✓'], warn: ['Watch', '!'], decide: ['Decide', '◆'], alarm: ['Alarm', '✕'],
@@ -141,7 +142,7 @@ function renderHero(hero: HeroPeriod, animate = false): void {
   get('#hero').dataset.from = hero.from; get('#hero').dataset.to = hero.to;
   get('#eyebrow').textContent = hero.eyebrow;
   get('#sub1').textContent = hero.sub1;
-  for (const key of ['net', 'orders', 'cr', 'spend', 'roas', 'margin'] as const) {
+  for (const key of ['net', 'orders', 'cr', 'spend', 'roas', 'margin', 'profit'] as const) {
     const element = get(`#hero .tile[data-k="${key}"]`), metric = hero[key];
     element.dataset.mode = metric.mode;
     element.dataset.source = metric.source.join(' ');
@@ -152,7 +153,7 @@ function renderHero(hero: HeroPeriod, animate = false): void {
     element.dataset.state = metric.state;
     element.dataset.detail = JSON.stringify(metric.d);
     statChip(element, metric.state);
-    details.set(element, { state: metric.state, title: get('.sl', element).textContent ?? '', detail: metric.d, mode: metric.mode });
+    details.set(element, { state: metric.state, title: key === 'profit' ? 'Net profit' : key === 'margin' ? 'Net margin' : get('.sl', element).textContent ?? '', detail: metric.d, mode: metric.mode });
     const spark = element.querySelector<HTMLElement>('.spark');
     if (spark) renderSpark(spark, hero.spark, metric.d);
   }
@@ -378,14 +379,19 @@ function updateSnapshot(next: DashboardSnapshot, initial = false): void {
   if (snapshot.shopify) {
     get('#shopify-needs').innerHTML = needsHtml(snapshot.shopify);
     if (snapshot.fulfilment) { get('#fulfilment-glance').innerHTML = glance(snapshot.fulfilment); }
-    const watchdogsOpen = get('#shopify-checks details').hasAttribute('open');
-    get('#shopify-checks').innerHTML = checksHtml(snapshot.shopify);
-    if (watchdogsOpen) get('#shopify-checks details').setAttribute('open', '');
     get('[data-sp="live"]').innerHTML = liveHtml(snapshot.shopify);
     get('#shopify-panels').innerHTML = storePanelsHtml(snapshot.shopify);
     all('[data-custom-detail]').forEach(element => details.set(element, { state: 'info', title: element.querySelector('.sl')?.textContent ?? '', detail: JSON.parse(element.dataset.customDetail!) as Detail, mode: snapshot.shopify!.mode }));
     all('.tile[data-mode="sample"]').filter(e => !e.closest('#hero')).forEach(element => { if (!element.querySelector('.sample-label')) element.insertAdjacentHTML('beforeend', '<small class="sample-label">Sample data</small>'); });
-    if (snapshot.banner) get('.sample-banner').textContent = snapshot.banner;
+  }
+  updateGreeting();
+  for (const [id, count, label] of [
+    ['source-health-count', snapshot.shopify?.checks.filter(check => check.status === 'tripped').length ?? 0, 'failing checks'],
+    ['settings-count', snapshot.metaCampaigns?.unconfirmedCount ?? 0, 'campaigns to confirm'],
+  ] as const) {
+    const badge = get(`#${id}`);
+    badge.textContent = String(count); badge.hidden = count === 0;
+    badge.setAttribute('aria-label', `${count} ${label}`);
   }
   all('.tile[data-src]').forEach(watermark);
   all('.spark[data-spark]').forEach((element) => renderSpark(element, (element.dataset.spark ?? '').split(',').map(Number)));
@@ -413,6 +419,11 @@ function updateSnapshot(next: DashboardSnapshot, initial = false): void {
     get('#sheet').scrollTop = scroll;
   }
 }
+
+function updateGreeting(): void {
+  get('#greeting').textContent = greetingAt(new Date());
+}
+setInterval(updateGreeting, 60_000);
 
 function connectUpdates(): void {
   if (stream && stream.readyState !== EventSource.CLOSED) return;

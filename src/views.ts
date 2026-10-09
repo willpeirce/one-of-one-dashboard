@@ -1,5 +1,6 @@
 import type { ShopifyStore } from './shopify/store.js';
 import type { SourceHealth } from './sources.js';
+import type { ShopifyDashboard } from './shopify/dashboard.js';
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({
@@ -73,10 +74,11 @@ const healthLabels: Record<SourceHealth['status'], string> = {
   error: 'Source unavailable',
 };
 
-export function sourceHealthPage(rows: readonly SourceHealth[], shopify?: Awaited<ReturnType<ShopifyStore['summary']>>, costs?: Awaited<ReturnType<ShopifyStore['costSummary']>>, ads?:Awaited<ReturnType<typeof import('./ad-spend/store.js').spendHealth>>): string {
-  return page('Source health', `<p class="sample-banner"><strong>sample data</strong> · ${shopify ? 'Shopify cards use ingested data; ad spend uses its own source connections; deferred examples remain labelled samples.' : 'No source data has been imported.'}</p>
-    <h1>Source health</h1>
-    ${shopify ? `<section aria-label="Shopify imports"><h2>Shopify imports · ${shopify.sample ? 'sample data' : 'live'}</h2><p>${shopify.counts.order ?? 0} orders · ${shopify.counts.inventory ?? 0} inventory rows · ${shopify.counts.sessions ?? 0} session days · ${shopify.counts.sales ?? 0} older sales days · ${shopify.pendingWebhooks} webhooks pending.</p><p>Shopify cards and watchdogs are on Home. New reviews follow in part 1c. Import counts include older records retained for replay; window-based cards exclude them.</p>${shopify.notices.length ? `<p>Needs attention: ${shopify.notices.map(n => escapeHtml(n.replaceAll('_', ' '))).join(' · ')}</p>` : ''}</section>` : ''}
+export function sourceHealthPage(rows: readonly SourceHealth[], shopify?: Awaited<ReturnType<ShopifyStore['summary']>>, costs?: Awaited<ReturnType<ShopifyStore['costSummary']>>, ads?:Awaited<ReturnType<typeof import('./ad-spend/store.js').spendHealth>>, status?: { summary: string; shopify: ShopifyDashboard; checkedAt: string }): string {
+  return page('Source health', `<h1>Source health</h1>
+    <section id="source-summary" aria-label="Sources and modes"><h2>Sources and modes</h2><p class="sample-banner">${status ? escapeHtml(status.summary) : `<strong>sample data</strong> · ${shopify ? 'Shopify cards use ingested data; ad spend uses its own source connections; deferred examples remain labelled samples.' : 'No source data has been imported.'}`}</p></section>
+    ${status ? `<section id="shopify-watchdogs" aria-label="Shopify watchdogs"><h2>Shopify watchdogs</h2><p>${status.shopify.checks.filter(check => check.status === 'pass').length}/${status.shopify.checks.length} checks passing · Shopify ${status.shopify.mode === 'live' ? 'live' : 'sample data'} · checked ${timestamp(status.checkedAt)} UK</p><ul>${status.shopify.checks.map(check => `<li><strong>${check.status === 'pass' ? '✓ Good' : check.status === 'tripped' ? '△ Watch' : '○ Unknown'} · ${escapeHtml(check.name)}</strong><p>${escapeHtml(check.why)}</p></li>`).join('')}</ul></section>` : ''}
+    ${shopify ? `<section aria-label="Shopify imports"><h2>Shopify imports · ${shopify.sample ? 'sample data' : 'live'}</h2><p>${shopify.counts.order ?? 0} orders · ${shopify.counts.inventory ?? 0} inventory rows · ${shopify.counts.sessions ?? 0} session days · ${shopify.counts.sales ?? 0} older sales days · ${shopify.pendingWebhooks} webhooks pending.</p><p>Shopify cards are on Home. Import counts include older records retained for replay; window-based cards exclude them.</p>${shopify.notices.length ? `<p>Needs attention: ${shopify.notices.map(n => escapeHtml(n.replaceAll('_', ' '))).join(' · ')}</p>` : ''}</section>` : ''}
     ${costs ? `<p>Shopify unit costs: ${costs.known} stock variants with a cost · ${costs.missing} without · last cost change ${costs.changed ? timestamp(costs.changed) : 'none observed'}. ${shopify?.sample ? 'Sample data.' : 'Live.'}</p>` : ''}
     ${ads?`<section aria-label="Ad spend imports"><h2>Ad spend</h2>${ads.map(a=>`<p>${escapeHtml(a.source==='meta'?'Meta':a.source==='google-ads'?'Google':'TikTok')} · ${escapeHtml(a.status)}${a.fetchedAt?` · fetched ${escapeHtml(a.fetchedAt)}`:''}${a.source==='google-ads'?' · Google can lag about 3 hours · hours re-aligned to UK time':a.source==='tiktok'?' · hours re-aligned to UK time':''}</p>`).join('')}<p>Account IDs belong in Settings &gt; Ad spend. Each source connects independently. No ad platform changes are made.</p></section>`:''}
     <p>Shopify imports when its keys are present. Ad spend also needs its account ID in Settings. Other source clients arrive in their stages.</p>

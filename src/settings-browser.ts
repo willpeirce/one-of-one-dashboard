@@ -60,8 +60,17 @@ function initializeSettings(form: HTMLFormElement): void {
   const fieldset = document.querySelector<HTMLFieldSetElement>('#settings-fields')!;
   const message = document.querySelector<HTMLElement>('#settings-message')!;
   const lists = Array.from(form.querySelectorAll<HTMLElement>('[data-settings-list]'));
+  const campaignRows = Array.from(form.querySelectorAll<HTMLElement>('[data-meta-campaign]'));
+  const ownerRules = form.querySelector<HTMLInputElement>('#saved-meta-owner-rules')!;
+  let savedMetaOwners = JSON.parse(ownerRules.value) as { campaignId: string; owner: 'ours' | 'freelancer' }[];
+  let savedValues: JsonObject;
   let pending = false;
   let dirty = false;
+  let mainDirty = false;
+
+  function updateDirty(): void {
+    dirty = mainDirty || campaignRows.some((row) => row.querySelector<HTMLSelectElement>('[data-campaign-owner]')!.value !== row.dataset.savedOwner);
+  }
   function showOverheadsTotal(): void {
     const list = form.querySelector<HTMLElement>('[data-settings-list="overheads"]');
     const total = list?.querySelector<HTMLElement>('[data-overheads-total]');
@@ -89,12 +98,13 @@ function initializeSettings(form: HTMLFormElement): void {
     }
   }
 
-  function markDirty(): void {
+  function markDirty(event?: Event): void {
     if (pending) return;
-    dirty = true;
+    if (!(event?.target instanceof Element && event.target.closest('[data-meta-campaign]'))) mainDirty = true;
+    updateDirty();
     showShopifyCosts();
     showOverheadsTotal();
-    message.textContent = 'You have unsaved changes.';
+    message.textContent = dirty ? 'You have unsaved changes.' : 'All changes saved.';
     message.removeAttribute('data-error');
   }
 
@@ -134,7 +144,21 @@ function initializeSettings(form: HTMLFormElement): void {
     if (!(target instanceof Element)) return;
     const add = target.closest<HTMLButtonElement>('[data-add-row]');
     const remove = target.closest<HTMLButtonElement>('[data-remove-row]');
-    if (add) {
+    const campaignSave = target.closest<HTMLButtonElement>('[data-save-campaign]');
+    if (campaignSave) {
+      if (pending) return;
+      const row = campaignSave.closest<HTMLElement>('[data-meta-campaign]')!;
+      const campaignId = row.dataset.metaCampaign!;
+      const owner = row.querySelector<HTMLSelectElement>('[data-campaign-owner]')!.value;
+      const values = structuredClone(savedValues);
+      const owners = structuredClone(savedMetaOwners);
+      const existing = owners.find((rule) => rule.campaignId === campaignId);
+      if (owner !== 'ours' && owner !== 'freelancer') return;
+      if (existing) existing.owner = owner;
+      else owners.push({ campaignId, owner });
+      values.metaOwners = owners;
+      saveValues(values, row);
+    } else if (add) {
       const list = add.closest<HTMLElement>('[data-settings-list]')!;
       if (!addRow(list)) return;
       list.querySelector<HTMLElement>('[data-list-rows] > .setting-row:last-child input, [data-list-rows] > .setting-row:last-child select')?.focus();
@@ -149,7 +173,7 @@ function initializeSettings(form: HTMLFormElement): void {
   });
   form.addEventListener('input', (event) => {
     if (event.target instanceof HTMLElement) event.target.removeAttribute('aria-invalid');
-    markDirty();
+    markDirty(event);
   });
   form.addEventListener('change', markDirty);
   form.addEventListener('invalid', (event) => {
@@ -157,7 +181,8 @@ function initializeSettings(form: HTMLFormElement): void {
   }, true);
 
   function readValues(): JsonObject {
-    const values: JsonObject = {};
+    // Only each campaign's Save confirms its owner. Keep rules for missing campaigns too.
+    const values: JsonObject = { metaOwners: structuredClone(savedMetaOwners) };
     form.querySelectorAll<SettingInput>('[data-setting-path]').forEach((input) => {
       if (!input.closest('[data-settings-list]')) setPath(values, input.dataset.settingPath!, inputValue(input));
     });
@@ -190,15 +215,13 @@ function initializeSettings(form: HTMLFormElement): void {
     showOverheadsTotal();
   }
 
-  form.addEventListener('submit', (event) => {
-    event.preventDefault();
+  function saveValues(values: JsonObject, campaign?: HTMLElement): void {
     if (pending) return;
-    const values = readValues();
     const version = Number(form.dataset.version);
     pending = true;
     save.disabled = true;
     fieldset.disabled = true;
-    message.textContent = 'Saving settings…';
+    message.textContent = campaign ? 'Saving campaign owner…' : 'Saving settings…';
     message.removeAttribute('data-error');
     form.querySelectorAll('[aria-invalid]').forEach((input) => input.removeAttribute('aria-invalid'));
     void (async () => {
@@ -227,9 +250,22 @@ function initializeSettings(form: HTMLFormElement): void {
         } else {
           const result = await response.json() as { version: number; values: JsonObject };
           form.dataset.version = String(result.version);
-          showValues(result.values);
-          dirty = false;
-          message.textContent = 'Settings saved.';
+          savedValues = structuredClone(result.values);
+          savedMetaOwners = structuredClone(result.values.metaOwners) as typeof savedMetaOwners;
+          ownerRules.value = JSON.stringify(savedMetaOwners);
+          if (campaign) {
+            const owner = savedMetaOwners.find((rule) => rule.campaignId === campaign.dataset.metaCampaign)!.owner;
+            campaign.dataset.savedOwner = owner;
+            campaign.dataset.confirmed = 'true';
+            campaign.querySelector('[data-campaign-new]')?.remove();
+          } else {
+            showValues(result.values);
+            mainDirty = false;
+          }
+          updateDirty();
+          message.textContent = campaign
+            ? dirty ? 'Campaign owner saved. Your other edits are still here.' : 'Campaign owner saved.'
+            : dirty ? 'Settings saved. Save each changed campaign owner.' : 'Settings saved.';
           return;
         }
         message.dataset.error = 'true';
@@ -242,6 +278,11 @@ function initializeSettings(form: HTMLFormElement): void {
         fieldset.disabled = false;
       }
     })();
+  }
+
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    saveValues(readValues());
   });
 
   window.addEventListener('beforeunload', (event) => {
@@ -255,6 +296,7 @@ function initializeSettings(form: HTMLFormElement): void {
     numberRows(list);
   });
   showOverheadsTotal();
+  savedValues = readValues();
   const canRefresh = () => dirty || pending ? 'Save or discard your changes first' : true;
   installPullToRefresh({
     status: message,

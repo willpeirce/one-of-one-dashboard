@@ -17,7 +17,7 @@ test('every dashboard binding resolves from source-tagged server sample data', (
     assert.ok(item.source.every((source) => sources.has(source)));
   }
   for (const period of Object.values(snapshot.hero)) {
-    for (const metric of [period.net, period.orders, period.cr, period.spend, period.roas, period.margin, period.ukcpo, period.uscpo]) {
+    for (const metric of [period.net, period.orders, period.cr, period.spend, period.roas, period.margin, period.profit, period.ukcpo, period.uscpo]) {
       assert.equal(metric.mode, 'sample');
       assert.ok(metric.source.length > 0 && metric.source.every((source) => sources.has(source)));
     }
@@ -34,7 +34,7 @@ test('every dashboard binding resolves from source-tagged server sample data', (
 test('rendered sample strings cannot inject HTML, attributes or an executable inline script', () => {
   const snapshot = getSampleDashboard();
   const payload = '"><img src=x onerror=alert(1)><script>alert(1)</script>';
-  const text = Object.values(snapshot.textValues).find((item) => item.value === 'Morning, Will.');
+  const text = snapshot.textValues.t0033;
   assert.ok(text);
   text.value = payload;
   snapshot.hero.today.net.d.why = payload;
@@ -46,6 +46,38 @@ test('rendered sample strings cannot inject HTML, attributes or an executable in
   assert.ok(page.includes('&lt;img src=x onerror=alert(1)&gt;'));
   assert.equal((page.match(/<script\b/g) ?? []).length, 2);
   assert.ok(!/<script\b(?![^>]*\bsrc=)/.test(page));
+});
+
+test('Home opens on the greeting with paired margin and profit, and status only in menu badges', () => {
+  const snapshot = getSampleDashboard();
+  snapshot.metaCampaigns = { unconfirmedCount: 1 };
+  snapshot.shopify = {
+    mode: 'sample', stock: [], needs: [], detail: {}, live: { lastOrder: 'No data', dispatch: 'No data', carts: 'No data' },
+    checks: [
+      { id: 'sample-pass', name: 'Sample passing check', status: 'pass', why: 'Invented passing check.', link: '/sources' },
+      { id: 'sample-fail', name: 'Sample failing check', status: 'tripped', why: 'Invented failing check.', link: '/sources' },
+      { id: 'sample-unknown', name: 'Sample unknown check', status: 'unknown', why: 'Invented unknown check.', link: '/sources' },
+    ],
+  };
+  snapshot.banner = 'Sample source summary belongs on Source health.';
+  const html = dashboardPage(snapshot);
+  const visible = html.split('<div id="dashboard-state"')[0]!;
+  assert.doesNotMatch(visible, /sample-banner|id="shopify-checks"|Sample source summary belongs|Shopify checks and sample previews are shown separately/);
+  assert.match(visible, /<main class="wrap" id="main">\s*<section class="hero"/);
+  assert.match(visible, /id="greeting"/);
+  assert.match(visible, /id="source-health-count" class="menu-count" aria-label="1 failing checks">1<\/span>/);
+  assert.match(visible, /id="settings-count" class="menu-count" aria-label="1 campaigns to confirm">1<\/span>/);
+  assert.match(visible, /data-k="margin"[\s\S]*?<\/button>\s*<button[^>]*data-k="profit"/);
+  const profitTile = /<button[^>]*data-k="profit"[^>]*>([\s\S]*?)<\/button>/.exec(visible)?.[1];
+  assert.ok(profitTile);
+  assert.ok(profitTile.includes('Net profit'));
+  assert.ok(profitTile.includes(`£${snapshot.hero.today.profit.n.toFixed(2)}`));
+  assert.doesNotMatch(profitTile, /class="spark"/);
+  snapshot.metaCampaigns.unconfirmedCount = 0;
+  snapshot.shopify.checks = snapshot.shopify.checks.filter(check => check.status !== 'tripped');
+  const clear = dashboardPage(snapshot);
+  assert.match(clear, /id="source-health-count" class="menu-count" hidden/);
+  assert.match(clear, /id="settings-count" class="menu-count" hidden/);
 });
 
 test('sample snapshots remain independent and configured tripwires update every hero period', () => {

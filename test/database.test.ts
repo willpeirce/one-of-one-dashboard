@@ -90,7 +90,7 @@ test('all migrations leave public empty, repeat without losing rows and reject c
   await Promise.all([migrate(db), migrate(db)]);
   await assertPublicHasNoTables(db);
   assert.equal((await db.query('SELECT * FROM pulse.audit_log')).rows.length, 1);
-  assert.equal((await db.query('SELECT * FROM pulse_private.schema_migrations')).rows.length, 11);
+  assert.equal((await db.query('SELECT * FROM pulse_private.schema_migrations')).rows.length, 12);
   await db.query("UPDATE pulse_private.schema_migrations SET checksum = 'changed'");
   await assert.rejects(migrate(db), (error: unknown) => {
     assert.ok(error instanceof MigrationError);
@@ -113,7 +113,7 @@ test('010 discovers a renamed audit field CHECK and preserves existing audit row
   const originalName = fieldCheck[0]!.conname.replaceAll('"', '""');
   await db.query(`
     ALTER TABLE pulse.settings_changes RENAME CONSTRAINT "${originalName}" TO invented_settings_fields;
-    DELETE FROM pulse_private.schema_migrations WHERE name >= '010_';
+    DELETE FROM pulse_private.schema_migrations WHERE name LIKE '010_%' OR name LIKE '011_%';
     WITH entry AS (
       INSERT INTO pulse.audit_log (event) VALUES ('settings_changed') RETURNING id
     )
@@ -128,7 +128,7 @@ test('010 discovers a renamed audit field CHECK and preserves existing audit row
   await migrate(db);
 
   assert.deepEqual((await db.query(`
-    SELECT * FROM pulse_private.schema_migrations WHERE name < '010_' ORDER BY name
+    SELECT * FROM pulse_private.schema_migrations WHERE name NOT LIKE '010_%' AND name NOT LIKE '011_%' ORDER BY name
   `)).rows, migrationHistory);
   assert.deepEqual((await db.query(`
     SELECT a.*, c.field FROM pulse.audit_log a

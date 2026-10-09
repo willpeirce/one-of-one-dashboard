@@ -11,9 +11,11 @@ import {
   ownerFor,
   type SpendRow,
   type AdSource,
+  type MetaCampaign,
 } from './model.js';
 export interface SpendReader {
   read(account: string, from: string, to: string, settings: Settings): Promise<SpendRow[]>;
+  readCampaigns?(account: string): Promise<MetaCampaign[]>;
 }
 const label = (value: unknown): string => {
   if (typeof value !== 'string' || !value.trim() || value.length > 300)
@@ -62,7 +64,8 @@ export function parseMeta(
           ),
     amount: microsDecimal(decimalMicros(r.spend)),
     currency: currency(curr),
-    owner: ownerFor('meta', r.campaign_id, settings),
+    // This compatibility field is not authoritative; spendFacts applies local ownership.
+    owner: 'ours',
     market: marketFor([r.campaign_name, r.adset_name], targets[r.adset_id]),
   }));
 }
@@ -133,6 +136,34 @@ export class MetaSpend implements SpendReader {
       method: 'GET',
       headers: { Authorization: `Bearer ${this.token}` },
     });
+  }
+  async readCampaigns(account: string): Promise<MetaCampaign[]> {
+    const rows: MetaCampaign[] = [], cursors = new Set<string>();
+    let after: string | undefined;
+    do {
+      const body = await this.get(`act_${account}/campaigns`, {
+        fields: 'id,name,effective_status,created_time',
+        // Campaign.EffectiveStatus; explicitly include archived and deleted campaigns.
+        effective_status: JSON.stringify([
+          'ACTIVE', 'PAUSED', 'ARCHIVED', 'DELETED', 'IN_PROCESS', 'WITH_ISSUES',
+        ]),
+        limit: '500',
+        ...(after ? { after } : {}),
+      });
+      for (const row of list(body.data)) {
+        const created = new Date(label(row.created_time)), status = label(row.effective_status);
+        if (!Number.isFinite(created.getTime()) || !/^[A-Z_]{1,50}$/.test(status))
+          throw new AdError('invalid');
+        rows.push({
+          id: identifier(row.id), name: label(row.name), status,
+          createdAt: created.toISOString(),
+        });
+      }
+      after = body.paging?.next ? label(body.paging?.cursors?.after) : undefined;
+      if (after && cursors.has(after)) throw new AdError('invalid');
+      if (after) cursors.add(after);
+    } while (after);
+    return rows;
   }
   async read(account: string, from: string, to: string, settings: Settings): Promise<SpendRow[]> {
     const metadata = await this.get(`act_${account}`, { fields: 'currency,timezone_name' }),

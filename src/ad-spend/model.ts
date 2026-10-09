@@ -1,5 +1,6 @@
 import { ukToday } from '../hero-range.js';
 import type { Settings } from '../settings.js';
+import type { SourceMode } from '../sources.js';
 export const adSources = ['meta', 'google-ads', 'tiktok'] as const;
 export type AdSource = (typeof adSources)[number];
 export const adNames: Record<AdSource, string> = {
@@ -19,6 +20,19 @@ export interface SpendRow {
   day: string;
   amount: string;
   currency: string;
+}
+export interface MetaCampaign {
+  id: string;
+  name: string;
+  status: string;
+  createdAt: string;
+}
+export interface MetaCampaignView extends MetaCampaign {
+  firstSeen: string;
+  lastSeen: string;
+  owner: 'ours' | 'freelancer';
+  confirmed: boolean;
+  mode: SourceMode;
 }
 export class AdError extends Error {
   constructor(
@@ -68,9 +82,9 @@ export function ownerFor(
   source: AdSource,
   campaignId: string,
   settings: Pick<Settings, 'metaOwners'>,
-): SpendRow['owner'] {
+): 'ours' | 'freelancer' {
   return source === 'meta'
-    ? (settings.metaOwners.find((r) => r.campaignId === campaignId)?.owner ?? 'unassigned')
+    ? (settings.metaOwners.find((r) => r.campaignId === campaignId)?.owner ?? 'ours')
     : 'freelancer';
 }
 /** Source hours are UTC unless Meta explicitly supplies another account timezone. */

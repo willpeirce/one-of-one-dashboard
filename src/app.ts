@@ -1,5 +1,5 @@
 import { SpendWorker, type SpendWorkerOptions } from './ad-spend/worker.js';
-import { spendFacts, spendHealth } from './ad-spend/store.js';
+import { readMetaCampaigns, spendFacts, spendHealth } from './ad-spend/store.js';
 import { readEstimates } from './fulfilment/store.js';
 import { dataset } from './shopify/metrics.js';
 import { registerFulfilment, seedFulfilment } from './fulfilment/routes.js';
@@ -138,7 +138,8 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     const [settings, sourceHealth] = await Promise.all([readSettings(db), readSourceHealth(db)]);
     const facts=await shopify.store.facts();
     const adInputs=await heroInputs(facts,settings.values);
-    const result = await applyShopifyDashboard({ ...getSampleDashboard(settings.values), generatedAt: new Date().toISOString(), sourceHealth }, db, facts, settings.values, sourceHealth, sourceNow(), adInputs);
+    const result = await applyShopifyDashboard({ ...getSampleDashboard(settings.values), generatedAt: new Date().toISOString(), sourceHealth }, db, facts, settings.values, sourceHealth, sourceNow(), adInputs, shopifyOptions.clock?.() ?? new Date());
+    result.metaCampaigns = { unconfirmedCount: (await readMetaCampaigns(db, settings.values, sourceEnv)).filter(campaign => !campaign.confirmed).length };
     result.fulfilment = await fulfilmentSummary(db, shopify.mode, sourceNow());
     result.shopify?.needs.push(...result.fulfilment.needs.map(n => ({ ...n, state: 'warn' as const, source: 'j-and-j' as const })));
     return result;
@@ -164,7 +165,10 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   });
   app.get('/sources', async (request, reply) => {
     if (!await auth.session(request)) return reply.redirect('/login');
-    return reply.type('text/html; charset=utf-8').send(sourceHealthPage(await readSourceHealth(db), await shopify.store.summary(), await shopify.store.costSummary(),await spendHealth(db,sourceEnv,(await readSettings(db)).values)));
+    const [dashboard, imports, costs, settings] = await Promise.all([snapshot(), shopify.store.summary(), shopify.store.costSummary(), readSettings(db)]);
+    return reply.type('text/html; charset=utf-8').send(sourceHealthPage(dashboard.sourceHealth ?? [], imports, costs, await spendHealth(db, sourceEnv, settings.values), {
+      summary: dashboard.banner ?? '', shopify: dashboard.shopify!, checkedAt: sourceNow().toISOString(),
+    }));
   });
   app.get('/api/shopify', async (request, reply) => {
     if (!await auth.session(request)) return reply.code(401).send({ error: 'Sign in to continue.' });
@@ -172,13 +176,14 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   });
   app.get('/settings', async (request, reply) => {
     if (!await auth.session(request)) return reply.redirect('/login');
-    return reply.type('text/html; charset=utf-8').send(settingsPage(await readSettings(db), await shopify.store.latestCosts(), shopify.mode));
+    const settings = await readSettings(db);
+    return reply.type('text/html; charset=utf-8').send(settingsPage(settings, await shopify.store.latestCosts(), shopify.mode, new Date(), await readMetaCampaigns(db, settings.values, sourceEnv)));
   });
   app.get('/api/settings', async (request, reply) => {
     if (!await auth.session(request)) return reply.code(401).send({ error: 'Sign in to continue.' });
     return await readSettings(db);
   });
-  app.post('/api/settings', async (request, reply) => {
+  app.post('/api/settings', { bodyLimit: 1_048_576 }, async (request, reply) => {
     const credentialId = await auth.session(request);
     if (!credentialId) return reply.code(401).send({ error: 'Sign in to continue.' });
     const saved = await saveSettings(db, request.body, credentialId);

@@ -26,7 +26,7 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
       const widget = snapshot.widgets[key];
       return widget ? tag.replace(/data-mode="[^"]+"/, `data-mode="${widget.mode}"`).replace(/data-source="[^"]+"/, `data-source="${widget.source.join(' ')}"`) : tag;
     });
-    content = content.replace(/<button\b[^>]*data-k="(net|orders|cr|spend|roas|margin)"[^>]*>/g, (tag, key: 'net'|'orders'|'cr'|'spend'|'roas'|'margin') => tag.replace(/data-mode="[^"]+"/, `data-mode="${snapshot.hero.today[key].mode}"`));
+    content = content.replace(/<button\b[^>]*data-k="(net|orders|cr|spend|roas|margin)"[^>]*>/g, (tag, key: 'net'|'orders'|'cr'|'spend'|'roas'|'margin') => tag.replace(/data-mode="[^"]+"/, `data-mode="${snapshot.hero.today[key].mode}"`).replace(/data-source="[^"]+"/, `data-source="${snapshot.hero.today[key].source.join(' ')}"`));
     // Label surviving mockup examples individually when a live source sits beside them.
     content = content.replace(/(<(?:article|button|div)\b[^>]*data-mode="sample"[^>]*>)/g, '$1<span class="sample-label">Sample data</span>');
   }

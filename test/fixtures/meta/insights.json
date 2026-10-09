@@ -1,0 +1,28 @@
+{
+  "data": [
+    {
+      "campaign_id": "900000000001",
+      "campaign_name": "Invented UK campaign",
+      "adset_id": "900000000101",
+      "adset_name": "Invented UK ad set",
+      "spend": "48.20",
+      "date_start": "2026-09-30",
+      "date_stop": "2026-09-30"
+    },
+    {
+      "campaign_id": "900000000002",
+      "campaign_name": "Invented targeting campaign",
+      "adset_id": "900000000102",
+      "adset_name": "Invented targeting ad set",
+      "spend": "24.01",
+      "date_start": "2026-09-30",
+      "date_stop": "2026-09-30"
+    }
+  ],
+  "paging": {
+    "cursors": {
+      "before": "sample-before",
+      "after": "sample-after"
+    }
+  }
+}

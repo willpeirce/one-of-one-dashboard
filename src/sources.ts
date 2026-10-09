@@ -4,6 +4,7 @@ export const sourceDefinitions = [
   { id: 'shopify', name: 'Shopify', stage: 1, requiredKeys: ['SHOPIFY_CLIENT_ID', 'SHOPIFY_CLIENT_SECRET'] },
   { id: 'meta', name: 'Meta Ads', stage: 2, requiredKeys: ['META_ACCESS_TOKEN'] },
   { id: 'google-ads', name: 'Google Ads', stage: 3, requiredKeys: ['GOOGLE_ADS_CLIENT_ID', 'GOOGLE_ADS_CLIENT_SECRET', 'GOOGLE_ADS_REFRESH_TOKEN'] },
+  { id: 'tiktok', name: 'TikTok Ads', stage: 2, requiredKeys: ['TIKTOK_ACCESS_TOKEN'] },
   { id: 'mailchimp', name: 'Mailchimp', stage: 4, requiredKeys: ['MAILCHIMP_API_KEY'] },
   { id: 'github-hq', name: 'GitHub HQ', stage: 5, requiredKeys: ['GITHUB_HQ_TOKEN'] },
   { id: 'gorgias', name: 'Gorgias', stage: 5, requiredKeys: ['GORGIAS_DOMAIN', 'GORGIAS_EMAIL', 'GORGIAS_API_KEY'] },

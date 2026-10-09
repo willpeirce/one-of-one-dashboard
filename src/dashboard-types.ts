@@ -80,6 +80,7 @@ export interface SampleProvenance {
 export interface HeroMetric extends SampleProvenance {
   n: number;
   unavailable?: boolean;
+  unavailableLabel?: string;
   state: State;
   d: Detail;
   ss: string;

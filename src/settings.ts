@@ -25,8 +25,12 @@ export interface Settings {
   seasonalMultiplier: number | null;
   markersPerKit: number | null;
   pencilsPerKit: number | null;
-  metaOwners: { campaignId: string; owner: 'ours' | 'freelancer' | 'unassigned' }[];
-  expectedGoogleCampaigns: { name: string; market: 'UK' | 'US' | 'EU' }[];
+  metaAdAccountId: string;
+  googleCustomerId: string;
+  googleLoginCustomerId: string;
+  tiktokAdvertiserId: string;
+  metaOwners: { campaignId: string; owner: 'ours' | 'freelancer' }[];
+  expectedGoogleCampaigns: { campaignId: string }[];
   blendedMetaTripwireGbp: number;
   creatorRules: {
     assetCapGbp: number;
@@ -82,8 +86,8 @@ export function defaultSettings(): Settings {
     seasonalMultiplier: null,
     markersPerKit: null,
     pencilsPerKit: null,
-    metaOwners: appConfig.meta.campaigns.map(({ id, owner }) => ({ campaignId: id, owner })),
-    expectedGoogleCampaigns: appConfig.googleAds.expectedCampaigns.map(({ name, market }) => ({ name, market })),
+    metaAdAccountId: '', googleCustomerId: '', googleLoginCustomerId: '', tiktokAdvertiserId: '',
+    metaOwners: [], expectedGoogleCampaigns: [],
     blendedMetaTripwireGbp: 28,
     creatorRules: {
       assetCapGbp: 200, minimumUsageMonths: 3, pushPriceBeforeExtendingUsage: true,
@@ -161,6 +165,14 @@ function list<T>(value: unknown, field: string, parse: (row: unknown, path: stri
   return rows;
 }
 
+function accountId(value: unknown, field: string, google = false): string {
+  if (typeof value !== 'string') return invalid(field);
+  const id = google ? value.replaceAll('-', '').trim() : value.trim();
+  if (id !== '' && !/^\d{1,24}$/.test(id)) return invalid(field);
+  if (google && id !== '' && id.length !== 10) return invalid(field);
+  return id;
+}
+
 export function validateSettings(input: unknown): Settings {
   const defaults = defaultSettings();
   const value = object(input, Object.keys(defaults), '');
@@ -191,15 +203,21 @@ export function validateSettings(input: unknown): Settings {
     seasonalMultiplier: number(value.seasonalMultiplier, 'seasonalMultiplier', 100, true, false, 0.01),
     markersPerKit: number(value.markersPerKit, 'markersPerKit', 1_000, true, true),
     pencilsPerKit: number(value.pencilsPerKit, 'pencilsPerKit', 1_000, true, true),
+    metaAdAccountId: accountId(value.metaAdAccountId, 'metaAdAccountId'),
+    googleCustomerId: accountId(value.googleCustomerId, 'googleCustomerId', true),
+    googleLoginCustomerId: accountId(value.googleLoginCustomerId, 'googleLoginCustomerId', true),
+    tiktokAdvertiserId: accountId(value.tiktokAdvertiserId, 'tiktokAdvertiserId'),
     metaOwners: list(value.metaOwners, 'metaOwners', (row, path) => {
       const parsed = object(row, ['campaignId', 'owner'], path);
       if (typeof parsed.campaignId !== 'string' || !/^\d{1,24}$/.test(parsed.campaignId)) return invalid(`${path}.campaignId`);
-      return { campaignId: parsed.campaignId, owner: choice(parsed.owner, `${path}.owner`, ['ours', 'freelancer', 'unassigned'] as const) };
+      return { campaignId: parsed.campaignId, owner: choice(parsed.owner, `${path}.owner`, ['ours', 'freelancer'] as const) };
     }, (row) => row.campaignId),
     expectedGoogleCampaigns: list(value.expectedGoogleCampaigns, 'expectedGoogleCampaigns', (row, path) => {
-      const parsed = object(row, ['name', 'market'], path);
-      return { name: text(parsed.name, `${path}.name`), market: choice(parsed.market, `${path}.market`, ['UK', 'US', 'EU'] as const) };
-    }, (row) => row.name),
+      const parsed = object(row, ['campaignId'], path);
+      const campaignId = accountId(parsed.campaignId, `${path}.campaignId`);
+      if (!campaignId) return invalid(`${path}.campaignId`);
+      return { campaignId };
+    }, (row) => row.campaignId),
     blendedMetaTripwireGbp: requiredNumber(value.blendedMetaTripwireGbp, 'blendedMetaTripwireGbp', 100_000, false, 0.01),
     creatorRules: {
       assetCapGbp: requiredNumber(rules.assetCapGbp, 'creatorRules.assetCapGbp', 100_000),

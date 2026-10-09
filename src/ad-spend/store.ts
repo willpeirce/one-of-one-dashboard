@@ -1,0 +1,224 @@
+import type { Database } from '../db.js';
+import { addDays } from '../hero-range.js';
+import { readSettings, type Settings } from '../settings.js';
+import { getSourceStates, type SourceMode } from '../sources.js';
+import {
+  accountFor,
+  adSources,
+  decimalMicros,
+  microsDecimal,
+  ownerFor,
+  type AdSource,
+  type SpendRow,
+} from './model.js';
+export interface SpendJob {
+  source: AdSource;
+  account_id: string;
+  backfill_next: string;
+  backfill_done: boolean;
+  last_poll_at: Date | null;
+  last_success_at: Date | null;
+  failures: number;
+}
+export async function readJobs(db: Database): Promise<SpendJob[]> {
+  return (
+    await db.query<SpendJob & Record<string, unknown>>(
+      'SELECT source,account_id,backfill_next::text,backfill_done,last_poll_at,last_success_at,failures FROM pulse.ad_spend_jobs',
+    )
+  ).rows;
+}
+export async function saveSpend(
+  db: Database,
+  source: AdSource,
+  account: string,
+  from: string,
+  to: string,
+  rows: SpendRow[],
+  now: Date,
+  next?: string,
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx.query(
+      'DELETE FROM pulse.ad_spend WHERE mode=$1 AND source=$2 AND account_id=$3 AND uk_day BETWEEN $4 AND $5',
+      ['live', source, account, from, to],
+    );
+    if (rows.length)
+      await tx.query(
+        `INSERT INTO pulse.ad_spend(mode,source,account_id,campaign_id,campaign_name,ad_set_id,ad_set_name,market,owner,uk_day,spend_amount,spend_gbp,currency,fetched_at)
+      SELECT 'live',$1,$2,r.campaign_id,r.campaign_name,r.ad_set_id,r.ad_set_name,r.market,r.owner,r.day,r.amount,CASE WHEN r.currency='GBP' THEN r.amount ELSE NULL END,r.currency,$4
+      FROM jsonb_to_recordset($3::jsonb) AS r(campaign_id text,campaign_name text,ad_set_id text,ad_set_name text,market text,owner text,day date,amount numeric,currency text)
+      ON CONFLICT (mode,source,campaign_id,ad_set_id,uk_day) DO UPDATE SET account_id=EXCLUDED.account_id,campaign_name=EXCLUDED.campaign_name,ad_set_name=EXCLUDED.ad_set_name,market=EXCLUDED.market,owner=EXCLUDED.owner,spend_amount=EXCLUDED.spend_amount,spend_gbp=EXCLUDED.spend_gbp,currency=EXCLUDED.currency,fetched_at=EXCLUDED.fetched_at`,
+        [
+          source,
+          account,
+          JSON.stringify(
+            rows.map((r) => ({
+              campaign_id: r.campaignId,
+              campaign_name: r.campaignName,
+              ad_set_id: r.adSetId,
+              ad_set_name: r.adSetName,
+              market: r.market,
+              owner: r.owner,
+              day: r.day,
+              amount: r.amount,
+              currency: r.currency,
+            })),
+          ),
+          now,
+        ],
+      );
+    await tx.query(
+      `INSERT INTO pulse.ad_spend_days(source,account_id,uk_day,fetched_at) SELECT $1,$2,day,$5 FROM generate_series($3::date,$4::date,interval '1 day') AS day
+      ON CONFLICT (source,account_id,uk_day) DO UPDATE SET fetched_at=EXCLUDED.fetched_at`,
+      [source, account, from, to, now],
+    );
+    if (next)
+      await tx.query(
+        'UPDATE pulse.ad_spend_jobs SET backfill_next=$3 WHERE source=$1 AND account_id=$2',
+        [source, account, next],
+      );
+  });
+}
+export interface SpendFacts {
+  mode: SourceMode;
+  rows: SpendRow[];
+  sources: {
+    source: AdSource;
+    live: boolean;
+    ready: boolean;
+    status: string;
+    fetchedAt: string | null;
+  }[];
+  days: { source: AdSource; day: string }[];
+}
+export async function spendFacts(
+  db: Database,
+  settings: Settings,
+  env: NodeJS.ProcessEnv,
+  mode: SourceMode,
+  from: string,
+  to: string,
+): Promise<SpendFacts> {
+  if (mode === 'sample') return sampleSpend(from, to);
+  const states = getSourceStates(env),
+    jobs = await readJobs(db);
+  const sources = adSources.map((source) => {
+    const account = accountFor(source, settings),
+      live = !!account && states.find((s) => s.source === source)!.mode === 'live';
+    const job = jobs.find((j) => j.source === source && j.account_id === account);
+    return {
+      source,
+      live,
+      ready: live && !!job?.last_success_at,
+      status: !live
+        ? 'waiting for keys'
+        : job?.failures
+          ? 'source unavailable'
+          : !job?.last_success_at
+            ? 'first sync pending'
+            : !job.backfill_done
+              ? `backfill running · next ${job.backfill_next}`
+              : 'live',
+      fetchedAt: job?.last_success_at ? new Date(job.last_success_at).toISOString() : null,
+    };
+  });
+  const rows: SpendRow[] = [],
+    days: SpendFacts['days'] = [];
+  for (const source of sources.filter((s) => s.live)) {
+    const account = accountFor(source.source, settings);
+    const stored = await db.query<any>(
+      `SELECT campaign_id,campaign_name,ad_set_id,ad_set_name,market,uk_day::text,spend_amount::text,currency FROM pulse.ad_spend WHERE mode='live' AND source=$1 AND account_id=$2 AND uk_day BETWEEN $3 AND $4`,
+      [source.source, account, from, to],
+    );
+    rows.push(
+      ...stored.rows.map((r) => ({
+        source: source.source,
+        accountId: account,
+        campaignId: r.campaign_id,
+        campaignName: r.campaign_name,
+        adSetId: r.ad_set_id,
+        adSetName: r.ad_set_name,
+        market: r.market,
+        owner: ownerFor(source.source, r.campaign_id, settings),
+        day: r.uk_day,
+        amount: r.spend_amount,
+        currency: r.currency,
+      })),
+    );
+    days.push(
+      ...(
+        await db.query<{ day: string }>(
+          'SELECT uk_day::text AS day FROM pulse.ad_spend_days WHERE source=$1 AND account_id=$2 AND uk_day BETWEEN $3 AND $4',
+          [source.source, account, from, to],
+        )
+      ).rows.map((r) => ({ ...r, source: source.source })),
+    );
+  }
+  return { mode, rows, sources, days };
+}
+/** Invented daily spend, only returned alongside sample Shopify facts. */
+export function sampleSpend(from: string, to: string): SpendFacts {
+  const rows: SpendRow[] = [],
+    days: SpendFacts['days'] = [];
+  for (let day = from; day <= to; day = addDays(day, 1)) {
+    for (const [source, owner, market, amount] of [
+      ['meta', 'ours', 'uk', '48.20'],
+      ['meta', 'ours', 'us', '0.00'],
+      ['meta', 'freelancer', 'uk', '252.00'],
+      ['meta', 'freelancer', 'us', '240.00'],
+      ['google-ads', 'freelancer', 'uk', '70.00'],
+      ['google-ads', 'freelancer', 'us', '30.00'],
+      ['tiktok', 'freelancer', 'uk', '12.40'],
+    ] as const)
+      rows.push({
+        source,
+        accountId: `sample-${source}-account`,
+        campaignId: `sample-${source}-${owner}-${market}`,
+        campaignName: `Invented ${source} ${market.toUpperCase()}`,
+        adSetId: source === 'meta' ? `sample-adset-${owner}-${market}` : null,
+        adSetName: source === 'meta' ? 'Invented ad set' : null,
+        market,
+        owner,
+        day,
+        amount: microsDecimal(decimalMicros(amount)),
+        currency: 'GBP',
+      });
+    for (const source of adSources) days.push({ source, day });
+  }
+  return {
+    mode: 'sample',
+    rows,
+    days,
+    sources: adSources.map((source) => ({
+      source,
+      live: false,
+      ready: true,
+      status: 'sample data · waiting for keys',
+      fetchedAt: null,
+    })),
+  };
+}
+export async function spendHealth(db: Database, env: NodeJS.ProcessEnv, settings: Settings) {
+  const jobs = await readJobs(db),
+    states = getSourceStates(env);
+  return adSources.map((source) => {
+    const account = accountFor(source, settings),
+      live = !!account && states.find((s) => s.source === source)!.mode === 'live';
+    const job = jobs.find((j) => j.source === source && j.account_id === account);
+    return {
+      source,
+      live,
+      ready: live && !!job?.last_success_at,
+      status: !live
+        ? 'waiting for keys'
+        : job?.failures
+          ? 'source unavailable'
+          : !job?.last_success_at
+            ? 'first sync pending'
+            : !job.backfill_done
+              ? `backfill running · next ${job.backfill_next}`
+              : 'live',
+      fetchedAt: job?.last_success_at ? new Date(job.last_success_at).toISOString() : null,
+    };
+  });
+}

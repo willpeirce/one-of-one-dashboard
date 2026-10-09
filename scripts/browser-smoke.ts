@@ -12,6 +12,7 @@ type Period = typeof periods[number];
 interface HeroMetric {
   n?: number;
   unavailable?: boolean;
+  unavailableLabel?: string;
   t?: string;
   pre?: string;
   suf?: string;
@@ -55,7 +56,7 @@ async function assertHeroModel(page: Page, metrics: HeroPeriod): Promise<void> {
     const metric = metrics[key];
     assert.ok(metric && typeof metric !== 'string' && !Array.isArray(metric));
     if (typeof metric.n === 'number') {
-      expected[key] = metric.unavailable ? 'No data' : (metric.pre ?? '') + (metric.dp ? metric.n.toFixed(metric.dp) : Math.round(metric.n).toLocaleString('en-GB')) + (metric.suf ?? '');
+      expected[key] = metric.unavailable ? metric.unavailableLabel ?? 'No data' : (metric.pre ?? '') + (metric.dp ? metric.n.toFixed(metric.dp) : Math.round(metric.n).toLocaleString('en-GB')) + (metric.suf ?? '');
     } else {
       assert.equal(typeof metric.t, 'string');
       expected[key] = metric.t!;
@@ -451,6 +452,24 @@ async function run(): Promise<void> {
           await page.locator(`#period [data-period="${period}"]`).click();
           await assertHero(page, snapshot, period);
         }
+        step = `check sample ad spend and market cost per order at ${viewport.width}px`;
+        await page.locator('#period [data-period="today"]').click();
+        await assertHero(page,snapshot,'today');
+        assert.equal((snapshot.hero.today.spend as HeroMetric).n, 652.60);
+        step = 'check sample spend provenance';
+        assert.match(await page.locator('#hero [data-k="spend"] .ss').innerText(), /Sample ad spend/);
+        assert.equal(await page.locator('#hero [data-k="spend"]').getAttribute('data-source'), 'meta google-ads tiktok');
+        await page.locator('#hero [data-k="spend"]').click();
+        step = 'check ad spend detail split';
+        const spendSheet = (await page.locator('#sheet').textContent()) ?? '';
+        for (const split of ['Meta ours', 'Meta freelancer', 'Meta unassigned', 'Google', 'TikTok', 'Unknown market']) assert.ok(spendSheet.includes(split));
+        step = 'check hourly realignment in spend sheet';
+        assert.match(spendSheet, /hours re-aligned to UK time/);
+        step = 'check Google lag in spend sheet';
+        assert.match(spendSheet, /Google can lag about 3 hours/);
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+        await page.locator('#sh-x').click();
+        if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/ad-spend-${viewport.width}.png` });
         step = `check date picker at ${viewport.width}px with ${preference} browser preference`;
         await checkDatePicker(page, context, snapshot, viewport.width);
         step = `check browser errors after dates at ${viewport.width}px (${scriptErrors.length} script, ${consoleErrors.length} console, ${externalRequests} external)${scriptErrors[0] ? `: ${scriptErrors[0]}` : ''}`;
@@ -547,6 +566,13 @@ async function run(): Promise<void> {
     await settingsPage.goto('/settings');
     await settingsPage.locator('#settings-form').waitFor();
     await settingsPage.setViewportSize(viewports[0]!);
+    await settingsPage.locator('summary').filter({ hasText: 'Ad spend' }).click();
+    for (const name of ['metaAdAccountId', 'googleCustomerId', 'googleLoginCustomerId', 'tiktokAdvertiserId']) {
+      assert.equal(await settingsPage.locator(`input[name="${name}"]`).inputValue(), '');
+      assert.equal(await settingsPage.locator(`input[name="${name}"]`).getAttribute('required'), null);
+    }
+    assert.equal(await settingsPage.locator('[data-settings-list="metaOwners"] .setting-row').count(), 0);
+    assert.equal(await settingsPage.locator('[data-settings-list="expectedGoogleCampaigns"] .setting-row').count(), 0);
     await settingsPage.locator('summary').filter({ hasText: 'Costs & dispatch' }).click();
     assert.match(await settingsPage.locator('[data-settings-list="startingCogs"]').innerText(), /Shopify · sample data: £3\.45/);
     assert.match(await settingsPage.locator('[data-settings-list="startingCogs"]').innerText(), /Shopify · sample data: no cost set · last seen/);
@@ -662,7 +688,7 @@ async function run(): Promise<void> {
     step = 'check authenticated source health remains available';
     await page.goto('/sources');
     await page.locator('#source-health tbody tr').last().waitFor();
-    assert.equal(await page.locator('#source-health tbody tr').count(), 10);
+    assert.equal(await page.locator('#source-health tbody tr').count(), 11);
     assert.ok(await page.getByText('sample data', { exact: true }).count() >= 1);
 
     step = 'sign out and revoke the browser session';

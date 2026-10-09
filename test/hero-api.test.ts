@@ -26,12 +26,13 @@ function assertSampleHero(hero: HeroPeriod, from: string, to: string): void {
     const metric = hero[key];
     assert.equal(metric.mode, 'sample', `${key} must stay labelled sample`);
     assert.ok(metric.source.length > 0, `${key} must identify its source`);
-    assert.ok(metric.source.every((source) => ['shopify', 'meta', 'google-ads', 'github-hq'].includes(source)));
+    assert.ok(metric.source.every((source) => ['shopify', 'meta', 'google-ads', 'tiktok', 'github-hq'].includes(source)));
     assert.ok(Number.isFinite('n' in metric ? metric.n : metric.v), `${key} must have a finite value`);
     assert.ok(metric.d.src.length > 0, `${key} must explain its source`);
     if (['net','orders','cr'].includes(key)) assert.ok(metric.d.hist && metric.d.hist.length > 0, `${key} must include its ingested detail history`);
-    else if ('n' in metric) assert.equal(metric.unavailable, true, `${key} must not mix example ad/cost figures with ingested Shopify`);
-    else assert.equal(metric.t, 'No data');
+    else if ('n' in metric) assert.equal(metric.unavailable, false, `${key} uses labelled sample spend with sample Shopify`);
+    else if (metric.t==='—') assert.match(metric.d.why, /÷ 0 Shopify orders/);
+    else assert.match(metric.t, /^£/);
   }
 }
 
@@ -133,9 +134,10 @@ test('hero range API protects sessions, validates fixed errors and serves labell
     const week = weekResponse.json<HeroPeriod>();
     assert.equal(week.net.n, 466.34);
     assert.equal(week.orders.n, 7);
-    assert.equal(week.spend.unavailable, true);
-    assert.equal(week.ukcpo.t, 'No data');
-    assert.equal(week.uscpo.t, 'No data');
+    assert.equal(week.spend.unavailable, false);
+    assert.equal(week.spend.n, 7 * 652.60);
+    assert.match(week.ukcpo.t, /^£/);
+    assert.match(week.uscpo.t, /^£/);
     const dashboardResponse = await app.inject({ url: '/api/dashboard', headers: { cookie } });
     assert.equal(dashboardResponse.statusCode, 200);
     const snapshot = dashboardResponse.json<DashboardSnapshot>();

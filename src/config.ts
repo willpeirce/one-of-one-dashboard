@@ -50,35 +50,7 @@ export const appConfig = {
     usShippingBelowThreshold: 1495,
     percentageDiscountsAllowed: false,
   },
-  meta: {
-    adAccountId: 'act_1357158712547002',
-    businessId: '1210322130473958',
-    pixelId: '1369046831670193',
-    pageId: '846882775164156',
-    currency: 'GBP',
-    campaigns: [
-      { id: '120247907044320430', name: 'WT3 US', owner: 'ours', market: 'US' },
-      { id: '120248123337010430', name: 'WT4 UK', owner: 'ours', market: 'UK' },
-      { id: '120248974854080430', name: 'Hudson creator', owner: 'ours', market: null },
-      { id: '120249894042810430', name: 'IMG-SEP22 concept reads', owner: 'ours', market: null },
-      { id: '120238023249020430', name: 'TOF-US Max Conversions', owner: 'freelancer', market: 'US' },
-      { id: '120249549236700430', name: 'TOF-US Cost Cap', owner: 'freelancer', market: 'US' },
-      { id: '120238023249000430', name: 'TOF-UK Max Conversions', owner: 'freelancer', market: 'UK' },
-    ],
-  },
-  googleAds: {
-    customerId: '2967045072',
-    managerId: '4037237507',
-    loginCustomerIdRequired: false,
-    reportingTimezone: 'GMT',
-    manager: 'Laszlo',
-    expectedCampaigns: [
-      { name: 'Branded Search UK', market: 'UK', confirmed: true },
-      { name: 'PMax xLM UK v2', market: 'UK', confirmed: true },
-      { name: 'Branded Search - US V2', market: 'US', confirmed: false },
-      { name: 'PMax - xLM US v2', market: 'US', confirmed: false },
-    ],
-  },
+  // Advertising account IDs and campaign mappings live in Settings.
   mailchimp: {
     server: 'us2',
     audienceName: 'One of One',

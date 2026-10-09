@@ -104,7 +104,7 @@ function statChip(element: HTMLElement, state: State): void {
 
 const animations = new WeakMap<HTMLElement, number>();
 function metricNumber(element: HTMLElement, data: HeroMetric, animate: boolean): void {
-  if (data.unavailable) { animations.set(element, (animations.get(element) ?? 0) + 1); element.textContent = 'No data'; return; }
+  if (data.unavailable) { animations.set(element, (animations.get(element) ?? 0) + 1); element.textContent = data.unavailableLabel ?? 'No data'; return; }
   const show = (value: number): void => { element.textContent = (data.pre ?? '') + (data.dp ? value.toFixed(data.dp) : Math.round(value).toLocaleString('en-GB')) + (data.suf ?? ''); };
   const generation = (animations.get(element) ?? 0) + 1;
   animations.set(element, generation);
@@ -142,6 +142,7 @@ function renderHero(hero: HeroPeriod, animate = false): void {
   for (const key of ['net', 'orders', 'cr', 'spend', 'roas', 'margin'] as const) {
     const element = get(`#hero .tile[data-k="${key}"]`), metric = hero[key];
     element.dataset.mode = metric.mode;
+    element.dataset.source = metric.source.join(' ');
     if (metric.mode === 'live') element.querySelector('.sample-label')?.remove();
     get('.per', element).textContent = `${hero.per} · ${metric.unavailable ? 'unavailable' : metric.mode === 'live' ? 'live' : 'sample'}`;
     metricNumber(get('.sv', element), metric, animate);
@@ -156,6 +157,8 @@ function renderHero(hero: HeroPeriod, animate = false): void {
   for (const key of ['ukcpo', 'uscpo'] as const) {
     const element = get(`#hero [data-k="${key}"]`);
     element.dataset.dial = JSON.stringify(hero[key]);
+    element.dataset.source = hero[key].source.join(' ');
+    element.dataset.mode = hero[key].mode;
     renderDial(element, hero[key]);
   }
   if (hero.business) for (const [kind, widgetId, valueKey, subKey] of [['email','w039','t0269','t0270'], ['refill','w037','t0266','t0267']] as const) {

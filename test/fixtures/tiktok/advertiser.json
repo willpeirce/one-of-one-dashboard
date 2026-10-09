@@ -1,0 +1,13 @@
+{
+  "code": 0,
+  "message": "OK",
+  "request_id": "sample-request",
+  "data": {
+    "list": [
+      {
+        "advertiser_id": "9000000000",
+        "currency": "GBP"
+      }
+    ]
+  }
+}

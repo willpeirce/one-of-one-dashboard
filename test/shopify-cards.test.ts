@@ -227,7 +227,7 @@ test('integrated live dashboard has no example Shopify values; mode changes cann
   assert.equal(snap.textValues.t0026!.value, 'Wed 30 Sept, 13:00 UK');
   assert.match(snap.hero.today.sub1, /^1 order so far\./);
   assert.equal(snap.hero.today.net.mode,'live');assert.equal(snap.hero.today.net.n,66.62);assert.equal(snap.hero.today.spend.unavailable,true);
-  assert.equal(snap.widgets.w037!.mode,'live');assert.match(snap.banner!,/Advertising.*sample/);
+  assert.equal(snap.widgets.w037!.mode,'live');assert.match(snap.banner!,/Ad spend uses separately labelled source connections/);
   const html=dashboardPage(snap);assert.match(html,/£66.62/);assert.ok(!html.includes('£296'));assert.match(html,/New reviews/);
   snap.shopify!.needs=[{id:'unsafe',state:'warn',title:'<script>alert(1)</script>',why:'<img src=x onerror=alert(1)>',link:'https://admin.shopify.com/store/example'}];
   assert.ok(!needsHtml(snap.shopify!).includes('<script>'));assert.match(needsHtml(snap.shopify!),/&lt;img/);

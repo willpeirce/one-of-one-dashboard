@@ -1,0 +1,34 @@
+[
+  {
+    "results": [
+      {
+        "campaign": {
+          "resourceName": "customers/9000000000/campaigns/900000000201",
+          "id": "900000000201",
+          "name": "Invented UK campaign"
+        },
+        "segments": {
+          "date": "2026-09-29",
+          "hour": 23
+        },
+        "metrics": {
+          "costMicros": "70000001"
+        }
+      },
+      {
+        "campaign": {
+          "resourceName": "customers/9000000000/campaigns/900000000202",
+          "id": "900000000202",
+          "name": "Invented targeting campaign"
+        },
+        "segments": {
+          "date": "2026-09-30",
+          "hour": 12
+        },
+        "metrics": {
+          "costMicros": "30000000"
+        }
+      }
+    ]
+  }
+]

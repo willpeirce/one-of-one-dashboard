@@ -1,3 +1,5 @@
+import { applySpend, type AdHeroInputs } from '../ad-spend/metrics.js';
+import { sampleSpend } from '../ad-spend/store.js';
 import { appConfig } from '../config.js';
 import { addDays, buildHeroRange, dayCount, HeroRangeError, rangeLabel, ukToday, type DailyMetrics } from '../hero-range.js';
 import type { HeroPeriod } from '../dashboard-types.js';
@@ -56,7 +58,7 @@ export function dailyRows(facts: Facts, today: string): DailyMetrics[] {
   return [...byDay.values()].map(row => ({ ...row, net: row.net / 100 }));
 }
 
-export function shopifyHero(facts: Facts, today: string, from: string, to: string, settings: Settings, name?: string, preparedRows?: DailyMetrics[]): HeroPeriod {
+export function shopifyHero(facts: Facts, today: string, from: string, to: string, settings: Settings, name?: string, preparedRows?: DailyMetrics[], adInputs?: AdHeroInputs): HeroPeriod {
   const data = dataset(facts, today);
   if (from < data.min || to > today) throw new HeroRangeError();
   const rows = preparedRows ?? dailyRows(facts, today);
@@ -101,15 +103,8 @@ export function shopifyHero(facts: Facts, today: string, from: string, to: strin
   hero.cr.unavailable = !data.ready || !sessionComplete || totalSessions === 0;
   hero.cr.ss = !sessionComplete ? 'Sessions unavailable for part of this range' : !marketReliable ? 'Market conversion unknown · geo guard' : `UK ${ukSessions ? (100 * count('UK') / ukSessions).toFixed(1) + '%' : 'unknown'} · US ${usSessions ? (100 * count('US') / usSessions).toFixed(1) + '%' : 'unknown'}`;
   hero.cr.d.why = `Orders divided by clean Shopify sessions. ${hero.cr.ss}. Only the specified /pages/inside desktop/Google/no-cart phantom traffic is removed. ${sessions.some(s => s.provenance === 'routine_daily') ? 'Routine daily fallback: conversion is daily, not live.' : ''}`;
-  // Ad clients and costs arrive in later stages. A live numerator is never divided by example spend.
-  for (const key of ['spend', 'roas', 'margin'] as const) {
-    hero[key].n = 0; hero[key].unavailable = true; hero[key].state = 'info'; hero[key].ss = 'Not available · ads/cost stages pending';
-    hero[key].d = { why: 'Advertising and costs have not been connected. No example spend is combined with Shopify sales.', rule: 'Available after the owning source stages.', src: 'Not built yet', hist: [], extra: [] };
-  }
-  for (const key of ['ukcpo', 'uscpo'] as const) {
-    hero[key].t = 'No data'; hero[key].s = `Meta stage pending · bar £${settings.blendedMetaTripwireGbp}`; hero[key].cap = 'info'; hero[key].v = 0;
-    hero[key].d = { why: 'Meta spend is not available yet.', rule: 'Shopify orders are the denominator once spend is connected.', src: 'Not built yet', hist: [] };
-  }
+  const inputs=adInputs ?? {spend:facts.mode==='sample'?sampleSpend(from,to):{mode:'live' as const,rows:[],sources:[],days:[]},costs:[],estimates:[]};
+  applySpend(hero,data.orders,settings,today,inputs);
   const periodEmail = orders.filter(o => emailFlow(o) !== null);
   const refill = orders.filter(isRefill);
   const emailNet = data.orders.filter(o => emailFlow(o) !== null).reduce((n, o) => n + orderNet(o, from, to), 0) / 100;

@@ -36,6 +36,11 @@ try {
   writeFileSync(join(directory, 'setup.txt'), `${['DASHBOARD', 'SETUP', 'CODE'].join('_')} = '${setupPhrase}'\n`);
   writeFileSync(join(directory, 'setup-unquoted.txt'), `${['DASHBOARD', 'SETUP', 'CODE'].join('_')}=${setupPhrase}\n`);
   expectDetection('dir', ['github-pat', 'pulse-secret-literal', 'pulse-secret-dotenv']);
+  writeFileSync(join(directory, 'tiktok.txt'), `${['TIKTOK', 'ACCESS', 'TOKEN'].join('_')} = '${setupPhrase}'\n`);
+  writeFileSync(join(directory, 'tiktok-unquoted.txt'), `${['TIKTOK', 'ACCESS', 'TOKEN'].join('_')}=${setupPhrase}\n`);
+  expectDetection('dir', ['github-pat', 'pulse-secret-literal', 'pulse-secret-dotenv']);
+  rmSync(join(directory, 'tiktok.txt'));
+  rmSync(join(directory, 'tiktok-unquoted.txt'));
   rmSync(join(directory, 'setup.txt'));
   rmSync(join(directory, 'setup-unquoted.txt'));
   git('init', '--quiet');

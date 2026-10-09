@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import type { AuthenticationResponseJSON } from '@simplewebauthn/server';
 import { chromium, type BrowserContext, type Page } from 'playwright';
 import { rangeLabel } from '../src/hero-range.js';
+import type { Detail } from '../src/dashboard-types.js';
 
 let step = 'read test configuration';
 
@@ -19,6 +20,7 @@ interface HeroMetric {
   dp?: number;
   ss?: string;
   s?: string;
+  d?: Detail;
 }
 interface HeroPeriod {
   from: string;
@@ -470,6 +472,19 @@ async function run(): Promise<void> {
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
         await page.locator('#sh-x').click();
         if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/ad-spend-${viewport.width}.png` });
+        step = `check shipping income in margin detail at ${viewport.width}px`;
+        await page.locator('#hero [data-k="margin"]').click();
+        const marginRows = await page.locator('#sh-extra dt').allTextContents();
+        const shippingIndex = marginRows.indexOf('Shipping charged');
+        assert.ok(shippingIndex >= 0);
+        assert.equal(marginRows[shippingIndex + 1], 'Fulfilment');
+        assert.equal(await page.locator('#sh-extra dt:text-is("Shipping charged") + dd').innerText(),
+          (snapshot.hero.today.margin as HeroMetric).d?.extra?.find(([key]) => key === 'Shipping charged')?.[1]);
+        assert.match(await page.locator('#sh-why').innerText(), /shipping income.*fulfilment includes postage/i);
+        assert.match(await page.locator('#sh-rule').innerText(), /shipping refunds not yet deducted/);
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+        if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/margin-shipping-${viewport.width}.png` });
+        await page.locator('#sh-x').click();
         step = `check date picker at ${viewport.width}px with ${preference} browser preference`;
         await checkDatePicker(page, context, snapshot, viewport.width);
         step = `check browser errors after dates at ${viewport.width}px (${scriptErrors.length} script, ${consoleErrors.length} console, ${externalRequests} external)${scriptErrors[0] ? `: ${scriptErrors[0]}` : ''}`;

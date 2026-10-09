@@ -250,3 +250,9 @@ Spend, ROAS and market CPO use only connected live sources alongside live Shopif
 Migration 010 replaces the settings_changes.field CHECK with every current Settings root key, including jjGbpPerUsd and the four ad account IDs. Discover its name through pg_constraint/pg_attribute and reuse that quoted identifier; retain the original 1–160 character length, path regex and rejection of unknown roots. Removing the allowlist was rejected because audit fields must remain bounded and value-free. Existing migrations and ledger checksums remain unchanged.
 
 Database regressions compare the actual CHECK with the keys of typed defaultSettings, exercise accepted/rejected paths and save each formerly excluded field with one audit row, including Google dash normalization. Unexpected Settings-route failures log only the allowlisted error code, never database messages, details or submitted values. Validation/conflict responses and browser save messages remain unchanged.
+
+## 2026-10-09, change: shipping income in margin (Will)
+
+Add customer shipping net of tax in shop currency to the hero margin numerator because fulfilment includes postage. Shipping tax is the non-negative difference between total and item tax, removed from shipping only on tax-inclusive orders; clamp net shipping at zero and exclude cancelled/test orders. Keep net sales as the divisor and payment-fee basis. Show Shipping charged before Fulfilment and state "shipping refunds not yet deducted": shipping refunds are not stored, and fetching them is outside this change. There is no per-market margin calculation today.
+
+Will's formula overrides the hero estimate in plan 5, which omitted shipping income; the read-only spec remains untouched. Leaving postage income out understates margin, while adding it to net sales would change the agreed revenue and fee basis.

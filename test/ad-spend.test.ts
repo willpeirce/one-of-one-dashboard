@@ -562,6 +562,145 @@ test('known costs feed margin, discounts are not subtracted twice and missing ex
   );
 });
 
+test('margin adds shipping charged net of tax while retaining net sales as its divisor and fee basis', async (t) => {
+  // All amounts are invented: £100 item net sales, £10 landed cost, £5 fulfilment and £20 ads.
+  const s = {
+    ...settings(),
+    paymentFeePercent: 2,
+    startingCogs: [{ sku: 'sample-margin-shipping', unitCostGbp: 10 }],
+  };
+  const base = cleanOrder((await shopifyFixture('order')).data.order) as Order;
+  const spend = sampleSpend('2026-09-30', '2026-09-30');
+  spend.rows = [{ ...spend.rows[0]!, amount: '20.000000' }];
+  const cases: { name: string; order: Partial<Order>; charged: string; margin: number }[] = [
+    {
+      name: 'UK tax-inclusive paid shipping removes shipping tax',
+      order: {
+        market: 'UK',
+        taxesIncluded: true,
+        shippingPence: 600,
+        taxPence: 2100,
+        itemTaxPence: 2000,
+      },
+      charged: '£5.00 · net of tax',
+      margin: 68,
+    },
+    {
+      name: 'US tax-exclusive paid shipping uses shop-currency shipping without subtracting tax',
+      order: {
+        market: 'US',
+        currency: 'USD',
+        taxesIncluded: false,
+        shippingPence: 700,
+        taxPence: 220,
+        itemTaxPence: 200,
+      },
+      charged: '£7.00 · net of tax',
+      margin: 70,
+    },
+    {
+      name: 'free shipping leaves margin unchanged',
+      order: { taxesIncluded: true, shippingPence: 0, taxPence: 2000, itemTaxPence: 2000 },
+      charged: '£0.00 · net of tax',
+      margin: 63,
+    },
+    {
+      name: 'order tax below item tax clamps shipping tax to zero',
+      order: { taxesIncluded: true, shippingPence: 400, taxPence: 1900, itemTaxPence: 2000 },
+      charged: '£4.00 · net of tax',
+      margin: 67,
+    },
+    {
+      name: 'shipping tax above the charge clamps shipping income to zero',
+      order: { taxesIncluded: true, shippingPence: 50, taxPence: 2100, itemTaxPence: 2000 },
+      charged: '£0.00 · net of tax',
+      margin: 63,
+    },
+  ];
+  for (const c of cases) {
+    await t.test(c.name, () => {
+      const o: Order = {
+        ...base,
+        day: '2026-09-30',
+        cancelledAt: null,
+        test: false,
+        itemsAfterDiscountsPence: 10000,
+        refunds: [],
+        lines: [{ ...base.lines[0]!, sku: 'sample-margin-shipping', quantity: 1, variantId: null }],
+        ...c.order,
+      };
+      const h = hero();
+      h.orders.n = 1;
+      applySpend(h, [o], s, '2026-10-09', {
+        spend,
+        costs: [],
+        estimates: [{ orderId: o.id, costPence: 500, source: 'exact' }],
+      });
+      assert.equal(h.margin.n, c.margin);
+      assert.equal(h.net.n, 100);
+      const details = h.margin.d.extra!;
+      const shippingIndex = details.findIndex(([label]) => label === 'Shipping charged');
+      assert.ok(shippingIndex >= 0);
+      assert.equal(details[shippingIndex]![1], c.charged);
+      assert.equal(details[shippingIndex + 1]![0], 'Fulfilment');
+      assert.equal(
+        details.find(([label]) => label === 'Fees')![1],
+        '£2.00 · Settings percentage of net sales',
+      );
+      assert.match(h.margin.d.why, /shipping income/i);
+      assert.match(h.margin.d.why, /fulfilment.*postage/i);
+      assert.match(h.margin.d.rule, /shipping income/i);
+      assert.match(h.margin.d.rule, /fulfilment.*postage/i);
+      assert.match(h.margin.d.rule, /shipping refunds not yet deducted/);
+    });
+  }
+});
+
+test('cancelled, test and out-of-period orders add no shipping income to margin', async () => {
+  // These synthetic orders and amounts are unrelated to any store figures.
+  const base = cleanOrder((await shopifyFixture('order')).data.order) as Order;
+  const s = {
+    ...settings(),
+    paymentFeePercent: 2,
+    startingCogs: [{ sku: 'sample-margin-shipping', unitCostGbp: 10 }],
+  };
+  const o: Order = {
+    ...base,
+    id: 'sample-margin-eligible',
+    day: '2026-09-30',
+    cancelledAt: null,
+    test: false,
+    shippingPence: 0,
+    taxPence: 2000,
+    itemTaxPence: 2000,
+    taxesIncluded: true,
+    lines: [{ ...base.lines[0]!, sku: 'sample-margin-shipping', quantity: 1, variantId: null }],
+  };
+  const excluded: Order[] = [
+    { ...o, id: 'sample-margin-cancelled', cancelledAt: '2026-09-30T12:00:00Z' },
+    { ...o, id: 'sample-margin-test', test: true },
+    { ...o, id: 'sample-margin-before-period', day: '2026-09-29' },
+    { ...o, id: 'sample-margin-after-period', day: '2026-10-01' },
+  ].map((order) => ({ ...order, shippingPence: 900, lines: [] }));
+  const spend = sampleSpend('2026-09-30', '2026-09-30');
+  spend.rows = [{ ...spend.rows[0]!, amount: '20.000000' }];
+  const h = hero();
+  h.orders.n = 1;
+  applySpend(h, [o, ...excluded], s, '2026-10-09', {
+    spend,
+    costs: [],
+    estimates: [
+      { orderId: o.id, costPence: 500, source: 'exact' },
+      ...excluded.map((order) => ({ orderId: order.id, costPence: 0, source: 'exact' })),
+    ],
+  });
+  assert.equal(h.margin.n, 63);
+  assert.equal(
+    h.margin.d.extra!.find(([label]) => label === 'Shipping charged')![1],
+    '£0.00 · net of tax',
+  );
+});
+
 test('ad polling starts after listen; a throwing source cannot delay startup or fail health', async (t) => {
   const db = await createTestDatabase(),
     s = settings(),

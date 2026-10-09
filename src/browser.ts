@@ -1,4 +1,5 @@
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
+import { installPullToRefresh, reloadPageForRefresh } from './pull-refresh.js';
 
 class RequestFailed extends Error {
   constructor(readonly status: number) {
@@ -82,4 +83,9 @@ signOut?.addEventListener('click', () => {
 setPending(false);
 if (signIn && !passkeysAvailable) {
   setMessage('Passkeys need a supported browser and a secure connection. Open Pulse over HTTPS, or localhost for local development.');
+}
+
+if (['/sources', '/audit', '/fulfilment'].includes(location.pathname)) {
+  const status = document.querySelector<HTMLElement>(location.pathname === '/fulfilment' ? '#upload-status' : '#auth-message');
+  if (status) installPullToRefresh({ refresh: reloadPageForRefresh, status });
 }

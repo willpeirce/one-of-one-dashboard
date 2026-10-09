@@ -256,3 +256,17 @@ Database regressions compare the actual CHECK with the keys of typed defaultSett
 Add customer shipping net of tax in shop currency to the hero margin numerator because fulfilment includes postage. Shipping tax is the non-negative difference between total and item tax, removed from shipping only on tax-inclusive orders; clamp net shipping at zero and exclude cancelled/test orders. Keep net sales as the divisor and payment-fee basis. Show Shipping charged before Fulfilment and state "shipping refunds not yet deducted": shipping refunds are not stored, and fetching them is outside this change. There is no per-market margin calculation today.
 
 Will's formula overrides the hero estimate in plan 5, which omitted shipping income; the read-only spec remains untouched. Leaving postage income out understates margin, while adding it to net sales would change the agreed revenue and fee basis.
+
+## 2026-10-09, change: named overheads (Will)
+
+Replace the single monthly figure with named monthly items. Each item is spread evenly over the days of its calendar month, replacing the ÷ 30.4 rule; today accrues the elapsed fraction of the actual Europe/London day. Margin is after overheads, retaining net sales as its divisor and fee basis. An active zero-cost item is set, while a period with no active items names overheads as left out. Sample Shopify uses only the invented software, accountant and rent items, never saved overhead costs.
+
+Defaults pending Will: overheads are business-wide and are not split by market; no start month means the item applies to all past months. Main has no market selector or per-market margin, so this change records and tests the exclusion policy for future views without adding those views. The request's spring-change date is one day late: 28 March 2027 is the 23-hour UK day; 29 March has 24 hours. Tests cover both and the 25-hour day on 25 October 2026. The spec remains read-only; Will's calendar-month and after-overheads rules override its older formula.
+
+Migration 011 preserves a positive legacy figure as one Overheads item and retains monthlyOverheadsGbp only as a retired audit key. Discover and reuse the CHECK name as in 010. Legacy documents also convert on reads. Preserve the old amount even if it exceeds the new per-item limit; the exact legacy shape stays readable, while new saves require it to be reduced or replaced. Clipping or splitting the stored amount was rejected because it would silently change the user's record. Adding/removing items audits the list; editing an existing item audits its field path, without values.
+
+## 2026-10-09, change: home-screen pull to refresh (Will)
+
+Enable one shared gesture only for standalone touch use. Soft-refresh the dashboard snapshot and any picked range together, retaining the current selection and last display on failure, and reconnect a closed live stream. Reload the other signed-in pages only after a successful read; Settings blocks unsaved edits and checks again before navigating. Use a ten-second abort timeout, accessible state announcements, safe-area positioning and reduced-motion behavior. Native browser-tab refresh remains available without an added indicator.
+
+Detail-sheet source suffixes come from each metric or widget's mode in the snapshot. The top-level snapshot still contains deferred sample widgets alongside live sources, so using its global sample mode would mislabel live sheets. Inferring provenance from source-label wording was rejected.

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import type { AuthenticationResponseJSON } from '@simplewebauthn/server';
-import { chromium, type BrowserContext, type Page } from 'playwright';
+import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 import { rangeLabel } from '../src/hero-range.js';
 import type { Detail } from '../src/dashboard-types.js';
 
@@ -21,6 +21,7 @@ interface HeroMetric {
   ss?: string;
   s?: string;
   d?: Detail;
+  mode?: 'sample' | 'live';
 }
 interface HeroPeriod {
   from: string;
@@ -303,6 +304,313 @@ async function checkManifest(page: Page, context: BrowserContext, origin: string
   assert.equal((await context.request.get(appleIcon)).status(), 200);
 }
 
+async function pullGesture(page: Page, travel: number, selector = 'header', moved?: () => Promise<void>): Promise<void> {
+  await page.evaluate(() => window.scrollTo(0, 0));
+  const point = await page.locator(selector).first().evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    return { x: Math.min(innerWidth - 10, Math.max(10, box.left + box.width / 2)), y: Math.max(10, box.top + 12) };
+  });
+  const touch = await page.context().newCDPSession(page);
+  try {
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...point, id: 1 }] });
+    for (let distance = 10; distance < travel; distance += 20) {
+      await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: point.x, y: point.y + distance, id: 1 }] });
+    }
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: point.x, y: point.y + travel, id: 1 }] });
+    await moved?.();
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  } finally { await touch.detach(); }
+}
+
+async function checkPullToRefresh(browser: Browser, signedIn: BrowserContext, origin: string): Promise<void> {
+  const scope = step;
+  step = `${scope}: load the standalone touch dashboard`;
+  const mobile = await browser.newContext({ baseURL: origin, viewport: viewports[0], hasTouch: true, isMobile: true, reducedMotion: 'reduce' });
+  await mobile.addCookies(await signedIn.cookies());
+  // Script text avoids TSX's generated function-name helpers in serialized callbacks.
+  await mobile.addInitScript(`
+    Object.defineProperty(navigator, 'standalone', { value: true });
+    const NativeEventSource = window.EventSource;
+    let latest;
+    let connections = 0;
+    class BrowserEventSource extends NativeEventSource {
+      constructor(url, options) {
+        super(url, options);
+        latest = this;
+        document.documentElement.dataset.browserEventConnections = String(++connections);
+      }
+    }
+    window.EventSource = BrowserEventSource;
+    document.addEventListener('browser-close-live-stream', () => {
+      latest?.close();
+      document.documentElement.dataset.browserStreamClosed = String(latest?.readyState === NativeEventSource.CLOSED);
+    });
+  `);
+  const errors: string[] = [];
+  let externalRequests = 0;
+  mobile.on('page', opened => {
+    opened.on('pageerror', () => errors.push('Unexpected standalone script error'));
+    opened.on('console', message => {
+      if (message.type() !== 'error') return;
+      // This browser check deliberately returns one service failure below.
+      if (['/api/dashboard', '/api/hero'].includes(new URL(message.location().url || origin, origin).pathname)
+        && message.text().includes('503')) return;
+      errors.push('Unexpected standalone console error');
+    });
+  });
+  await mobile.route('**/*', async route => {
+    const url = new URL(route.request().url());
+    if (['http:', 'https:'].includes(url.protocol) && url.origin !== new URL(origin).origin) {
+      externalRequests += 1;
+      await route.abort('blockedbyclient');
+    } else await route.continue();
+  });
+  const page = await mobile.newPage();
+  let fetches = 0, ranges = 0;
+  page.on('request', request => {
+    if (new URL(request.url()).pathname === '/api/dashboard') fetches += 1;
+    if (new URL(request.url()).pathname === '/api/hero') ranges += 1;
+  });
+  try {
+    await page.goto('/');
+    await page.locator('html[data-dashboard-ready="true"]').waitFor();
+    step = `${scope}: create the standalone indicator`;
+    if (await page.locator('#pull-refresh').count() !== 1) {
+      const diagnostic = await page.evaluate(() => ({
+        standalone: (navigator as Navigator & { standalone?: boolean }).standalone === true,
+        touchPoints: navigator.maxTouchPoints,
+        mediaStandalone: matchMedia('(display-mode: standalone)').matches,
+        coarsePointer: matchMedia('(pointer: coarse)').matches,
+        indicatorCount: document.querySelectorAll('#pull-refresh').length,
+        enabled: document.documentElement.classList.contains('pull-refresh-enabled'),
+      }));
+      console.error(`Standalone setup diagnostic: ${JSON.stringify(diagnostic)}`);
+    }
+    assert.equal(await page.locator('#pull-refresh').count(), 1);
+    step = `${scope}: announce the standalone indicator accessibly`;
+    assert.equal(await page.locator('#pull-refresh').getAttribute('aria-live'), 'polite');
+    step = `${scope}: load standalone containment styles`;
+    await page.waitForFunction(() => getComputedStyle(document.documentElement).overscrollBehaviorY === 'contain');
+
+    step = `${scope}: short standalone pull does not fetch`;
+    const beforeShort = fetches;
+    await pullGesture(page, 35, 'header', async () => {
+      assert.equal(await page.locator('#pull-refresh-label').innerText(), 'Pull to refresh');
+      assert.equal(await page.locator('#pull-refresh').getAttribute('data-state'), 'pulling');
+    });
+    await page.locator('#pull-refresh').waitFor({ state: 'hidden' });
+    assert.equal(fetches, beforeShort);
+
+    step = `${scope}: full standalone pull keeps the selected preset`;
+    await page.locator('#period [data-period="7d"]').click();
+    const liveLabelSnapshot = await dashboardSnapshot(mobile);
+    for (const period of periods) {
+      liveLabelSnapshot.hero[period].net = { ...(liveLabelSnapshot.hero[period].net as HeroMetric), mode: 'live',
+        d: { ...(liveLabelSnapshot.hero[period].net as HeroMetric).d!, src: 'Shopify' } };
+    }
+    let received!: () => void, release!: () => void;
+    const refreshRequest = new Promise<void>(resolve => { received = resolve; });
+    const responseAllowed = new Promise<void>(resolve => { release = resolve; });
+    await page.route('**/api/dashboard', async route => {
+      received();
+      await responseAllowed;
+      await route.fulfill({ status: 200, json: liveLabelSnapshot });
+    }, { times: 1 });
+    const beforeFull = fetches;
+    await pullGesture(page, 140, 'header', async () => {
+      assert.equal(await page.locator('#pull-refresh-label').innerText(), 'Release to refresh');
+      assert.equal(await page.locator('#pull-refresh').getAttribute('data-state'), 'ready');
+    });
+    await refreshRequest;
+    assert.equal(await page.locator('#pull-refresh-label').innerText(), 'Refreshing');
+    assert.equal(await page.locator('#pull-refresh').getAttribute('data-state'), 'refreshing');
+    await pullGesture(page, 140);
+    assert.equal(fetches, beforeFull + 1, 'An in-flight refresh must exclude another pull');
+    release();
+    await page.locator('#pull-refresh').waitFor({ state: 'hidden' });
+    await page.waitForFunction(() => /^Updated \d{2}:\d{2}$/.test(document.querySelector('#update-status')?.textContent ?? ''));
+    assert.equal(await page.locator('#period [data-period="7d"]').getAttribute('aria-selected'), 'true');
+    assert.equal(await page.locator('#picklbl').innerText(), 'Dates');
+
+    step = `${scope}: a live sheet cannot inherit the mixed snapshot sample label`;
+    await page.locator('#hero [data-k="net"]').click();
+    assert.match(await page.locator('#sh-src').innerText(), /live/);
+    assert.doesNotMatch(await page.locator('#sh-src').innerText(), /sample data/i);
+    const beforeSheetPull = fetches;
+    await pullGesture(page, 140);
+    assert.equal(fetches, beforeSheetPull, 'An open detail sheet excludes a pull');
+    await page.locator('#sh-x').click();
+
+    step = `${scope}: full standalone pull refetches and keeps picked dates`;
+    await applyCalendarRange(page, '2026-09-20', '2026-09-24');
+    const beforeRange = { fetches, ranges, label: await page.locator('#picklbl').innerText() };
+    await pullGesture(page, 140);
+    await page.locator('#pull-refresh').waitFor({ state: 'hidden' });
+    await page.waitForFunction(() => /^Updated \d{2}:\d{2}$/.test(document.querySelector('#update-status')?.textContent ?? ''));
+    assert.equal(fetches, beforeRange.fetches + 1);
+    assert.equal(ranges, beforeRange.ranges + 1);
+    assert.equal(await page.locator('#pickbtn').getAttribute('aria-selected'), 'true');
+    assert.equal(await page.locator('#picklbl').innerText(), beforeRange.label);
+    await assertCustomRange(page, mobile, '2026-09-20', '2026-09-24');
+
+    step = `${scope}: a full pull reopens a closed live-updates stream`;
+    const beforeStream = Number(await page.locator('html').getAttribute('data-browser-event-connections'));
+    assert.ok(beforeStream > 0);
+    await page.evaluate(() => document.dispatchEvent(new Event('browser-close-live-stream')));
+    assert.equal(await page.locator('html').getAttribute('data-browser-stream-closed'), 'true');
+    await pullGesture(page, 140);
+    await page.locator('#pull-refresh').waitFor({ state: 'hidden' });
+    assert.equal(Number(await page.locator('html').getAttribute('data-browser-event-connections')), beforeStream + 1);
+    assert.equal(await page.locator('#picklbl').innerText(), beforeRange.label);
+
+    step = `${scope}: pulls inside the date picker and a horizontal scroller do nothing`;
+    await page.locator('#pickbtn').click();
+    const beforeExcluded = fetches;
+    await pullGesture(page, 140, '#picker');
+    assert.equal(fetches, beforeExcluded);
+    assert.equal(await page.locator('#picker').isVisible(), true);
+    await page.locator('#pk-x').click();
+    await page.evaluate(() => {
+      const scroller = document.createElement('div');
+      scroller.id = 'browser-horizontal-scroller';
+      scroller.style.cssText = 'position:fixed;z-index:99;top:80px;left:20px;width:160px;height:45px;overflow-x:auto';
+      scroller.innerHTML = '<div style="width:400px;height:40px">Invented horizontal browser fixture</div>';
+      document.body.append(scroller);
+    });
+    await pullGesture(page, 140, '#browser-horizontal-scroller');
+    assert.equal(fetches, beforeExcluded);
+    await page.locator('#browser-horizontal-scroller').evaluate(element => element.remove());
+
+    step = `${scope}: failed refresh preserves the visible last data`;
+    const previousTiles = await page.locator('#hero .tile[data-k]').evaluateAll(tiles => tiles.map(tile => tile.outerHTML));
+    await page.route('**/api/dashboard', route => route.fulfill({ status: 503, json: { error: 'Invented browser refresh failure' } }), { times: 1 });
+    await pullGesture(page, 140);
+    await page.waitForFunction(() => document.querySelector('#update-status')?.textContent === 'Could not refresh, showing the last data');
+    assert.deepEqual(await page.locator('#hero .tile[data-k]').evaluateAll(tiles => tiles.map(tile => tile.outerHTML)), previousTiles);
+    assert.equal(await page.locator('#picklbl').innerText(), beforeRange.label);
+
+    step = `${scope}: a failed picked-range fetch commits neither half of a refresh`;
+    const beforePartialFailure = { updated: await page.locator('html').getAttribute('data-updated-at'),
+      tiles: await page.locator('#hero .tile[data-k]').evaluateAll(tiles => tiles.map(tile => tile.outerHTML)) };
+    const partialSnapshot = await dashboardSnapshot(mobile) as DashboardSnapshot & { generatedAt: string };
+    partialSnapshot.generatedAt = new Date(Date.parse(partialSnapshot.generatedAt) + 1_000).toISOString();
+    await page.route('**/api/dashboard', route => route.fulfill({ status: 200, json: partialSnapshot }), { times: 1 });
+    await page.route('**/api/hero?**', route => route.fulfill({ status: 503, json: { error: 'Invented browser range failure' } }), { times: 1 });
+    await pullGesture(page, 140);
+    await page.locator('#pull-refresh').waitFor({ state: 'hidden' });
+    assert.equal(await page.locator('#update-status').innerText(), 'Could not refresh, showing the last data');
+    assert.equal(await page.locator('html').getAttribute('data-updated-at'), beforePartialFailure.updated);
+    assert.deepEqual(await page.locator('#hero .tile[data-k]').evaluateAll(tiles => tiles.map(tile => tile.outerHTML)), beforePartialFailure.tiles);
+    assert.equal(await page.locator('#picklbl').innerText(), beforeRange.label);
+
+    step = `${scope}: timeout aborts refresh and a late decoded response cannot replace data`;
+    await page.locator('#period [data-period="7d"]').click();
+    const beforeTimeout = { updated: await page.locator('html').getAttribute('data-updated-at'),
+      tiles: await page.locator('#hero .tile[data-k]').evaluateAll(tiles => tiles.map(tile => tile.outerHTML)) };
+    const lateSnapshot = await dashboardSnapshot(mobile) as DashboardSnapshot & { generatedAt: string };
+    lateSnapshot.generatedAt = new Date(Date.parse(lateSnapshot.generatedAt) + 2_000).toISOString();
+    for (const period of periods) (lateSnapshot.hero[period].net as HeroMetric).n! += 123;
+    await page.route('**/api/dashboard', route => route.fulfill({ status: 200, json: lateSnapshot }), { times: 1 });
+    // A decoded body can finish after cancellation; the dashboard must still check its signal before committing.
+    await page.evaluate(`(() => {
+      const originalFetch = window.fetch;
+      window.fetch = async (input, options) => {
+        const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, location.href).pathname;
+        if (path !== '/api/dashboard') return originalFetch(input, options);
+        window.fetch = originalFetch;
+        options.signal.addEventListener('abort', () => { document.documentElement.dataset.browserRefreshAborted = 'true'; }, { once: true });
+        const gate = new Promise(resolve => document.addEventListener('browser-release-late-body', resolve, { once: true }));
+        const response = await originalFetch(input, options);
+        const body = await response.json();
+        Object.defineProperty(response, 'json', { value: async () => {
+          document.documentElement.dataset.browserLateBodyWaiting = 'true';
+          await gate;
+          document.documentElement.dataset.browserLateBodyResolved = 'true';
+          return body;
+        }});
+        return response;
+      };
+    })()`);
+    await page.clock.install();
+    await pullGesture(page, 140);
+    await page.waitForFunction(() => document.documentElement.dataset.browserLateBodyWaiting === 'true');
+    await page.clock.fastForward(10_250);
+    await page.waitForFunction(() => document.querySelector('#update-status')?.textContent === 'Could not refresh, showing the last data');
+    assert.equal(await page.locator('html').getAttribute('data-browser-refresh-aborted'), 'true');
+    await page.evaluate(() => document.dispatchEvent(new Event('browser-release-late-body')));
+    await page.waitForFunction(() => document.documentElement.dataset.browserLateBodyResolved === 'true');
+    assert.equal(await page.locator('#update-status').innerText(), 'Could not refresh, showing the last data');
+    assert.equal(await page.locator('html').getAttribute('data-updated-at'), beforeTimeout.updated);
+    assert.deepEqual(await page.locator('#hero .tile[data-k]').evaluateAll(tiles => tiles.map(tile => tile.outerHTML)), beforeTimeout.tiles);
+    assert.equal(await page.locator('#period [data-period="7d"]').getAttribute('aria-selected'), 'true');
+
+    step = `${scope}: the shared standalone gesture is installed on every signed-in page`;
+    for (const path of ['/fulfilment', '/audit', '/sources']) {
+      await page.goto(path);
+      await page.locator('#pull-refresh').waitFor({ state: 'attached' });
+      assert.equal(await page.locator('#pull-refresh').count(), 1);
+    }
+    step = `${scope}: a Source health pull reloads and restores the UK update time`;
+    await page.evaluate(() => { document.documentElement.dataset.browserRefreshMarker = 'before'; });
+    await pullGesture(page, 140);
+    await page.waitForFunction(() => !document.documentElement.dataset.browserRefreshMarker
+      && /^Updated \d{2}:\d{2}$/.test(document.querySelector('#auth-message')?.textContent ?? ''));
+    assert.equal(new URL(page.url()).pathname, '/sources');
+    assert.equal(await page.locator('#source-health tbody tr').count(), 11);
+
+    step = `${scope}: Settings edits made during a refresh also block reload`;
+    await page.goto('/settings');
+    await page.locator('#settings-form').waitFor();
+    const input = page.locator('input[name="goalOrdersPerDay"]');
+    const changedGoal = String(Number(await input.inputValue()) + 1);
+    let navigations = 0, settingsReads = 0;
+    page.on('framenavigated', () => { navigations += 1; });
+    page.on('request', request => { if (new URL(request.url()).pathname === '/settings') settingsReads += 1; });
+    let settingsRequested!: () => void, releaseSettings!: () => void;
+    const settingsRefreshRequest = new Promise<void>(resolve => { settingsRequested = resolve; });
+    const settingsResponseAllowed = new Promise<void>(resolve => { releaseSettings = resolve; });
+    await page.route('**/settings', async route => {
+      const response = await route.fetch();
+      settingsRequested();
+      await settingsResponseAllowed;
+      await route.fulfill({ response });
+    }, { times: 1 });
+    await pullGesture(page, 140);
+    await settingsRefreshRequest;
+    await input.fill(changedGoal);
+    releaseSettings();
+    await page.waitForFunction(() => document.querySelector('#settings-message')?.textContent === 'Save or discard your changes first');
+    await page.locator('#pull-refresh').waitFor({ state: 'hidden' });
+    assert.equal(navigations, 0);
+    assert.equal(await input.inputValue(), changedGoal);
+
+    step = `${scope}: Settings existing unsaved edits block even the refresh read`;
+    const beforeDirtyPull = settingsReads;
+    await pullGesture(page, 140);
+    await page.waitForFunction(() => document.querySelector('#settings-message')?.textContent === 'Save or discard your changes first');
+    assert.equal(navigations, 0);
+    assert.equal(settingsReads, beforeDirtyPull);
+    assert.equal(await input.inputValue(), changedGoal);
+    assert.equal(errors.length, 0);
+    assert.equal(externalRequests, 0);
+  } finally { await mobile.close(); }
+
+  step = `${scope}: a normal touch browser tab has no pull indicator`;
+  const tab = await browser.newContext({ baseURL: origin, viewport: viewports[0], hasTouch: true, isMobile: true, reducedMotion: 'reduce' });
+  try {
+    await tab.addCookies(await signedIn.cookies());
+    const page = await tab.newPage();
+    await page.goto('/');
+    await page.locator('html[data-dashboard-ready="true"]').waitFor();
+    assert.equal(await page.locator('#pull-refresh').count(), 0);
+    let fetches = 0;
+    page.on('request', request => { if (new URL(request.url()).pathname === '/api/dashboard') fetches += 1; });
+    await pullGesture(page, 140);
+    assert.equal(fetches, 0);
+    assert.equal(await page.locator('#pull-refresh').count(), 0);
+  } finally { await tab.close(); }
+}
+
 async function run(): Promise<void> {
   const origin = process.env.APP_ORIGIN;
   const setupPhrase = process.env.DASHBOARD_SETUP_CODE;
@@ -482,6 +790,20 @@ async function run(): Promise<void> {
           (snapshot.hero.today.margin as HeroMetric).d?.extra?.find(([key]) => key === 'Shipping charged')?.[1]);
         assert.match(await page.locator('#sh-why').innerText(), /shipping income.*fulfilment includes postage/i);
         assert.match(await page.locator('#sh-rule').innerText(), /shipping refunds not yet deducted/);
+        step = `check daily overhead shares in margin detail at ${viewport.width}px`;
+        assert.ok(marginRows.includes('Overheads'));
+        const overheads = page.locator('#sh-extra dt:text-is("Overheads") + dd');
+        assert.equal(await overheads.innerText(),
+          (snapshot.hero.today.margin as HeroMetric).d?.extra?.find(([key]) => key === 'Overheads')?.[1]);
+        assert.match(await overheads.innerText(), /3 items, spread daily across each month/);
+        for (const name of ['Software subscriptions', 'Accountant', 'Office rent']) {
+          const item = page.locator(`#sh-extra dt:text-is("${name}") + dd`);
+          assert.match(await item.innerText(), /^£\d+\.\d{2}$/);
+          assert.equal(await item.innerText(),
+            (snapshot.hero.today.margin as HeroMetric).d?.extra?.find(([key]) => key === name)?.[1]);
+        }
+        assert.match(await page.locator('#sh-why').innerText(), /after overheads/i);
+        assert.match(await page.locator('#sh-src').innerText(), /sample data/i);
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
         if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/margin-shipping-${viewport.width}.png` });
         await page.locator('#sh-x').click();
@@ -588,6 +910,33 @@ async function run(): Promise<void> {
     }
     assert.equal(await settingsPage.locator('[data-settings-list="metaOwners"] .setting-row').count(), 0);
     assert.equal(await settingsPage.locator('[data-settings-list="expectedGoogleCampaigns"] .setting-row').count(), 0);
+    step = 'add named overheads, remove one and retain correctly numbered month fields';
+    const overheads = settingsPage.locator('[data-settings-list="overheads"]');
+    assert.equal(await settingsPage.locator('input[name="monthlyOverheadsGbp"]').count(), 0);
+    assert.equal(await overheads.locator('.setting-row').count(), 0);
+    const currentMonth = await settingsPage.evaluate(() => {
+      const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', year: 'numeric', month: '2-digit' }).formatToParts(new Date());
+      return `${parts.find(part => part.type === 'year')!.value}-${parts.find(part => part.type === 'month')!.value}`;
+    });
+    await overheads.locator('[data-add-row]').click();
+    await settingsPage.locator('input[name="overheads.0.name"]').fill('Browser sample removed');
+    await settingsPage.locator('input[name="overheads.0.monthlyGbp"]').fill('12.34');
+    const monthInput = settingsPage.locator('input[name="overheads.0.startMonth"]');
+    assert.equal(await monthInput.getAttribute('type'), 'month');
+    await monthInput.fill(currentMonth);
+    await settingsPage.locator('input[name="overheads.0.endMonth"]').fill(currentMonth);
+    assert.equal(await settingsPage.locator('[data-overheads-total]').innerText(), 'Total this month: £12.34');
+    await overheads.locator('[data-add-row]').click();
+    await settingsPage.locator('input[name="overheads.1.name"]').fill('Browser sample retained');
+    await settingsPage.locator('input[name="overheads.1.monthlyGbp"]').fill('20.01');
+    assert.equal(await settingsPage.locator('[data-overheads-total]').innerText(), 'Total this month: £32.35');
+    await overheads.locator('.setting-row').first().locator('[data-remove-row]').click();
+    assert.equal(await overheads.locator('.setting-row').count(), 1);
+    assert.equal(await settingsPage.locator('input[name="overheads.0.name"]').inputValue(), 'Browser sample retained');
+    assert.equal(await settingsPage.locator('input[name="overheads.0.startMonth"]').getAttribute('type'), 'month');
+    assert.equal(await settingsPage.locator('input[name="overheads.1.name"]').count(), 0);
+    assert.equal(await settingsPage.locator('[data-overheads-total]').innerText(), 'Total this month: £20.01');
+    assert.match(await overheads.innerText(), /Each item is spread evenly over the days of its month\./);
     await settingsPage.locator('summary').filter({ hasText: 'Costs & dispatch' }).click();
     assert.match(await settingsPage.locator('[data-settings-list="startingCogs"]').innerText(), /Shopify · sample data: £3\.45/);
     assert.match(await settingsPage.locator('[data-settings-list="startingCogs"]').innerText(), /Shopify · sample data: no cost set · last seen/);
@@ -628,12 +977,17 @@ async function run(): Promise<void> {
     step = 'check the saved Settings value persists in the API and form';
     const saved = await context.request.get('/api/settings');
     assert.equal(saved.status(), 200);
-    assert.equal((await saved.json() as { values: { blendedMetaTripwireGbp: number } }).values.blendedMetaTripwireGbp, updatedBar);
+    const savedValues = (await saved.json() as { values: { blendedMetaTripwireGbp: number; overheads: Array<Record<string, unknown>> } }).values;
+    assert.equal(savedValues.blendedMetaTripwireGbp, updatedBar);
+    assert.deepEqual(savedValues.overheads, [{ name: 'Browser sample retained', monthlyGbp: 20.01, startMonth: '', endMonth: '' }]);
     await settingsPage.reload();
     assert.equal(await settingsPage.locator('input[name="blendedMetaTripwireGbp"]').inputValue(), String(updatedBar));
+    assert.equal(await settingsPage.locator('input[name="overheads.0.name"]').inputValue(), 'Browser sample retained');
+    assert.equal(await settingsPage.locator('input[name="overheads.0.monthlyGbp"]').inputValue(), '20.01');
     step = 'check the changed Settings field appears in the audit log';
     await settingsPage.goto('/audit');
     assert.match(await settingsPage.locator('#audit-log').innerText(), /blendedMetaTripwireGbp/);
+    assert.match(await settingsPage.locator('#audit-log').innerText(), /overheads/);
     await settingsPage.close();
 
     step = 'check fulfilment costs at phone and desktop widths';
@@ -705,6 +1059,9 @@ async function run(): Promise<void> {
     await page.locator('#source-health tbody tr').last().waitFor();
     assert.equal(await page.locator('#source-health tbody tr').count(), 11);
     assert.ok(await page.getByText('sample data', { exact: true }).count() >= 1);
+
+    step = 'check home-screen pull to refresh with trusted touch input';
+    await checkPullToRefresh(browser, context, origin);
 
     step = 'sign out and revoke the browser session';
     await showAccountMenu(page);
@@ -793,7 +1150,7 @@ async function run(): Promise<void> {
     assert.equal(consoleErrors.length, 0);
     assert.equal(externalRequests, 0);
     await context.close();
-    console.log('Browser checks passed: passkeys and replay/origin/signature rejection; all hero presets and custom dates, bounded keyboard calendars, decks, search and details; Settings persistence and SSE without replacing picked dates; source health and audit; local fonts and PWA; dark-only phone/desktop with both browser preferences and no external requests.');
+    console.log('Browser checks passed: passkeys and replay/origin/signature rejection; all hero presets and custom dates, bounded keyboard calendars, decks, search and details; named overhead Settings and margin shares; Settings persistence and SSE without replacing picked dates; standalone touch refresh, excluded controls, failure retention and unsaved edits; live sheet labels; source health and audit; local fonts and PWA; dark-only phone/desktop with both browser preferences and no external requests.');
   } finally {
     await browser.close();
   }

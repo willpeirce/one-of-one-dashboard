@@ -547,7 +547,8 @@ test('known costs feed margin, discounts are not subtracted twice and missing ex
     costs: [],
     estimates: [{ orderId: o.id, costPence: 500, source: 'exact' }],
   });
-  assert.equal(h.margin.n, 63);
+  // The sample margin also deducts the invented £730 monthly examples across September's 30 days.
+  assert.ok(Math.abs(h.margin.n - (63 - 730 / 30)) < 1e-10);
   assert.match(h.margin.d.rule, /not subtracted twice/);
   spend.mode = 'live';
   const needs = spendNeeds(spend, s, '2026-10-09');
@@ -636,7 +637,7 @@ test('margin adds shipping charged net of tax while retaining net sales as its d
         costs: [],
         estimates: [{ orderId: o.id, costPence: 500, source: 'exact' }],
       });
-      assert.equal(h.margin.n, c.margin);
+      assert.ok(Math.abs(h.margin.n - (c.margin - 730 / 30)) < 1e-10);
       assert.equal(h.net.n, 100);
       const details = h.margin.d.extra!;
       const shippingIndex = details.findIndex(([label]) => label === 'Shipping charged');
@@ -694,11 +695,111 @@ test('cancelled, test and out-of-period orders add no shipping income to margin'
       ...excluded.map((order) => ({ orderId: order.id, costPence: 0, source: 'exact' })),
     ],
   });
-  assert.equal(h.margin.n, 63);
+  assert.ok(Math.abs(h.margin.n - (63 - 730 / 30)) < 1e-10);
   assert.equal(
     h.margin.d.extra!.find(([label]) => label === 'Shipping charged')![1],
     '£0.00 · net of tax',
   );
+});
+
+test('margin deducts active overhead items, distinguishes missing items from zero, and excludes them in market views', async (t) => {
+  // All sample amounts are invented: before overheads the contribution margin is 63% on £100 net sales.
+  const base = cleanOrder((await shopifyFixture('order')).data.order) as Order;
+  const o: Order = {
+    ...base,
+    day: '2026-09-30', test: false, cancelledAt: null, shippingPence: 0,
+    taxPence: 0, itemTaxPence: 0,
+    lines: [{ ...base.lines[0]!, sku: 'sample-overhead-margin', quantity: 1, variantId: null }],
+  };
+  const s = {
+    ...settings(), paymentFeePercent: 2,
+    startingCogs: [{ sku: 'sample-overhead-margin', unitCostGbp: 10 }],
+  };
+  const spend = sampleSpend('2026-09-30', '2026-09-30');
+  spend.mode = 'live';
+  spend.sources = spend.sources.map((source) => ({ ...source, live: true }));
+  spend.rows = [{ ...spend.rows[0]!, amount: '20.000000' }];
+  const inputs = {
+    spend, costs: [], estimates: [{ orderId: o.id, costPence: 500, source: 'exact' }], now,
+  };
+  const liveHero = () => { const h = hero(); h.net.mode = 'live'; h.orders.n = 1; return h; };
+  const leftOut = (h: ReturnType<typeof hero>) => h.margin.d.extra!.find(([name]) => name === 'Left out')![1];
+
+  await t.test('no active items are named as left out, with no guessed charge', () => {
+    const h = liveHero();
+    applySpend(h, [o], { ...s, overheads: [{ name: 'Ended sample service', monthlyGbp: 300, startMonth: '', endMonth: '2026-08' }] }, '2026-10-09', inputs);
+    assert.equal(h.margin.n, 63);
+    assert.equal(leftOut(h), 'overheads');
+    assert.equal(h.margin.d.extra!.find(([name]) => name === 'Overheads')![1], '£0.00 · 0 items, spread daily across each month');
+  });
+
+  await t.test('named items subtract their fair share, keeping net sales and fees unchanged', () => {
+    const h = liveHero();
+    applySpend(h, [o], { ...s, overheads: [
+      { name: 'Sample service', monthlyGbp: 300, startMonth: '', endMonth: '' },
+      { name: 'Sample support', monthlyGbp: 150, startMonth: '2026-09', endMonth: '2026-09' },
+    ] }, '2026-10-09', inputs);
+    assert.equal(h.margin.n, 48);
+    assert.equal(h.net.n, 100);
+    assert.equal(leftOut(h), 'None of these components');
+    assert.ok(h.margin.d.extra!.some(([name, value]) => name === 'Fees' && value === '£2.00 · Settings percentage of net sales'));
+    assert.ok(h.margin.d.extra!.some(([name, value]) => name === 'Overheads' && value === '£15.00 · 2 items, spread daily across each month'));
+    assert.ok(h.margin.d.extra!.some(([name, value]) => name === 'Sample service' && value === '£10.00'));
+    assert.ok(h.margin.d.extra!.some(([name, value]) => name === 'Sample support' && value === '£5.00'));
+    assert.match(h.margin.d.why, /after overheads/);
+    assert.match(h.margin.d.rule, /each calendar month's days/);
+  });
+
+  await t.test('an active zero-cost item is configured, not missing', () => {
+    const h = liveHero();
+    applySpend(h, [o], { ...s, overheads: [{ name: 'Sample free plan', monthlyGbp: 0, startMonth: '', endMonth: '' }] }, '2026-10-09', inputs);
+    assert.equal(h.margin.n, 63);
+    assert.equal(leftOut(h), 'None of these components');
+    assert.ok(h.margin.d.extra!.some(([name, value]) => name === 'Sample free plan' && value === '£0.00'));
+  });
+
+  for (const market of ['uk', 'us'] as const) await t.test(`${market.toUpperCase()} margin does not invent an overhead allocation`, () => {
+    const h = liveHero();
+    applySpend(h, [o], { ...s, overheads: [{ name: 'Sample service', monthlyGbp: 300, startMonth: '', endMonth: '' }] }, '2026-10-09', { ...inputs, market });
+    assert.equal(h.margin.n, 63);
+    assert.equal(leftOut(h), 'None of these components');
+    assert.ok(h.margin.d.extra!.some(([name, value]) => name === 'Overheads' && value === 'Not deducted; overheads are not split by market'));
+    assert.match(h.margin.d.rule, /overheads are not split by market/);
+    assert.ok(!h.margin.d.extra!.some(([name]) => name === 'Sample service'));
+  });
+
+  await t.test('the sheet shows eight item lines then names how many remain, including all in the total', () => {
+    const h = liveHero();
+    const overheads = Array.from({ length: 10 }, (_, index) => ({ name: `Sample item ${index + 1}`, monthlyGbp: 30, startMonth: '', endMonth: '' }));
+    applySpend(h, [o], { ...s, overheads }, '2026-10-09', inputs);
+    assert.equal(h.margin.n, 53);
+    assert.ok(h.margin.d.extra!.some(([name, value]) => name === 'Overheads' && value === '£10.00 · 10 items, spread daily across each month'));
+    assert.equal(h.margin.d.extra!.filter(([name]) => name.startsWith('Sample item ')).length, 8);
+    assert.ok(h.margin.d.extra!.some(([name]) => name === 'Sample item 8'));
+    assert.ok(!h.margin.d.extra!.some(([name]) => name === 'Sample item 9'));
+    assert.ok(h.margin.d.extra!.some(([name]) => name === 'and 2 more'));
+  });
+
+  await t.test('today uses the supplied clock and remains so far without a judgement', () => {
+    const h = liveHero();
+    applySpend(h, [o], { ...s, overheads: [{ name: 'Sample service', monthlyGbp: 300, startMonth: '', endMonth: '' }] }, '2026-09-30', { ...inputs, now: new Date('2026-09-30T11:00:00Z') });
+    assert.equal(h.margin.n, 58);
+    assert.equal(h.margin.state, 'sofar');
+    assert.match(h.margin.ss, /so far/);
+    assert.ok(h.margin.d.extra!.some(([name, value]) => name === 'Sample service' && value === '£5.00'));
+  });
+
+  await t.test('sample margin ignores Settings overheads entirely and labels its invented examples', () => {
+    const h = hero(); h.orders.n = 1;
+    const sampleSettings = { ...s };
+    Object.defineProperty(sampleSettings, 'overheads', { get: () => { throw new Error('Sample mode must not read Settings overheads'); } });
+    applySpend(h, [o], sampleSettings, '2026-10-09', { ...inputs, spend: { ...spend, mode: 'sample' } });
+    assert.ok(Math.abs(h.margin.n - (63 - 730 / 30)) < 1e-10);
+    assert.ok(h.margin.d.extra!.some(([name, value]) => name === 'Overheads' && value === '£24.33 · 3 items, spread daily across each month · sample data'));
+    assert.ok(h.margin.d.extra!.some(([name, value]) => name === 'Software subscriptions' && value === '£6.00'));
+    assert.ok(h.margin.d.extra!.some(([name, value]) => name === 'Accountant' && value === '£5.00'));
+    assert.ok(h.margin.d.extra!.some(([name, value]) => name === 'Office rent' && value === '£13.33'));
+  });
 });
 
 test('ad polling starts after listen; a throwing source cannot delay startup or fail health', async (t) => {

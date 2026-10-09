@@ -1,5 +1,23 @@
+import { ukToday } from './hero-range.js';
+import { monthlyOverheadTotal, type OverheadItem } from './overheads.js';
+import { installPullToRefresh, reloadPageForRefresh } from './pull-refresh.js';
+
 type SettingInput = HTMLInputElement | HTMLSelectElement;
 type JsonObject = { [key: string]: unknown };
+
+function enhanceMonthInputs(root: HTMLElement | DocumentFragment): void {
+  root.querySelectorAll<HTMLInputElement>('[data-month-input]').forEach((input) => {
+    const probe = document.createElement('input');
+    probe.type = 'month';
+    probe.value = 'not-a-month';
+    if (probe.type !== 'month' || probe.value !== '') {
+      input.type = 'text';
+      input.placeholder = 'YYYY-MM';
+      input.pattern = '[0-9]{4}-(0[1-9]|1[0-2])';
+      input.maxLength = 7;
+    }
+  });
+}
 
 function inputValue(input: SettingInput): string | number | boolean | null {
   if (input instanceof HTMLInputElement && input.type === 'checkbox') return input.checked;
@@ -44,6 +62,22 @@ function initializeSettings(form: HTMLFormElement): void {
   const lists = Array.from(form.querySelectorAll<HTMLElement>('[data-settings-list]'));
   let pending = false;
   let dirty = false;
+  function showOverheadsTotal(): void {
+    const list = form.querySelector<HTMLElement>('[data-settings-list="overheads"]');
+    const total = list?.querySelector<HTMLElement>('[data-overheads-total]');
+    if (!list || !total) return;
+    const items = Array.from(list.querySelectorAll<HTMLElement>('[data-list-rows] > .setting-row')).flatMap((row): OverheadItem[] => {
+      const value = (key: string) => row.querySelector<HTMLInputElement>(`[data-setting-path$=".${key}"]`)?.value ?? '';
+      const monthlyGbp = Number(value('monthlyGbp'));
+      const startMonth = value('startMonth');
+      const endMonth = value('endMonth');
+      const monthIsValid = (month: string) => month === '' || /^[0-9]{4}-(0[1-9]|1[0-2])$/.test(month);
+      if (!Number.isFinite(monthlyGbp) || monthlyGbp < 0 || monthlyGbp > 1_000_000 || !monthIsValid(startMonth) || !monthIsValid(endMonth)) return [];
+      return [{ name: value('name'), monthlyGbp, startMonth, endMonth }];
+    });
+    total.textContent = `Total this month: £${monthlyOverheadTotal(items, ukToday().slice(0, 7)).toFixed(2)}`;
+  }
+
   function showShopifyCosts(): void {
     const list = form.querySelector<HTMLElement>('[data-shopify-cost-map]');
     if (!list) return;
@@ -59,6 +93,7 @@ function initializeSettings(form: HTMLFormElement): void {
     if (pending) return;
     dirty = true;
     showShopifyCosts();
+    showOverheadsTotal();
     message.textContent = 'You have unsaved changes.';
     message.removeAttribute('data-error');
   }
@@ -77,15 +112,21 @@ function initializeSettings(form: HTMLFormElement): void {
         input.id = `setting-${path.replaceAll('.', '-')}`;
         row.querySelector<HTMLLabelElement>(`label[for="${oldId}"]`)?.setAttribute('for', input.id);
       });
+      enhanceMonthInputs(row);
     });
     list.querySelector('[data-list-count]')!.textContent = String(rows.length);
     list.querySelector<HTMLElement>('[data-list-empty]')!.hidden = rows.length > 0;
+    const maxRows = list.dataset.listMax;
+    if (maxRows) list.querySelector<HTMLButtonElement>('[data-add-row]')!.disabled = rows.length >= Number(maxRows);
   }
 
-  function addRow(list: HTMLElement): void {
+  function addRow(list: HTMLElement): boolean {
+    const maxRows = list.dataset.listMax;
+    if (maxRows && list.querySelector('[data-list-rows]')!.children.length >= Number(maxRows)) return false;
     const template = list.querySelector<HTMLTemplateElement>('[data-list-template]')!;
     list.querySelector('[data-list-rows]')!.append(template.content.cloneNode(true));
     numberRows(list);
+    return true;
   }
 
   form.addEventListener('click', (event) => {
@@ -95,7 +136,7 @@ function initializeSettings(form: HTMLFormElement): void {
     const remove = target.closest<HTMLButtonElement>('[data-remove-row]');
     if (add) {
       const list = add.closest<HTMLElement>('[data-settings-list]')!;
-      addRow(list);
+      if (!addRow(list)) return;
       list.querySelector<HTMLElement>('[data-list-rows] > .setting-row:last-child input, [data-list-rows] > .setting-row:last-child select')?.focus();
       markDirty();
     } else if (remove) {
@@ -146,6 +187,7 @@ function initializeSettings(form: HTMLFormElement): void {
       else input.value = value === null || value === undefined ? '' : String(value);
     });
     showShopifyCosts();
+    showOverheadsTotal();
   }
 
   form.addEventListener('submit', (event) => {
@@ -207,6 +249,18 @@ function initializeSettings(form: HTMLFormElement): void {
     event.preventDefault();
   });
 
+  enhanceMonthInputs(form);
+  lists.forEach((list) => {
+    enhanceMonthInputs(list.querySelector<HTMLTemplateElement>('[data-list-template]')!.content);
+    numberRows(list);
+  });
+  showOverheadsTotal();
+  const canRefresh = () => dirty || pending ? 'Save or discard your changes first' : true;
+  installPullToRefresh({
+    status: message,
+    refresh: (signal) => reloadPageForRefresh(signal, canRefresh),
+    canRefresh,
+  });
   save.disabled = false;
 }
 

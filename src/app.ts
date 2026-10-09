@@ -160,7 +160,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     const { from, to } = validateHeroRange(query.from, query.to);
     const settings = await readSettings(db);
     const facts=await shopify.store.facts();
-    return shopifyHero(facts, ukToday(sourceNow()), from, to, settings.values,undefined,undefined,await heroInputs(facts,settings.values));
+    return shopifyHero(facts, ukToday(sourceNow()), from, to, settings.values,undefined,undefined,await heroInputs(facts,settings.values),sourceNow());
   });
   app.get('/sources', async (request, reply) => {
     if (!await auth.session(request)) return reply.redirect('/login');
@@ -196,7 +196,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   // Fixed paths only; the server never exposes repository or environment files.
   const assets = [
     ...['browser.js', 'dashboard.js', 'settings.js', 'fulfilment.js'].map(name => [name, 'text/javascript; charset=utf-8'] as const),
-    ...['styles.css', 'dashboard.css', 'settings.css', 'fulfilment.css', 'fonts.css'].map(name => [name, 'text/css; charset=utf-8'] as const),
+    ...['styles.css', 'dashboard.css', 'settings.css', 'fulfilment.css', 'fonts.css', 'pull-refresh.css'].map(name => [name, 'text/css; charset=utf-8'] as const),
     ...['logo.png', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'].map(name => [name, 'image/png'] as const),
     ...['outfit', 'plus-jakarta-sans'].flatMap(name => [
       [`fonts/${name}-latin-wght-normal.woff2`, 'font/woff2'] as const,

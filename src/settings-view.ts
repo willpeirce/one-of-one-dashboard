@@ -1,5 +1,7 @@
 import { SETTINGS_KEY_NAMES, type SettingsSnapshot } from './settings.js';
 import type { ShopifyCost } from './shopify/costs.js';
+import { ukToday } from './hero-range.js';
+import { monthlyOverheadTotal } from './overheads.js';
 
 function escapeHtml(value: string | number): string {
   return String(value).replace(/[&<>"']/g, (character) => ({
@@ -10,13 +12,14 @@ function escapeHtml(value: string | number): string {
 type Field = {
   key: string;
   label: string;
-  type?: 'text' | 'number' | 'time' | 'date' | 'checkbox';
+  type?: 'text' | 'number' | 'time' | 'date' | 'month' | 'checkbox';
   nullable?: boolean;
   optional?: boolean;
   integer?: boolean;
   step?: string;
   min?: number;
   max?: number;
+  maxlength?: number;
   hint?: string;
   options?: readonly { value: string; label: string }[];
 };
@@ -33,7 +36,7 @@ function field(definition: Field, value: unknown, prefix = ''): string {
   }
   const input = definition.options
     ? `<select ${attributes}>${definition.options.map((option) => `<option value="${escapeHtml(option.value)}"${option.value === value ? ' selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}</select>`
-    : `<input ${attributes} type="${type}" value="${escapeHtml(value === null || value === undefined ? '' : String(value))}"${definition.nullable ? ' data-nullable="true" placeholder="Not set"' : definition.optional ? '' : ' required'}${type === 'number' ? ` min="${definition.min ?? 0}" step="${definition.step ?? (definition.integer ? '1' : '0.01')}"${definition.max === undefined ? '' : ` max="${definition.max}"`}` : ''}${type === 'text' ? ' maxlength="160" autocomplete="off"' : ''}>`;
+    : `<input ${attributes} type="${type}" value="${escapeHtml(value === null || value === undefined ? '' : String(value))}"${definition.nullable ? ' data-nullable="true" placeholder="Not set"' : definition.optional ? '' : ' required'}${type === 'number' ? ` min="${definition.min ?? 0}" step="${definition.step ?? (definition.integer ? '1' : '0.01')}"${definition.max === undefined ? '' : ` max="${definition.max}"`}` : ''}${type === 'text' ? ` maxlength="${definition.maxlength ?? 160}" autocomplete="off"` : ''}${type === 'month' ? ' data-month-input pattern="[0-9]{4}-(0[1-9]|1[0-2])" maxlength="7" placeholder="YYYY-MM" autocomplete="off"' : ''}>`;
   return `<div class="setting-field"><label for="${id}">${escapeHtml(definition.label)}</label>${input}${hint}</div>`;
 }
 
@@ -41,15 +44,16 @@ function fields(definitions: readonly Field[], values: object, prefix = ''): str
   return definitions.map((definition) => field(definition, (values as Record<string, unknown>)[definition.key], prefix)).join('');
 }
 
-function collection(key: string, label: string, definitions: readonly Field[], rows: readonly Record<string, unknown>[], note: string, costs?: Record<string, string>): string {
+function collection(key: string, label: string, definitions: readonly Field[], rows: readonly object[], note: string, costs?: Record<string, string>, options: { maxRows?: number; footer?: string; heading?: string } = {}): string {
   const row = (value: Record<string, unknown>, index: number | string) => `<fieldset class="setting-row"><legend>${escapeHtml(label)} <span data-row-number>${typeof index === 'number' ? index + 1 : ''}</span></legend><div class="setting-row-fields">${fields(definitions, value, `${key}.${index}`)}</div>${costs ? `<p class="setting-help" data-shopify-cost>${escapeHtml(costs[String(value.sku)] ?? 'Not in Shopify')}</p>` : ''}<button class="btn setting-remove" type="button" data-remove-row aria-label="Remove ${escapeHtml(label.toLowerCase())}">Remove</button></fieldset>`;
-  return `<section class="setting-collection" data-settings-list="${key}" aria-labelledby="${key}-heading">
-    <h3 id="${key}-heading">${escapeHtml(label)} <span class="setting-count" data-list-count>${rows.length}</span></h3>
+  return `<section class="setting-collection" data-settings-list="${key}"${options.maxRows === undefined ? '' : ` data-list-max="${options.maxRows}"`} aria-labelledby="${key}-heading">
+    <h3 id="${key}-heading">${escapeHtml(options.heading ?? label)} <span class="setting-count" data-list-count>${rows.length}</span></h3>
     <p class="setting-help">${escapeHtml(note)}</p>
-    <div data-list-rows${costs ? ` data-shopify-cost-map="${escapeHtml(JSON.stringify(costs))}"` : ''}>${rows.map((value, index) => row(value, index)).join('')}</div>
+    <div data-list-rows${costs ? ` data-shopify-cost-map="${escapeHtml(JSON.stringify(costs))}"` : ''}>${rows.map((value, index) => row(value as Record<string, unknown>, index)).join('')}</div>
     <p class="setting-empty" data-list-empty${rows.length ? ' hidden' : ''}>None added yet.</p>
     <template data-list-template>${row({}, '__index__')}</template>
-    <button class="btn setting-add" type="button" data-add-row>Add ${escapeHtml(label.toLowerCase())}</button>
+    <button class="btn setting-add" type="button" data-add-row${options.maxRows !== undefined && rows.length >= options.maxRows ? ' disabled' : ''}>Add ${escapeHtml(label.toLowerCase())}</button>
+    ${options.footer ?? ''}
   </section>`;
 }
 
@@ -60,7 +64,7 @@ function section(title: string, description: string, content: string, open = fal
 const number = (key: string, label: string, extra: Partial<Field> = {}): Field => ({ key, label, type: 'number', ...extra });
 const checkbox = (key: string, label: string): Field => ({ key, label, type: 'checkbox' });
 
-export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly ShopifyCost[] = [], mode: 'sample' | 'live' = 'sample'): string {
+export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly ShopifyCost[] = [], mode: 'sample' | 'live' = 'sample', now = new Date()): string {
   const values = snapshot.values;
   const costLabels: Record<string, string> = Object.create(null);
   for (const c of shopifyCosts) if (c.sku) {
@@ -71,9 +75,16 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
   const goals = section('Goals & overheads', 'The targets behind your business.', `<div class="settings-grid">${fields([
     number('goalOrdersPerDay', 'Order goal per day', { integer: true, min: 1 }),
     number('goalNetMarginPercent', 'Net margin goal (%)', { max: 100 }),
-    number('monthlyOverheadsGbp', 'Monthly overheads (£)', { nullable: true }),
     number('paymentFeePercent', 'Payment fee rate (%)', { nullable: true, max: 100 }),
-  ], values)}</div>`, true);
+  ], values)}</div>${collection('overheads', 'Overhead', [
+    { key: 'name', label: 'Name', maxlength: 60 },
+    number('monthlyGbp', 'Monthly amount (£)', { max: 1_000_000 }),
+    { key: 'startMonth', label: 'Start month (optional)', type: 'month', optional: true },
+    { key: 'endMonth', label: 'End month (optional)', type: 'month', optional: true },
+  ], values.overheads, 'Add each fixed monthly cost as its own item. Blank months apply to all months.', undefined, {
+    heading: 'Overheads', maxRows: 50,
+    footer: `<p class="setting-overheads-total" data-overheads-total>Total this month: £${monthlyOverheadTotal(values.overheads, ukToday(now).slice(0, 7)).toFixed(2)}</p><p class="setting-help">Each item is spread evenly over the days of its month.</p>`,
+  })}`, true);
   const advertising = section('Cost per purchase', 'UK and US targets, plus the blended Meta tripwire.', `<div class="settings-grid">${fields([
     number('cppUkBreakEvenGbp', 'UK break-even cost (£)'), number('cppUkTargetGbp', 'UK target cost (£)', { hint: 'At or below the UK break-even cost.' }),
     number('cppUsBreakEvenGbp', 'US break-even cost (£)'), number('cppUsTargetGbp', 'US target cost (£)', { hint: 'At or below the US break-even cost.' }),

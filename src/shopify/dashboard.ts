@@ -33,9 +33,9 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
   };
   // The unstarted live backfill still renders all four periods as unavailable.
   for (const [key, [from, to, name]] of Object.entries(ranges)) {
-    if (from >= data.min) snapshot.hero[key as Period] = shopifyHero(facts, today, from, to, settings, name, preparedRows, adInputs);
+    if (from >= data.min) snapshot.hero[key as Period] = shopifyHero(facts, today, from, to, settings, name, preparedRows, adInputs, now);
     else {
-      const hero = shopifyHero(facts, today, today, today, settings, name, preparedRows, adInputs);
+      const hero = shopifyHero(facts, today, today, today, settings, name, preparedRows, adInputs, now);
       hero.from = from; hero.to = to; hero.short = name; hero.eyebrow = `${from}–${to} · history unavailable`;
       for (const metric of [hero.net, hero.orders, hero.cr, hero.spend, hero.roas, hero.margin]) { metric.unavailable = true; metric.ss = 'History unavailable for this range'; }
       for(const dial of [hero.ukcpo,hero.uscpo]){dial.t='—';dial.s='History unavailable for this range';}

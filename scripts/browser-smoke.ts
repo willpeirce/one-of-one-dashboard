@@ -7,7 +7,9 @@ import type { Detail, DashboardSnapshot as FullDashboardSnapshot } from '../src/
 import { formatMetricNumber, formatPounds } from '../src/money.js';
 import { applySpend } from '../src/ad-spend/metrics.js';
 import type { SpendFacts } from '../src/ad-spend/store.js';
-import { defaultSettings } from '../src/settings.js';
+import { defaultSettings, type SettingsSnapshot } from '../src/settings.js';
+import { calculateSeriesPace, paceDate, paceNumber } from '../src/series-pace/model.js';
+import type { SeriesPaceMarketView } from '../src/series-pace/presentation.js';
 
 let step = 'read test configuration';
 
@@ -207,6 +209,243 @@ async function checkNegativeProfit(context: BrowserContext): Promise<void> {
       await page.locator('#sh-x').click();
     }
   } finally { await page.close(); }
+}
+
+async function checkSeriesPace(context: BrowserContext): Promise<void> {
+  const scope = step;
+  const page = await context.newPage();
+  try {
+    const response = await context.request.get('/api/dashboard');
+    assert.equal(response.status(), 200);
+    const fixture = await response.json() as FullDashboardSnapshot;
+    const widget = fixture.widgets.w017;
+    assert.ok(widget?.kind === 'series-pace');
+    assert.equal(widget.mode, 'sample');
+    await page.goto('/');
+    await page.locator('html[data-dashboard-ready="true"]').waitFor();
+    await page.locator('#tabs [data-tab="ads"]').click();
+    for (const viewport of viewports) {
+      step = `${scope}: sample card and market sheets at ${viewport.width}px`;
+      await page.setViewportSize(viewport);
+      const card = page.locator('[data-model-id="w017"]');
+      assert.equal(await card.locator('h3').innerText(), 'Series 1 sell-out pace');
+      assert.match(await card.innerText(), /sample data/i);
+      assert.equal(await card.locator(':scope > .sample-label').count(), 1);
+      assert.equal(await card.locator('[data-series-market] .well svg').count(), 2);
+      assert.doesNotMatch(await card.innerText(), /Our spend vs plan/);
+      const layout = await card.evaluate(element => {
+        const grid = element.parentElement!;
+        const neighbor = grid.querySelector('[data-model-id="w018"]')!;
+        const box = element.getBoundingClientRect(), next = neighbor.getBoundingClientRect();
+        const style = getComputedStyle(grid), own = getComputedStyle(element);
+        return { span: own.gridColumn, width: box.width, gridWidth: grid.clientWidth,
+          neighborWidth: next.width, gap: parseFloat(style.columnGap),
+          sideways: document.documentElement.scrollWidth > innerWidth };
+      });
+      assert.match(layout.span, /span 2/);
+      assert.ok(Math.abs(layout.width - (2 * layout.neighborWidth + layout.gap)) <= 2,
+        'The pace card must occupy two ordinary tile widths');
+      if (viewport.width === 390) assert.ok(Math.abs(layout.width - layout.gridWidth) <= 2, 'The pace card fills one phone row');
+      assert.equal(layout.sideways, false);
+      for (let index = 18; index <= 24; index += 1) assert.equal(await page.locator(`#p-ads [data-model-id="w0${index}"]`).count(), 1);
+      assert.ok(await page.locator('#p-ads').getByText('Google spend vs plan', { exact: true }).count() > 0);
+      for (const market of ['UK', 'US'] as const) {
+        const model: SeriesPaceMarketView = widget.value.markets[market];
+        const dial = card.locator(`[data-series-market="${market}"]`);
+        assert.equal(await dial.getAttribute('data-state'), market === 'UK' ? 'good' : 'warn');
+        assert.match(await dial.innerText(), market === 'UK' ? /1,850 kits left/ : /2,400 kits left/);
+        assert.ok((await dial.innerText()).includes(model.correction));
+        assert.match(await dial.innerText(), market === 'UK' ? /last 3 days: 15\.3 a day.*↑/ : /last 3 days: 15\.0 a day.*↓/);
+        await dial.click();
+        assert.equal(await page.locator('#sh-title').innerText(), `Series 1 sell-out pace · ${market}`);
+        assert.match(await page.locator('#sh-src').innerText(), /sample data/i);
+        assert.deepEqual(await page.locator('.pace-days tbody tr td:first-of-type').allTextContents(), model.days.map(day => String(day.sold)));
+        assert.equal(await page.locator('.pace-days tbody tr').count(), 7);
+        assert.deepEqual(await page.locator('.pace-days tbody tr td:last-child').allTextContents(), Array(7).fill('ShopifyQL'));
+        assert.match(await page.locator('#sh-rule').innerText(), /complete UK days/i);
+        assert.match(await page.locator('.series-pace-sheet').innerText(), /No stock snapshots yet/);
+        assert.ok((await page.locator('.series-pace-sheet').innerText()).includes(paceDate(model.landingDate)));
+        assert.match(await page.locator('[data-series-date-in-force]').innerText(), /landing date/);
+        for (const selector of ['#series-target-date', '#series-target-form button[type="submit"]', '[data-series-use-landing]']) {
+          assert.equal(await page.locator(selector).isDisabled(), true);
+        }
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+        if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/series-pace-sheet-${market}-${viewport.width}.png` });
+        await page.locator('#sh-x').click();
+      }
+      if (process.env.PULSE_SCREENSHOT_DIR) {
+        await card.evaluate(element => window.scrollTo(0, element.getBoundingClientRect().top + window.scrollY
+          - document.querySelector('header')!.getBoundingClientRect().height - 12));
+        await card.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/series-pace-card-${viewport.width}.png` });
+      }
+    }
+
+    // All figures remain invented. Only this widget's mode is switched so the
+    // real authenticated Settings save can be exercised from its sheet.
+    widget.mode = 'live';
+    // A second invented UK example lands exactly on the inclusive +5-day green boundary.
+    widget.value.markets.UK.stock = 115;
+    widget.value.markets.UK.days = widget.value.markets.UK.days.map((day, index) => ({ ...day, sold: [-3, 1, 1, 1, 1, 3, 3][index]! }));
+    for (const market of ['UK', 'US'] as const) {
+      const model = widget.value.markets[market];
+      model.days[0] = { ...model.days[0]!, sold: -3, source: 'shopifyql' };
+      model.days[1] = { ...model.days[1]!, source: 'snapshot' };
+      model.snapshots = [{ day: model.days[0]!.day, takenAt: `${model.days[0]!.day}T03:15:00Z`, late: true },
+        ...model.days.slice(1, 3).map(day => ({ day: day.day, takenAt: `${day.day}T00:05:00+01:00`, late: false }))];
+    }
+    const currentFixture = async () => {
+      const settings = await (await context.request.get('/api/settings')).json() as SettingsSnapshot;
+      for (const market of ['UK', 'US'] as const) {
+        const model = widget.value.markets[market];
+        const override = settings.values[market === 'UK' ? 'series1UkTargetDate' : 'series1UsTargetDate'];
+        widget.value.markets[market] = { ...model, ...calculateSeriesPace({ ...model, targetDate: override || model.landingDate }), targetOverride: override || null };
+      }
+      return fixture;
+    };
+    await page.route('**/api/dashboard', async route => route.fulfill({ status: 200, json: await currentFixture() }));
+    await page.route('**/api/events', async route => route.fulfill({ status: 200, contentType: 'text/event-stream',
+      body: `retry: 60000\nevent: dashboard\ndata: ${JSON.stringify(await currentFixture())}\n\n` }));
+    await page.reload();
+    await page.locator('html[data-dashboard-ready="true"]').waitFor();
+    await page.waitForFunction(() => document.querySelector('[data-model-id="w017"]')?.getAttribute('data-mode') === 'live');
+    await page.locator('#tabs [data-tab="ads"]').click();
+    const boundary = page.locator('[data-model-id="w017"] [data-series-market="UK"]');
+    assert.equal(await boundary.getAttribute('data-state'), 'good');
+    assert.equal(await boundary.locator('.well svg text').first().textContent(), '+5.0d');
+    assert.equal(await boundary.locator('.well svg path[stroke-opacity="1"]').getAttribute('stroke'), 'var(--good)');
+    for (const [index, market] of (['UK', 'US'] as const).entries()) {
+      step = `${scope}: ${market} signed daily facts, target save and clear`;
+      await page.setViewportSize(viewports[index]!);
+      const dial = page.locator(`[data-model-id="w017"] [data-series-market="${market}"]`);
+      await dial.click();
+      assert.equal(await page.locator('.pace-days tbody tr td:first-of-type').first().innerText(), '-3');
+      assert.equal(await page.locator('.pace-days tbody tr td:last-child').first().innerText(), 'ShopifyQL');
+      assert.equal(await page.locator('.pace-days tbody tr td:last-child').nth(1).innerText(), 'Snapshot');
+      assert.match(await page.locator('.pace-snapshots').innerText(), /UK · late/);
+      assert.match(await page.locator('.pace-snapshots').innerText(), /UK · on time/);
+      assert.match(await page.locator('.pace-snapshots').innerText(), /\d{2}:\d{2}/);
+      assert.equal(await page.locator('#series-target-date').isDisabled(), false);
+      const before = await (await context.request.get('/api/settings')).json() as SettingsSnapshot;
+      const key = market === 'UK' ? 'series1UkTargetDate' : 'series1UsTargetDate';
+      const target = addDays(widget.value.markets[market].today, 45);
+      await page.locator('#series-target-date').fill(target);
+      const saved = page.waitForResponse(response => new URL(response.url()).pathname === '/api/settings' && response.request().method() === 'POST');
+      await page.locator('#series-target-form button[type="submit"]').click();
+      assert.equal((await saved).status(), 200);
+      await page.waitForFunction(day => document.querySelector('[data-series-date-in-force]')?.textContent?.includes(day), paceDate(target));
+      assert.match(await page.locator('[data-series-date-in-force]').innerText(), /your date/);
+      const after = await (await context.request.get('/api/settings')).json() as SettingsSnapshot;
+      assert.equal(after.version, before.version + 1);
+      assert.deepEqual(after.values, { ...before.values, [key]: target }, 'The sheet changes only its market target through the normal Settings save');
+      await page.locator('#sh-x').click();
+      assert.ok((await dial.innerText()).includes(`${paceNumber(widget.value.markets[market].stock! / 45)} needed`));
+      assert.match(await dial.innerText(), /your date/);
+      await dial.click();
+      const cleared = page.waitForResponse(response => new URL(response.url()).pathname === '/api/settings' && response.request().method() === 'POST');
+      await page.locator('[data-series-use-landing]').click();
+      assert.equal((await cleared).status(), 200);
+      await page.waitForFunction(() => document.querySelector('[data-series-date-in-force]')?.textContent?.includes('landing date'));
+      assert.equal(await page.locator('#series-target-date').inputValue(), '');
+      const final = await (await context.request.get('/api/settings')).json() as SettingsSnapshot;
+      assert.equal(final.version, after.version + 1);
+      assert.deepEqual(final.values, before.values);
+      await page.locator('#sh-x').click();
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    }
+    for (const draftMarket of ['US', 'UK'] as const) {
+      step = `${scope}: delayed UK save preserves a newer ${draftMarket} draft`;
+      const submitted = addDays(widget.value.markets.UK.today, 45);
+      const draft = addDays(widget.value.markets[draftMarket].today, 55);
+      let captured!: () => void, release!: () => void, held = false;
+      const pending = new Promise<void>(resolve => { captured = resolve; });
+      const allowed = new Promise<void>(resolve => { release = resolve; });
+      await page.route('**/api/settings', async route => {
+        if (route.request().method() === 'POST' && !held) { held = true; captured(); await allowed; }
+        await route.fallback();
+      });
+      try {
+        await page.locator('[data-model-id="w017"] [data-series-market="UK"]').click();
+        await page.locator('#series-target-date').fill(submitted);
+        const saved = page.waitForResponse(response => new URL(response.url()).pathname === '/api/settings' && response.request().method() === 'POST');
+        await page.locator('#series-target-form button[type="submit"]').click();
+        await pending;
+        await page.locator('#sh-x').click();
+        await page.locator(`[data-model-id="w017"] [data-series-market="${draftMarket}"]`).click();
+        await page.locator('#series-target-date').fill(draft);
+        const draftStatus = await page.locator('#series-target-status').innerText();
+        release();
+        assert.equal((await saved).status(), 200);
+        await page.waitForFunction(date => document.querySelector('[data-model-id="w017"] [data-series-market="UK"]')?.textContent?.includes(date), paceDate(submitted));
+        const stored = await (await context.request.get('/api/settings')).json() as SettingsSnapshot;
+        assert.equal(stored.values.series1UkTargetDate, submitted);
+        assert.equal(await page.locator('#sh-title').innerText(), `Series 1 sell-out pace · ${draftMarket}`);
+        assert.equal(await page.locator('#series-target-date').inputValue(), draft);
+        assert.equal(await page.locator('#series-target-status').innerText(), draftStatus,
+          'Completion of an earlier save must not claim a newer draft was saved');
+        await page.locator('#sh-x').click();
+        await page.locator('[data-model-id="w017"] [data-series-market="UK"]').click();
+        const cleared = page.waitForResponse(response => new URL(response.url()).pathname === '/api/settings' && response.request().method() === 'POST');
+        await page.locator('[data-series-use-landing]').click();
+        assert.equal((await cleared).status(), 200);
+        await page.waitForFunction(() => document.querySelector('[data-series-date-in-force]')?.textContent?.includes('landing date'));
+        await page.locator('#sh-x').click();
+      } finally { release(); await page.unroute('**/api/settings'); }
+    }
+    await page.goto('/audit');
+    for (const key of ['series1UkTargetDate', 'series1UsTargetDate']) assert.ok((await page.locator('#audit-log').innerText()).includes(key));
+  } finally { await page.close(); }
+}
+
+async function checkSeriesPaceSettings(page: Page, context: BrowserContext): Promise<void> {
+  const scope = step;
+  const before = await (await context.request.get('/api/settings')).json() as SettingsSnapshot;
+  const dashboardBefore = await (await context.request.get('/api/dashboard')).json() as FullDashboardSnapshot;
+  const keys = ['series1OrderDate', 'series1UkLandingOffsetDays', 'series1UsLandingOffsetDays', 'series1UkTargetDate', 'series1UsTargetDate'] as const;
+  const input = (key: typeof keys[number]) => page.locator(`[data-setting-path="${key}"]`);
+  const openGroup = async () => {
+    const summary = page.locator('summary').filter({ hasText: 'Series 1 sell-out pace' });
+    if (await summary.locator('..').getAttribute('open') === null) await summary.click();
+  };
+  const save = async () => {
+    const response = page.waitForResponse(response => new URL(response.url()).pathname === '/api/settings' && response.request().method() === 'POST');
+    await page.locator('#settings-save').click();
+    assert.equal((await response).status(), 200);
+    await page.waitForFunction(() => document.querySelector('#settings-message')?.textContent === 'Settings saved.');
+  };
+  await openGroup();
+  for (const key of keys) assert.equal(await input(key).inputValue(), String(before.values[key]));
+  for (const key of ['series1OrderDate', 'series1UkTargetDate', 'series1UsTargetDate'] as const) assert.equal(await input(key).getAttribute('type'), 'date');
+  for (const key of ['series1UkLandingOffsetDays', 'series1UsLandingOffsetDays'] as const) {
+    assert.equal(await input(key).getAttribute('min'), '0');
+    assert.equal(await input(key).getAttribute('max'), '365');
+    assert.equal(await input(key).getAttribute('step'), '1');
+  }
+  await input('series1OrderDate').fill('2027-01-05');
+  await input('series1UkLandingOffsetDays').fill('20');
+  await input('series1UsLandingOffsetDays').fill('30');
+  await input('series1UkTargetDate').fill('2027-02-18');
+  await input('series1UsTargetDate').fill('');
+  for (const viewport of viewports) {
+    step = `${scope}: derived landing and target dates at ${viewport.width}px`;
+    await page.setViewportSize(viewport);
+    assert.equal(await page.locator('[data-series-pace-dates="Uk"]').innerText(), 'Landing date: 25 Jan 2027 · Target date: 18 Feb 2027 (your date)');
+    assert.equal(await page.locator('[data-series-pace-dates="Us"]').innerText(), 'Landing date: 4 Feb 2027 · Target date: 4 Feb 2027 (landing date)');
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  }
+  await save();
+  const after = await (await context.request.get('/api/settings')).json() as SettingsSnapshot;
+  assert.equal(after.version, before.version + 1);
+  assert.deepEqual(after.values, { ...before.values, series1OrderDate: '2027-01-05', series1UkLandingOffsetDays: 20,
+    series1UsLandingOffsetDays: 30, series1UkTargetDate: '2027-02-18', series1UsTargetDate: '' });
+  const dashboardAfter = await (await context.request.get('/api/dashboard')).json() as FullDashboardSnapshot;
+  assert.deepEqual(dashboardAfter.widgets.w017, dashboardBefore.widgets.w017, 'Invented sample pace remains independent of saved Settings');
+  await page.reload();
+  await openGroup();
+  assert.equal(await input('series1UkTargetDate').inputValue(), '2027-02-18');
+  assert.match(await page.locator('[data-series-pace-dates="Uk"]').innerText(), /18 Feb 2027 \(your date\)/);
+  for (const key of keys) await input(key).fill(String(before.values[key]));
+  await save();
+  assert.deepEqual((await (await context.request.get('/api/settings')).json() as SettingsSnapshot).values, before.values);
 }
 
 async function checkPartialAdSpend(context: BrowserContext): Promise<void> {
@@ -1232,6 +1471,9 @@ async function run(): Promise<void> {
     assert.equal(await page.locator('#sheet [data-unbuilt]').count(), 2);
     await page.locator('#sh-x').click();
 
+    step = 'check Series 1 sell-out pace card, signed daily facts and editable target sheets';
+    await checkSeriesPace(context);
+
     step = 'check same-origin manifest and installation icons';
     await checkManifest(page, context, origin);
 
@@ -1246,6 +1488,8 @@ async function run(): Promise<void> {
     await settingsPage.goto('/settings');
     await settingsPage.locator('#settings-form').waitFor();
     await settingsPage.setViewportSize(viewports[0]!);
+    step = 'check sell-out Settings dates, persistence and sample independence';
+    await checkSeriesPaceSettings(settingsPage, context);
     await settingsPage.locator('summary').filter({ hasText: 'Ad spend' }).click();
     for (const name of ['metaAdAccountId', 'googleCustomerId', 'googleLoginCustomerId', 'tiktokAdvertiserId']) {
       assert.equal(await settingsPage.locator(`input[name="${name}"]`).inputValue(), '');
@@ -1520,14 +1764,16 @@ async function run(): Promise<void> {
     assert.equal(consoleErrors.length, 0);
     assert.equal(externalRequests, 0);
     await context.close();
-    console.log('Browser checks passed: passkeys and replay/origin/signature rejection; all hero presets and custom dates, paired margin/profit tiles, correctly signed pound losses and shared breakdown, bounded keyboard calendars, decks, search and details; named overhead Settings and margin shares; automatic campaign list, sync state, local confirmation and owner changes; Settings persistence and SSE without replacing picked dates; safe-area nav clearance on every signed-in page with normal and simulated top insets; standalone touch refresh, menu counts, excluded controls, failure retention and unsaved edits; UK greeting rollover and moved source status; live sheet labels, audit, local fonts and PWA; dark-only phone/desktop with both browser preferences and no external requests.');
+    console.log('Browser checks passed: passkeys and replay/origin/signature rejection; all hero presets and custom dates, paired margin/profit tiles, correctly signed pound losses and shared breakdown, bounded keyboard calendars, decks, search and details; Series 1 two-market pace card, signed daily sources and snapshot times, sample-disabled target controls, real Settings target save/clear and date previews; named overhead Settings and margin shares; automatic campaign list, sync state, local confirmation and owner changes; Settings persistence and SSE without replacing picked dates; safe-area nav clearance on every signed-in page with normal and simulated top insets; standalone touch refresh, menu counts, excluded controls, failure retention and unsaved edits; UK greeting rollover and moved source status; live sheet labels, audit, local fonts and PWA; dark-only phone/desktop with both browser preferences and no external requests.');
   } finally {
     await browser.close();
   }
 }
 
-run().catch(() => {
+run().catch((error: unknown) => {
   // Authentication exceptions must never print browser credentials or the setup phrase.
   console.error(`Browser checks failed during: ${step}.`);
+  const frames = error instanceof Error ? error.stack?.match(/\/scripts\/browser-smoke\.ts:\d+:\d+/g) ?? [] : [];
+  if (frames.length) console.error(`Check location: ${frames.join(', ')}.`);
   process.exitCode = 1;
 });

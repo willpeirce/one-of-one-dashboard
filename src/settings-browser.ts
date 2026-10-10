@@ -2,6 +2,8 @@ import { ukToday } from './hero-range.js';
 import { formatPounds } from './money.js';
 import { monthlyOverheadTotal, type OverheadItem } from './overheads.js';
 import { installPullToRefresh, reloadPageForRefresh } from './pull-refresh.js';
+import { seriesPaceDates } from './series-pace/dates.js';
+import { paceDate } from './series-pace/model.js';
 
 type SettingInput = HTMLInputElement | HTMLSelectElement;
 type JsonObject = { [key: string]: unknown };
@@ -99,12 +101,25 @@ function initializeSettings(form: HTMLFormElement): void {
     }
   }
 
+  function showSeriesPaceDates(): void {
+    const input = (key: string) => form.querySelector<HTMLInputElement>(`[data-setting-path="${key}"]`)!;
+    const orderDate = input('series1OrderDate').value;
+    for (const summary of Array.from(form.querySelectorAll<HTMLElement>('[data-series-pace-dates]'))) {
+      const suffix = summary.dataset.seriesPaceDates!;
+      const dates = seriesPaceDates(orderDate, input(`series1${suffix}LandingOffsetDays`).valueAsNumber, input(`series1${suffix}TargetDate`).value);
+      summary.textContent = dates
+        ? `Landing date: ${paceDate(dates.landingDate)} · Target date: ${paceDate(dates.targetDate)} (${dates.targetKind})`
+        : 'Enter a valid order date, landing offset and optional target date to see the dates.';
+    }
+  }
+
   function markDirty(event?: Event): void {
     if (pending) return;
     if (!(event?.target instanceof Element && event.target.closest('[data-meta-campaign]'))) mainDirty = true;
     updateDirty();
     showShopifyCosts();
     showOverheadsTotal();
+    showSeriesPaceDates();
     message.textContent = dirty ? 'You have unsaved changes.' : 'All changes saved.';
     message.removeAttribute('data-error');
   }
@@ -214,6 +229,7 @@ function initializeSettings(form: HTMLFormElement): void {
     });
     showShopifyCosts();
     showOverheadsTotal();
+    showSeriesPaceDates();
   }
 
   function saveValues(values: JsonObject, campaign?: HTMLElement): void {
@@ -297,6 +313,7 @@ function initializeSettings(form: HTMLFormElement): void {
     numberRows(list);
   });
   showOverheadsTotal();
+  showSeriesPaceDates();
   savedValues = readValues();
   const canRefresh = () => dirty || pending ? 'Save or discard your changes first' : true;
   installPullToRefresh({

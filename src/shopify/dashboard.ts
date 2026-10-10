@@ -6,6 +6,10 @@ import type { Settings } from '../settings.js';
 import type { SourceHealth } from '../sources.js';
 import { appConfig } from '../config.js';
 import { greetingAt } from '../greeting.js';
+import { calculateSeriesPace } from '../series-pace/model.js';
+import { seriesPaceDates } from '../series-pace/dates.js';
+import { readSeriesPaceFacts } from '../series-pace/store.js';
+import { sampleSeriesPaceCard, type SeriesPaceCard, type SeriesPaceMarketView } from '../series-pace/presentation.js';
 import { formatMetricNumber, formatPounds } from '../money.js';
 import { dailyRows, dataset, emailFlow, isRefill, isUpgrade, isKit, kitIds, orderNet, ratio, shopifyHero, stockCover, type Facts, type StockCover } from './metrics.js';
 import { blankObservation, evaluateWatchdogs, type Check, type Observation } from './watchdogs.js';
@@ -55,6 +59,20 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
   for (const [key, value] of [['t0032',initial.eyebrow],['t0033',greetingAt(greetingNow)],['t0034',initial.sub1],['t0035',''],['t0002',initial.spark.join(',')]]) snapshot.textValues[key!] = { source: ['shopify'], mode: facts.mode, value: value! };
   snapshot.widgets.w001 = { source: initial.ukcpo.source, mode: initial.ukcpo.mode, kind: 'dial', value: initial.ukcpo };
   snapshot.widgets.w002 = { source: initial.uscpo.source, mode: initial.uscpo.mode, kind: 'dial', value: initial.uscpo };
+  let pace = sampleSeriesPaceCard(appConfig.shopify.sampleNow);
+  if (facts.mode === 'live') {
+    const paceFacts = await readSeriesPaceFacts(db, now);
+    const marketView = (market: 'UK' | 'US'): SeriesPaceMarketView => {
+      const offset = market === 'UK' ? settings.series1UkLandingOffsetDays : settings.series1UsLandingOffsetDays;
+      const target = market === 'UK' ? settings.series1UkTargetDate : settings.series1UsTargetDate;
+      const dates = seriesPaceDates(settings.series1OrderDate, offset, target)!;
+      return { ...calculateSeriesPace({ today, targetDate: dates.targetDate, ...paceFacts[market] }),
+        landingDate: dates.landingDate, orderDate: settings.series1OrderDate,
+        landingOffsetDays: offset, targetOverride: target || null, snapshots: paceFacts[market].snapshots };
+    };
+    pace = { markets: { UK: marketView('UK'), US: marketView('US') } } satisfies SeriesPaceCard;
+  }
+  snapshot.widgets.w017 = { source: ['shopify'], mode: facts.mode, kind: 'series-pace', value: pace };
   const stamp = facts.mode === 'sample' ? 'Shopify sample data' : 'Shopify live';
   const poll = facts.jobs.find(j => j.name === 'poll');
   const freshness = poll?.last_success_at ? `Last worked at ${new Date(poll.last_success_at).toISOString()}` : 'First sync pending';

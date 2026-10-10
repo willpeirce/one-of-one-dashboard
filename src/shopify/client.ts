@@ -25,7 +25,7 @@ export interface ShopifyReader {
   scopes(): Promise<string[]>;
   orders(query: string, after: string | null, address: boolean): Promise<Page>;
   order(id: string, address: boolean): Promise<any>;
-  inventory(): Promise<any[]>;
+  inventory(sku?: string): Promise<any[]>;
   report(query: string): Promise<any>;
   subscriptions(after: string | null): Promise<Page>;
   subscribe(topic: string, uri: string): Promise<void>;
@@ -95,15 +95,17 @@ export class ShopifyClient implements ShopifyReader {
       }
     }
   }
-  async inventory(): Promise<any[]> {
+  async inventory(sku?: string): Promise<any[]> {
     const result: any[] = [];
     // Variants and levels paginate independently; only configured products/locations are retained.
     for (const product of appConfig.shopify.stockProducts) {
+      if (sku && (!('sku' in product) || product.sku !== sku)) continue;
       let after: string | null = null;
       do {
         const data = await this.#graphql(`query PulseStock($id: ID!, $after: String) { product(id: $id) { id variants(first: 100, after: $after) { nodes { id sku inventoryItem { id unitCost { amount currencyCode } } } ${page} } } }`, { id: `gid://shopify/Product/${product.id}`, after });
         if (!data.product) break;
         for (const variant of data.product.variants.nodes) {
+          if (sku && variant.sku !== sku) continue;
           const metadata = { productId: data.product.id, variantId: variant.id, sku: variant.sku, inventoryItemId: variant.inventoryItem.id, unitCost: variant.inventoryItem.unitCost };
           let hasLevels = false;
           let levelsAfter: string | null = null;

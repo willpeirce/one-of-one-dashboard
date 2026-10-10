@@ -6,6 +6,8 @@ import type { MetaCampaignView } from './ad-spend/model.js';
 import type { CampaignSyncState } from './ad-spend/campaign-cache.js';
 import { campaignSyncText } from './ad-spend/campaign-status.js';
 import { formatPounds } from './money.js';
+import { seriesPaceDates } from './series-pace/dates.js';
+import { paceDate } from './series-pace/model.js';
 
 function escapeHtml(value: string | number): string {
   return String(value).replace(/[&<>"']/g, (character) => ({
@@ -128,6 +130,17 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
   ], values)}</div>${collection('supplierLeadTimes', 'Supplier lead time', [
     { key: 'supplier', label: 'Supplier business' }, number('days', 'Lead time (days)', { nullable: true, integer: true }),
   ], values.supplierLeadTimes, 'Starting supplier lead times. Freight and confirmed arrival dates come with uploads.')}`);
+  const paceMarket = (market: 'UK' | 'US') => {
+    const suffix = market === 'UK' ? 'Uk' : 'Us';
+    const dates = seriesPaceDates(values.series1OrderDate, values[`series1${suffix}LandingOffsetDays`], values[`series1${suffix}TargetDate`])!;
+    return `<section aria-labelledby="series-pace-${market}-heading"><h3 id="series-pace-${market}-heading">${market} · ${market === 'UK' ? 'Northampton' : 'Ohio'}</h3><div class="settings-grid">${fields([
+      number(`series1${suffix}LandingOffsetDays`, `${market} landing offset (days)`, { integer: true, min: 0, max: 365 }),
+      { key: `series1${suffix}TargetDate`, label: `${market} target sell-out date (optional)`, type: 'date', optional: true, hint: 'Leave blank to use the landing date.' },
+    ], values)}</div><p class="setting-help" data-series-pace-dates="${suffix}" aria-live="polite">Landing date: ${paceDate(dates.landingDate)} · Target date: ${paceDate(dates.targetDate)} (${dates.targetKind})</p></section>`;
+  };
+  const pace = section('Series 1 sell-out pace', 'Sell out when Series 2 lands, or choose your own target.', `<div class="settings-grid">${fields([
+    { key: 'series1OrderDate', label: 'Drop 1 order date', type: 'date' },
+  ], values)}</div>${paceMarket('UK')}${paceMarket('US')}`);
   const campaigns = section('Ad spend', 'Read-only spend connections and campaign ownership.', `<div class="settings-grid">${fields([
     {key:'metaAdAccountId',label:'Meta ad account ID',optional:true,hint:'Digits only, without act_. Blank waits for keys and account setup.'},
     {key:'googleCustomerId',label:'Google customer ID',optional:true,hint:'Dashes are removed when saved.'},
@@ -186,7 +199,7 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     <div class="settings-intro"><p class="eyebrow">Your business, your rules</p><h1>Settings</h1><p>Real business settings, saved in Pulse. Dashboard figures remain labelled sample data while source feeds are being built.</p></div>
     <form id="settings-form" data-version="${snapshot.version}" method="post" action="/api/settings">
       <input type="hidden" id="saved-meta-owner-rules" value="${escapeHtml(JSON.stringify(values.metaOwners))}">
-      <fieldset id="settings-fields"><legend class="settings-sr-only">Business settings</legend>${goals}${advertising}${costs}${stock}${campaigns}${creators}${dates}${preferences}</fieldset>
+      <fieldset id="settings-fields"><legend class="settings-sr-only">Business settings</legend>${goals}${advertising}${costs}${stock}${pace}${campaigns}${creators}${dates}${preferences}</fieldset>
       <div class="settings-savebar glass"><div><p id="settings-message" role="status" aria-live="polite">Choose Save settings for these fields, or Save beside a campaign owner.</p><p class="setting-help">Unknown costs can stay blank. Saving adds an audit entry.</p></div><button class="btn settings-save" id="settings-save" type="submit" disabled>Save settings</button></div>
     </form>
     <p id="auth-message" role="status" aria-live="polite"></p>

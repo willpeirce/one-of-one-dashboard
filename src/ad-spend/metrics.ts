@@ -5,6 +5,7 @@ import { costOrder, type ShopifyCost } from '../shopify/costs.js';
 import type { Order } from '../shopify/model.js';
 import { overheadsForPeriod, sampleOverheads } from '../overheads.js';
 import { profitAndMargin } from '../profit.js';
+import { formatPounds } from '../money.js';
 import { adNames, decimalMicros, type AdSource } from './model.js';
 import type { SpendFacts } from './store.js';
 export interface AdHeroInputs {
@@ -71,8 +72,8 @@ export function applySpend(
       ['Google', pounds(sum((r) => r.source === 'google-ads'))],
       ['TikTok', pounds(sum((r) => r.source === 'tiktok'))],
     ] as [string, number][]
-  ).map(([name, value]) => [name, `£${value.toFixed(2)}`]);
-  split.push(['Unknown market', `£${unknown.toFixed(2)} not split into UK or US`]);
+  ).map(([name, value]) => [name, formatPounds(value)]);
+  split.push(['Unknown market', `${formatPounds(unknown)} not split into UK or US`]);
   for (const source of spend.sources)
     split.push([
       `${adNames[source.source]} freshness`,
@@ -93,7 +94,7 @@ export function applySpend(
     state: to === today ? 'sofar' : 'info',
     ss: label + (to === today ? ' · so far' : ''),
     d: {
-      why: `Total spend £${total.toFixed(2)}. ${label}.`,
+      why: `Total spend ${formatPounds(total)}. ${label}.`,
       rule: 'GBP spend only. Re-fetches replace daily rows. Unknown-market spend counts in All and is never shared out.',
       src: label,
       extra: split,
@@ -148,8 +149,8 @@ export function applySpend(
   const overheadRows: [string, string][] = marketView
     ? [['Overheads', 'Not deducted; overheads are not split by market']]
     : [
-        ['Overheads', `£${overheads.total.toFixed(2)} · ${overheads.items.length} items, spread daily across each month${hero.net.mode === 'sample' ? ' · sample data' : ''}`],
-        ...overheads.items.slice(0, 8).map((item): [string, string] => [item.name, `£${item.total.toFixed(2)}`]),
+        ['Overheads', `${formatPounds(overheads.total)} · ${overheads.items.length} items, spread daily across each month${hero.net.mode === 'sample' ? ' · sample data' : ''}`],
+        ...overheads.items.slice(0, 8).map((item): [string, string] => [item.name, formatPounds(item.total)]),
         ...(overheads.items.length > 8 ? [['and ' + (overheads.items.length - 8) + ' more', 'Included in the Overheads total'] as [string, string]] : []),
       ];
   const omitted = [
@@ -182,18 +183,18 @@ export function applySpend(
         ...split,
         [
           'Landed costs',
-          `£${(landed / 100).toFixed(2)}${missingLanded ? `; unknown costs on ${missingLanded} orders left out` : ''}`,
+          `${formatPounds(landed / 100)}${missingLanded ? `; unknown costs on ${missingLanded} orders left out` : ''}`,
         ],
-        ['Shipping charged', `£${(shippingNet / 100).toFixed(2)} · net of tax`],
+        ['Shipping charged', `${formatPounds(shippingNet / 100)} · net of tax`],
         [
           'Fulfilment',
-          `£${(fulfilment / 100).toFixed(2)}${missingFulfilment ? `; ${missingFulfilment} unknown orders left out` : ''}`,
+          `${formatPounds(fulfilment / 100)}${missingFulfilment ? `; ${missingFulfilment} unknown orders left out` : ''}`,
         ],
         [
           'Fees',
           settings.paymentFeePercent === null
             ? 'Not set; left out'
-            : `£${(fees / 100).toFixed(2)} · Settings percentage of net sales`,
+            : `${formatPounds(fees / 100)} · Settings percentage of net sales`,
         ],
         ...overheadRows,
         ['Discounts', 'Already deducted in net sales'],
@@ -210,7 +211,7 @@ export function applySpend(
     d: {
       ...hero.margin.d,
       why: `Net profit is net sales plus shipping income net of tax, less available landed costs, fulfilment, payment fees and all counted ad spend${marketView ? '' : ' and overheads'}. ${marketView ? 'This market view is before overheads; overheads are not split by market.' : 'Profit is after overheads.'} Shipping income is added because fulfilment includes postage. This is the same pound total used to calculate net margin.`,
-      extra: [...hero.margin.d.extra!, ['Net profit', `£${result.profit.toFixed(2)}`]],
+      extra: [...hero.margin.d.extra!, ['Net profit', formatPounds(result.profit)]],
     },
   };
   for (const [key, market] of [
@@ -226,14 +227,14 @@ export function applySpend(
     hero[key] = {
       ...hero[key],
       v: value ?? 0,
-      t: available && value !== null ? `£${value.toFixed(2)}` : '—',
+      t: available && value !== null ? formatPounds(value) : '—',
       l: `${market.toUpperCase()} cost per order`,
-      s: `${label}${periodOrders.length < hero.orders.n ? '; older order market detail unavailable' : ''} · bar £${settings.blendedMetaTripwireGbp}`,
+      s: `${label}${periodOrders.length < hero.orders.n ? '; older order market detail unavailable' : ''} · bar ${formatPounds(settings.blendedMetaTripwireGbp, String)}`,
       source: ['shopify', ...sourceIds],
       mode: spend.mode,
       cap: to === today ? 'sofar' : 'info',
       d: {
-        why: `${market.toUpperCase()} spend £${cost.toFixed(2)} ÷ ${count} Shopify orders. £${unknown.toFixed(2)} unknown-market spend is not split.${periodOrders.length < hero.orders.n ? ' Older order market detail is unavailable; no denominator is guessed.' : ''}`,
+        why: `${market.toUpperCase()} spend ${formatPounds(cost)} ÷ ${count} Shopify orders. ${formatPounds(unknown)} unknown-market spend is not split.${periodOrders.length < hero.orders.n ? ' Older order market detail is unavailable; no denominator is guessed.' : ''}`,
         rule: 'Meta + Google + TikTok spend in this market ÷ Shopify orders in this market. CAC awaits stage 2: stored Shopify facts do not identify first orders.',
         src: label,
         extra: split,

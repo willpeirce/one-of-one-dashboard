@@ -2,6 +2,8 @@ import type { Database } from '../db.js';
 import { addDays } from '../hero-range.js';
 import { readSettings, type Settings } from '../settings.js';
 import { getSourceStates, type SourceMode } from '../sources.js';
+import { cachedMetaCampaigns, invalidateMetaCampaigns, storedCampaignSync, type CampaignSyncState } from './campaign-cache.js';
+export { recordCampaignSync, type CampaignSyncState } from './campaign-cache.js';
 import {
   accountFor,
   adSources,
@@ -19,7 +21,10 @@ export async function saveMetaCampaigns(
   campaigns: MetaCampaign[],
   now: Date,
 ): Promise<void> {
-  if (!campaigns.length) return;
+  if (!campaigns.length) {
+    invalidateMetaCampaigns(db, account);
+    return;
+  }
   const rows = [...new Map(campaigns.map((campaign) => [campaign.id, campaign])).values()];
   await db.query(
     `INSERT INTO pulse.meta_campaigns(campaign_id,account_id,name,status,created_at,first_seen,last_seen)
@@ -33,6 +38,7 @@ export async function saveMetaCampaigns(
       now,
     ],
   );
+  invalidateMetaCampaigns(db, account);
 }
 
 /** Invented source-shaped campaigns; only these sample ids can pick up saved local rules. */
@@ -71,22 +77,23 @@ export async function readMetaCampaigns(
   const account = settings.metaAdAccountId,
     live = !!account && getSourceStates(env).find((state) => state.source === 'meta')!.mode === 'live';
   if (!live) return sampleMetaCampaigns(settings);
-  const result = await db.query<{
-    campaign_id: string; name: string; status: string;
-    created_at: Date | string; first_seen: Date | string; last_seen: Date | string;
-  }>(
-    `SELECT campaign_id,name,status,created_at,first_seen,last_seen FROM pulse.meta_campaigns
-    WHERE account_id=$1 ORDER BY created_at DESC,campaign_id`,
-    [account],
-  );
-  return result.rows.map((row) => ({
-    id: row.campaign_id, name: row.name, status: row.status,
-    createdAt: new Date(row.created_at).toISOString(),
-    firstSeen: new Date(row.first_seen).toISOString(), lastSeen: new Date(row.last_seen).toISOString(),
-    owner: ownerFor('meta', row.campaign_id, settings),
-    confirmed: settings.metaOwners.some((rule) => rule.campaignId === row.campaign_id),
-    mode: 'live',
+  return (await cachedMetaCampaigns(db, account)).map((row) => ({
+    ...row,
+    owner: ownerFor('meta', row.id, settings),
+    confirmed: settings.metaOwners.some((rule) => rule.campaignId === row.id),
+    mode: 'live' as const,
   }));
+}
+
+export async function readCampaignSync(
+  db: Database,
+  settings: Settings,
+  env: NodeJS.ProcessEnv,
+): Promise<CampaignSyncState> {
+  const account = settings.metaAdAccountId,
+    live = !!account && getSourceStates(env).find((state) => state.source === 'meta')!.mode === 'live';
+  return live ? storedCampaignSync(db, account)
+    : { state: 'success', at: '2026-09-30T12:00:00.000Z' };
 }
 export interface SpendJob {
   source: AdSource;

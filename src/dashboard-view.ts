@@ -2,6 +2,7 @@ import { glance } from './fulfilment/view.js';
 import type { DashboardSnapshot } from './dashboard-types.js';
 import { liveHtml, needsHtml, storePanelsHtml } from './shopify/presentation.js';
 import { dashboardTemplate } from './dashboard-template.js';
+import { formatMetricNumber } from './money.js';
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({
@@ -11,13 +12,16 @@ function escapeHtml(value: string): string {
 
 /** All business copy and numbers come from the same server snapshot used by SSE. */
 export function dashboardPage(snapshot: DashboardSnapshot): string {
+  const moneyBindings = { t0038: snapshot.hero.today.net, t0050: snapshot.hero.today.spend };
   let content = dashboardTemplate.replace(/\{\{(sample|widget):([a-z0-9]+)\}\}/g, (_token, kind: string, key: string) => {
-    const value = kind === 'sample' ? snapshot.textValues[key]?.value : JSON.stringify(snapshot.widgets[key]?.value);
+    const metric = kind === 'sample' ? moneyBindings[key as keyof typeof moneyBindings] : undefined;
+    const value = metric ? metric.unavailable ? metric.unavailableLabel ?? 'No data' : formatMetricNumber(metric.n, metric)
+      : kind === 'sample' ? snapshot.textValues[key]?.value : JSON.stringify(snapshot.widgets[key]?.value);
     if (value === undefined) throw new Error('Dashboard sample binding is missing');
     return escapeHtml(value);
   });
   const profit = snapshot.hero.today.profit;
-  const profitDisplay = profit.unavailable ? profit.unavailableLabel ?? 'No data' : `£${profit.n.toFixed(2)}`;
+  const profitDisplay = profit.unavailable ? profit.unavailableLabel ?? 'No data' : formatMetricNumber(profit.n, profit);
   content = content.replace(/(<button[^>]*data-k="profit"[^>]*>)[\s\S]*?<\/button>/, `$1<span class="sl">Net profit · <span class="per">${escapeHtml(snapshot.hero.today.per)}</span></span><span class="sv" data-pre="£" data-dp="2" data-n="${profit.n}">${escapeHtml(profitDisplay)}</span><span class="ss">${escapeHtml(profit.ss)}</span></button>`);
   if (snapshot.shopify) {
     content = content.replace('<div class="deck" id="deck">', `<div class="deck" id="deck"><div id="shopify-needs">${needsHtml(snapshot.shopify)}</div><p class="note">Sample decisions from later stages</p>`);

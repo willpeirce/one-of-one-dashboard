@@ -2,10 +2,10 @@ import type { Database } from '../db.js';
 import { addDays, ukToday } from '../hero-range.js';
 import { readSettings } from '../settings.js';
 import { getSourceStates } from '../sources.js';
-import { AdError, accountFor, adSources, type AdSource } from './model.js';
+import { AdError, adErrorCode, accountFor, adSources, type AdSource } from './model.js';
 import { liveReader, type SpendReader } from './clients.js';
 import type { AdTransportOptions } from './http.js';
-import { readJobs, saveMetaCampaigns, saveSpend } from './store.js';
+import { readJobs, recordCampaignSync, saveMetaCampaigns, saveSpend } from './store.js';
 export interface SpendWorkerOptions extends AdTransportOptions {
   clock?: () => Date;
   readers?: Partial<Record<AdSource, SpendReader>>;
@@ -39,7 +39,7 @@ export class SpendWorker {
     if (this.closing) return Promise.resolve();
     const run = this.run(source)
       .catch((error) => {
-        const code = error instanceof AdError ? error.code : 'unknown';
+        const code = adErrorCode(error, source);
         console.error(`Ad spend ${source} failed (${code}).`);
       })
       .finally(() => {
@@ -100,9 +100,8 @@ export class SpendWorker {
         },
       });
     this.readers.set(readerScope, reader);
+    let spendFailure: { error: unknown } | undefined;
     try {
-      if (source === 'meta' && reader.readCampaigns)
-        await saveMetaCampaigns(this.db, account, await reader.readCampaigns(account), now);
       const from = addDays(today, -2),
         rows = await reader.read(account, from, today, settings);
       await saveSpend(this.db, source, account, from, today, rows, now);
@@ -151,7 +150,19 @@ export class SpendWorker {
           [source, now],
         )
         .catch(() => {});
-      throw error;
+      spendFailure = { error };
     }
+    // Secondary Settings reads run after money is committed and cannot change its health.
+    if (source === 'meta' && reader.readCampaigns) {
+      try {
+        await saveMetaCampaigns(this.db, account, await reader.readCampaigns(account), now);
+        recordCampaignSync(this.db, account, { state: 'success', at: now.toISOString() });
+      } catch (error) {
+        const code = adErrorCode(error, 'meta');
+        recordCampaignSync(this.db, account, { state: 'error', at: now.toISOString(), code });
+        console.error(`Meta campaigns read failed (${code}).`);
+      }
+    }
+    if (spendFailure) throw spendFailure.error;
   }
 }

@@ -1,5 +1,5 @@
 import { SpendWorker, type SpendWorkerOptions } from './ad-spend/worker.js';
-import { readMetaCampaigns, spendFacts, spendHealth } from './ad-spend/store.js';
+import { readCampaignSync, readMetaCampaigns, spendFacts, spendHealth } from './ad-spend/store.js';
 import { readEstimates } from './fulfilment/store.js';
 import { dataset } from './shopify/metrics.js';
 import { registerFulfilment, seedFulfilment } from './fulfilment/routes.js';
@@ -18,7 +18,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import type { Database } from './db.js';
 import { Auth } from './auth.js';
-import { readSourceHealth, syncSourceHealth } from './sources.js';
+import { getSourceStates, readSourceHealth, syncSourceHealth } from './sources.js';
 import { loginPage, sourceHealthPage, auditPage } from './views.js';
 import type { RuntimeConfig } from './runtime.js';
 import { dashboardPage } from './dashboard-view.js';
@@ -134,12 +134,19 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     const today=ukToday(sourceNow());
     return {spend:await spendFacts(db,settings,sourceEnv,shopify.mode,dataset(facts,today).min,today),costs:await shopify.store.costHistory(),estimates:await readEstimates(db,shopify.mode)};
   }
+  let unconfirmedCampaigns: { scope: string; count: number } | undefined;
   async function snapshot() {
     const [settings, sourceHealth] = await Promise.all([readSettings(db), readSourceHealth(db)]);
     const facts=await shopify.store.facts();
     const adInputs=await heroInputs(facts,settings.values);
     const result = await applyShopifyDashboard({ ...getSampleDashboard(settings.values), generatedAt: new Date().toISOString(), sourceHealth }, db, facts, settings.values, sourceHealth, sourceNow(), adInputs, shopifyOptions.clock?.() ?? new Date());
-    result.metaCampaigns = { unconfirmedCount: (await readMetaCampaigns(db, settings.values, sourceEnv)).filter(campaign => !campaign.confirmed).length };
+    const campaignScope = JSON.stringify([settings.values.metaAdAccountId, getSourceStates(sourceEnv).find(source => source.source === 'meta')!.mode]);
+    try {
+      unconfirmedCampaigns = { scope: campaignScope, count: (await readMetaCampaigns(db, settings.values, sourceEnv)).filter(campaign => !campaign.confirmed).length };
+    } catch (error) {
+      console.error(`Meta campaign summary failed (code: ${errorCode(error)}).`);
+    }
+    if (unconfirmedCampaigns?.scope === campaignScope) result.metaCampaigns = { unconfirmedCount: unconfirmedCampaigns.count };
     result.fulfilment = await fulfilmentSummary(db, shopify.mode, sourceNow());
     result.shopify?.needs.push(...result.fulfilment.needs.map(n => ({ ...n, state: 'warn' as const, source: 'j-and-j' as const })));
     return result;
@@ -167,7 +174,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     if (!await auth.session(request)) return reply.redirect('/login');
     const [dashboard, imports, costs, settings] = await Promise.all([snapshot(), shopify.store.summary(), shopify.store.costSummary(), readSettings(db)]);
     return reply.type('text/html; charset=utf-8').send(sourceHealthPage(dashboard.sourceHealth ?? [], imports, costs, await spendHealth(db, sourceEnv, settings.values), {
-      summary: dashboard.banner ?? '', shopify: dashboard.shopify!, checkedAt: sourceNow().toISOString(),
+      summary: dashboard.banner ?? '', shopify: dashboard.shopify!, checkedAt: sourceNow().toISOString(), campaigns: await readCampaignSync(db, settings.values, sourceEnv),
     }));
   });
   app.get('/api/shopify', async (request, reply) => {
@@ -177,7 +184,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   app.get('/settings', async (request, reply) => {
     if (!await auth.session(request)) return reply.redirect('/login');
     const settings = await readSettings(db);
-    return reply.type('text/html; charset=utf-8').send(settingsPage(settings, await shopify.store.latestCosts(), shopify.mode, new Date(), await readMetaCampaigns(db, settings.values, sourceEnv)));
+    return reply.type('text/html; charset=utf-8').send(settingsPage(settings, await shopify.store.latestCosts(), shopify.mode, new Date(), await readMetaCampaigns(db, settings.values, sourceEnv), await readCampaignSync(db, settings.values, sourceEnv)));
   });
   app.get('/api/settings', async (request, reply) => {
     if (!await auth.session(request)) return reply.code(401).send({ error: 'Sign in to continue.' });

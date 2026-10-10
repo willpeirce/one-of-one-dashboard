@@ -1,6 +1,7 @@
 import type { Detail, HeroMetric, HeroPeriod, State, Zone } from './dashboard-types.js';
 import type { SourceId } from './sources.js';
 import { profitAndMargin } from './profit.js';
+import { formatPounds } from './money.js';
 
 const DAY = 86_400_000;
 const fields = ['net', 'o', 'uk', 'us', 'sess', 'ukS', 'ukM', 'usM', 'g', 'ours'] as const;
@@ -67,7 +68,7 @@ export function aggregateDays(rows: readonly DailyMetrics[]): Totals {
 const divide = (numerator: number, denominator: number): number => denominator ? numerator / denominator : 0;
 const rounded = (value: number, places = 2): number => Math.round(value * 10 ** places) / 10 ** places;
 const integer = (value: number): string => Math.round(value).toLocaleString('en-GB');
-const money = (value: number): string => `£${integer(value)}`;
+const money = (value: number): string => formatPounds(value, integer);
 const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const shortDate = (date: string): string => `${Number(date.slice(-2))} ${months[Number(date.slice(5, 7)) - 1]}`;
@@ -188,19 +189,19 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
   const metric = (value: Omit<HeroMetric, 'source' | 'mode'>, source: SourceId[]): HeroMetric => ({ ...value, ...provenance(source) });
   const bar = options.blendedMetaTripwireGbp ?? 28;
   const amber = rounded(bar * 0.9);
-  const poundsBar = `£${bar.toLocaleString('en-GB', { maximumFractionDigits: 2 })}`;
+  const poundsBar = formatPounds(bar, value => value.toLocaleString('en-GB', { maximumFractionDigits: 2 }));
   const zones: Zone[] = [[Math.min(12, bar / 2), amber, 'good'], [amber, bar, 'warn'], [bar, Math.max(40, bar + 12), 'decide']];
   const cpo = (key: 'ukcpo' | 'uscpo', country: 'UK' | 'US'): HeroPeriod['ukcpo'] => {
     const value = metrics[key](t);
     const over = selected.filter((row) => metrics[key](aggregateDays([row])) > bar).length;
     return {
-      v: rounded(value), min: zones[0]![0], max: zones[2]![1], t: `£${value.toFixed(2)}`, l: `${country} Meta cost per order`, z: structuredClone(zones),
+      v: rounded(value), min: zones[0]![0], max: zones[2]![1], t: formatPounds(value), l: `${country} Meta cost per order`, z: structuredClone(zones),
       s: `${partial ? 'so far · ' : one ? '' : `${n}-day blend · `}bar ${poundsBar}`,
       ...(partial ? { cap: 'sofar' as const } : one && spikeMarkets(from).includes(country) ? { cap: 'info' as const } : {}),
       d: detail(key, { hp: '£',
-        rule: `${later(`Amber from 90% of the ${poundsBar} blended bar (£${amber.toFixed(2)}). Over ${poundsBar} is a decision, not an alarm. Red is never used here.`)}${spikeNote ? ` ${spikeNote}` : ''}`,
+        rule: `${later(`Amber from 90% of the ${poundsBar} blended bar (${formatPounds(amber)}). Over ${poundsBar} is a decision, not an alarm. Red is never used here.`)}${spikeNote ? ` ${spikeNote}` : ''}`,
         src: `Meta spend ${country} ÷ Shopify ${country} orders, ${when}`,
-        why: `${country} Meta spend ${on} ÷ ${country} orders: £${value.toFixed(2)}. ${over} of ${n} days were over ${poundsBar}.`,
+        why: `${country} Meta spend ${on} ÷ ${country} orders: ${formatPounds(value)}. ${over} of ${n} days were over ${poundsBar}.`,
       }),
       ...provenance(['shopify', 'meta']),
     };
@@ -244,8 +245,8 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
     profit: metric({ n: profit, state: 'est', pre: '£', dp: 2, ss: 'sample estimate · costs model not built',
       d: { rule: 'Sample only. Assumes non-ad costs at 25% of net sales until known costs replace this preview.',
         src: 'Shopify net sales and orders, knowledge/costs.md, Meta + Google + TikTok spend',
-        why: `Sample only. Net sales less ad spend and assumed non-ad costs of 25%: £${profit.toFixed(2)}. This is the same pound total used to calculate net margin.`,
-        extra: [['Net profit', `£${profit.toFixed(2)}`]],
+        why: `Sample only. Net sales less ad spend and assumed non-ad costs of 25%: ${formatPounds(profit)}. This is the same pound total used to calculate net margin.`,
+        extra: [['Net profit', formatPounds(profit)]],
       },
     }, ['shopify', 'meta', 'google-ads', 'github-hq']),
     ukcpo: cpo('ukcpo', 'UK'), uscpo: cpo('uscpo', 'US'),

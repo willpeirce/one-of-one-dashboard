@@ -1,4 +1,5 @@
 import { ukToday } from './hero-range.js';
+import { formatPounds } from './money.js';
 import { monthlyOverheadTotal, type OverheadItem } from './overheads.js';
 import { installPullToRefresh, reloadPageForRefresh } from './pull-refresh.js';
 
@@ -84,7 +85,7 @@ function initializeSettings(form: HTMLFormElement): void {
       if (!Number.isFinite(monthlyGbp) || monthlyGbp < 0 || monthlyGbp > 1_000_000 || !monthIsValid(startMonth) || !monthIsValid(endMonth)) return [];
       return [{ name: value('name'), monthlyGbp, startMonth, endMonth }];
     });
-    total.textContent = `Total this month: £${monthlyOverheadTotal(items, ukToday().slice(0, 7)).toFixed(2)}`;
+    total.textContent = `Total this month: ${formatPounds(monthlyOverheadTotal(items, ukToday().slice(0, 7)))}`;
   }
 
   function showShopifyCosts(): void {

@@ -5,6 +5,7 @@ import { createDatePicker } from './dashboard-dates.js';
 import { rangeLabel } from './hero-range.js';
 import { installPullToRefresh } from './pull-refresh.js';
 import { greetingAt } from './greeting.js';
+import { formatLike, formatMetricNumber } from './money.js';
 
 const states: Record<State, [string, string]> = {
   good: ['Good', '✓'], warn: ['Watch', '!'], decide: ['Decide', '◆'], alarm: ['Alarm', '✕'],
@@ -42,10 +43,6 @@ const point = (a: number, radius: number, cx = 50, cy = 50): [number, number] =>
 function arc(start: number, end: number, radius = 40): string {
   const [x1, y1] = point(start, radius), [x2, y2] = point(end, radius);
   return `M${x1} ${y1}A${radius} ${radius} 0 ${start - end > Math.PI ? 1 : 0} 1 ${x2} ${y2}`;
-}
-function formatLike(text: string): (value: number) => string {
-  const prefix = text.match(/^[^\d-]+/)?.[0] ?? '', suffix = text.match(/[^\d.,]+$/)?.[0] ?? '';
-  return (value) => prefix + (Math.abs(value) >= 1000 ? value.toLocaleString('en-GB') : String(rounded(value))) + suffix;
 }
 function watermark(element: HTMLElement): void {
   const icon = icons[element.dataset.src ?? ''];
@@ -108,7 +105,7 @@ function statChip(element: HTMLElement, state: State): void {
 const animations = new WeakMap<HTMLElement, number>();
 function metricNumber(element: HTMLElement, data: HeroMetric, animate: boolean): void {
   if (data.unavailable) { animations.set(element, (animations.get(element) ?? 0) + 1); element.textContent = data.unavailableLabel ?? 'No data'; return; }
-  const show = (value: number): void => { element.textContent = (data.pre ?? '') + (data.dp ? value.toFixed(data.dp) : Math.round(value).toLocaleString('en-GB')) + (data.suf ?? ''); };
+  const show = (value: number): void => { element.textContent = formatMetricNumber(value, data); };
   const generation = (animations.get(element) ?? 0) + 1;
   animations.set(element, generation);
   if (!animate || reducedMotion()) { show(data.n); return; }

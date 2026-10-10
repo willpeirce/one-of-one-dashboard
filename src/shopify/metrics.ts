@@ -1,6 +1,7 @@
 import { applySpend, type AdHeroInputs } from '../ad-spend/metrics.js';
 import { sampleSpend } from '../ad-spend/store.js';
 import { appConfig } from '../config.js';
+import { formatPounds } from '../money.js';
 import { addDays, buildHeroRange, dayCount, HeroRangeError, rangeLabel, ukToday, type DailyMetrics } from '../hero-range.js';
 import type { HeroPeriod } from '../dashboard-types.js';
 import type { Order, Inventory, Sessions } from './model.js';
@@ -85,7 +86,7 @@ export function shopifyHero(facts: Facts, today: string, from: string, to: strin
   const lastLabel = lastWorked ? `Last order poll ${new Date(lastWorked).toISOString()}` : 'First sync pending';
   for (const metric of [hero.net, hero.orders, hero.cr]) metric.d.src += ` · ${lastLabel}`;
   const kitOrders = orders.filter(isKit);
-  hero.orders.d.extra = [...(hero.orders.d.extra ?? []), ['Orders by market', breakdown], ['Average order', ratio(hero.net.n, hero.orders.n) === null ? 'No paid orders' : `£${(hero.net.n / hero.orders.n).toFixed(2)}`], ['Upgrade rate', kitOrders.length ? `${(100 * orders.filter(isUpgrade).length / kitOrders.length).toFixed(1)}% · tiers from ordered products` : 'No kit orders'], ['Coverage', `Order details from ${data.from}. Earlier sales are store-wide ShopifyQL only; no invented market split.`]];
+  hero.orders.d.extra = [...(hero.orders.d.extra ?? []), ['Orders by market', breakdown], ['Average order', ratio(hero.net.n, hero.orders.n) === null ? 'No paid orders' : formatPounds(hero.net.n / hero.orders.n)], ['Upgrade rate', kitOrders.length ? `${(100 * orders.filter(isUpgrade).length / kitOrders.length).toFixed(1)}% · tiers from ordered products` : 'No kit orders'], ['Coverage', `Order details from ${data.from}. Earlier sales are store-wide ShopifyQL only; no invented market split.`]];
   const orderLabel = `${hero.orders.n} ${hero.orders.n === 1 ? 'order' : 'orders'}`;
   hero.sub1 = `${orderLabel}${to === today ? ' so far' : ''}.`;
   if (from === today && to === today) {
@@ -111,7 +112,7 @@ export function shopifyHero(facts: Facts, today: string, from: string, to: strin
   const ordersByDay = new Map<string, Order[]>();
   for (const order of data.orders) { const list = ordersByDay.get(order.day) ?? []; list.push(order); ordersByDay.set(order.day, list); }
   hero.business = {
-    email: { count: periodEmail.length, detail: { why: `${periodEmail.length} last-visit email orders; £${emailNet.toFixed(2)} net sales, ${from}–${to}. ${from < '2026-09-27' ? 'Attribution partial before 27 Sep 2026.' : ''}`, rule: 'UTM medium=email, grouped by last-visit campaign; first visit is assisted only. SLABPACK is never an email signal. Sends, reachable-by-email and Mailchimp credit await their source.', src: provenance,
+    email: { count: periodEmail.length, detail: { why: `${periodEmail.length} last-visit email orders; ${formatPounds(emailNet)} net sales, ${from}–${to}. ${from < '2026-09-27' ? 'Attribution partial before 27 Sep 2026.' : ''}`, rule: 'UTM medium=email, grouped by last-visit campaign; first visit is assisted only. SLABPACK is never an email signal. Sends, reachable-by-email and Mailchimp credit await their source.', src: provenance,
       extra: appConfig.mailchimp.flows.filter(f => f.status === 'live').map(f => [f.name, `${periodEmail.filter(o => emailFlow(o) === f.name).length} Shopify orders · Mailchimp figures unavailable`]) } },
     refill: { count: refill.length, detail: { why: `${refill.length} ${refill.length === 1 ? 'order' : 'orders'} containing SKU REFILL in ${rangeLabel(from, to)}.`, rule: 'D30 attribution needs a refill campaign or REFILLSHIP. Early for 4 weeks from first send on 25 Sep 2026; sends threshold awaits Mailchimp. Before launch on 11 Sep 2026 has no refill history.', src: provenance,
       extra: [['D30 email', String(refill.filter(o => emailFlow(o)?.startsWith('D30 refill')).length)], ['Site / other', String(refill.filter(o => !emailFlow(o)?.startsWith('D30 refill')).length)], ['Since launch', `${data.orders.filter(o => o.day >= '2026-09-11' && isRefill(o)).length}${data.from > '2026-09-11' ? ' (partial history)' : ''}`], ['Stock', 'Open Stock and cover for configured warehouse stock.']] } },

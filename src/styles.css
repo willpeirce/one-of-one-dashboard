@@ -7,6 +7,8 @@
   --line: #625970;
   --accent: #cbb6ff;
   --button-text: #201334;
+  --page-gutter: 1.5rem;
+  --nav-height: 6.25rem;
   font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   line-height: 1.55;
   background: var(--background);
@@ -14,14 +16,16 @@
 }
 
 * { box-sizing: border-box; }
-body { max-width: 76rem; margin: auto; padding: 1.5rem; }
+body { margin: 0; }
 a { color: var(--accent); text-underline-offset: 0.2em; }
-header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; padding-bottom: 1.5rem; border-bottom: 1px solid var(--line); }
+.top { position: sticky; top: 0; padding-top: env(safe-area-inset-top, 0px); z-index: 6; background: var(--background); border-bottom: 1px solid var(--line); }
+.hin { max-width: 76rem; margin-inline: auto; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; padding-block: var(--page-gutter) 1.5rem; padding-inline: max(var(--page-gutter), env(safe-area-inset-left, 0px)) max(var(--page-gutter), env(safe-area-inset-right, 0px)); }
 .wordmark { font-weight: 750; font-size: 1.15rem; color: var(--text); text-decoration: none; }
 .wordmark span { color: var(--accent); }
 nav { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; }
 nav a { padding-block: 0.6rem; }
-main { margin-block: 2rem; }
+.wrap { max-width: 76rem; margin: 2rem auto; padding-inline: max(var(--page-gutter), env(safe-area-inset-left, 0px)) max(var(--page-gutter), env(safe-area-inset-right, 0px)); padding-bottom: var(--page-gutter); }
+.wrap > * { scroll-margin-top: calc(var(--nav-height) + 16px + env(safe-area-inset-top, 0px)); }
 h1 { font-size: clamp(1.5rem, 4vw, 2rem); line-height: 1.2; }
 h1, h2, h3, .wordmark { font-family: 'Outfit', system-ui, sans-serif; }
 p { max-width: 70ch; }
@@ -54,9 +58,12 @@ code { font-size: 0.85rem; }
 .skip-link { position: absolute; top: -5rem; background: var(--surface); padding: 0.8rem; }
 .skip-link:focus { top: 0.5rem; }
 
+@media (max-width: 800px) {
+  :root { --nav-height: 12.5rem; }
+}
 @media (max-width: 600px) {
-  body { padding: 1rem; }
-  header { align-items: flex-start; }
+  :root { --page-gutter: 1rem; }
+  .hin { align-items: flex-start; }
   nav { gap: 0.9rem; }
   .sign-in { margin-top: 2rem; }
 }

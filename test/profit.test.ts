@@ -96,7 +96,7 @@ test('profit keeps missing costs, unavailable data and losses in the same neutra
   assert.equal(hero.profit.state, hero.margin.state);
   assert.equal(hero.profit.ss, hero.margin.ss);
   assert.match(hero.profit.ss, /left out: payment fees, older order cost detail, overheads/);
-  assert.deepEqual(hero.profit.d.extra!.at(-1), ['Net profit', '£-10.00']);
+  assert.deepEqual(hero.profit.d.extra!.at(-1), ['Net profit', '-£10.00']);
   applySpend(hero, [], settings, '2026-10-09', { spend: { ...spend, rows: [], sources: [] }, costs: [], estimates: [] });
   assert.equal(hero.profit.unavailable, true);
   assert.equal(hero.profit.unavailable, hero.margin.unavailable);

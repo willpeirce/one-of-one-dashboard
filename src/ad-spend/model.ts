@@ -35,6 +35,9 @@ export interface MetaCampaignView extends MetaCampaign {
   mode: SourceMode;
 }
 export class AdError extends Error {
+  readonly status: number;
+  readonly providerCode: number | undefined;
+  readonly providerSubcode: number | undefined;
   constructor(
     readonly code:
       | 'http'
@@ -43,10 +46,29 @@ export class AdError extends Error {
       | 'unauthorized'
       | 'rate_limit'
       | 'developer_token_required',
-    readonly status = 0,
+    status = 0,
+    providerCode?: unknown,
+    providerSubcode?: unknown,
   ) {
     super(`Ad spend request failed (${code}).`);
+    this.status = Number.isInteger(status) && status >= 100 && status <= 599 ? status : 0;
+    this.providerCode = safeNumericCode(providerCode);
+    this.providerSubcode = safeNumericCode(providerSubcode);
   }
+}
+function safeNumericCode(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+/** Only app-owned categories and numeric provider details may reach logs or Settings. */
+export function adErrorCode(error: unknown, source: AdSource): string {
+  if (!(error instanceof AdError)) return 'unknown';
+  const parts: string[] = error.code === 'http' && error.status ? [] : [error.code];
+  if (error.status) parts.push(`http ${error.status}`);
+  if (error.providerCode !== undefined) {
+    const provider = source === 'google-ads' ? 'google' : source;
+    parts.push(`${provider} ${error.providerCode}${error.providerSubcode === undefined ? '' : `/${error.providerSubcode}`}`);
+  }
+  return parts.join(', ');
 }
 export function decimalMicros(value: unknown): bigint {
   if (typeof value !== 'string' || !/^\d{1,18}(\.\d{1,6})?$/.test(value))

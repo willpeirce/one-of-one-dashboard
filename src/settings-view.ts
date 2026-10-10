@@ -3,6 +3,9 @@ import type { ShopifyCost } from './shopify/costs.js';
 import { ukToday } from './hero-range.js';
 import { monthlyOverheadTotal } from './overheads.js';
 import type { MetaCampaignView } from './ad-spend/model.js';
+import type { CampaignSyncState } from './ad-spend/campaign-cache.js';
+import { campaignSyncText } from './ad-spend/campaign-status.js';
+import { formatPounds } from './money.js';
 
 function escapeHtml(value: string | number): string {
   return String(value).replace(/[&<>"']/g, (character) => ({
@@ -65,7 +68,7 @@ function section(title: string, description: string, content: string, open = fal
 const number = (key: string, label: string, extra: Partial<Field> = {}): Field => ({ key, label, type: 'number', ...extra });
 const checkbox = (key: string, label: string): Field => ({ key, label, type: 'checkbox' });
 
-function campaignOwners(campaigns: readonly MetaCampaignView[]): string {
+function campaignOwners(campaigns: readonly MetaCampaignView[], sync: CampaignSyncState): string {
   const newest = [...campaigns].sort((a, b) => Date.parse(b.createdAt ?? b.firstSeen) - Date.parse(a.createdAt ?? a.firstSeen));
   const date = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', day: 'numeric', month: 'short', year: 'numeric' });
   const row = (campaign: MetaCampaignView) => {
@@ -79,15 +82,15 @@ function campaignOwners(campaigns: readonly MetaCampaignView[]): string {
   };
   const active = newest.filter((campaign) => campaign.status === 'ACTIVE');
   const inactive = newest.filter((campaign) => campaign.status !== 'ACTIVE');
-  return `<section class="setting-collection" aria-labelledby="metaOwners-heading"><h3 id="metaOwners-heading">Meta campaigns <span class="setting-count">${campaigns.length}</span></h3><p class="setting-help">Campaigns appear automatically. New campaigns count as Ours until you check the owner. Save each row to confirm it; this saves a local rule and does not change Meta.</p><div class="setting-campaigns">${active.map(row).join('')}</div>${inactive.length ? `<details class="setting-campaign-inactive"><summary>Show ${inactive.length} inactive</summary><div class="setting-campaigns">${inactive.map(row).join('')}</div></details>` : ''}${campaigns.length ? '' : '<p class="setting-empty">Campaigns will appear after the next Meta ad spend sync.</p>'}</section>`;
+  return `<section class="setting-collection" aria-labelledby="metaOwners-heading"><h3 id="metaOwners-heading">Meta campaigns <span class="setting-count">${campaigns.length}</span></h3><p class="setting-help" data-campaign-sync data-state="${sync.state}">${escapeHtml(campaignSyncText(sync))}</p><p class="setting-help">Campaigns appear automatically. New campaigns count as Ours until you check the owner. Save each row to confirm it; this saves a local rule and does not change Meta.</p><div class="setting-campaigns">${active.map(row).join('')}</div>${inactive.length ? `<details class="setting-campaign-inactive"><summary>Show ${inactive.length} inactive</summary><div class="setting-campaigns">${inactive.map(row).join('')}</div></details>` : ''}</section>`;
 }
 
-export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly ShopifyCost[] = [], mode: 'sample' | 'live' = 'sample', now = new Date(), metaCampaigns: readonly MetaCampaignView[] = []): string {
+export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly ShopifyCost[] = [], mode: 'sample' | 'live' = 'sample', now = new Date(), metaCampaigns: readonly MetaCampaignView[] = [], campaignSync: CampaignSyncState = { state: 'pending', at: null }): string {
   const values = snapshot.values;
   const costLabels: Record<string, string> = Object.create(null);
   for (const c of shopifyCosts) if (c.sku) {
     const seen = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(c.last_seen_at));
-    const amount = c.amount_pence === null ? 'no cost set' : `${c.currency === 'GBP' ? '£' : c.currency + ' '}${(Number(c.amount_pence)/100).toFixed(2)}`;
+    const amount = c.amount_pence === null ? 'no cost set' : c.currency === 'GBP' ? formatPounds(Number(c.amount_pence) / 100) : `${c.currency} ${(Number(c.amount_pence)/100).toFixed(2)}`;
     costLabels[c.sku] = `Shopify · ${mode === 'sample' ? 'sample data' : 'live'}: ${amount} · last seen ${seen}`;
   }
   const goals = section('Goals & overheads', 'The targets behind your business.', `<div class="settings-grid">${fields([
@@ -101,7 +104,7 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     { key: 'endMonth', label: 'End month (optional)', type: 'month', optional: true },
   ], values.overheads, 'Add each fixed monthly cost as its own item. Blank months apply to all months.', undefined, {
     heading: 'Overheads', maxRows: 50,
-    footer: `<p class="setting-overheads-total" data-overheads-total>Total this month: £${monthlyOverheadTotal(values.overheads, ukToday(now).slice(0, 7)).toFixed(2)}</p><p class="setting-help">Each item is spread evenly over the days of its month.</p>`,
+    footer: `<p class="setting-overheads-total" data-overheads-total>Total this month: ${formatPounds(monthlyOverheadTotal(values.overheads, ukToday(now).slice(0, 7)))}</p><p class="setting-help">Each item is spread evenly over the days of its month.</p>`,
   })}`, true);
   const advertising = section('Cost per purchase', 'UK and US targets, plus the blended Meta tripwire.', `<div class="settings-grid">${fields([
     number('cppUkBreakEvenGbp', 'UK break-even cost (£)'), number('cppUkTargetGbp', 'UK target cost (£)', { hint: 'At or below the UK break-even cost.' }),
@@ -130,7 +133,7 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     {key:'googleCustomerId',label:'Google customer ID',optional:true,hint:'Dashes are removed when saved.'},
     {key:'googleLoginCustomerId',label:'Google login customer ID (manager, optional)',optional:true},
     {key:'tiktokAdvertiserId',label:'TikTok advertiser ID',optional:true},
-  ], values)}</div>${campaignOwners(metaCampaigns)}${collection('expectedGoogleCampaigns', 'Google campaign', [
+  ], values)}</div>${campaignOwners(metaCampaigns, campaignSync)}${collection('expectedGoogleCampaigns', 'Google campaign', [
     { key: 'campaignId', label: 'Campaign ID' },
   ], values.expectedGoogleCampaigns, 'Campaign IDs expected to report on complete days. This does not enable a campaign.')}`);
   const creators = section('Creator negotiation', 'Your rules for agreeing an asset and its usage.', `<div class="settings-grid">${fields([

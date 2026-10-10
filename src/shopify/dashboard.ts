@@ -6,6 +6,7 @@ import type { Settings } from '../settings.js';
 import type { SourceHealth } from '../sources.js';
 import { appConfig } from '../config.js';
 import { greetingAt } from '../greeting.js';
+import { formatMetricNumber, formatPounds } from '../money.js';
 import { dailyRows, dataset, emailFlow, isRefill, isUpgrade, isKit, kitIds, orderNet, ratio, shopifyHero, stockCover, type Facts, type StockCover } from './metrics.js';
 import { blankObservation, evaluateWatchdogs, type Check, type Observation } from './watchdogs.js';
 
@@ -48,7 +49,7 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
   const initial = snapshot.hero.today;
   for (const [key, rawKey, displayKey, subKey] of [['net','t0001','t0038','t0039'],['orders','t0003','t0042','t0043'],['cr','t0004','t0046','t0047'],['spend','t0005','t0050','t0051'],['roas','t0006','t0054','t0055'],['margin','t0007','t0058','t0059']] as const) {
     const metric = initial[key];
-    const display = metric.unavailable ? metric.unavailableLabel ?? 'No data' : `${metric.pre ?? ''}${metric.dp ? metric.n.toFixed(metric.dp) : Math.round(metric.n).toLocaleString('en-GB')}${metric.suf ?? ''}`;
+    const display = metric.unavailable ? metric.unavailableLabel ?? 'No data' : formatMetricNumber(metric.n, metric);
     for (const [k, value] of [[rawKey,String(metric.n)],[displayKey,display],[subKey,metric.ss]]) snapshot.textValues[k!] = { source: metric.source, mode: metric.mode, value: value! };
   }
   for (const [key, value] of [['t0032',initial.eyebrow],['t0033',greetingAt(greetingNow)],['t0034',initial.sub1],['t0035',''],['t0002',initial.spark.join(',')]]) snapshot.textValues[key!] = { source: ['shopify'], mode: facts.mode, value: value! };
@@ -86,7 +87,7 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
     ['w035', 't0260', 't0261', baseline.length.toString(), detail(`${baseline.length} of ${weekly.length} orders have no last-visit paid signal.`, 'No fbclid/gclid/ttclid and medium not cpc/paid/paid_social; 7 UK dates, today so far.')],
     ['w036', 't0263', 't0264', checks.find(c => c.id === 'webhooks')!.status, detail(checks.find(c => c.id === 'webhooks')!.why, 'Hourly owned-subscription check, five-minute overlap polling backstop.')],
     ['w037', 't0266', 't0267', String(refillSince.length), detail(`${refillSince.length} refill orders since 11 Sep 2026 (${data.from > '2026-09-11' ? 'partial order history' : 'covered'}).`, 'SKU REFILL; email credit from D30 campaign or REFILLSHIP only. Sent/opened figures await Mailchimp.', [['D30 email', String(refillSince.filter(o => emailFlow(o)?.startsWith('D30 refill')).length)], ['Site / other', String(refillSince.filter(o => !emailFlow(o)?.startsWith('D30 refill')).length)], ['Funnel', 'Starts at attributed orders; sends/clicks not available. Early: first 4 weeks from 25 Sep 2026; the sends threshold awaits stage 4.']])],
-    ['w039', 't0269', 't0270', String(weekEmail.length), detail(`${weekEmail.length} last-visit email orders in 7 UK dates. £${(weekEmail.reduce((n, o) => n + orderNet(o, weekFrom, today), 0) / 100).toFixed(2)} net sales.`, 'UTM medium=email, grouped by campaign. Before 27 Sep 2026 is partial, never zero. SLABPACK is not an email signal.', appConfig.mailchimp.flows.filter(f => f.status === 'live').map(f => [f.name, `${weekEmail.filter(o => emailFlow(o) === f.name).length} Shopify orders · sends and Mailchimp credit unavailable`]))],
+    ['w039', 't0269', 't0270', String(weekEmail.length), detail(`${weekEmail.length} last-visit email orders in 7 UK dates. ${formatPounds(weekEmail.reduce((n, o) => n + orderNet(o, weekFrom, today), 0) / 100)} net sales.`, 'UTM medium=email, grouped by campaign. Before 27 Sep 2026 is partial, never zero. SLABPACK is not an email signal.', appConfig.mailchimp.flows.filter(f => f.status === 'live').map(f => [f.name, `${weekEmail.filter(o => emailFlow(o) === f.name).length} Shopify orders · sends and Mailchimp credit unavailable`]))],
   ];
   for (const [key, valueKey, subKey, value, d] of stats) {
     snapshot.widgets[key] = { source: ['shopify'], mode: facts.mode, kind: 'detail', value: d };

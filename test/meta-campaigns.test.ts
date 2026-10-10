@@ -31,10 +31,10 @@ test('Meta campaign reads follow every cursor on the fixed read-only edge, inclu
       assert.equal(request.pathname, '/v25.0/act_9000000000/campaigns');
       assert.equal(request.searchParams.get('fields'), 'id,name,effective_status,created_time');
       assert.equal(request.searchParams.has('access_token'), false);
-      // Meta's Campaign.EffectiveStatus is narrower than the ad/ad-set status enums.
       assert.deepEqual(JSON.parse(request.searchParams.get('effective_status')!).sort(), [
-        'ACTIVE', 'ARCHIVED', 'DELETED', 'IN_PROCESS', 'PAUSED', 'WITH_ISSUES',
+        'ACTIVE', 'PAUSED',
       ]);
+      assert.equal(request.searchParams.get('limit'), '100');
       return response(seen.length === 1
         ? { data: data.slice(0, 2), paging: { next: 'https://untrusted.example.test/ignored', cursors: { after: 'sample-next' } } }
         : { data: data.slice(2) });

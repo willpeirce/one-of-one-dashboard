@@ -4,6 +4,7 @@ import type { AuthenticationResponseJSON } from '@simplewebauthn/server';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 import { rangeLabel } from '../src/hero-range.js';
 import type { Detail } from '../src/dashboard-types.js';
+import { formatMetricNumber, formatPounds } from '../src/money.js';
 
 let step = 'read test configuration';
 
@@ -60,7 +61,7 @@ async function assertHeroModel(page: Page, metrics: HeroPeriod): Promise<void> {
     const metric = metrics[key];
     assert.ok(metric && typeof metric !== 'string' && !Array.isArray(metric));
     if (typeof metric.n === 'number') {
-      expected[key] = metric.unavailable ? metric.unavailableLabel ?? 'No data' : (metric.pre ?? '') + (metric.dp ? metric.n.toFixed(metric.dp) : Math.round(metric.n).toLocaleString('en-GB')) + (metric.suf ?? '');
+      expected[key] = metric.unavailable ? metric.unavailableLabel ?? 'No data' : formatMetricNumber(metric.n, metric);
     } else {
       assert.equal(typeof metric.t, 'string');
       expected[key] = metric.t!;
@@ -123,6 +124,88 @@ async function checkGreetingRollover(context: BrowserContext): Promise<void> {
   } finally { await page.close(); }
 }
 
+async function simulateTopInset(page: Page, pixels: number): Promise<void> {
+  // Replace env() in the served CSS, including sticky top, so the test catches an
+  // offset header that fails to reserve its inset in the document's flow.
+  await page.route('**/assets/*.css', async route => {
+    const response = await route.fetch();
+    const body = (await response.text()).replace(/env\(\s*safe-area-inset-top\s*,\s*0px\s*\)/g, `${pixels}px`);
+    await route.fulfill({ response, body });
+  });
+}
+
+async function checkSafeAreaNavigation(context: BrowserContext): Promise<void> {
+  const scope = step;
+  for (const inset of [0, 47]) {
+    const page = await context.newPage();
+    try {
+      if (inset) await simulateTopInset(page, inset);
+      for (const viewport of viewports) {
+        await page.setViewportSize(viewport);
+        for (const path of ['/', '/settings', '/sources', '/audit', '/fulfilment']) {
+          step = `${scope}: ${path} at ${viewport.width}px with ${inset}px top inset`;
+          await page.goto(path);
+          if (path === '/') await page.locator('html[data-dashboard-ready="true"]').waitFor();
+          await page.evaluate(() => window.scrollTo(0, 0));
+          assert.match(await page.locator('meta[name="viewport"]').getAttribute('content') ?? '', /viewport-fit=cover/);
+          const layout = await page.evaluate((home) => {
+            const header = document.querySelector<HTMLElement>('header.top');
+            const nav = header?.querySelector<HTMLElement>('.hin');
+            const first = document.querySelector<HTMLElement>(home ? '#period' : 'main h1');
+            if (!header || !nav || !first) throw new Error('Signed-in navigation layout missing');
+            const style = getComputedStyle(header);
+            return { top: header.getBoundingClientRect().top, bottom: header.getBoundingClientRect().bottom,
+              navTop: nav.getBoundingClientRect().top, firstTop: first.getBoundingClientRect().top,
+              sticky: style.position, stickyTop: style.top, paddingTop: parseFloat(style.paddingTop),
+              sideways: document.documentElement.scrollWidth > innerWidth, scroll: window.scrollY };
+          }, path === '/');
+          assert.equal(layout.scroll, 0);
+          assert.equal(layout.sticky, 'sticky');
+          assert.equal(layout.stickyTop, '0px');
+          assert.equal(layout.top, 0, 'The bar must fill the status-bar strip from the top of the viewport');
+          assert.equal(layout.paddingTop, inset);
+          assert.ok(layout.navTop >= inset, 'Navigation content must sit below the status-bar strip');
+          assert.ok(layout.firstTop >= layout.bottom - 0.5, 'Main content must start below the sticky bar at scroll zero');
+          assert.equal(layout.sideways, false);
+          if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({
+            path: `${process.env.PULSE_SCREENSHOT_DIR}/nav-${path.slice(1) || 'home'}-${viewport.width}-inset-${inset}.png`,
+          });
+        }
+      }
+    } finally { await page.close(); }
+  }
+}
+
+async function checkNegativeProfit(context: BrowserContext): Promise<void> {
+  const page = await context.newPage();
+  try {
+    const fixture = await dashboardSnapshot(context);
+    for (const period of periods) {
+      const profit = fixture.hero[period].profit as HeroMetric;
+      profit.n = -10;
+      profit.unavailable = false;
+      profit.pre = '£';
+      profit.dp = 2;
+      profit.d = { ...profit.d!, extra: [...(profit.d?.extra?.filter(([label]) => label !== 'Net profit') ?? []), ['Net profit', formatPounds(-10)]] };
+    }
+    await page.route('**/api/dashboard', route => route.fulfill({ status: 200, json: fixture }));
+    await page.route('**/api/events', route => route.fulfill({ status: 200, contentType: 'text/event-stream',
+      body: `retry: 60000\nevent: dashboard\ndata: ${JSON.stringify(fixture)}\n\n` }));
+    await page.goto('/');
+    await page.locator('html[data-dashboard-ready="true"]').waitFor();
+    for (const viewport of viewports) {
+      await page.setViewportSize(viewport);
+      const profit = page.locator('#hero [data-k="profit"]');
+      assert.equal(await profit.locator('.sv').innerText(), '-£10.00');
+      assert.equal(await page.getByRole('button', { name: /Net profit.*-£10\.00/ }).count(), 1);
+      await profit.click();
+      assert.equal(await page.locator('#sh-extra dd').last().innerText(), '-£10.00');
+      assert.doesNotMatch(await page.locator('#sh-extra').innerText(), /£-/);
+      await page.locator('#sh-x').click();
+    }
+  } finally { await page.close(); }
+}
+
 async function checkCampaignOwners(page: Page, context: BrowserContext, dashboard: Page): Promise<void> {
   const scope = step;
   const rows = page.locator('[data-meta-campaign]');
@@ -145,6 +228,12 @@ async function checkCampaignOwners(page: Page, context: BrowserContext, dashboar
   assert.match(await page.locator('.setting-campaign-inactive [data-meta-campaign]').innerText(), /paused · Created.*sample data/is);
   for (const viewport of viewports) {
     await page.setViewportSize(viewport);
+    const campaignSync = page.locator('[data-campaign-sync]');
+    assert.match(await campaignSync.innerText(), /^Campaigns updated .+/);
+    assert.equal(await campaignSync.isVisible(), true);
+    const syncBox = await campaignSync.boundingBox(), campaignBox = await rows.first().boundingBox();
+    assert.ok(syncBox && campaignBox && syncBox.y + syncBox.height <= campaignBox.y,
+      'Campaign sync state must appear above the campaign list');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     for (const row of await rows.all()) {
       assert.equal(await row.locator('h4').isVisible(), true);
@@ -479,6 +568,7 @@ async function checkPullToRefresh(browser: Browser, signedIn: BrowserContext, or
     } else await route.continue();
   });
   const page = await mobile.newPage();
+  await simulateTopInset(page, 47);
   let fetches = 0, ranges = 0;
   page.on('request', request => {
     if (new URL(request.url()).pathname === '/api/dashboard') fetches += 1;
@@ -504,15 +594,30 @@ async function checkPullToRefresh(browser: Browser, signedIn: BrowserContext, or
     assert.equal(await page.locator('#pull-refresh').getAttribute('aria-live'), 'polite');
     step = `${scope}: load standalone containment styles`;
     await page.waitForFunction(() => getComputedStyle(document.documentElement).overscrollBehaviorY === 'contain');
+    const restingPeriod = await page.locator('#period').boundingBox();
+    assert.ok(restingPeriod);
+    assert.equal(await page.locator('#pull-refresh').isVisible(), false);
 
     step = `${scope}: short standalone pull does not fetch`;
     const beforeShort = fetches;
     await pullGesture(page, 35, 'header', async () => {
       assert.equal(await page.locator('#pull-refresh-label').innerText(), 'Pull to refresh');
       assert.equal(await page.locator('#pull-refresh').getAttribute('data-state'), 'pulling');
+      const indicator = await page.locator('#pull-refresh').evaluate(element => {
+        const style = getComputedStyle(element), header = document.querySelector('header.top');
+        return { top: parseFloat(style.top), position: style.position,
+          renderedTop: element.getBoundingClientRect().top, layer: Number(style.zIndex),
+          headerLayer: header ? Number(getComputedStyle(header).zIndex) : 0 };
+      });
+      assert.equal(indicator.position, 'fixed');
+      assert.equal(indicator.top, 55, 'The indicator starts just below the simulated status-bar strip');
+      assert.ok(indicator.renderedTop >= 47);
+      assert.ok(indicator.layer > indicator.headerLayer, 'The indicator must display above the nav');
+      assert.deepEqual(await page.locator('#period').boundingBox(), restingPeriod, 'Pulling must not move the page');
     });
     await page.locator('#pull-refresh').waitFor({ state: 'hidden' });
     assert.equal(fetches, beforeShort);
+    assert.deepEqual(await page.locator('#period').boundingBox(), restingPeriod, 'The hidden indicator reserves no space');
 
     step = `${scope}: full standalone pull keeps the selected preset`;
     await page.locator('#period [data-period="7d"]').click();
@@ -1212,6 +1317,15 @@ async function run(): Promise<void> {
     assert.match(await watchdogPanel.innerText(), new RegExp(`${sourceChecks.filter(check => check.status === 'pass').length}.*${sourceChecks.length}.*passing`, 'i'));
     const checkedAt = await watchdogPanel.locator('time').getAttribute('datetime');
     assert.ok(checkedAt && Number.isFinite(Date.parse(checkedAt)));
+    const metaRow = page.locator('#source-health tbody tr').filter({ has: page.locator('[data-campaign-sync]') });
+    assert.equal(await metaRow.count(), 1, 'Meta retains one source row with its secondary campaign state');
+    assert.match(await metaRow.locator('[data-campaign-sync]').innerText(), /^Campaigns updated .+/);
+
+    step = 'check the nav clears content on every signed-in page with and without a safe-area inset';
+    await checkSafeAreaNavigation(context);
+
+    step = 'check a pound loss in the browser tile, accessible label and detail sheet';
+    await checkNegativeProfit(context);
 
     step = 'check the UK greeting turns over while the sample dashboard stays open';
     await checkGreetingRollover(context);
@@ -1306,7 +1420,7 @@ async function run(): Promise<void> {
     assert.equal(consoleErrors.length, 0);
     assert.equal(externalRequests, 0);
     await context.close();
-    console.log('Browser checks passed: passkeys and replay/origin/signature rejection; all hero presets and custom dates, paired margin/profit tiles and shared breakdown, bounded keyboard calendars, decks, search and details; named overhead Settings and margin shares; automatic campaign list, local confirmation and owner changes; Settings persistence and SSE without replacing picked dates; standalone touch refresh, menu counts, excluded controls, failure retention and unsaved edits; UK greeting rollover and moved source status; live sheet labels, audit, local fonts and PWA; dark-only phone/desktop with both browser preferences and no external requests.');
+    console.log('Browser checks passed: passkeys and replay/origin/signature rejection; all hero presets and custom dates, paired margin/profit tiles, correctly signed pound losses and shared breakdown, bounded keyboard calendars, decks, search and details; named overhead Settings and margin shares; automatic campaign list, sync state, local confirmation and owner changes; Settings persistence and SSE without replacing picked dates; safe-area nav clearance on every signed-in page with normal and simulated top insets; standalone touch refresh, menu counts, excluded controls, failure retention and unsaved edits; UK greeting rollover and moved source status; live sheet labels, audit, local fonts and PWA; dark-only phone/desktop with both browser preferences and no external requests.');
   } finally {
     await browser.close();
   }

@@ -1,4 +1,5 @@
 import { knownService } from './model.js';
+import { formatPounds } from '../money.js';
 import { rowsHtml, escape } from './view.js';
 import type { previewImport } from './store.js';
 type Preview = Awaited<ReturnType<typeof previewImport>> & {token:string;gbpPerUsd:number};
@@ -22,7 +23,7 @@ file.addEventListener('change',()=>{clear();const current=generation,selected=fi
       if(!response.ok)throw new Error(result.error??'Could not preview this export.');
       const dates=result.rows.map(r=>r.despatchedAt.slice(0,10)).sort();
       token=result.token;coverage.hidden=false;document.querySelector('#coverage-copy')!.textContent=`This is the complete export for ${dates[0]} to ${dates.at(-1)}, including days with no despatches.`;
-      area.innerHTML=`<h3>Review before saving</h3><p>Matched order numbers: ${escape(result.matched.join(', ')||'None')}<br>Unmatched order numbers: ${escape(result.unmatched.join(', ')||'None')}<br>${result.duplicates} duplicate rows will be skipped.<br>Unknown services: ${escape([...new Set(result.rows.filter(r=>!knownService(r.warehouse,r.service)).map(r=>r.service))].join(', ')||'None')}<br>Unknown centres: ${escape([...new Set(result.rows.filter(r=>r.warehouse==='unknown').map(r=>r.centre))].join(', ')||'None')}<br>Rate: £${result.gbpPerUsd} per USD.</p>${Object.entries(result.warehouses).map(([w,r])=>`<p>${w.toUpperCase()}: ${r.rows} rows · postage ${(r.postage/100).toFixed(2)} · pick &amp; pack ${(r.pickPack/100).toFixed(2)} ${w==='us'?'USD':w==='uk'?'GBP':'unknown currency'} · GBP total ${r.gbpPence===null?'unknown':'£'+(r.gbpPence/100).toFixed(2)} · customer paid £${(r.customerPaidPence/100).toFixed(2)}</p>`).join('')}${rowsHtml(result.rows)}`;
+      area.innerHTML=`<h3>Review before saving</h3><p>Matched order numbers: ${escape(result.matched.join(', ')||'None')}<br>Unmatched order numbers: ${escape(result.unmatched.join(', ')||'None')}<br>${result.duplicates} duplicate rows will be skipped.<br>Unknown services: ${escape([...new Set(result.rows.filter(r=>!knownService(r.warehouse,r.service)).map(r=>r.service))].join(', ')||'None')}<br>Unknown centres: ${escape([...new Set(result.rows.filter(r=>r.warehouse==='unknown').map(r=>r.centre))].join(', ')||'None')}<br>Rate: ${formatPounds(result.gbpPerUsd, String)} per USD.</p>${Object.entries(result.warehouses).map(([w,r])=>`<p>${w.toUpperCase()}: ${r.rows} rows · postage ${(r.postage/100).toFixed(2)} · pick &amp; pack ${(r.pickPack/100).toFixed(2)} ${w==='us'?'USD':w==='uk'?'GBP':'unknown currency'} · GBP total ${r.gbpPence===null?'unknown':formatPounds(r.gbpPence/100)} · customer paid ${formatPounds(r.customerPaidPence/100)}</p>`).join('')}${rowsHtml(result.rows)}`;
       status.textContent='Nothing saved. Check all rows, unknown services and centres, then confirm.';confirm.hidden=cancel.hidden=false;
     }catch(e){if(current===generation)status.textContent=e instanceof Error?e.message:'Could not preview this export.';}
   })();

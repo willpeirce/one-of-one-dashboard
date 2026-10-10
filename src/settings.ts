@@ -1,4 +1,5 @@
 import { appConfig } from './config.js';
+import { invalidateMetaCampaigns } from './ad-spend/campaign-cache.js';
 import type { Database } from './db.js';
 import type { OverheadItem } from './overheads.js';
 import { sourceDefinitions } from './sources.js';
@@ -317,7 +318,7 @@ export async function saveSettings(db: Database, input: unknown, credentialId: s
   const request = object(input, ['version', 'values'], '');
   const version = requiredNumber(request.version, '', 2_147_483_646, true);
   const values = validateSettings(request.values);
-  return db.transaction(async (transaction) => {
+  const saved = await db.transaction(async (transaction) => {
     await ensureSettings(transaction);
     const current = await transaction.query<{ version: number; values: Settings }>(
       'SELECT version, values FROM pulse.settings WHERE singleton = true FOR UPDATE',
@@ -338,4 +339,7 @@ export async function saveSettings(db: Database, input: unknown, credentialId: s
     }
     return { version: version + 1, values, changedFields: fields };
   });
+  if (saved.changedFields.some((field) => field === 'metaOwners' || field.startsWith('metaOwners.')))
+    invalidateMetaCampaigns(db);
+  return saved;
 }

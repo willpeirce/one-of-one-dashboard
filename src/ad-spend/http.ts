@@ -63,7 +63,14 @@ export class AdTransport {
               this.next = now() + 60_000;
           } catch {}
         }
-        const body = (await response.json()) as any;
+        let body: any;
+        try {
+          body = await response.json();
+        } catch {
+          throw new AdError(response.ok ? 'invalid' : 'http', response.status);
+        }
+        const providerCode = this.source === 'tiktok' ? body?.code : body?.error?.code,
+          providerSubcode = this.source === 'meta' ? body?.error?.error_subcode : undefined;
         if (
           response.status === 429 ||
           body?.code === 40100 ||
@@ -71,7 +78,7 @@ export class AdTransport {
         ) {
           const retry = Number(response.headers.get('retry-after') ?? 1);
           this.next = now() + Math.max(1000, Number.isFinite(retry) ? retry * 1000 : 1000);
-          throw new AdError('rate_limit', 429);
+          throw new AdError('rate_limit', response.status, providerCode, providerSubcode);
         }
         if (!response.ok || body?.error || (typeof body?.code === 'number' && body.code !== 0)) {
           const developer = JSON.stringify(body?.error?.details ?? []).includes('DEVELOPER_TOKEN');
@@ -82,6 +89,8 @@ export class AdTransport {
                 ? 'unauthorized'
                 : 'http',
             response.status,
+            providerCode,
+            providerSubcode,
           );
         }
         return body;
@@ -92,7 +101,7 @@ export class AdTransport {
           safe.code === 'unauthorized' ||
           safe.code === 'developer_token_required' ||
           (safe.code === 'rate_limit' && safe.status === 0) ||
-          (safe.status >= 400 && safe.status < 500 && safe.status !== 429)
+          (safe.code !== 'rate_limit' && safe.status >= 400 && safe.status < 500 && safe.status !== 429)
         )
           throw safe;
         await this.sleep(250 * 2 ** attempt);

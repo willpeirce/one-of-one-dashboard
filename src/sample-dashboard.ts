@@ -3,6 +3,7 @@ import type { Settings } from './settings.js';
 import { addDays, buildHeroRange, validateHeroRange } from './hero-range.js';
 import { sampleDays, SAMPLE_START, SAMPLE_TODAY } from './sample-days.js';
 import { greetingAt } from './greeting.js';
+import { formatPounds } from './money.js';
 
 /**
  * Server-only presentation fixtures ported from docs/spec/mockup.html. These are
@@ -4554,7 +4555,7 @@ export function getSampleHero(from: string, to: string, settings?: Settings): He
     // selections use the generic seven bars ending on their selected day.
     const week = getSampleHero(samplePresets['7d'].from, samplePresets['7d'].to, settings);
     hero.spark = [...week.spark];
-    hero.net.ss = `${hero.orders.n} orders · 7-day avg £${Math.round(week.net.n / 7).toLocaleString('en-GB')} a day`;
+    hero.net.ss = `${hero.orders.n} orders · 7-day avg ${formatPounds(week.net.n / 7, value => Math.round(value).toLocaleString('en-GB'))} a day`;
     for (const key of ['net', 'orders', 'cr', 'spend', 'roas', 'margin', 'ukcpo', 'uscpo'] as const) {
       hero[key].d.hist = [...week[key].d.hist!];
       hero[key].d.hl = [...week[key].d.hl!];
@@ -4566,7 +4567,7 @@ export function getSampleHero(from: string, to: string, settings?: Settings): He
 }
 
 function applyBlendedBar(snapshot: DashboardSnapshot, bar: number): void {
-  const pounds = (value: number): string => `£${value.toLocaleString('en-GB', { maximumFractionDigits: 2 })}`;
+  const pounds = (value: number): string => formatPounds(value, number => number.toLocaleString('en-GB', { maximumFractionDigits: 2 }));
   const amber = Math.round(bar * 90) / 100;
   const replace = (text: string): string => text.replace(/£25\.20|£28(?!\d|\.\d)/g, (value) => value === '£25.20' ? pounds(amber) : pounds(bar));
   const update = (model: DialModel): void => {

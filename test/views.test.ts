@@ -14,6 +14,15 @@ function source(overrides: Partial<SourceHealth> = {}): SourceHealth {
   };
 }
 
+test('the shared head and page wrappers reserve the safe area on sign-in, Source health and Audit', () => {
+  for (const html of [loginPage(false), sourceHealthPage([source()]), auditPage([])]) {
+    assert.match(html, /<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">/);
+    assert.match(html, /<header class="top"><div class="hin">/);
+    assert.match(html, /<main class="wrap" id="main">/);
+    assert.ok(html.indexOf('</div></header>') < html.indexOf('<main class="wrap"'));
+  }
+});
+
 test('source and audit values cannot inject markup or execute a script', () => {
   const attack = '<img src=x onerror="alert(1)">&\'"';
   const healthHtml = sourceHealthPage([source({ name: attack, requiredKeys: [attack] })]);

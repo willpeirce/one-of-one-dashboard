@@ -1,5 +1,7 @@
 import type { ShopifyStore } from './shopify/store.js';
 import type { SourceHealth } from './sources.js';
+import type { CampaignSyncState } from './ad-spend/campaign-cache.js';
+import { campaignSyncText } from './ad-spend/campaign-status.js';
 import type { ShopifyDashboard } from './shopify/dashboard.js';
 
 function escapeHtml(value: string): string {
@@ -23,7 +25,7 @@ function page(title: string, content: string, signedIn: boolean): string {
 <html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#1e0f48">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -39,12 +41,12 @@ function page(title: string, content: string, signedIn: boolean): string {
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
-  <header>
+  <header class="top"><div class="hin">
     <a class="wordmark" href="/">One of One <span>Pulse</span></a>
     ${signedIn ? `<nav aria-label="Main"><a href="/">Home</a><a href="/sources">Source health</a><a href="/settings">Settings</a><a href="/audit">Audit log</a><button id="sign-out" type="button" disabled>Sign out</button></nav>` : ''}
-  </header>
-  <main id="main">${content}<p id="auth-message" role="status" aria-live="polite"></p></main>
-  <noscript><p class="notice">Enable JavaScript to sign in or sign out with a passkey.</p></noscript>
+  </div></header>
+  <main class="wrap" id="main">${content}<p id="auth-message" role="status" aria-live="polite"></p></main>
+  <noscript><div class="wrap"><p class="notice">Enable JavaScript to sign in or sign out with a passkey.</p></div></noscript>
 </body>
 </html>`;
 }
@@ -74,7 +76,7 @@ const healthLabels: Record<SourceHealth['status'], string> = {
   error: 'Source unavailable',
 };
 
-export function sourceHealthPage(rows: readonly SourceHealth[], shopify?: Awaited<ReturnType<ShopifyStore['summary']>>, costs?: Awaited<ReturnType<ShopifyStore['costSummary']>>, ads?:Awaited<ReturnType<typeof import('./ad-spend/store.js').spendHealth>>, status?: { summary: string; shopify: ShopifyDashboard; checkedAt: string }): string {
+export function sourceHealthPage(rows: readonly SourceHealth[], shopify?: Awaited<ReturnType<ShopifyStore['summary']>>, costs?: Awaited<ReturnType<ShopifyStore['costSummary']>>, ads?:Awaited<ReturnType<typeof import('./ad-spend/store.js').spendHealth>>, status?: { summary: string; shopify: ShopifyDashboard; checkedAt: string; campaigns?: CampaignSyncState }): string {
   return page('Source health', `<h1>Source health</h1>
     <section id="source-summary" aria-label="Sources and modes"><h2>Sources and modes</h2><p class="sample-banner">${status ? escapeHtml(status.summary) : `<strong>sample data</strong> · ${shopify ? 'Shopify cards use ingested data; ad spend uses its own source connections; deferred examples remain labelled samples.' : 'No source data has been imported.'}`}</p></section>
     ${status ? `<section id="shopify-watchdogs" aria-label="Shopify watchdogs"><h2>Shopify watchdogs</h2><p>${status.shopify.checks.filter(check => check.status === 'pass').length}/${status.shopify.checks.length} checks passing · Shopify ${status.shopify.mode === 'live' ? 'live' : 'sample data'} · checked ${timestamp(status.checkedAt)} UK</p><ul>${status.shopify.checks.map(check => `<li><strong>${check.status === 'pass' ? '✓ Good' : check.status === 'tripped' ? '△ Watch' : '○ Unknown'} · ${escapeHtml(check.name)}</strong><p>${escapeHtml(check.why)}</p></li>`).join('')}</ul></section>` : ''}
@@ -89,7 +91,7 @@ export function sourceHealthPage(rows: readonly SourceHealth[], shopify?: Awaite
         <tbody>${rows.map((row) => `<tr>
           <th scope="row">${escapeHtml(row.name)}</th>
           <td>${(ads?.find(a=>a.source===row.source)?.live??row.mode==='live') ? 'Live' : 'Sample'}</td>
-          <td>${escapeHtml(ads?.find(a=>a.source===row.source)?.status??(row.source === 'shopify' && row.status === 'not_implemented' ? 'First sync pending' : healthLabels[row.status]))}</td>
+          <td>${escapeHtml(ads?.find(a=>a.source===row.source)?.status??(row.source === 'shopify' && row.status === 'not_implemented' ? 'First sync pending' : healthLabels[row.status]))}${row.source === 'meta' && status?.campaigns ? `<br><small data-campaign-sync data-state="${status.campaigns.state}">${escapeHtml(campaignSyncText(status.campaigns))}</small>` : ''}</td>
           <td>${timestamp(row.lastSuccessAt)}</td>
           <td class="key-names">${row.requiredKeys.map((key) => `<code>${escapeHtml(key)}</code>`).join('<br>')}</td>
         </tr>`).join('')}</tbody>

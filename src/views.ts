@@ -82,19 +82,19 @@ export function sourceHealthPage(rows: readonly SourceHealth[], shopify?: Awaite
     ${status ? `<section id="shopify-watchdogs" aria-label="Shopify watchdogs"><h2>Shopify watchdogs</h2><p>${status.shopify.checks.filter(check => check.status === 'pass').length}/${status.shopify.checks.length} checks passing · Shopify ${status.shopify.mode === 'live' ? 'live' : 'sample data'} · checked ${timestamp(status.checkedAt)} UK</p><ul>${status.shopify.checks.map(check => `<li><strong>${check.status === 'pass' ? '✓ Good' : check.status === 'tripped' ? '△ Watch' : '○ Unknown'} · ${escapeHtml(check.name)}</strong><p>${escapeHtml(check.why)}</p></li>`).join('')}</ul></section>` : ''}
     ${shopify ? `<section aria-label="Shopify imports"><h2>Shopify imports · ${shopify.sample ? 'sample data' : 'live'}</h2><p>${shopify.counts.order ?? 0} orders · ${shopify.counts.inventory ?? 0} inventory rows · ${shopify.counts.sessions ?? 0} session days · ${shopify.counts.sales ?? 0} older sales days · ${shopify.pendingWebhooks} webhooks pending.</p><p>Shopify cards are on Home. Import counts include older records retained for replay; window-based cards exclude them.</p>${shopify.notices.length ? `<p>Needs attention: ${shopify.notices.map(n => escapeHtml(n.replaceAll('_', ' '))).join(' · ')}</p>` : ''}</section>` : ''}
     ${costs ? `<p>Shopify unit costs: ${costs.known} stock variants with a cost · ${costs.missing} without · last cost change ${costs.changed ? timestamp(costs.changed) : 'none observed'}. ${shopify?.sample ? 'Sample data.' : 'Live.'}</p>` : ''}
-    ${ads?`<section aria-label="Ad spend imports"><h2>Ad spend</h2>${ads.map(a=>`<p>${escapeHtml(a.source==='meta'?'Meta':a.source==='google-ads'?'Google':'TikTok')} · ${escapeHtml(a.status)}${a.fetchedAt?` · fetched ${escapeHtml(a.fetchedAt)}`:''}${a.source==='google-ads'?' · Google can lag about 3 hours · hours re-aligned to UK time':a.source==='tiktok'?' · hours re-aligned to UK time':''}</p>`).join('')}<p>Account IDs belong in Settings &gt; Ad spend. Each source connects independently. No ad platform changes are made.</p></section>`:''}
+    ${ads?`<section aria-label="Ad spend imports"><h2>Ad spend</h2>${ads.map(a=>`<p>${escapeHtml(a.source==='meta'?'Meta':a.source==='google-ads'?'Google':'TikTok')} · ${escapeHtml(a.status)}${a.fetchedAt?` · last fetched ${timestamp(a.fetchedAt)} UK`:''}${a.failures?` · ${a.failures} consecutive failure${a.failures === 1 ? '' : 's'}`:''}${a.source==='google-ads'?' · Google can lag about 3 hours · hours re-aligned to UK time':a.source==='tiktok'?' · hours re-aligned to UK time':''}</p>`).join('')}<p>Account IDs belong in Settings &gt; Ad spend. Each source connects independently. No ad platform changes are made.</p></section>`:''}
     <p>Shopify imports when its keys are present. Ad spend also needs its account ID in Settings. Other source clients arrive in their stages.</p>
     <div class="table-scroll" role="region" aria-label="Source health table, scroll horizontally if needed" tabindex="0">
       <table id="source-health">
         <caption>Source connections · times shown in UK time</caption>
         <thead><tr><th scope="col">Source</th><th scope="col">Mode</th><th scope="col">Health</th><th scope="col">Last success</th><th scope="col">Required keys</th></tr></thead>
-        <tbody>${rows.map((row) => `<tr>
+        <tbody>${rows.map((row) => { const ad = ads?.find(a => a.source === row.source); return `<tr>
           <th scope="row">${escapeHtml(row.name)}</th>
-          <td>${(ads?.find(a=>a.source===row.source)?.live??row.mode==='live') ? 'Live' : 'Sample'}</td>
-          <td>${escapeHtml(ads?.find(a=>a.source===row.source)?.status??(row.source === 'shopify' && row.status === 'not_implemented' ? 'First sync pending' : healthLabels[row.status]))}${row.source === 'meta' && status?.campaigns ? `<br><small data-campaign-sync data-state="${status.campaigns.state}">${escapeHtml(campaignSyncText(status.campaigns))}</small>` : ''}</td>
-          <td>${timestamp(row.lastSuccessAt)}</td>
+          <td>${(ad?.live??row.mode==='live') ? 'Live' : 'Sample'}</td>
+          <td>${escapeHtml(ad?.status??(row.source === 'shopify' && row.status === 'not_implemented' ? 'First sync pending' : healthLabels[row.status]))}${ad?.failures ? ` · ${ad.failures} consecutive failure${ad.failures === 1 ? '' : 's'}` : ''}${row.source === 'meta' && status?.campaigns ? `<br><small data-campaign-sync data-state="${status.campaigns.state}">${escapeHtml(campaignSyncText(status.campaigns))}</small>` : ''}</td>
+          <td>${timestamp(ad ? ad.fetchedAt : row.lastSuccessAt)}</td>
           <td class="key-names">${row.requiredKeys.map((key) => `<code>${escapeHtml(key)}</code>`).join('<br>')}</td>
-        </tr>`).join('')}</tbody>
+        </tr>`; }).join('')}</tbody>
       </table>
     </div>`, true);
 }

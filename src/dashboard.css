@@ -113,6 +113,12 @@ svg.ic{width:1.1em;height:1.1em;fill:none;stroke:currentColor;stroke-width:2;str
 .sv{font-family:var(--disp);font-size:26px;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums;color:var(--ink)}
 .sv.big{font-size:40px;font-weight:800}
 .ss{font-size:12px;color:var(--muted)}
+#hero .tile:is([data-k="spend"],[data-k="roas"],[data-k="margin"],[data-k="profit"],[data-k="ukcpo"],[data-k="uscpo"])[data-state="warn"]{border-color:var(--warn);box-shadow:inset 4px 0 0 var(--warn)}
+#hero .tile:is([data-k="spend"],[data-k="roas"],[data-k="margin"],[data-k="profit"],[data-k="ukcpo"],[data-k="uscpo"])[data-state="warn"] :is(.ss,.ds){white-space:pre-line;overflow-wrap:anywhere;max-width:100%}
+/* A partial total takes the opening space; the normal greeting returns on recovery. */
+#hero:has([data-k="spend"][data-state="warn"]) .greet{grid-template-columns:1fr}
+#hero:has([data-k="spend"][data-state="warn"]) .radar{display:none}
+#hero .four [data-k="spend"][data-state="warn"]{order:-1}
 .spark{display:block;width:100%;height:34px;margin:6px 0 2px}
 .spark svg{width:100%;height:100%;display:block}
 .chip{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-family:var(--disp);font-size:11.5px;font-weight:700;letter-spacing:.02em;background:var(--c,var(--glass-3));color:var(--chip-ink);white-space:nowrap}

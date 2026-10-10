@@ -69,7 +69,7 @@ test('campaign failure follows committed spend, preserves the list and leaves Me
   assert.equal(health.status, 'healthy');
   assert.equal(new Date(health.last_success_at).toISOString(), now.toISOString());
   assert.equal(health.consecutive_failures, 0);
-  const facts = await spendFacts(db, s, e, 'live', '2026-10-10', '2026-10-10');
+  const facts = await spendFacts(db, s, e, 'live', '2026-10-10', '2026-10-10', now);
   assert.equal(facts.sources.find((source) => source.source === 'meta')!.status, 'live');
   assert.equal(facts.rows[0]!.amount, '12.500000');
   assert.deepEqual(await readMetaCampaigns(db, s, e), before);
@@ -101,7 +101,7 @@ test('spend failure stays unavailable even when the independent campaign read su
   assert.equal(health.status, 'error');
   assert.equal(health.last_success_at, null);
   assert.equal(health.consecutive_failures, 1);
-  assert.equal((await spendFacts(db, s, e, 'live', '2026-10-10', '2026-10-10')).sources[0]!.status, 'source unavailable');
+  assert.equal((await spendFacts(db, s, e, 'live', '2026-10-10', '2026-10-10', now)).sources[0]!.status, 'source unavailable');
   assert.equal((await readMetaCampaigns(db, s, e))[0]!.name, campaign.name);
   assert.deepEqual(logs, ['Ad spend meta failed (http 400, meta 100/1487694).']);
 });

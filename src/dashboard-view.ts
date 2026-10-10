@@ -23,6 +23,12 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
   const profit = snapshot.hero.today.profit;
   const profitDisplay = profit.unavailable ? profit.unavailableLabel ?? 'No data' : formatMetricNumber(profit.n, profit);
   content = content.replace(/(<button[^>]*data-k="profit"[^>]*>)[\s\S]*?<\/button>/, `$1<span class="sl">Net profit · <span class="per">${escapeHtml(snapshot.hero.today.per)}</span></span><span class="sv" data-pre="£" data-dp="2" data-n="${profit.n}">${escapeHtml(profitDisplay)}</span><span class="ss">${escapeHtml(profit.ss)}</span></button>`);
+  // Partial totals must name their missing source even before browser hydration.
+  content = content.replace(/(<button\b[^>]*data-k="(spend|roas|margin|profit)"[^>]*>)([\s\S]*?)<\/button>/g, (_button, tag: string, key: 'spend'|'roas'|'margin'|'profit', inner: string) => {
+    const metric = snapshot.hero.today[key];
+    if (metric.state !== 'warn') return `${tag}${inner}</button>`;
+    return `${tag.replace(/data-state="[^"]+"/, 'data-state="warn"')}${inner.replace(/<span class="ss">(?:<span\b[^>]*>[\s\S]*?<\/span>|[^<]*)<\/span>/, () => `<span class="ss">${escapeHtml(metric.ss)}</span>`)}<span class="chip warn">! Watch</span></button>`;
+  });
   if (snapshot.shopify) {
     content = content.replace('<div class="deck" id="deck">', `<div class="deck" id="deck"><div id="shopify-needs">${needsHtml(snapshot.shopify)}</div><p class="note">Sample decisions from later stages</p>`);
     content = content.replace(/(<div class="srows" data-sp="live">)[\s\S]*?(?=<div class="srows" data-sp="wins")/, `$1${liveHtml(snapshot.shopify)}</div>\n`);

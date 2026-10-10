@@ -3,6 +3,7 @@ import { addDays } from '../hero-range.js';
 import { readSettings, type Settings } from '../settings.js';
 import { getSourceStates, type SourceMode } from '../sources.js';
 import { cachedMetaCampaigns, invalidateMetaCampaigns, storedCampaignSync, type CampaignSyncState } from './campaign-cache.js';
+import { SPEND_STALE_AFTER_MS } from './worker.js';
 export { recordCampaignSync, type CampaignSyncState } from './campaign-cache.js';
 import {
   accountFor,
@@ -172,6 +173,9 @@ export interface SpendFacts {
     ready: boolean;
     status: string;
     fetchedAt: string | null;
+    failures?: number;
+    stale?: boolean;
+    lastAttemptAt?: string | null;
   }[];
   days: { source: AdSource; day: string }[];
 }
@@ -182,6 +186,7 @@ export async function spendFacts(
   mode: SourceMode,
   from: string,
   to: string,
+  now = new Date(),
 ): Promise<SpendFacts> {
   if (mode === 'sample') return sampleSpend(from, to, settings);
   const states = getSourceStates(env),
@@ -190,21 +195,7 @@ export async function spendFacts(
     const account = accountFor(source, settings),
       live = !!account && states.find((s) => s.source === source)!.mode === 'live';
     const job = jobs.find((j) => j.source === source && j.account_id === account);
-    return {
-      source,
-      live,
-      ready: live && !!job?.last_success_at,
-      status: !live
-        ? 'waiting for keys'
-        : job?.failures
-          ? 'source unavailable'
-          : !job?.last_success_at
-            ? 'first sync pending'
-            : !job.backfill_done
-              ? `backfill running · next ${job.backfill_next}`
-              : 'live',
-      fetchedAt: job?.last_success_at ? new Date(job.last_success_at).toISOString() : null,
-    };
+    return sourceFacts(source, live, job, now);
   });
   const rows: SpendRow[] = [],
     days: SpendFacts['days'] = [];
@@ -229,14 +220,13 @@ export async function spendFacts(
         currency: r.currency,
       })),
     );
-    days.push(
-      ...(
-        await db.query<{ day: string }>(
-          'SELECT uk_day::text AS day FROM pulse.ad_spend_days WHERE source=$1 AND account_id=$2 AND uk_day BETWEEN $3 AND $4',
-          [source.source, account, from, to],
-        )
-      ).rows.map((r) => ({ ...r, source: source.source })),
+    const coverage = await db.query<{ day: string }>(
+      'SELECT uk_day::text AS day FROM pulse.ad_spend_days WHERE source=$1 AND account_id=$2 AND uk_day BETWEEN $3 AND $4',
+      [source.source, account, from, to],
     );
+    days.push(...coverage.rows.map((r) => ({ ...r, source: source.source })));
+    // A successfully fetched zero-spend day is still stored coverage for this range.
+    if (source.stale && !stored.rows.length && !coverage.rows.length) source.ready = false;
   }
   return { mode, rows, sources, days };
 }
@@ -291,27 +281,39 @@ export function sampleSpend(
     })),
   };
 }
-export async function spendHealth(db: Database, env: NodeJS.ProcessEnv, settings: Settings) {
+function sourceFacts(source: AdSource, live: boolean, job: SpendJob | undefined, now: Date) {
+  const fetchedAt = job?.last_success_at ? new Date(job.last_success_at).toISOString() : null,
+    stale = live && !!fetchedAt && now.getTime() - new Date(fetchedAt).getTime() > SPEND_STALE_AFTER_MS;
+  return {
+    source,
+    live,
+    ready: live && !!fetchedAt,
+    status: !live
+      ? 'waiting for keys'
+      : job?.failures
+        ? 'source unavailable'
+        : !fetchedAt
+          ? 'first sync pending'
+          : stale
+            ? `stale · last fetched ${new Intl.DateTimeFormat('en-GB', {
+              timeZone: 'Europe/London', dateStyle: 'medium', timeStyle: 'short',
+            }).format(new Date(fetchedAt))} UK`
+            : !job!.backfill_done
+              ? `backfill running · next ${job!.backfill_next}`
+              : 'live',
+    fetchedAt,
+    failures: live ? job?.failures ?? 0 : 0,
+    stale,
+    lastAttemptAt: job?.last_poll_at ? new Date(job.last_poll_at).toISOString() : null,
+  };
+}
+export async function spendHealth(db: Database, env: NodeJS.ProcessEnv, settings: Settings, now = new Date()) {
   const jobs = await readJobs(db),
     states = getSourceStates(env);
   return adSources.map((source) => {
     const account = accountFor(source, settings),
       live = !!account && states.find((s) => s.source === source)!.mode === 'live';
     const job = jobs.find((j) => j.source === source && j.account_id === account);
-    return {
-      source,
-      live,
-      ready: live && !!job?.last_success_at,
-      status: !live
-        ? 'waiting for keys'
-        : job?.failures
-          ? 'source unavailable'
-          : !job?.last_success_at
-            ? 'first sync pending'
-            : !job.backfill_done
-              ? `backfill running · next ${job.backfill_next}`
-              : 'live',
-      fetchedAt: job?.last_success_at ? new Date(job.last_success_at).toISOString() : null,
-    };
+    return sourceFacts(source, live, job, now);
   });
 }

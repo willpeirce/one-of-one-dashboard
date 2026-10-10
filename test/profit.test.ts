@@ -49,7 +49,7 @@ test('profit equals the margin numerator for every period and All, UK and US', a
       })));
     const spend = sampleSpend(period.from, period.to);
     spend.mode = 'live';
-    spend.sources = spend.sources.map((source) => ({ ...source, live: true }));
+    spend.sources = spend.sources.map((source) => ({ ...source, live: true, status: 'live', fetchedAt: now.toISOString() }));
     const prototype = spend.rows[0]!;
     spend.rows = dates.flatMap((day) => (['uk', 'us', 'unknown'] as const)
       .filter((country) => market === 'all' || country === market)

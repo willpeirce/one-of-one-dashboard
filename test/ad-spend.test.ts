@@ -718,7 +718,7 @@ test('margin deducts active overhead items, distinguishes missing items from zer
   };
   const spend = sampleSpend('2026-09-30', '2026-09-30');
   spend.mode = 'live';
-  spend.sources = spend.sources.map((source) => ({ ...source, live: true }));
+  spend.sources = spend.sources.map((source) => ({ ...source, live: true, status: 'live', fetchedAt: now.toISOString() }));
   spend.rows = [{ ...spend.rows[0]!, amount: '20.000000' }];
   const inputs = {
     spend, costs: [], estimates: [{ orderId: o.id, costPence: 500, source: 'exact' }], now,

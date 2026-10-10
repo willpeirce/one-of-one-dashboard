@@ -8,6 +8,7 @@ import { profitAndMargin } from '../profit.js';
 import { formatPounds } from '../money.js';
 import { adNames, decimalMicros, type AdSource } from './model.js';
 import type { SpendFacts } from './store.js';
+import { SPEND_STALE_AFTER_MS } from './worker.js';
 export interface AdHeroInputs {
   spend: SpendFacts;
   costs: ShopifyCost[];
@@ -16,6 +17,45 @@ export interface AdHeroInputs {
   market?: 'all' | 'uk' | 'us';
 }
 const pounds = (micros: bigint) => Number(micros) / 1_000_000;
+type SpendGap = { source: AdSource; excluded: boolean; spend: string; dependent: string };
+const fetchedTime = (value: string) => new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Europe/London', dateStyle: 'medium', timeStyle: 'short',
+}).format(new Date(value)) + ' UK';
+function spendGaps(facts: SpendFacts, from: string, to: string, today: string): SpendGap[] {
+  if (facts.mode === 'sample') return [];
+  const sources = facts.sources.filter((source) => source.live),
+    coverage = new Map(sources.map(({ source }) => [source, new Set(facts.days
+      .filter((day) => day.source === source && day.day >= from && day.day <= to)
+      .map((day) => day.day))]));
+  return sources.flatMap((source): SpendGap[] => {
+    const name = adNames[source.source],
+      backfill = source.status.startsWith('backfill running'),
+      stale = source.stale || source.status.startsWith('stale'),
+      unavailable = (source.failures ?? 0) > 0 || source.status === 'source unavailable',
+      missing = unavailable || stale || !source.ready || (!backfill && source.status !== 'live');
+    if (missing) {
+      const since = stale && source.fetchedAt && !unavailable
+        ? `stale since ${new Intl.DateTimeFormat('en-GB', {
+          timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+        }).format(new Date(source.fetchedAt))}` : 'missing';
+      return [{ source: source.source, excluded: true,
+        spend: `${name} ${since} · ${stale && !unavailable ? 'total may be low' : `total excludes ${name}`}`,
+        dependent: `Excludes ${name} spend` }];
+    }
+    // Healthy historical backfill keeps its existing progress label and known rows.
+    if (backfill && to < today) return [];
+    const days = coverage.get(source.source)!;
+    if (days.size < dayCount(from, to))
+      return [{ source: source.source, excluded: false,
+        spend: `${name} missing days · total may be low`,
+        dependent: `Excludes ${name} spend for missing days` }];
+    return [];
+  });
+}
+function gapLines(gaps: SpendGap[], kind: 'spend' | 'dependent'): string {
+  return [...gaps.slice(0, 2).map((gap) => gap[kind]),
+    ...(gaps.length > 2 ? [`+${gaps.length - 2} more`] : [])].join('\n');
+}
 export function applySpend(
   hero: HeroPeriod,
   orders: Order[],
@@ -26,9 +66,11 @@ export function applySpend(
   const { spend, costs, estimates } = inputs,
     from = hero.from,
     to = hero.to;
+  const gaps = spendGaps(spend, from, to, today),
+    excluded = new Set(gaps.filter((gap) => gap.excluded).map((gap) => gap.source));
   const selected = spend.rows.filter((r) => r.day >= from && r.day <= to),
-    rows = selected.filter((r) => r.currency === 'GBP');
-  const usable = spend.sources.filter((s) => s.ready && (spend.mode === 'sample' || s.live));
+    rows = selected.filter((r) => r.currency === 'GBP' && !excluded.has(r.source));
+  const usable = spend.sources.filter((s) => s.ready && !excluded.has(s.source) && (spend.mode === 'sample' || s.live));
   const covered = new Set(
     spend.days.filter((d) => d.day >= from && d.day <= to).map((d) => d.source),
   );
@@ -44,7 +86,9 @@ export function applySpend(
         ? 'Meta + Google + TikTok'
         : live.length
           ? `${live.join(' + ')} only`
-          : 'Ad spend waiting for keys';
+          : spend.sources.some((source) => source.live)
+            ? 'No ad spend sources available'
+            : 'Ad spend waiting for keys';
   const partial = usable.some(
     (s) =>
       spend.days.filter((d) => d.source === s.source && d.day >= from && d.day <= to).length <
@@ -58,7 +102,11 @@ export function applySpend(
     ...(waiting.length ? [`${waiting.join(' and ')} waiting for keys`] : []),
     ...(partial ? ['incomplete range coverage'] : []),
     ...issues,
+    ...gaps.map((gap) => gap.dependent),
   ].join('; ');
+  const soFar = to === today ? ' · so far' : '',
+    spendSubtitle = gaps.length ? gapLines(gaps, 'spend') + soFar : label + soFar,
+    dependentSubtitle = gaps.length ? gapLines(gaps, 'dependent') + soFar : label + soFar;
   const sum = (filter: (r: (typeof rows)[number]) => boolean = () => true) =>
     rows.filter(filter).reduce((s, r) => s + decimalMicros(r.amount), 0n);
   const total = pounds(sum()),
@@ -77,7 +125,7 @@ export function applySpend(
   for (const source of spend.sources)
     split.push([
       `${adNames[source.source]} freshness`,
-      `${source.fetchedAt ?? source.status}${source.source === 'google-ads' ? ' · Google can lag about 3 hours · hours re-aligned to UK time' : source.source === 'tiktok' ? ' · hours re-aligned to UK time' : ''}`,
+      `${gaps.some((gap) => gap.source === source.source) ? `${source.status} · ` : ''}${source.fetchedAt ?? source.status}${source.source === 'google-ads' ? ' · Google can lag about 3 hours · hours re-aligned to UK time' : source.source === 'tiktok' ? ' · hours re-aligned to UK time' : ''}`,
     ]);
   for (const source of new Set(selected.filter((r) => r.currency !== 'GBP').map((r) => r.source)))
     split.push([
@@ -91,8 +139,8 @@ export function applySpend(
     mode: spend.mode,
     source: sourceIds,
     unavailable: !available,
-    state: to === today ? 'sofar' : 'info',
-    ss: label + (to === today ? ' · so far' : ''),
+    state: gaps.length ? 'warn' : to === today ? 'sofar' : 'info',
+    ss: spendSubtitle,
     d: {
       why: `Total spend ${formatPounds(total)}. ${label}.`,
       rule: 'GBP spend only. Re-fetches replace daily rows. Unknown-market spend counts in All and is never shared out.',
@@ -108,8 +156,8 @@ export function applySpend(
     mode: spend.mode,
     source: ['shopify', ...sourceIds],
     unavailable: !available || hero.net.unavailable || total === 0 || hero.net.n === 0,
-    state: to === today ? 'sofar' : 'info',
-    ss: label + (to === today ? ' · so far' : ''),
+    state: gaps.length ? 'warn' : to === today ? 'sofar' : 'info',
+    ss: dependentSubtitle,
     d: {
       why: 'Shopify net sales divided by all counted ad spend.',
       rule: 'No division when spend or sales is zero. A live numerator never uses sample spend.',
@@ -173,8 +221,10 @@ export function applySpend(
     mode: spend.mode,
     source: ['shopify', ...sourceIds],
     unavailable: !available || hero.net.unavailable || total === 0 || hero.net.n <= 0,
-    state: to === today ? 'sofar' : 'est',
-    ss: `Estimate${marketView ? ' before overheads' : ''}${omitted.length ? `; left out: ${omitted.join(', ')}` : ''} · ${label}${to === today ? ' · so far' : ''}`,
+    state: gaps.length ? 'warn' : to === today ? 'sofar' : 'est',
+    ss: gaps.length
+      ? `${dependentSubtitle}\nEstimate${marketView ? ' before overheads' : ''}${omitted.length ? `; left out: ${omitted.join(', ')}` : ''}`
+      : `Estimate${marketView ? ' before overheads' : ''}${omitted.length ? `; left out: ${omitted.join(', ')}` : ''} · ${label}${soFar}`,
     d: {
       why: `Net sales plus shipping income net of tax, less available landed costs, fulfilment, payment fees and all counted ad spend${marketView ? '' : ' and overheads'}, divided by net sales. ${marketView ? 'In this market view, overheads are not split by market and are not deducted.' : 'Margin is after overheads.'} Shipping income is added because fulfilment includes postage.`,
       rule: `Monthly overhead items are spread evenly over each calendar month's days; today uses the elapsed fraction of the real UK day. ${marketView ? 'In this market view, overheads are not split by market and are not deducted.' : 'Margin is after overheads.'} Shipping income is added net of tax because fulfilment includes postage; shipping refunds not yet deducted. Net sales remains the divisor and the payment-fee basis. Cancelled and test orders are excluded. Discounts are already deducted in Shopify net sales, so are not subtracted twice. Unknown costs are named and left out. Item refunds reduce sales on their UK day; no unobserved stock returns or fee refunds are assumed.`,
@@ -229,10 +279,10 @@ export function applySpend(
       v: value ?? 0,
       t: available && value !== null ? formatPounds(value) : '—',
       l: `${market.toUpperCase()} cost per order`,
-      s: `${label}${periodOrders.length < hero.orders.n ? '; older order market detail unavailable' : ''} · bar ${formatPounds(settings.blendedMetaTripwireGbp, String)}`,
+      s: `${gaps.length ? dependentSubtitle : label}${periodOrders.length < hero.orders.n ? '; older order market detail unavailable' : ''} · bar ${formatPounds(settings.blendedMetaTripwireGbp, String)}`,
       source: ['shopify', ...sourceIds],
       mode: spend.mode,
-      cap: to === today ? 'sofar' : 'info',
+      cap: gaps.length ? 'warn' : to === today ? 'sofar' : 'info',
       d: {
         why: `${market.toUpperCase()} spend ${formatPounds(cost)} ÷ ${count} Shopify orders. ${formatPounds(unknown)} unknown-market spend is not split.${periodOrders.length < hero.orders.n ? ' Older order market detail is unavailable; no denominator is guessed.' : ''}`,
         rule: 'Meta + Google + TikTok spend in this market ÷ Shopify orders in this market. CAC awaits stage 2: stored Shopify facts do not identify first orders.',
@@ -242,16 +292,25 @@ export function applySpend(
     };
   }
 }
-export function spendNeeds(facts: SpendFacts, settings: Settings, today: string) {
+export function spendNeeds(facts: SpendFacts, settings: Settings, today: string, now = new Date()) {
   if (facts.mode === 'sample') return [];
   const needs: { id: string; state: 'warn'; title: string; why: string; link: string }[] = [],
     seen = new Set<string>();
-  const add = (id: string, title: string, why: string) => {
+  const add = (id: string, title: string, why: string, link = '/settings') => {
     if (!seen.has(id)) {
       seen.add(id);
-      needs.push({ id, state: 'warn', title, why, link: '/settings' });
+      needs.push({ id, state: 'warn', title, why, link });
     }
   };
+  for (const source of facts.sources) {
+    const lastActivity = source.fetchedAt ?? source.lastAttemptAt,
+      stale = source.stale || source.status.startsWith('stale') ||
+        (!!lastActivity && now.getTime() - new Date(lastActivity).getTime() > SPEND_STALE_AFTER_MS);
+    if (source.live && ((source.failures ?? 0) >= 2 || stale))
+      add(`ad-source:${source.source}`, `${adNames[source.source]} ad spend not updating`,
+        `Last fetched ${source.fetchedAt ? fetchedTime(source.fetchedAt) : 'never'}. Totals that include ad spend leave it out until it recovers. Check Source health.`,
+        '/sources');
+  }
   for (const row of facts.rows) {
     if (row.market === 'unknown')
       add(

@@ -131,8 +131,8 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     return reply.type('text/html; charset=utf-8').send(loginPage(Boolean(config.setupCode)));
   });
   async function heroInputs(facts:Awaited<ReturnType<typeof shopify.store.facts>>,settings:Awaited<ReturnType<typeof readSettings>>['values']) {
-    const today=ukToday(sourceNow());
-    return {spend:await spendFacts(db,settings,sourceEnv,shopify.mode,dataset(facts,today).min,today),costs:await shopify.store.costHistory(),estimates:await readEstimates(db,shopify.mode)};
+    const now=sourceNow(), today=ukToday(now);
+    return {spend:await spendFacts(db,settings,sourceEnv,shopify.mode,dataset(facts,today).min,today,now),costs:await shopify.store.costHistory(),estimates:await readEstimates(db,shopify.mode),now};
   }
   let unconfirmedCampaigns: { scope: string; count: number } | undefined;
   async function snapshot() {
@@ -173,7 +173,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   app.get('/sources', async (request, reply) => {
     if (!await auth.session(request)) return reply.redirect('/login');
     const [dashboard, imports, costs, settings] = await Promise.all([snapshot(), shopify.store.summary(), shopify.store.costSummary(), readSettings(db)]);
-    return reply.type('text/html; charset=utf-8').send(sourceHealthPage(dashboard.sourceHealth ?? [], imports, costs, await spendHealth(db, sourceEnv, settings.values), {
+    return reply.type('text/html; charset=utf-8').send(sourceHealthPage(dashboard.sourceHealth ?? [], imports, costs, await spendHealth(db, sourceEnv, settings.values, sourceNow()), {
       summary: dashboard.banner ?? '', shopify: dashboard.shopify!, checkedAt: sourceNow().toISOString(), campaigns: await readCampaignSync(db, settings.values, sourceEnv),
     }));
   });

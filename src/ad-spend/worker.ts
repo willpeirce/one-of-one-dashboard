@@ -6,6 +6,8 @@ import { AdError, adErrorCode, accountFor, adSources, type AdSource } from './mo
 import { liveReader, type SpendReader } from './clients.js';
 import type { AdTransportOptions } from './http.js';
 import { readJobs, recordCampaignSync, saveMetaCampaigns, saveSpend } from './store.js';
+export const SPEND_POLL_INTERVAL_MS = 30 * 60_000;
+export const SPEND_STALE_AFTER_MS = 3 * SPEND_POLL_INTERVAL_MS;
 export interface SpendWorkerOptions extends AdTransportOptions {
   clock?: () => Date;
   readers?: Partial<Record<AdSource, SpendReader>>;
@@ -49,6 +51,9 @@ export class SpendWorker {
     return run;
   }
   private async run(source: AdSource): Promise<void> {
+    // Spend runs first and alone sets source health and spend rows.
+    // Every later read (campaigns or future extras) needs its own try/catch:
+    // it can never change source state or the committed spend rows.
     const now = this.options.clock?.() ?? new Date(),
       today = ukToday(now),
       settings = (await readSettings(this.db)).values,
@@ -69,7 +74,7 @@ export class SpendWorker {
     const job = (await readJobs(this.db)).find(
       (j) => j.source === source && j.account_id === account,
     )!;
-    if (job.last_poll_at && now.getTime() - new Date(job.last_poll_at).getTime() < 30 * 60_000)
+    if (job.last_poll_at && now.getTime() - new Date(job.last_poll_at).getTime() < SPEND_POLL_INTERVAL_MS)
       return;
     await this.db.query(
       "UPDATE pulse.source_health SET mode='live',status=CASE WHEN last_success_at IS NULL THEN 'not_implemented' ELSE status END,last_attempt_at=$2 WHERE source=$1",

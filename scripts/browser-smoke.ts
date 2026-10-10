@@ -2,9 +2,12 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import type { AuthenticationResponseJSON } from '@simplewebauthn/server';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
-import { rangeLabel } from '../src/hero-range.js';
-import type { Detail } from '../src/dashboard-types.js';
+import { addDays, rangeLabel } from '../src/hero-range.js';
+import type { Detail, DashboardSnapshot as FullDashboardSnapshot } from '../src/dashboard-types.js';
 import { formatMetricNumber, formatPounds } from '../src/money.js';
+import { applySpend } from '../src/ad-spend/metrics.js';
+import type { SpendFacts } from '../src/ad-spend/store.js';
+import { defaultSettings } from '../src/settings.js';
 
 let step = 'read test configuration';
 
@@ -202,6 +205,100 @@ async function checkNegativeProfit(context: BrowserContext): Promise<void> {
       assert.equal(await page.locator('#sh-extra dd').last().innerText(), '-£10.00');
       assert.doesNotMatch(await page.locator('#sh-extra').innerText(), /£-/);
       await page.locator('#sh-x').click();
+    }
+  } finally { await page.close(); }
+}
+
+async function checkPartialAdSpend(context: BrowserContext): Promise<void> {
+  const scope = step;
+  const page = await context.newPage();
+  try {
+    const response = await context.request.get('/api/dashboard');
+    assert.equal(response.status(), 200);
+    const fixture = await response.json() as FullDashboardSnapshot;
+    for (const period of periods) {
+      step = `${scope}: calculate ${period} warning fixture`;
+      const hero = fixture.hero[period];
+      // Invented connected-source failure on a labelled sample dashboard. Use
+      // the real calculation so a missing production warning fails this check.
+      const spend: SpendFacts = {
+        mode: 'live', rows: [], days: [],
+        sources: [
+          { source: 'meta', live: true, ready: false, status: 'source unavailable', fetchedAt: null, failures: 2 },
+          { source: 'google-ads', live: true, ready: true, status: 'live', fetchedAt: '2026-09-30T11:00:00Z', failures: 0 },
+          { source: 'tiktok', live: false, ready: false, status: 'waiting for keys', fetchedAt: null, failures: 0 },
+        ],
+      };
+      for (let day = hero.from; day <= hero.to; day = addDays(day, 1)) {
+        spend.days.push({ source: 'google-ads', day });
+        spend.rows.push({ source: 'google-ads', accountId: '80000001', campaignId: '80000002',
+          campaignName: 'Invented browser guard fixture', adSetId: null, adSetName: null,
+          market: 'uk', owner: 'ours', day, amount: '3.00', currency: 'GBP' });
+      }
+      applySpend(hero, [], defaultSettings(), fixture.bounds.today, {
+        spend, costs: [], estimates: [], now: new Date('2026-09-30T11:00:00Z'),
+      });
+      for (const key of ['spend', 'margin', 'profit', 'roas', 'ukcpo', 'uscpo'] as const) hero[key].mode = 'sample';
+      assert.equal(hero.spend.state, 'warn');
+      assert.match(hero.spend.ss.split('\n')[0]!, /^Meta missing · total excludes Meta(?: · so far)?$/);
+      for (const key of ['margin', 'profit', 'roas'] as const) {
+        assert.equal(hero[key].state, 'warn');
+        assert.match(hero[key].ss, /Excludes Meta spend/);
+      }
+    }
+    await page.route('**/api/dashboard', route => route.fulfill({ status: 200, json: fixture }));
+    await page.route('**/api/events', route => route.fulfill({ status: 200, contentType: 'text/event-stream',
+      body: `retry: 60000\nevent: dashboard\ndata: ${JSON.stringify(fixture)}\n\n` }));
+    for (const viewport of viewports) {
+      step = `${scope}: source warning at ${viewport.width}px`;
+      await page.setViewportSize(viewport);
+      await page.goto('/');
+      await page.locator('html[data-dashboard-ready="true"]').waitFor();
+      await page.locator('#hero [data-k="spend"][data-state="warn"]').waitFor();
+      await page.evaluate(() => window.scrollTo(0, 0));
+      if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({
+        path: `${process.env.PULSE_SCREENSHOT_DIR}/ad-spend-partial-${viewport.width}.png`,
+      });
+      const spend = page.locator('#hero [data-k="spend"]');
+      assert.equal(await spend.getAttribute('data-state'), 'warn');
+      assert.equal(await spend.locator('.chip.warn').count(), 1);
+      assert.match((await spend.locator('.ss').innerText()).split('\n')[0]!, /^Meta missing · total excludes Meta(?: · so far)?$/);
+      const bounds = await spend.evaluate(element => {
+        const box = element.getBoundingClientRect();
+        const subtitle = element.querySelector('.ss')!;
+        const warning = subtitle.textContent!.split('\n')[0]!;
+        const range = document.createRange();
+        range.setStart(subtitle.firstChild!, 0);
+        range.setEnd(subtitle.firstChild!, warning.length);
+        const lines = Array.from(range.getClientRects(), line => ({ left: line.left, right: line.right, bottom: line.bottom }));
+        const colour = document.createElement('span');
+        colour.style.color = 'var(--warn)';
+        document.body.append(colour);
+        const amber = getComputedStyle(colour).color;
+        colour.remove();
+        return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, lines,
+          amber, border: getComputedStyle(element).borderTopColor, height: innerHeight,
+          sideways: document.documentElement.scrollWidth > innerWidth,
+          subtitleOverflow: subtitle.scrollWidth > subtitle.clientWidth };
+      });
+      step = `${scope}: amber border at ${viewport.width}px`;
+      assert.equal(bounds.border, bounds.amber, 'Partial spend has an amber tile border');
+      step = `${scope}: above the fold at ${viewport.width}px (${Math.round(bounds.top)}–${Math.round(bounds.bottom)})`;
+      assert.ok(bounds.top >= 0 && bounds.bottom <= bounds.height, 'The warning tile must be above the fold on Home');
+      step = `${scope}: wrapped warning at ${viewport.width}px`;
+      assert.ok(bounds.lines.length > 0);
+      assert.ok(bounds.lines.every(line => line.left >= bounds.left && line.right <= bounds.right && line.bottom <= bounds.height),
+        'Every wrapped line of the source warning must fit inside the tile and the opening viewport');
+      if (viewport.width === 390) assert.ok(bounds.lines.length > 1, 'The phone source warning wraps within its tile');
+      assert.equal(bounds.sideways, false);
+      assert.equal(bounds.subtitleOverflow, false);
+      step = `${scope}: dependent tiles at ${viewport.width}px`;
+      for (const key of ['margin', 'profit', 'roas', 'ukcpo', 'uscpo']) {
+        const tile = page.locator(`#hero [data-k="${key}"]`);
+        assert.equal(await tile.getAttribute('data-state'), 'warn');
+        assert.equal(await tile.locator('.chip.good').count(), 0);
+        assert.match(await tile.locator('.ss, .ds').innerText(), /Excludes Meta spend/);
+      }
     }
   } finally { await page.close(); }
 }
@@ -1326,6 +1423,9 @@ async function run(): Promise<void> {
 
     step = 'check a pound loss in the browser tile, accessible label and detail sheet';
     await checkNegativeProfit(context);
+
+    step = 'check partial ad spend stays visible on every spend-dependent hero tile';
+    await checkPartialAdSpend(context);
 
     step = 'check the UK greeting turns over while the sample dashboard stays open';
     await checkGreetingRollover(context);

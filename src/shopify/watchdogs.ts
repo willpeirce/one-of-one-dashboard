@@ -101,7 +101,8 @@ export function evaluateWatchdogs(facts: Facts, now: Date, settings: Settings, o
     s ? `Missouri ${s.us ? (100 * s.missouri / s.us).toFixed(1) + '%' : 'unknown'} of US sessions. Bar over 10%; 22–23 Sep 2026 market conversion is unknown.` : 'Today’s session report is unavailable.', '/analytics');
   const intervals: Record<string, number> = { poll: 300_000, inventory: 300_000, sessions: 300_000, reconcile: 86_400_000, subscriptions: 3_600_000 };
   const failed = facts.jobs.filter(j => j.failures >= 2 || j.name in intervals && j.last_success_at && now.getTime() - new Date(j.last_success_at).getTime() > 3 * (j.name === 'sessions' && j.state.cadence === 'daily' ? 86_400_000 : intervals[j.name]!));
-  const otherFailures = health.filter(h => h.mode === 'live' && h.status === 'error' && h.consecutiveFailures >= 2);
+  // Reviews remain a reading decision; their connection status never changes business health.
+  const otherFailures = health.filter(h => h.source !== 'judgeme' && h.mode === 'live' && h.status === 'error' && h.consecutiveFailures >= 2);
   const expiry = settings.keyExpiryDates.filter(k => k.expiresOn <= addDays(day, 14));
   add('self', 'Self-check', failed.length || otherFailures.length || expiry.length ? 'tripped' : facts.jobs.some(j => j.name in intervals && !j.last_success_at && !(facts.mode === 'sample' && j.name === 'subscriptions')) ? 'unknown' : 'pass',
     [...failed.map(j => `${j.name}: failed ${j.failures} times; last worked at ${j.last_success_at ? new Date(j.last_success_at).toISOString() : 'never'}`), ...otherFailures.map(h => `${h.name}: last worked at ${h.lastSuccessAt ?? 'never'}`), ...expiry.map(k => `${k.keyName}: expires ${k.expiresOn}`)].join(' · ') || 'No repeated failures, stale feeds or keys within 14 days of expiry.', '');

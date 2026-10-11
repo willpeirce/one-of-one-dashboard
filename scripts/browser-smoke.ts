@@ -211,6 +211,88 @@ async function checkNegativeProfit(context: BrowserContext): Promise<void> {
   } finally { await page.close(); }
 }
 
+async function checkReviews(context: BrowserContext): Promise<void> {
+  const scope = step;
+  const page = await context.newPage();
+  try {
+    const response = await context.request.get('/api/dashboard');
+    assert.equal(response.status(), 200);
+    const fixture = await response.json() as FullDashboardSnapshot;
+    assert.ok(fixture.reviews);
+    const sample = structuredClone(fixture.reviews);
+    assert.equal(sample.mode, 'sample');
+    assert.equal(sample.rows.length, 3);
+    assert.equal(sample.publishEnabled, false);
+    assert.ok(sample.rows[0]!.rating <= 3, 'Low-star reviews come before newer high-star reviews');
+    assert.ok(sample.rows.slice(1).every(review => review.rating > 3));
+    assert.ok(sample.rows.every(review => !review.published && !review.hidden));
+    assert.doesNotMatch(JSON.stringify(sample.rows), /reviewer|email|ip_address/i);
+    await page.route('**/api/dashboard', route => route.fulfill({ status: 200, json: fixture }));
+    await page.route('**/api/events', route => route.fulfill({ status: 200, contentType: 'text/event-stream',
+      body: `retry: 60000\nevent: dashboard\ndata: ${JSON.stringify(fixture)}\n\n` }));
+    for (const viewport of viewports) {
+      step = `${scope}: sample review panel and greeting at ${viewport.width}px`;
+      fixture.reviews = structuredClone(sample);
+      // Invented, explicitly excluded identity metadata must never reach the UI.
+      Object.assign(fixture.reviews.rows[0]!, { reviewer: { name: 'Invented browser private reviewer', email: 'invented-browser-private@example.invalid' } });
+      await page.setViewportSize(viewport);
+      await page.goto('/');
+      await page.locator('html[data-dashboard-ready="true"]').waitFor();
+      const rows = page.locator('#reviews .rv[data-review-id]');
+      assert.equal(await rows.count(), 3);
+      assert.deepEqual(await rows.evaluateAll(elements => elements.map(element => element.getAttribute('data-review-id'))), sample.rows.map(review => review.id));
+      assert.match(await page.locator('#counts button[data-rv]').innerText(), /3.*sample.*reviews/is);
+      assert.equal((await page.locator('#subrv').innerText()).trim(), '3 sample reviews, 1 needs reading first.');
+      assert.match(await page.locator('#reviews').innerText(), /sample/i);
+      const health = await page.locator('#counts > span').allTextContents();
+      const radar = await page.locator('#radar').getAttribute('aria-label');
+      await page.locator('#counts button[data-rv]').click();
+      await page.locator('#reviews').scrollIntoViewIfNeeded();
+      assert.equal(await rows.first().isVisible(), true);
+      assert.match(await rows.first().innerText(), /Read first/i);
+      assert.equal(await page.locator('#reviews [data-unbuilt]').count(), 0);
+      assert.doesNotMatch(await page.locator('#reviews').innerHTML(), /Invented browser private reviewer|invented-browser-private@example\.invalid/);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/reviews-panel-${viewport.width}.png` });
+      for (const [index, review] of sample.rows.entries()) {
+        step = `${scope}: review sheet ${index + 1} at ${viewport.width}px`;
+        await rows.nth(index).locator('button[data-review-open]').click();
+        assert.equal(await page.locator('#sheet').isVisible(), true);
+        assert.equal(await page.locator('#sh-extra .review-body').innerText(), review.body);
+        assert.match(await page.locator('#sheet').innerText(), /sample data/i);
+        const links = page.locator('#sh-extra [data-review-link]');
+        assert.equal(await links.first().innerText(), review.rating <= 3 ? 'Read in Judge.me' : 'Open in Judge.me');
+        assert.ok(await links.count() >= 1);
+        for (const link of await links.all()) {
+          const href = await link.getAttribute('href');
+          assert.ok(href && new URL(href).protocol === 'https:');
+          assert.equal(href, 'https://app.judge.me/index', 'Unset review URL template opens the reviews dashboard');
+          assert.equal(await link.getAttribute('target'), '_blank');
+          assert.match(await link.getAttribute('rel') ?? '', /noopener/);
+          assert.match(await link.getAttribute('rel') ?? '', /noreferrer/);
+        }
+        assert.equal(await page.locator('#review-publish').isDisabled(), true);
+        assert.doesNotMatch(await page.locator('#sheet').innerHTML(), /Invented browser private reviewer|invented-browser-private@example\.invalid/);
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+        assert.equal(await page.locator('#sheet').evaluate(element => element.scrollWidth <= element.clientWidth), true);
+        if (index === 0 && process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/reviews-sheet-${viewport.width}.png` });
+        await page.locator('#sh-x').click();
+      }
+      step = `${scope}: all caught up without changing health at ${viewport.width}px`;
+      fixture.reviews = { ...sample, mode: 'live', rows: [], status: 'live' };
+      await page.reload();
+      await page.locator('html[data-dashboard-ready="true"]').waitFor();
+      assert.equal(await rows.count(), 0);
+      assert.match(await page.locator('#counts button[data-rv]').innerText(), /All caught up/);
+      assert.match(await page.locator('#subrv').innerText(), /All caught up/);
+      assert.match(await page.locator('#rvcount').innerText(), /All caught up/);
+      assert.deepEqual(await page.locator('#counts > span').allTextContents(), health);
+      assert.equal(await page.locator('#radar').getAttribute('aria-label'), radar);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    }
+  } finally { await page.close(); }
+}
+
 async function checkSeriesPace(context: BrowserContext): Promise<void> {
   const scope = step;
   const page = await context.newPage();
@@ -805,7 +887,9 @@ async function assertSampleTextStyles(page: Page): Promise<void> {
 
 async function assertUnbuiltActions(page: Page): Promise<void> {
   const buttons = page.locator('button[data-unbuilt]');
-  assert.ok(await buttons.count() >= 17);
+  assert.equal(await page.locator('#table button[data-unbuilt]').count(), 12);
+  assert.equal(await page.locator('#tests button[data-unbuilt]').count(), 1);
+  assert.equal(await page.locator('#review-publish').isDisabled(), true);
   for (const button of await buttons.all()) {
     const label = await button.getAttribute('aria-label');
     assert.ok(label);
@@ -1473,6 +1557,9 @@ async function run(): Promise<void> {
 
     step = 'check Series 1 sell-out pace card, signed daily facts and editable target sheets';
     await checkSeriesPace(context);
+
+    step = 'check sample reviews, low-star sheets, greeting and recovered empty state';
+    await checkReviews(context);
 
     step = 'check same-origin manifest and installation icons';
     await checkManifest(page, context, origin);

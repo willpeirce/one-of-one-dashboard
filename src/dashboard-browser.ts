@@ -8,6 +8,7 @@ import { greetingAt } from './greeting.js';
 import { formatLike, formatMetricNumber } from './money.js';
 import { paceState, seriesPaceCardHtml, seriesPaceDial, seriesPaceFacts, seriesPaceSheetHtml, type SeriesPaceCard } from './series-pace/presentation.js';
 import type { SeriesPaceMarket } from './series-pace/model.js';
+import { reviewsGreeting, reviewsPanelHtml, reviewSheetHtml } from './judgeme/presentation.js';
 
 const states: Record<State, [string, string]> = {
   good: ['Good', '✓'], warn: ['Watch', '!'], decide: ['Decide', '◆'], alarm: ['Alarm', '✕'],
@@ -310,11 +311,9 @@ function renderHealth(): void {
   });
   const health = Math.round(100 * score(total));
   const rows = snapshot.shopify ? all('#shopify-needs .dcard[data-state]') : all('.dcard[data-state]'), alarmCount = rows.filter((row) => row.dataset.state === 'alarm').length, decisions = rows.filter((row) => row.dataset.state === 'decide').length;
-  const reviewCount = all('#reviews .rv').length;
-  get('#counts').innerHTML = `<span class="pk health"><b>${health}</b> health</span>` + ([['alarm', alarmCount, alarmCount === 1 ? 'alarm' : 'alarms'], ['decide', decisions, decisions === 1 ? 'decision' : 'decisions'], ['warn', total.warn, 'to watch'], ['good', total.good, 'good']] as const).map(([state, count, label]) => `<span class="pk" style="--c:${colour[state]}"><i>${states[state][1]}</i><b>${count}</b> ${label}</span>`).join('') + (reviewCount ? `<button class="pk" type="button" data-rv style="--c:var(--decide)"><i>★</i><b>${reviewCount}</b> ${snapshot.shopify ? 'sample ' : 'new '}${reviewCount === 1 ? 'review' : 'reviews'}</button>` : '');
-  get('#rvcount').textContent = reviewCount ? `◆ ${reviewCount} waiting` : '✓ All caught up';
-  get('#rvcount').className = `chip ${reviewCount ? 'decide' : 'good'}`;
-  get('#subrv').textContent = reviewCount ? ` ${reviewCount} ${snapshot.shopify ? 'sample' : 'new'} ${reviewCount === 1 ? 'review' : 'reviews'} to check.` : '';
+  const reviewCount = snapshot.reviews?.rows.length ?? 0;
+  get('#counts').innerHTML = `<span class="pk health"><b>${health}</b> health</span>` + ([['alarm', alarmCount, alarmCount === 1 ? 'alarm' : 'alarms'], ['decide', decisions, decisions === 1 ? 'decision' : 'decisions'], ['warn', total.warn, 'to watch'], ['good', total.good, 'good']] as const).map(([state, count, label]) => `<span class="pk" style="--c:${colour[state]}"><i>${states[state][1]}</i><b>${count}</b> ${label}</span>`).join('') + `<button class="pk" type="button" data-rv style="--c:var(--decide)"><i>★</i>${reviewCount ? `<b>${reviewCount.toLocaleString('en-GB')}</b> ${snapshot.reviews?.mode === 'sample' ? 'sample ' : 'new '}${reviewCount === 1 ? 'review' : 'reviews'}` : esc(snapshot.reviews ? reviewsGreeting(snapshot.reviews) : 'All caught up')}</button>`;
+  get('#subrv').textContent = snapshot.reviews ? ` ${reviewsGreeting(snapshot.reviews)}.` : '';
   get('#deckcount').textContent = `${alarmCount} ${alarmCount === 1 ? 'alarm' : 'alarms'} · ${decisions} ${decisions === 1 ? 'decision' : 'decisions'}`;
   const radarPoint = (index: number, radius: number): [number, number] => [rounded(160 + radius * Math.cos(-Math.PI / 2 + index * 2 * Math.PI / groups.length)), rounded(150 + radius * Math.sin(-Math.PI / 2 + index * 2 * Math.PI / groups.length))];
   const polygon = (points: [number, number][]): string => points.map((p) => p.join(',')).join(' ');
@@ -358,6 +357,21 @@ function miniChart(detail: Detail, dial?: SheetDetail['dial']): string {
 }
 
 function showDetail(element: HTMLElement, reopen = true): void {
+  const reviewId = element.dataset.reviewOpen;
+  if (reviewId && snapshot.reviews) {
+    const review = snapshot.reviews.rows.find(row => row.id === reviewId);
+    openDetail = element; openTemplateId = undefined;
+    get('#sh-title').textContent = review ? `${review.rating}★ · ${review.productTitle}` : 'Review no longer waiting';
+    get('#sh-dot').className = `dot ${review && review.rating <= 3 ? 'warn' : 'decide'}`;
+    get('#sh-dot').textContent = review && review.rating <= 3 ? '!' : '◆';
+    get('#sh-dl').hidden = true;
+    get('#sh-chart').replaceChildren();
+    get('#sh-extra').innerHTML = review ? reviewSheetHtml(review, snapshot.reviews) : '<p>This review is no longer waiting in Judge.me.</p>';
+    get('#sh-src').textContent = `Judge.me · ${snapshot.reviews.mode === 'sample' ? 'sample data' : 'live'}`;
+    const sheet = get<HTMLDialogElement>('#sheet');
+    if (reopen && !sheet.open) sheet.showModal();
+    return;
+  }
   const market = element.dataset.seriesMarket;
   if (market === 'UK' || market === 'US') { showSeriesPaceDetail(element, market, reopen); return; }
   const data = details.get(element);
@@ -416,6 +430,7 @@ function filterDials(): void {
 
 function updateSnapshot(next: DashboardSnapshot, initial = false): void {
   snapshot = next;
+  if (snapshot.reviews) get('#reviews').innerHTML = reviewsPanelHtml(snapshot.reviews);
   for (const root of [document, ...all<HTMLTemplateElement>('template').map((template) => template.content)]) {
     all('[data-sample-text]', root).forEach((element) => {
       const sample = snapshot.textValues[element.dataset.sampleText ?? ''];
@@ -561,6 +576,8 @@ function boot(): void {
   document.addEventListener('click', (event) => {
     const target = event.target instanceof Element ? event.target : undefined;
     if (!target) return;
+    const review = target.closest<HTMLElement>('[data-review-open]');
+    if (review) { showDetail(review); return; }
     if (target.closest('[data-series-use-landing]')) { void saveSeriesTarget(''); return; }
     const element = target.closest<HTMLElement>('[data-series-market],.tile,.rt[data-sheet]');
     if (element && details.has(element)) { showDetail(element); return; }

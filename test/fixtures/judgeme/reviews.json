@@ -1,0 +1,246 @@
+{
+  "current_page": 1,
+  "per_page": 100,
+  "reviews": [
+    {
+      "id": 900101,
+      "title": "Invented review",
+      "body": "An invented review of the sample product.",
+      "rating": 2,
+      "pinned": false,
+      "product_external_id": 910001,
+      "product_title": "Sample Duo Pack",
+      "product_handle": "sample-product",
+      "reviewer": {
+        "id": 920001,
+        "email": "reviewer@example.test",
+        "name": "Invented Reviewer",
+        "phone": "+441234000000",
+        "tags": [],
+        "accepts_marketing": false,
+        "unsubscribed_at": null,
+        "external_id": 920002
+      },
+      "source": "email",
+      "curated": "not-yet",
+      "hidden": false,
+      "verified": "buyer",
+      "created_at": "2026-09-30T09:00:00Z",
+      "updated_at": "2026-09-30T11:00:00Z",
+      "ip_address": "203.0.113.8",
+      "has_published_pictures": false,
+      "has_published_videos": false,
+      "pictures": [
+        {
+          "hidden": false,
+          "urls": {
+            "small": "https://example.test/sample.jpg",
+            "compact": "https://example.test/sample.jpg",
+            "huge": "https://example.test/sample.jpg",
+            "original": "https://example.test/sample.jpg"
+          }
+        }
+      ]
+    },
+    {
+      "id": 900102,
+      "title": "Invented review",
+      "body": "An invented review of the sample product.",
+      "rating": 5,
+      "pinned": false,
+      "product_external_id": 910001,
+      "product_title": "Sample Kit",
+      "product_handle": "sample-product",
+      "reviewer": {
+        "id": 920001,
+        "email": "reviewer@example.test",
+        "name": "Invented Reviewer",
+        "phone": "+441234000000",
+        "tags": [],
+        "accepts_marketing": false,
+        "unsubscribed_at": null,
+        "external_id": 920002
+      },
+      "source": "email",
+      "curated": "not-yet",
+      "hidden": false,
+      "verified": "buyer",
+      "created_at": "2026-09-30T10:00:00Z",
+      "updated_at": "2026-09-30T11:00:00Z",
+      "ip_address": "203.0.113.8",
+      "has_published_pictures": false,
+      "has_published_videos": false,
+      "pictures": [
+        {
+          "hidden": false,
+          "urls": {
+            "small": "https://example.test/sample.jpg",
+            "compact": "https://example.test/sample.jpg",
+            "huge": "https://example.test/sample.jpg",
+            "original": "https://example.test/sample.jpg"
+          }
+        }
+      ]
+    },
+    {
+      "id": 900103,
+      "title": "Invented review",
+      "body": "An invented review of the sample product.",
+      "rating": 4,
+      "pinned": false,
+      "product_external_id": 910001,
+      "product_title": "Sample Refill Pack",
+      "product_handle": "sample-product",
+      "reviewer": {
+        "id": 920001,
+        "email": "reviewer@example.test",
+        "name": "Invented Reviewer",
+        "phone": "+441234000000",
+        "tags": [],
+        "accepts_marketing": false,
+        "unsubscribed_at": null,
+        "external_id": 920002
+      },
+      "source": "email",
+      "curated": "not-yet",
+      "hidden": false,
+      "verified": "buyer",
+      "created_at": "2026-09-30T08:00:00Z",
+      "updated_at": "2026-09-30T11:00:00Z",
+      "ip_address": "203.0.113.8",
+      "has_published_pictures": false,
+      "has_published_videos": false,
+      "pictures": [
+        {
+          "hidden": false,
+          "urls": {
+            "small": "https://example.test/sample.jpg",
+            "compact": "https://example.test/sample.jpg",
+            "huge": "https://example.test/sample.jpg",
+            "original": "https://example.test/sample.jpg"
+          }
+        }
+      ]
+    },
+    {
+      "id": 900104,
+      "title": "Invented review",
+      "body": "An invented review of the sample product.",
+      "rating": 5,
+      "pinned": false,
+      "product_external_id": 910001,
+      "product_title": "Sample Kit",
+      "product_handle": "sample-product",
+      "reviewer": {
+        "id": 920001,
+        "email": "reviewer@example.test",
+        "name": "Invented Reviewer",
+        "phone": "+441234000000",
+        "tags": [],
+        "accepts_marketing": false,
+        "unsubscribed_at": null,
+        "external_id": 920002
+      },
+      "source": "email",
+      "curated": "ok",
+      "hidden": false,
+      "verified": "buyer",
+      "created_at": "2026-09-30T07:00:00Z",
+      "updated_at": "2026-09-30T11:00:00Z",
+      "ip_address": "203.0.113.8",
+      "has_published_pictures": false,
+      "has_published_videos": false,
+      "pictures": [
+        {
+          "hidden": false,
+          "urls": {
+            "small": "https://example.test/sample.jpg",
+            "compact": "https://example.test/sample.jpg",
+            "huge": "https://example.test/sample.jpg",
+            "original": "https://example.test/sample.jpg"
+          }
+        }
+      ]
+    },
+    {
+      "id": 900105,
+      "title": "Invented review",
+      "body": "An invented review of the sample product.",
+      "rating": 1,
+      "pinned": false,
+      "product_external_id": 910001,
+      "product_title": "Sample Kit",
+      "product_handle": "sample-product",
+      "reviewer": {
+        "id": 920001,
+        "email": "reviewer@example.test",
+        "name": "Invented Reviewer",
+        "phone": "+441234000000",
+        "tags": [],
+        "accepts_marketing": false,
+        "unsubscribed_at": null,
+        "external_id": 920002
+      },
+      "source": "email",
+      "curated": "not-yet",
+      "hidden": true,
+      "verified": "buyer",
+      "created_at": "2026-09-30T11:00:00Z",
+      "updated_at": "2026-09-30T11:00:00Z",
+      "ip_address": "203.0.113.8",
+      "has_published_pictures": false,
+      "has_published_videos": false,
+      "pictures": [
+        {
+          "hidden": false,
+          "urls": {
+            "small": "https://example.test/sample.jpg",
+            "compact": "https://example.test/sample.jpg",
+            "huge": "https://example.test/sample.jpg",
+            "original": "https://example.test/sample.jpg"
+          }
+        }
+      ]
+    },
+    {
+      "id": 900106,
+      "title": "Invented review",
+      "body": "An invented review of the sample product.",
+      "rating": 3,
+      "pinned": false,
+      "product_external_id": 910001,
+      "product_title": "Sample Kit",
+      "product_handle": "sample-product",
+      "reviewer": {
+        "id": 920001,
+        "email": "reviewer@example.test",
+        "name": "Invented Reviewer",
+        "phone": "+441234000000",
+        "tags": [],
+        "accepts_marketing": false,
+        "unsubscribed_at": null,
+        "external_id": 920002
+      },
+      "source": "email",
+      "curated": "spam",
+      "hidden": false,
+      "verified": "buyer",
+      "created_at": "2026-09-30T06:00:00Z",
+      "updated_at": "2026-09-30T11:00:00Z",
+      "ip_address": "203.0.113.8",
+      "has_published_pictures": false,
+      "has_published_videos": false,
+      "pictures": [
+        {
+          "hidden": false,
+          "urls": {
+            "small": "https://example.test/sample.jpg",
+            "compact": "https://example.test/sample.jpg",
+            "huge": "https://example.test/sample.jpg",
+            "original": "https://example.test/sample.jpg"
+          }
+        }
+      ]
+    }
+  ]
+}

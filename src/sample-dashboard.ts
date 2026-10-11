@@ -6,6 +6,7 @@ import { greetingAt } from './greeting.js';
 import { formatPounds } from './money.js';
 import { sampleSeriesPaceCard } from './series-pace/presentation.js';
 import { appConfig } from './config.js';
+import { sampleReviews } from './judgeme/sample.js';
 
 /**
  * Server-only presentation fixtures ported from docs/spec/mockup.html. These are
@@ -4463,6 +4464,7 @@ export function getSampleDashboard(settings?: Settings): DashboardSnapshot {
   const hero = Object.fromEntries(Object.entries(samplePresets).map(([period, range]) => [period, getSampleHero(range.from, range.to, settings)])) as Record<Period, HeroPeriod>;
   const snapshot: DashboardSnapshot = { ...structuredClone(fixture), hero,
     bounds: { min: SAMPLE_START, max: SAMPLE_TODAY, today: SAMPLE_TODAY }, generatedAt: new Date().toISOString() };
+  snapshot.reviews = sampleReviews();
   snapshot.textValues.t0033!.value = greetingAt(new Date());
   const bar = settings?.blendedMetaTripwireGbp;
   if (bar !== undefined) applyBlendedBar(snapshot, bar);

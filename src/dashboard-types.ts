@@ -142,4 +142,5 @@ export interface DashboardSnapshot {
   banner?: string;
   fulfilment?: import('./fulfilment/view.js').Summary;
   metaCampaigns?: { unconfirmedCount: number };
+  reviews?: import('./judgeme/model.js').ReviewsPanel;
 }

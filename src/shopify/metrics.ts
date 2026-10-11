@@ -9,7 +9,8 @@ import type { Settings } from '../settings.js';
 import type { ShopifyStore } from './store.js';
 
 export type Facts = Awaited<ReturnType<ShopifyStore['facts']>>;
-export const paidOrder = (o: Order): boolean => !o.test && !o.cancelledAt && ['PAID', 'PARTIALLY_REFUNDED', 'REFUNDED'].includes(o.financialStatus);
+export { paidOrder } from './model.js';
+import { paidOrder } from './model.js';
 export const ratio = (n: number, d: number): number | null => d > 0 ? n / d : null;
 export const kitIds = appConfig.shopify.stockProducts.slice(0, 4).map(p => `gid://shopify/Product/${p.id}`);
 export const isKit = (o: Order): boolean => o.lines.some(l => kitIds.includes(l.productId ?? '') || appConfig.shopify.tiktokOrderOnlyProductIds.some(id => l.productId === `gid://shopify/Product/${id}`));

@@ -1500,7 +1500,8 @@ async function run(): Promise<void> {
         assert.equal(await page.locator('#sh-extra dt:text-is("Shipping charged") + dd').innerText(),
           (snapshot.hero.today.margin as HeroMetric).d?.extra?.find(([key]) => key === 'Shipping charged')?.[1]);
         assert.match(await page.locator('#sh-why').innerText(), /shipping income.*fulfilment includes postage/i);
-        assert.match(await page.locator('#sh-rule').innerText(), /shipping refunds not yet deducted/);
+        assert.match(await page.locator('#sh-rule').innerText(), /shipping refunds are deducted net of tax on their refund UK day/);
+        assert.doesNotMatch(await page.locator('#sh-rule').innerText(), /shipping refunds not yet deducted/);
         step = `check daily overhead shares in margin detail at ${viewport.width}px`;
         assert.ok(marginRows.includes('Overheads'));
         const overheads = page.locator('#sh-extra dt:text-is("Overheads") + dd');

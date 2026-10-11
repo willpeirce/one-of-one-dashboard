@@ -12,8 +12,8 @@ import { channelKey, reportRows } from './model.js';
 import { paidOrder } from './metrics.js';
 import { webhookTopics } from './webhooks.js';
 
-type Job = 'backfill' | 'poll' | 'inventory' | 'sessions' | 'subscriptions' | 'reconcile' | 'session_history' | 'stock_snapshot' | 'series_pace';
-const intervals: Record<Job, number> = { backfill: 0, poll: 300_000, inventory: 300_000, sessions: 300_000, subscriptions: 3_600_000, reconcile: 86_400_000, session_history: 0, stock_snapshot: 0, series_pace: 3_600_000 };
+type Job = 'backfill' | 'poll' | 'inventory' | 'sessions' | 'subscriptions' | 'reconcile' | 'session_history' | 'stock_snapshot' | 'series_pace' | 'shipping_refunds';
+const intervals: Record<Job, number> = { backfill: 0, poll: 300_000, inventory: 300_000, sessions: 300_000, subscriptions: 3_600_000, reconcile: 86_400_000, session_history: 0, stock_snapshot: 0, series_pace: 3_600_000, shipping_refunds: 60_000 };
 export function backfillWindow(now: Date, allOrders: boolean) {
   return { from: addDays(ukToday(now), -(allOrders ? 399 : 59)), olderFrom: addDays(ukToday(now), -399), olderTo: addDays(ukToday(now), -60) };
 }
@@ -33,7 +33,7 @@ export function nextNight(now: Date): Date {
   return new Date(value);
 }
 export function nextStockSnapshot(now: Date): Date { return new Date(nextNight(now).getTime() + 4 * 60_000); }
-const secondaryJob = (job: Job) => job === 'stock_snapshot' || job === 'series_pace';
+const secondaryJob = (job: Job) => ['stock_snapshot', 'series_pace', 'shipping_refunds'].includes(job);
 export class ShopifyWorker {
   readonly store: ShopifyStore;
   readonly client: ShopifyReader;
@@ -93,7 +93,7 @@ export class ShopifyWorker {
         if (job.name === 'series_pace') await this.db.query(`UPDATE pulse.shopify_jobs SET next_run_at = $3 WHERE mode = $1 AND name = $2`, [this.mode, job.name, new Date(this.clock().getTime() + intervals.series_pace)]);
         const state = await this.execute(job.name, job.state, job.last_success_at);
         const scheduledFrom = secondaryJob(job.name) ? this.clock() : now;
-        const next = state.continuing ? new Date(now.getTime() + 1000) : ['backfill', 'session_history'].includes(job.name) ? new Date('9999-01-01T00:00:00Z') : job.name === 'stock_snapshot' ? nextStockSnapshot(scheduledFrom) : job.name === 'reconcile' ? nextNight(now) : new Date(scheduledFrom.getTime() + intervals[job.name]);
+        const next = state.continuing ? new Date(now.getTime() + 1000) : ['backfill', 'session_history'].includes(job.name) ? new Date('9999-01-01T00:00:00Z') : job.name === 'stock_snapshot' ? nextStockSnapshot(scheduledFrom) : job.name === 'reconcile' ? nextNight(now) : new Date(scheduledFrom.getTime() + (job.name === 'shipping_refunds' && state.idle ? 3_600_000 : intervals[job.name]));
         await this.db.query(`UPDATE pulse.shopify_jobs SET state = $3, next_run_at = $4, last_success_at = $5, failures = 0 WHERE mode = $1 AND name = $2`, [this.mode, job.name, JSON.stringify(state), next, now]);
       } catch (error) {
         if (!secondaryJob(job.name)) failed = true;
@@ -143,7 +143,7 @@ export class ShopifyWorker {
     if (attempted) await this.health(failed);
   }
   private async health(failed: boolean): Promise<void> {
-    const remainingFailures = await this.db.query(`SELECT name FROM pulse.shopify_jobs WHERE mode = 'live' AND name NOT IN ('stock_snapshot', 'series_pace') AND failures > 0 UNION ALL SELECT source_id FROM pulse.shopify_webhook_inbox WHERE processed_at IS NULL AND attempts > 0`);
+    const remainingFailures = await this.db.query(`SELECT name FROM pulse.shopify_jobs WHERE mode = 'live' AND name NOT IN ('stock_snapshot', 'series_pace', 'shipping_refunds') AND failures > 0 UNION ALL SELECT source_id FROM pulse.shopify_webhook_inbox WHERE processed_at IS NULL AND attempts > 0`);
     failed ||= remainingFailures.rows.length > 0;
     await this.db.query(`UPDATE pulse.source_health SET status = $1, last_attempt_at = $2,
       last_success_at = CASE WHEN $1 = 'healthy' THEN $2 ELSE last_success_at END,
@@ -183,7 +183,7 @@ export class ShopifyWorker {
   }
   private async execute(name: Job, state: any, lastSuccess: Date | null): Promise<any> {
     const now = this.clock(), day = ukToday(now);
-    // These secondary stock reads never change the main Shopify money source state.
+    // Secondary reads never change the main Shopify money source state.
     if (name === 'stock_snapshot') {
       if (this.mode !== 'live') return { skipped: 'sample_mode' };
       await takeStockSnapshot(this.db, await this.client.inventory('oneofone1'), this.clock(), state.caughtUp === true);
@@ -201,6 +201,29 @@ export class ShopifyWorker {
     }
     const checkpoint = await this.db.query<{ state: any }>(`SELECT state FROM pulse.shopify_jobs WHERE mode = $1 AND name = 'backfill'`, [this.mode]);
     const address = checkpoint.rows[0]?.state.address !== false;
+    if (name === 'shipping_refunds') {
+      if (this.mode !== 'live') return { skipped: 'sample_mode' };
+      // One legacy order per run keeps historical enrichment off startup and bounded.
+      const legacy = await this.db.query<{ source_id: string }>(`SELECT source_id FROM pulse.shopify_records
+        WHERE mode = 'live' AND kind = 'order' AND source_id > $1 AND data->>'day' >= $2
+          AND EXISTS (SELECT 1 FROM jsonb_array_elements(data->'refunds') AS refund WHERE NOT (refund ? 'shippingNetPence'))
+        ORDER BY source_id LIMIT 1`, [state.after ?? '', checkpoint.rows[0]?.state.from ?? day]);
+      const id = legacy.rows[0]?.source_id;
+      if (!id) return { after: null, idle: true };
+      // Advance durably before the read: an inaccessible old order cannot block the rest.
+      const nextState = { after: id };
+      await this.db.query(`UPDATE pulse.shopify_jobs SET state = $1, next_run_at = $2 WHERE mode = 'live' AND name = 'shipping_refunds'`, [JSON.stringify(nextState), new Date(now.getTime() + intervals.shipping_refunds)]);
+      let raw;
+      try { raw = await this.client.order(id, address); }
+      catch (error) {
+        if (!address || !(error instanceof ShopifyError) || error.code !== 'denied') throw error;
+        raw = await this.client.order(id, false);
+      }
+      if (!raw) throw new ShopifyError('denied');
+      if (raw.refunds.some((refund: any) => !refund.refundShippingLines)) throw new ShopifyError('invalid');
+      await this.store.orders([raw], this.clock());
+      return nextState;
+    }
     if (name === 'backfill') {
       if (!state.from) {
         const scopes = await this.client.scopes();

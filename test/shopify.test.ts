@@ -332,11 +332,12 @@ test('GraphQL client paginates nested order lines, refunds, variants and stock l
       const body = await fixture('orders'); const order = body.data.orders.nodes[0];
       order.subtotalPriceSet.shopMoney.amount = '80.95'; order.totalTaxSet.shopMoney.amount = '13.50';
       order.lineItems.pageInfo = { hasNextPage: true, endCursor: 'line-2' };
-      order.refunds = [{ id: 'gid://shopify/Refund/900001', createdAt: now.toISOString(), refundLineItems: { nodes: [], pageInfo: { hasNextPage: true, endCursor: 'refund-2' } } }];
+      order.refunds = [{ id: 'gid://shopify/Refund/900001', createdAt: now.toISOString(), refundLineItems: { nodes: [], pageInfo: { hasNextPage: true, endCursor: 'refund-2' } }, refundShippingLines: { nodes: [], pageInfo: { hasNextPage: true, endCursor: 'shipping-2' } } }];
       return Response.json(body);
     }
     if (q.includes('PulseLines')) return Response.json({ data: { order: { lineItems: { nodes: [{ id: 'gid://shopify/LineItem/900002', sku: 'oneofone-slab', quantity: 1, product: { id: 'gid://shopify/Product/15948268306766' }, taxLines: [{ priceSet: { shopMoney: { amount: '0.17', currencyCode: 'GBP' } } }] }], pageInfo: { hasNextPage: false, endCursor: null } } } } });
     if (q.includes('PulseRefundLines')) return Response.json({ data: { node: { refundLineItems: { nodes: [{ quantity: 1, subtotalSet: { shopMoney: { amount: '1.00', currencyCode: 'GBP' } }, totalTaxSet: { shopMoney: { amount: '0.17', currencyCode: 'GBP' } } }], pageInfo: { hasNextPage: false, endCursor: null } } } } });
+    if (q.includes('PulseRefundShippingLines')) return Response.json({ data: { node: { refundShippingLines: { nodes: [{ subtotalAmountSet: { shopMoney: { amount: '2.00', currencyCode: 'GBP' } }, taxAmountSet: { shopMoney: { amount: '0.40', currencyCode: 'GBP' } } }], pageInfo: { hasNextPage: false, endCursor: null } } } } });
     if (q.includes('PulseStock')) {
       if (request.variables.id !== 'gid://shopify/Product/10896502063438') return Response.json({ data: { product: null } });
       const body = await fixture('product'); if (!request.variables.after) body.data.product.variants.pageInfo = { hasNextPage: true, endCursor: 'variant-2' };
@@ -354,6 +355,9 @@ test('GraphQL client paginates nested order lines, refunds, variants and stock l
   const result = await client.orders('created_at:>=2026-09-01', null, true);
   const order = cleanOrder(result.nodes[0]); assert.equal(order.lines.length, 2); assert.equal(order.refunds[0].itemsPence, 83);
   assert.equal(order.itemTaxPence, 1350); assert.equal(order.itemsAfterDiscountsPence, 6745);
+  assert.equal(order.refunds[0].shippingNetPence, 200); assert.equal(order.refunds[0].shippingTaxPence, 40);
+  assert.ok(requests.some(r => r.variables.after === 'shipping-2'));
+  assert.match(orderFields(true), /refundShippingLines\(first: 100\)/);
   assert.match(orderFields(true), /taxesIncluded/); assert.match(orderFields(false), /taxesIncluded/);
   assert.ok(requests.filter(r => /PulseOrders|PulseLines/.test(r.query)).every(r => /taxLines\s*\{\s*priceSet\s*\{\s*shopMoney/.test(r.query)));
   const stock = await client.inventory(); assert.equal(stock.length, 2); assert.ok(stock.every(s => cleanInventory(s)));

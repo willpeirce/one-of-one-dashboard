@@ -70,6 +70,7 @@
         {
           "id": "gid://shopify/Refund/900001",
           "createdAt": "2026-09-30T11:45:00Z",
+          "refundShippingLines": { "nodes": [], "pageInfo": { "hasNextPage": false, "endCursor": null } },
           "refundLineItems": {
             "nodes": [
               {

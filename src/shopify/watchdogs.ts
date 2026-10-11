@@ -103,7 +103,7 @@ export function evaluateWatchdogs(facts: Facts, now: Date, settings: Settings, o
   add('geo', 'Session geo', geo ? 'tripped' : !s || !freshSessions ? 'unknown' : 'pass',
     geo?.why ?? (s ? 'No unreliable country days in the last 7 UK dates. Store-wide conversion is unaffected.' : 'Today’s session report is unavailable.'), '/analytics');
   const intervals: Record<string, number> = { poll: 300_000, inventory: 300_000, sessions: 300_000, reconcile: 86_400_000, subscriptions: 3_600_000 };
-  const failed = facts.jobs.filter(j => j.failures >= 2 || j.name in intervals && j.last_success_at && now.getTime() - new Date(j.last_success_at).getTime() > 3 * (j.name === 'sessions' && j.state.cadence === 'daily' ? 86_400_000 : intervals[j.name]!));
+  const failed = facts.jobs.filter(j => j.name !== 'shipping_refunds' && (j.failures >= 2 || j.name in intervals && j.last_success_at && now.getTime() - new Date(j.last_success_at).getTime() > 3 * (j.name === 'sessions' && j.state.cadence === 'daily' ? 86_400_000 : intervals[j.name]!)));
   // Reviews remain a reading decision; their connection status never changes business health.
   const otherFailures = health.filter(h => h.source !== 'judgeme' && h.mode === 'live' && h.status === 'error' && h.consecutiveFailures >= 2);
   const expiry = settings.keyExpiryDates.filter(k => k.expiresOn <= addDays(day, 14));

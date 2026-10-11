@@ -2,6 +2,7 @@
 export function profitAndMargin({
   netSales,
   shippingIncome = 0,
+  shippingRefunds = 0,
   landedCost = 0,
   fulfilment = 0,
   paymentFees = 0,
@@ -10,12 +11,13 @@ export function profitAndMargin({
 }: {
   netSales: number;
   shippingIncome?: number;
+  shippingRefunds?: number;
   landedCost?: number;
   fulfilment?: number;
   paymentFees?: number;
   adSpend?: number;
   overheads?: number;
 }): { profit: number; margin: number } {
-  const profit = netSales + shippingIncome - landedCost - fulfilment - paymentFees - adSpend - overheads;
+  const profit = netSales + shippingIncome - shippingRefunds - landedCost - fulfilment - paymentFees - adSpend - overheads;
   return { profit, margin: netSales > 0 ? 100 * profit / netSales : 0 };
 }

@@ -1,8 +1,9 @@
+import { formatNumber } from '../money.js';
 import { appConfig } from '../config.js';
 import type { Review, ReviewsPanel } from './model.js';
 
 const esc = (text: string): string => text.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
-const count = (n: number): string => n.toLocaleString('en-GB');
+const count = formatNumber;
 export function reviewLink(id: string, template: string = appConfig.judgeme.reviewUrlTemplate, shop: string = appConfig.shopify.storeDomain): string {
   return template.trim()
     ? template.replaceAll('{shop}', encodeURIComponent(shop)).replaceAll('{review_id}', encodeURIComponent(id))

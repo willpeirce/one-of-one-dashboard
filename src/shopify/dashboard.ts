@@ -10,7 +10,7 @@ import { calculateSeriesPace } from '../series-pace/model.js';
 import { seriesPaceDates } from '../series-pace/dates.js';
 import { readSeriesPaceFacts } from '../series-pace/store.js';
 import { sampleSeriesPaceCard, type SeriesPaceCard, type SeriesPaceMarketView } from '../series-pace/presentation.js';
-import { formatMetricNumber, formatPounds } from '../money.js';
+import { formatNumber, formatMetricNumber, formatPounds } from '../money.js';
 import { dailyRows, dataset, emailFlow, isRefill, isUpgrade, isKit, kitIds, orderNet, ratio, shopifyHero, stockCover, type Facts, type StockCover } from './metrics.js';
 import { blankObservation, evaluateWatchdogs, type Check, type Observation } from './watchdogs.js';
 
@@ -29,6 +29,7 @@ export async function readWatchdogContext(db: Database, facts: Facts) {
 }
 export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Database, facts: Facts, settings: Settings, health: SourceHealth[], now: Date, adInputs?:AdHeroInputs, greetingNow: Date = new Date()): Promise<DashboardSnapshot> {
   const today = ukToday(now), data = dataset(facts, today);
+  snapshot.adSources = adInputs?.spend.sources.map(({ source, live, status, fetchedAt, stale, failures }) => ({ source, live, status, fetchedAt, stale, failures }));
   const context = await readWatchdogContext(db, facts);
   const checks = evaluateWatchdogs(facts, now, settings, context.observation, context.holidays, health);
   const stock = stockCover(facts, today, settings);
@@ -80,7 +81,7 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
   const detail = (why: string, rule: string, extra?: [string, string][]): Detail => ({ why, rule, src: `${stamp} · ${freshness}`, extra });
   const dial = (key: string, label: string, value: number | null, suffix: string, rule: string, why: string, max = 100, zones: DialModel['z'] = [[0, 100, 'info']]) => {
     snapshot.widgets[key] = { source: ['shopify'], mode: facts.mode, kind: 'dial', value: {
-      v: value ?? 0, min: 0, max, t: value === null ? 'No data' : `${value.toFixed(1)}${suffix}`, l: label,
+      v: value ?? 0, min: 0, max, t: value === null ? 'No data' : `${formatNumber(value, 1)}${suffix}`, l: label,
       s: value === null ? 'Unknown' : stamp, z: zones, cap: stale || value === null ? 'info' : undefined,
       d: detail(why, rule),
     } };
@@ -102,32 +103,32 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
   const weekEmail = weekly.filter(o => emailFlow(o) !== null);
   const baseline = weekly.filter(o => !o.lastVisit?.fbclid && !o.lastVisit?.gclid && !o.lastVisit?.ttclid && !['cpc', 'paid', 'paid_social'].includes(String(o.lastVisit?.medium)));
   const stats: [string, string, string, string, Detail][] = [
-    ['w035', 't0260', 't0261', baseline.length.toString(), detail(`${baseline.length} of ${weekly.length} orders have no last-visit paid signal.`, 'No fbclid/gclid/ttclid and medium not cpc/paid/paid_social; 7 UK dates, today so far.')],
+    ['w035', 't0260', 't0261', formatNumber(baseline.length), detail(`${formatNumber(baseline.length)} of ${formatNumber(weekly.length)} orders have no last-visit paid signal.`, 'No fbclid/gclid/ttclid and medium not cpc/paid/paid_social; 7 UK dates, today so far.')],
     ['w036', 't0263', 't0264', checks.find(c => c.id === 'webhooks')!.status, detail(checks.find(c => c.id === 'webhooks')!.why, 'Hourly owned-subscription check, five-minute overlap polling backstop.')],
-    ['w037', 't0266', 't0267', String(refillSince.length), detail(`${refillSince.length} refill orders since 11 Sep 2026 (${data.from > '2026-09-11' ? 'partial order history' : 'covered'}).`, 'SKU REFILL; email credit from D30 campaign or REFILLSHIP only. Sent/opened figures await Mailchimp.', [['D30 email', String(refillSince.filter(o => emailFlow(o)?.startsWith('D30 refill')).length)], ['Site / other', String(refillSince.filter(o => !emailFlow(o)?.startsWith('D30 refill')).length)], ['Funnel', 'Starts at attributed orders; sends/clicks not available. Early: first 4 weeks from 25 Sep 2026; the sends threshold awaits stage 4.']])],
-    ['w039', 't0269', 't0270', String(weekEmail.length), detail(`${weekEmail.length} last-visit email orders in 7 UK dates. ${formatPounds(weekEmail.reduce((n, o) => n + orderNet(o, weekFrom, today), 0) / 100)} net sales.`, 'UTM medium=email, grouped by campaign. Before 27 Sep 2026 is partial, never zero. SLABPACK is not an email signal.', appConfig.mailchimp.flows.filter(f => f.status === 'live').map(f => [f.name, `${weekEmail.filter(o => emailFlow(o) === f.name).length} Shopify orders · sends and Mailchimp credit unavailable`]))],
+    ['w037', 't0266', 't0267', formatNumber(refillSince.length), detail(`${formatNumber(refillSince.length)} refill orders since 11 Sep 2026 (${data.from > '2026-09-11' ? 'partial order history' : 'covered'}).`, 'SKU REFILL; email credit from D30 campaign or REFILLSHIP only. Sent/opened figures await Mailchimp.', [['D30 email', formatNumber(refillSince.filter(o => emailFlow(o)?.startsWith('D30 refill')).length)], ['Site / other', formatNumber(refillSince.filter(o => !emailFlow(o)?.startsWith('D30 refill')).length)], ['Funnel', 'Starts at attributed orders; sends/clicks not available. Early: first 4 weeks from 25 Sep 2026; the sends threshold awaits stage 4.']])],
+    ['w039', 't0269', 't0270', formatNumber(weekEmail.length), detail(`${formatNumber(weekEmail.length)} last-visit email orders in 7 UK dates. ${formatPounds(weekEmail.reduce((n, o) => n + orderNet(o, weekFrom, today), 0) / 100)} net sales.`, 'UTM medium=email, grouped by campaign. Before 27 Sep 2026 is partial, never zero. SLABPACK is not an email signal.', appConfig.mailchimp.flows.filter(f => f.status === 'live').map(f => [f.name, `${formatNumber(weekEmail.filter(o => emailFlow(o) === f.name).length)} Shopify orders · sends and Mailchimp credit unavailable`]))],
   ];
   for (const [key, valueKey, subKey, value, d] of stats) {
     snapshot.widgets[key] = { source: ['shopify'], mode: facts.mode, kind: 'detail', value: d };
     snapshot.textValues[valueKey] = { source: ['shopify'], mode: facts.mode, value };
     snapshot.textValues[subKey] = { source: ['shopify'], mode: facts.mode, value: stamp + (key === 'w039' && weekFrom < '2026-09-27' ? ' · attribution partial' : '') };
   }
-  const stockDetails: [string, string][] = stock.map(s => [s.name, `Available ${s.available ?? 'unknown'} · cover ${s.cover === null ? 'unknown' : Math.floor(s.cover) + ' days'} · ${s.basis}`]);
+  const stockDetails: [string, string][] = stock.map(s => [s.name, `Available ${s.available === null ? 'unknown' : formatNumber(s.available)} · cover ${s.cover === null ? 'unknown' : formatNumber(Math.floor(s.cover)) + ' days'} · ${s.basis}`]);
   for (const [key, productId, location] of [['w046', kitIds[0], appConfig.shopify.locations.us.id], ['w047', kitIds[0], appConfig.shopify.locations.uk.id], ['w048', 'gid://shopify/Product/10892913574222', appConfig.shopify.locations.us.id]] as const) {
     const row = stock.find(s => s.productId === productId && s.locationId === location)!;
     snapshot.widgets[key] = { source: ['shopify'], mode: facts.mode, kind: 'ring', value: { v: row.cover ?? 0, max: 180,
-      t: row.cover === null ? 'No data' : `${Math.floor(row.cover)} d`, l: row.name, s: row.cover === null ? `Available ${row.available ?? 'unknown'} · cover unknown` : `Run-out ${row.runOut}`,
+      t: row.cover === null ? 'No data' : `${formatNumber(Math.floor(row.cover))} d`, l: row.name, s: row.cover === null ? `Available ${row.available === null ? 'unknown' : formatNumber(row.available)} · cover unknown` : `Run-out ${row.runOut}`,
       state: row.cover === null || (facts.jobs.find(j => j.name === 'inventory')?.failures ?? 0) >= 2 || !facts.jobs.find(j => j.name === 'inventory')?.last_success_at || now.getTime() - new Date(facts.jobs.find(j => j.name === 'inventory')!.last_success_at!).getTime() > 900_000 ? 'info' : row.cover < 21 ? 'alarm' : row.cover < 60 ? 'warn' : 'good',
       d: detail(row.basis, 'Kits: available ÷ 60-day warehouse rate × seasonal multiplier. Accessories: attach rate × kits remaining; no guessed daily cover.', stockDetails) } };
   }
   const last = data.orders.filter(o => o.paidAt).sort((a, b) => b.paidAt!.localeCompare(a.paidAt!))[0];
   const detailData = {
-    checkout: detail(session ? `${session.sessions} sessions → ${session.carts} carts → ${session.checkouts} checkout starts → ${session.completed} completed. Today so far.` : 'Today’s sessions are unavailable.', 'Completed session checkouts ÷ session checkouts started, by market. Geo guards preserve store-wide totals.', session ? [['UK', session.marketReliable ? `${session.ukCheckouts} started · ${session.ukCompleted} completed · ${percentage(session.ukCompleted, session.ukCheckouts)?.toFixed(1) ?? 'unknown'}%` : 'Unknown · geo guard'], ['US', session.marketReliable ? `${session.usCheckouts} started · ${session.usCompleted} completed · ${percentage(session.usCompleted, session.usCheckouts)?.toFixed(1) ?? 'unknown'}%` : 'Unknown · geo guard']] : []),
+    checkout: detail(session ? `${formatNumber(session.sessions)} sessions → ${formatNumber(session.carts)} carts → ${formatNumber(session.checkouts)} checkout starts → ${formatNumber(session.completed)} completed. Today so far.` : 'Today’s sessions are unavailable.', 'Completed session checkouts ÷ session checkouts started, by market. Geo guards preserve store-wide totals.', session ? [['UK', session.marketReliable ? `${formatNumber(session.ukCheckouts)} started · ${formatNumber(session.ukCompleted)} completed · ${session.ukCheckouts ? formatNumber(percentage(session.ukCompleted, session.ukCheckouts)!, 1) : 'unknown'}%` : 'Unknown · geo guard'], ['US', session.marketReliable ? `${formatNumber(session.usCheckouts)} started · ${formatNumber(session.usCompleted)} completed · ${session.usCheckouts ? formatNumber(percentage(session.usCompleted, session.usCheckouts)!, 1) : 'unknown'}%` : 'Unknown · geo guard']] : []),
     stock: detail('Available stock, cover and run-out by configured product and warehouse.', 'TikTok duplicate stock excluded. Missing rate/multiplier or stock stays unknown. Never plan J&J transfers.', stockDetails),
   };
   const needs = checks.filter(c => c.status === 'tripped').map(c => ({ id: c.id, state: (c.id === 'self' || c.id === 'webhooks' ? 'alarm' : 'warn') as State, title: c.name, why: c.why, link: c.link }));
-  for (const row of stock) if (row.cover !== null && row.cover < 60) needs.push({ id: `stock:${row.productId}:${row.locationId}`, state: row.cover < 21 ? 'alarm' : 'warn', title: row.name, why: `${Math.floor(row.cover)} days of cover; run-out ${row.runOut}. Series 1 kits are not restocked.`, link: `https://admin.shopify.com/store/${appConfig.shopify.storeDomain.split('.')[0]}/products/${row.productId.split('/').at(-1)}` });
-  for (const row of stock) if (row.available !== null && row.required !== null && row.available < row.required) needs.push({ id: `attach:${row.productId}:${row.locationId}`, state: 'warn', title: row.name, why: `${row.available} available; ${Math.ceil(row.required)} needed at the measured attach rate for remaining kits. Source-owned stock only; TikTok gift stock awaits its source.`, link: `https://admin.shopify.com/store/${appConfig.shopify.storeDomain.split('.')[0]}/products/${row.productId.split('/').at(-1)}` });
+  for (const row of stock) if (row.cover !== null && row.cover < 60) needs.push({ id: `stock:${row.productId}:${row.locationId}`, state: row.cover < 21 ? 'alarm' : 'warn', title: row.name, why: `${formatNumber(Math.floor(row.cover))} days of cover; run-out ${row.runOut}. Series 1 kits are not restocked.`, link: `https://admin.shopify.com/store/${appConfig.shopify.storeDomain.split('.')[0]}/products/${row.productId.split('/').at(-1)}` });
+  for (const row of stock) if (row.available !== null && row.required !== null && row.available < row.required) needs.push({ id: `attach:${row.productId}:${row.locationId}`, state: 'warn', title: row.name, why: `${formatNumber(row.available)} available; ${formatNumber(Math.ceil(row.required))} needed at the measured attach rate for remaining kits. Source-owned stock only; TikTok gift stock awaits its source.`, link: `https://admin.shopify.com/store/${appConfig.shopify.storeDomain.split('.')[0]}/products/${row.productId.split('/').at(-1)}` });
   for (const n of facts.noticeDetails) if (['reports_unavailable', 'address_unavailable'].includes(n.kind)) needs.push({ id: n.source_id, state: 'warn', title: n.kind === 'reports_unavailable' ? 'Shopify reports unavailable' : 'Address access unavailable', why: n.kind === 'reports_unavailable' ? 'ShopifyQL was denied. Sessions may be daily routine data or unavailable; older order detail needs read_all_orders. Check granted Level 2 access.' : 'Order markets use currency/warehouse fallback. Check the app’s address permission; no personal address is stored.', link: `https://admin.shopify.com/store/${appConfig.shopify.storeDomain.split('.')[0]}/settings/apps` });
   if(adInputs)needs.push(...spendNeeds(adInputs.spend,settings,today,now));
   needs.sort((a, b) => Number(b.state === 'alarm') - Number(a.state === 'alarm'));

@@ -1,7 +1,7 @@
 import type { Detail, HeroMetric, HeroPeriod, State, Zone } from './dashboard-types.js';
 import type { SourceId } from './sources.js';
 import { profitAndMargin } from './profit.js';
-import { formatPounds } from './money.js';
+import { formatNumber, formatPounds } from './money.js';
 
 const DAY = 86_400_000;
 const fields = ['net', 'o', 'uk', 'us', 'sess', 'ukS', 'ukM', 'usM', 'g', 'ours'] as const;
@@ -67,7 +67,7 @@ export function aggregateDays(rows: readonly DailyMetrics[]): Totals {
 
 const divide = (numerator: number, denominator: number): number => denominator ? numerator / denominator : 0;
 const rounded = (value: number, places = 2): number => Math.round(value * 10 ** places) / 10 ** places;
-const integer = (value: number): string => Math.round(value).toLocaleString('en-GB');
+const integer = (value: number): string => formatNumber(Math.round(value), 0);
 const money = (value: number): string => formatPounds(value, integer);
 const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -133,7 +133,7 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
   const base = previous.length === comparisonDays ? aggregateDays(previous) : null;
   const comparison = (metric: Metric): number | null => base ? metrics[metric](base) / (one && additive.has(metric) ? 7 : 1) : null;
   const spikeRows = selected.filter((row) => spikeMarkets(row.date).length);
-  const spikeSummary = spikeRows.length > 5 ? `${spikeRows.length} spike days in this range`
+  const spikeSummary = spikeRows.length > 5 ? `${formatNumber(spikeRows.length)} spike days in this range`
     : `Spike days: ${spikeRows.map((row) => `${shortDate(row.date)} (${spikeMarkets(row.date).join(' and ')})`).join(', ')}`;
   const spikeNote = spikeRows.length ? `${spikeSummary}. Do not base a verdict on a spike day alone.` : '';
   const state = (value: number, compared: number | null): State => partial ? 'sofar' : one && spikeRows.length ? 'info'
@@ -189,7 +189,7 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
   const metric = (value: Omit<HeroMetric, 'source' | 'mode'>, source: SourceId[]): HeroMetric => ({ ...value, ...provenance(source) });
   const bar = options.blendedMetaTripwireGbp ?? 28;
   const amber = rounded(bar * 0.9);
-  const poundsBar = formatPounds(bar, value => value.toLocaleString('en-GB', { maximumFractionDigits: 2 }));
+  const poundsBar = formatPounds(bar, value => formatNumber(Math.round(value * 100) / 100));
   const zones: Zone[] = [[Math.min(12, bar / 2), amber, 'good'], [amber, bar, 'warn'], [bar, Math.max(40, bar + 12), 'decide']];
   const cpo = (key: 'ukcpo' | 'uscpo', country: 'UK' | 'US'): HeroPeriod['ukcpo'] => {
     const value = metrics[key](t);
@@ -209,7 +209,7 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
   return {
     from, to, short: label, spark: history('net'),
     eyebrow: one ? `${weekday} · ${partial ? 'today so far' : 'one day'}` : `${label} · ${options.name ?? `${n} days`}${partial ? ', today so far' : ''}`,
-    sub1: one ? `${t.o} orders on ${weekday}${partial ? ' so far' : ''}.` : `${integer(t.o)} orders over ${label}${partial ? ' so far' : ''}, avg ${integer(t.o / n)} a day.`,
+    sub1: one ? `${integer(t.o)} orders on ${weekday}${partial ? ' so far' : ''}.` : `${integer(t.o)} orders over ${label}${partial ? ' so far' : ''}, avg ${integer(t.o / n)} a day.`,
     per: options.name ?? (one ? weekday : label),
     net: metric({ n: Math.round(t.net), state: state(t.net, cNet), pre: '£',
       ss: one ? cNet === null ? 'no earlier days to compare' : `7-day avg ${money(cNet)}${cNet && !partial ? ` · ${t.net >= cNet ? '+' : '−'}${percent(t.net, cNet)}%` : ''}`
@@ -220,7 +220,7 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
     orders: metric({ n: t.o, state: state(t.o, cOrders),
       ss: `${one && cOrders !== null ? `avg ${integer(cOrders)} · ` : ''}UK ${integer(t.uk)} · US ${integer(t.us)}${!one && cOrders !== null ? ` · prev ${n} days ${integer(cOrders)}` : ''}`,
       d: detail('orders', { src: `Shopify orders, paid, both markets, ${when}`,
-        why: `${integer(t.o)} orders ${on}. UK ${integer(t.uk)}, US ${integer(t.us)}.${one ? '' : ` Best day ${weekdayDate(best.date)} with ${best.o}.`}${spikeNote ? ` ${spikeNote}` : ''}` }),
+        why: `${integer(t.o)} orders ${on}. UK ${integer(t.uk)}, US ${integer(t.us)}.${one ? '' : ` Best day ${weekdayDate(best.date)} with ${integer(best.o)}.`}${spikeNote ? ` ${spikeNote}` : ''}` }),
     }, ['shopify']),
     cr: metric({ n: rounded(cr, 1), state: state(cr, cCr), suf: '%', dp: 1,
       ss: `${integer(t.o)} of ${integer(t.sess)} sessions · ${marketRates}`,
@@ -235,10 +235,10 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
     }, ['meta', 'google-ads']),
     roas: metric({ n: rounded(roas), state: 'info', suf: '×', dp: 2, ss: 'net sales ÷ all ad spend · set a bar',
       d: detail('roas', { hs: '×', rule: 'No bar yet. Break-even ROAS comes from costs.md: 1 ÷ (1 − non-ad cost share). Grey until then.',
-        src: 'Shopify net sales ÷ Meta + Google + TikTok spend', why: `${money(t.net)} ÷ ${money(t.spend)} ${on} = ${roas.toFixed(2)}×.` }),
+        src: 'Shopify net sales ÷ Meta + Google + TikTok spend', why: `${money(t.net)} ÷ ${money(t.spend)} ${on} = ${formatNumber(roas, 2)}×.` }),
     }, ['shopify', 'meta', 'google-ads']),
     margin: metric({ n: margin, state: 'est', suf: '%', dp: 1, ss: 'sample estimate · costs model not built',
-      d: detail('margin', { hs: '%', rule: `No bar until the costs are real. At ${roas.toFixed(2)}× ROAS the true number may be near zero.`,
+      d: detail('margin', { hs: '%', rule: `No bar until the costs are real. At ${formatNumber(roas, 2)}× ROAS the true number may be near zero.`,
         src: 'Shopify net sales and orders, knowledge/costs.md, Meta + Google + TikTok spend',
         why: `Sample only. Assumes non-ad costs at 25% of net sales until knowledge/costs.md is filled: 1 − ${money(t.spend)} ÷ ${money(t.net)} − 25% = ${Math.round(margin)}%.` }),
     }, ['shopify', 'meta', 'google-ads', 'github-hq']),

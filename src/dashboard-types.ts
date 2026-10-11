@@ -138,6 +138,7 @@ export interface DashboardSnapshot {
   widgets: Record<string, DashboardWidget>;
   textValues: Record<string, SampleText>;
   sourceHealth?: SourceHealth[];
+  adSources?: import('./radar.js').RadarAdSource[];
   shopify?: import('./shopify/dashboard.js').ShopifyDashboard;
   banner?: string;
   fulfilment?: import('./fulfilment/view.js').Summary;

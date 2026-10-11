@@ -1,3 +1,4 @@
+import { formatNumber } from '../money.js';
 import { appConfig } from '../config.js';
 import type { Database } from '../db.js';
 import type { Settings } from '../settings.js';
@@ -5,6 +6,7 @@ import type { SourceHealth, SourceMode } from '../sources.js';
 import { addDays, ukToday } from '../hero-range.js';
 import { dataset, orderNet, ratio, type Facts } from './metrics.js';
 import type { Order, Sessions } from './model.js';
+import { geoNotice } from './geo-notice.js';
 
 export interface Check { id: string; name: string; status: 'pass' | 'tripped' | 'unknown'; why: string; link: string }
 export interface Observation {
@@ -77,36 +79,37 @@ export function evaluateWatchdogs(facts: Facts, now: Date, settings: Settings, o
   const silence = paidTimes.every(time => time < threshold);
   const paidCoverage = data.ready && data.from <= ukToday(new Date(baselineStart)) && data.orders.every(o => o.paidAt);
   add('orders', 'Orders flowing', !freshOrders || !paidCoverage ? 'unknown' : silence && sameHourLastWeek > 0 ? 'tripped' : 'pass',
-    !freshOrders || !paidCoverage ? 'Paid times or complete fresh history unavailable; no silence verdict.' : `No paid order in ${hours} hours: ${silence ? 'yes' : 'no'}; same UK hours last week ${sameHourLastWeek} paid orders.`);
+    !freshOrders || !paidCoverage ? 'Paid times or complete fresh history unavailable; no silence verdict.' : `No paid order in ${hours} hours: ${silence ? 'yes' : 'no'}; same UK hours last week ${formatNumber(sameHourLastWeek)} paid orders.`);
   const cartLimit = usDaytime(now) ? 40 : 75;
   add('us_cart', 'US add to cart', !freshSessions || typeof s?.usCarts !== 'number' || !s?.marketReliable || !observation.lastObserved || !observation.initialized ? 'unknown' : observation.cartless >= cartLimit ? 'tripped' : 'pass',
-    `Monitoring changes between clean report snapshots: ${observation.cartless} US sessions without a cart; bar ${cartLimit}. A poll with carts resets the streak; exact visitor order is unavailable in ShopifyQL.`, '/analytics');
+    `Monitoring changes between clean report snapshots: ${formatNumber(observation.cartless)} US sessions without a cart; bar ${cartLimit}. A poll with carts resets the streak; exact visitor order is unavailable in ShopifyQL.`, '/analytics');
   add('checkout', 'Checkout', !freshSessions || !observation.lastObserved || !observation.initialized ? 'unknown' : observation.checkoutSince && now.getTime() - Date.parse(observation.checkoutSince) >= 90 * 60_000 ? 'tripped' : 'pass',
     observation.checkoutSince ? `Checkouts started without a completion since ${observation.checkoutSince}; bar 90 minutes.` : 'No outstanding checkout silence observed between report snapshots.', '/analytics');
   const dispatch = data.orders.map(o => dispatchLate(o, now, settings, holidays));
   const late = dispatch.filter(x => x === true).length;
   add('dispatch', 'Dispatch', !freshOrders || !data.ready ? 'unknown' : late ? 'tripped' : dispatch.some(x => x === null) ? 'unknown' : 'pass',
-    `${late} orders unfulfilled a working day after cut-off. Destination warehouse; Northampton ${settings.dispatchCutoffUk} UK, Ohio ${settings.dispatchCutoffUs} ET. Unknown paid times/fulfilment states stay unknown. Holiday calendar covers 2026–27.`);
+    `${formatNumber(late)} orders unfulfilled a working day after cut-off. Destination warehouse; Northampton ${settings.dispatchCutoffUk} UK, Ohio ${settings.dispatchCutoffUs} ET. Unknown paid times/fulfilment states stay unknown. Holiday calendar covers 2026–27.`);
   const from = addDays(day, -6);
   const net = data.orders.reduce((n, o) => n + orderNet(o, from, day), 0);
   const refunds = data.orders.reduce((n, o) => n + o.refunds.filter(r => { const d = ukToday(new Date(r.createdAt)); return d >= from && d <= day; }).reduce((sum, r) => sum + r.itemsPence, 0), 0);
   const rate = ratio(refunds, net);
   add('refunds', 'Refunds', !freshOrders || !data.ready || data.from > from || rate === null ? 'unknown' : rate > .03 ? 'tripped' : 'pass',
-    `Rolling 7 UK dates, today so far: ${rate === null ? 'rate unknown' : (rate * 100).toFixed(1) + '%'} net item refunds / net sales; bar 3%. Shipping/tax excluded.`);
+    `Rolling 7 UK dates, today so far: ${rate === null ? 'rate unknown' : formatNumber(rate * 100, 1) + '%'} net item refunds / net sales; bar 3%. Shipping/tax excluded.`);
   const subscriptions = facts.jobs.find(j => j.name === 'subscriptions');
   const webhookNotices = facts.noticeDetails.filter(n => n.kind === 'webhook_recreated');
   add('webhooks', 'Shopify webhooks', facts.mode === 'sample' ? 'unknown' : webhookNotices.length ? 'tripped' : !subscriptions?.last_success_at || subscriptions.failures || now.getTime() - new Date(subscriptions.last_success_at).getTime() > 3 * 3_600_000 ? 'unknown' : 'pass',
-    facts.mode === 'sample' ? 'Sample mode never subscribes.' : webhookNotices.length ? `${webhookNotices.length} subscriptions repaired; notices clear when the next hourly check finds them present.` : 'Owned subscriptions checked hourly; initial creation is quiet.');
-  add('geo', 'Session geo', !s || !freshSessions ? 'unknown' : !s.marketReliable ? 'tripped' : 'pass',
-    s ? `Missouri ${s.us ? (100 * s.missouri / s.us).toFixed(1) + '%' : 'unknown'} of US sessions. Bar over 10%; 22–23 Sep 2026 market conversion is unknown.` : 'Today’s session report is unavailable.', '/analytics');
+    facts.mode === 'sample' ? 'Sample mode never subscribes.' : webhookNotices.length ? `${formatNumber(webhookNotices.length)} subscriptions repaired; notices clear when the next hourly check finds them present.` : 'Owned subscriptions checked hourly; initial creation is quiet.');
+  const geo = geoNotice(data.sessions, now);
+  add('geo', 'Session geo', geo ? 'tripped' : !s || !freshSessions ? 'unknown' : 'pass',
+    geo?.why ?? (s ? 'No unreliable country days in the last 7 UK dates. Store-wide conversion is unaffected.' : 'Today’s session report is unavailable.'), '/analytics');
   const intervals: Record<string, number> = { poll: 300_000, inventory: 300_000, sessions: 300_000, reconcile: 86_400_000, subscriptions: 3_600_000 };
   const failed = facts.jobs.filter(j => j.failures >= 2 || j.name in intervals && j.last_success_at && now.getTime() - new Date(j.last_success_at).getTime() > 3 * (j.name === 'sessions' && j.state.cadence === 'daily' ? 86_400_000 : intervals[j.name]!));
   // Reviews remain a reading decision; their connection status never changes business health.
   const otherFailures = health.filter(h => h.source !== 'judgeme' && h.mode === 'live' && h.status === 'error' && h.consecutiveFailures >= 2);
   const expiry = settings.keyExpiryDates.filter(k => k.expiresOn <= addDays(day, 14));
   add('self', 'Self-check', failed.length || otherFailures.length || expiry.length ? 'tripped' : facts.jobs.some(j => j.name in intervals && !j.last_success_at && !(facts.mode === 'sample' && j.name === 'subscriptions')) ? 'unknown' : 'pass',
-    [...failed.map(j => `${j.name}: failed ${j.failures} times; last worked at ${j.last_success_at ? new Date(j.last_success_at).toISOString() : 'never'}`), ...otherFailures.map(h => `${h.name}: last worked at ${h.lastSuccessAt ?? 'never'}`), ...expiry.map(k => `${k.keyName}: expires ${k.expiresOn}`)].join(' · ') || 'No repeated failures, stale feeds or keys within 14 days of expiry.', '');
-  for (const notice of facts.noticeDetails) if (notice.kind === 'channel_short') add(notice.source_id, 'Orders by channel', 'tripped', `${notice.detail.channel}: stored ${notice.detail.stored}, ShopifyQL ${notice.detail.reported}, ${notice.detail.from}–${notice.detail.to}. Check app access in Shopify Dev Dashboard; marketplace scope is decided by the live check.`);
+    [...failed.map(j => `${j.name}: failed ${formatNumber(j.failures)} times; last worked at ${j.last_success_at ? new Date(j.last_success_at).toISOString() : 'never'}`), ...otherFailures.map(h => `${h.name}: last worked at ${h.lastSuccessAt ?? 'never'}`), ...expiry.map(k => `${k.keyName}: expires ${k.expiresOn}`)].join(' · ') || 'No repeated failures, stale feeds or keys within 14 days of expiry.', '');
+  for (const notice of facts.noticeDetails) if (notice.kind === 'channel_short') add(notice.source_id, 'Orders by channel', 'tripped', `${notice.detail.channel}: stored ${formatNumber(notice.detail.stored)}, ShopifyQL ${formatNumber(notice.detail.reported)}, ${notice.detail.from}–${notice.detail.to}. Check app access in Shopify Dev Dashboard; marketplace scope is decided by the live check.`);
   return checks;
 }
 export async function updateObservation(db: Database, mode: SourceMode, facts: Facts, now: Date): Promise<Observation> {

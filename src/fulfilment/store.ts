@@ -1,3 +1,4 @@
+import { formatNumber } from '../money.js';
 import { ukToday } from '../hero-range.js';
 import { randomUUID } from 'node:crypto';
 import type { Database } from '../db.js';
@@ -145,7 +146,7 @@ export async function confirmImport(db:Database,mode:SourceMode,rows:ParcelRow[]
       const costs=[...stored,...pending].filter(p=>p.orderId===orderId).map(actualPence);
       return previous===null||costs.some(c=>c===null)?[]:[Math.abs(costs.reduce<number>((s,c)=>s+c!,0)-previous)];
     });
-    const changes=model.rates.map(r=>{const before=oldModel.rates.find(b=>b.warehouse===r.warehouse&&normaliseService(b.service)===normaliseService(r.service)&&b.mix===r.mix&&b.state===r.state);return {r,before,delta:before?Math.abs(r.postage+r.pickPack-before.postage-before.pickPack):r.postage+r.pickPack};}).filter(r=>!r.before || r.delta>1e-6).sort((a,b)=>b.delta-a.delta).slice(0,3).map(({r,before})=>`${r.warehouse.toUpperCase()} · ${r.service} · ${(JSON.parse(r.mix) as [string,number][]).map(([sku,n])=>`${sku} × ${n}`).join(', ')}${r.state?' · '+r.state:''}: ${before?((before.postage+before.pickPack)/100).toFixed(2):'new'} → ${((r.postage+r.pickPack)/100).toFixed(2)} ${r.warehouse==='us'?'USD':'GBP'} (${r.count} parcels)`);
+    const changes=model.rates.map(r=>{const before=oldModel.rates.find(b=>b.warehouse===r.warehouse&&normaliseService(b.service)===normaliseService(r.service)&&b.mix===r.mix&&b.state===r.state);return {r,before,delta:before?Math.abs(r.postage+r.pickPack-before.postage-before.pickPack):r.postage+r.pickPack};}).filter(r=>!r.before || r.delta>1e-6).sort((a,b)=>b.delta-a.delta).slice(0,3).map(({r,before})=>`${r.warehouse.toUpperCase()} · ${r.service} · ${(JSON.parse(r.mix) as [string,number][]).map(([sku,n])=>`${sku} × ${formatNumber(n)}`).join(', ')}${r.state?' · '+r.state:''}: ${before?formatNumber((before.postage+before.pickPack)/100, 2):'new'} → ${formatNumber((r.postage+r.pickPack)/100, 2)} ${r.warehouse==='us'?'USD':'GBP'} (${formatNumber(r.count)} parcels)`);
     await tx.query('UPDATE pulse.fulfilment_uploads SET error_pence=$2,error_count=$3,changes=$4 WHERE id=$1',[id,errors.length?errors.reduce((s,n)=>s+n,0)/errors.length:null,errors.length,JSON.stringify(changes)]);
     if (credentialId) await tx.query("INSERT INTO pulse.audit_log (event,credential_id) VALUES ('fulfilment_upload_confirmed',$1)",[credentialId]);
     return {saved:pending.length,skipped:rows.length-pending.length,uploadId:id};
@@ -167,7 +168,7 @@ export async function fulfilmentSummary(db:Database,mode:SourceMode,now:Date) {
     }
     return [{id:`parcel:${p.id}:${flag}`,title:flag,why:`Order #${p.orderNumber} · ${p.centre} · ${p.service}`,link:'/fulfilment'}];
   }));
-  for (const [key,group] of unknown) needs.push({id:`unknown:${key}`,title:group.title,why:`${group.spelling} · ${group.count} ${group.count === 1 ? 'parcel' : 'parcels'}`,link:'/fulfilment'});
+  for (const [key,group] of unknown) needs.push({id:`unknown:${key}`,title:group.title,why:`${group.spelling} · ${formatNumber(group.count)} ${group.count === 1 ? 'parcel' : 'parcels'}`,link:'/fulfilment'});
   if (monthlyReminder(now,uploads)) needs.unshift({id:'jj-monthly',title:"Upload last month's J&J export",why:'First working day, 09:00 UK: confirm a complete export covering the previous month, 1st to last day.',link:'/fulfilment'});
   return {mode,averages,lastUpload:uploads[0]??null,unmatched:parcels.filter(p=>!p.orderId),needs,model,recent:parcels.slice(-20).reverse().map(p=>({...p,actualPence:actualPence(p)})),orderCount:Number(count.rows[0]!.count)};
 }

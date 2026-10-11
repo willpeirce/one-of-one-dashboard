@@ -108,7 +108,7 @@ test('live worker polls once per five minutes, shares in-flight runs and recover
   clock = new Date(clock.getTime() + REVIEW_POLL_MS); await worker.tick();
   const failedHealth = await readSourceHealth(db);
   assert.equal(failedHealth.find(row => row.source === 'judgeme')!.consecutiveFailures, 2);
-  const facts: Facts = { mode: 'live', sample: false, jobs: [], records: [], counts: {}, pendingWebhooks: 0, notices: [], noticeDetails: [] };
+  const facts: Facts = { mode: 'live', sample: false, jobs: [], records: [], counts: {}, pendingWebhooks: 0, geoNotice: null, notices: [], noticeDetails: [] };
   assert.deepEqual(evaluateWatchdogs(facts, clock, defaultSettings(), blankObservation(), [], failedHealth),
     evaluateWatchdogs(facts, clock, defaultSettings(), blankObservation(), [], []), 'repeated review failures cannot change any watchdog or its alarm card');
   clock = new Date(clock.getTime() + REVIEW_POLL_MS); fail = false; await worker.tick();

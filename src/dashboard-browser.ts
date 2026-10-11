@@ -1,3 +1,4 @@
+import { radarMeasure } from './radar.js';
 import { glance } from './fulfilment/view.js';
 import { liveHtml, needsHtml, storePanelsHtml } from './shopify/presentation.js';
 import type { DashboardSnapshot, Detail, DialModel, HeroMetric, HeroPeriod, Period, RingModel, SheetModel, State, TestModel, Zone } from './dashboard-types.js';
@@ -5,7 +6,7 @@ import { createDatePicker } from './dashboard-dates.js';
 import { rangeLabel } from './hero-range.js';
 import { installPullToRefresh } from './pull-refresh.js';
 import { greetingAt } from './greeting.js';
-import { formatLike, formatMetricNumber } from './money.js';
+import { formatLike, formatMetricNumber, formatNumber } from './money.js';
 import { paceState, seriesPaceCardHtml, seriesPaceDial, seriesPaceFacts, seriesPaceSheetHtml, type SeriesPaceCard } from './series-pace/presentation.js';
 import type { SeriesPaceMarket } from './series-pace/model.js';
 import { reviewsGreeting, reviewsPanelHtml, reviewSheetHtml } from './judgeme/presentation.js';
@@ -69,7 +70,7 @@ function renderDial(element: HTMLElement, data: DialModel, mode: 'sample' | 'liv
   const { v, min, max, z } = data;
   // An explicit status also owns a shared zone boundary (Series 1 includes +5 in green).
   const cappedZone = z.findIndex(([start, end, state]) => state === data.cap && v >= start && v <= end);
-  const activeZone = cappedZone >= 0 ? cappedZone : zoneIndex(v, z), state = data.cap ?? zoneOf(v, z), format = data.t === 'No data' ? (value: number) => String(Math.round(value)) : formatLike(data.t);
+  const activeZone = cappedZone >= 0 ? cappedZone : zoneIndex(v, z), state = data.cap ?? zoneOf(v, z), format = data.t === 'No data' ? (value: number) => formatNumber(Math.round(value)) : formatLike(data.t);
   let svg = `<span class="well"><svg viewBox="0 0 100 64" aria-hidden="true"><path d="${arc(Math.PI, 0)}" fill="none" stroke="var(--line)" stroke-width="7"/>`;
   z.forEach(([start, end, status], index) => {
     const a = angle(start, min, max) - (index ? 0.035 : 0), b = angle(end, min, max) + (index < z.length - 1 ? 0.035 : 0);
@@ -183,6 +184,7 @@ function statChip(element: HTMLElement, state: State): void {
 
 const animations = new WeakMap<HTMLElement, number>();
 function metricNumber(element: HTMLElement, data: HeroMetric, animate: boolean): void {
+  element.style.setProperty('--number-chars', String(formatMetricNumber(data.n, data).length));
   if (data.unavailable) { animations.set(element, (animations.get(element) ?? 0) + 1); element.textContent = data.unavailableLabel ?? 'No data'; return; }
   const show = (value: number): void => { element.textContent = formatMetricNumber(value, data); };
   const generation = (animations.get(element) ?? 0) + 1;
@@ -242,7 +244,7 @@ function renderHero(hero: HeroPeriod, animate = false): void {
   }
   if (hero.business) for (const [kind, widgetId, valueKey, subKey] of [['email','w039','t0269','t0270'], ['refill','w037','t0266','t0267']] as const) {
     const model = hero.business[kind], element = document.querySelector<HTMLElement>(`[data-model-id="${widgetId}"]`);
-    all(`[data-sample-text="${valueKey}"]`).forEach(e => { e.textContent = String(model.count); });
+    all(`[data-sample-text="${valueKey}"]`).forEach(e => { e.textContent = formatNumber(model.count); });
     all(`[data-sample-text="${subKey}"]`).forEach(e => { e.textContent = `${rangeLabel(hero.from, hero.to)} · Shopify ${hero.net.mode}`; });
     if (element) details.set(element, { state: 'info', title: kind === 'email' ? 'Email · Shopify' : 'Refill Pack', detail: model.detail, mode: hero.net.mode });
   }
@@ -272,7 +274,7 @@ function renderTest(card: HTMLElement, data: TestModel): void {
   const leader = Math.max(...data.arms.map((arm) => arm.x)), tied = data.arms.every((arm) => arm.x === leader);
   get('[data-bars]', card).innerHTML = data.arms.map((arm) => {
     const band = 1.28 * Math.sqrt(arm.x), low = Math.max(arm.x - band, 0), high = arm.x + band;
-    return `<div class="tbar${arm.x === leader && !tied ? ' lead' : ''}"><div class="tl2"><span>${esc(arm.k)} · ${esc(arm.l)}</span><b>${arm.x}<small>${esc(data.unit)}</small></b></div><div class="trk"><i class="fill" style="width:${rounded(arm.x / top * 100)}%"></i><i class="band" style="left:${rounded(low / top * 100)}%;width:${rounded((high - low) / top * 100)}%"></i></div></div>`;
+    return `<div class="tbar${arm.x === leader && !tied ? ' lead' : ''}"><div class="tl2"><span>${esc(arm.k)} · ${esc(arm.l)}</span><b>${formatNumber(arm.x)}<small>${esc(data.unit)}</small></b></div><div class="trk"><i class="fill" style="width:${rounded(arm.x / top * 100)}%"></i><i class="band" style="left:${rounded(low / top * 100)}%;width:${rounded((high - low) / top * 100)}%"></i></div></div>`;
   }).join('');
   const result = data.presentation;
   let dial = '<svg viewBox="0 0 100 58" aria-hidden="true">';
@@ -312,27 +314,30 @@ function renderHealth(): void {
   const health = Math.round(100 * score(total));
   const rows = snapshot.shopify ? all('#shopify-needs .dcard[data-state]') : all('.dcard[data-state]'), alarmCount = rows.filter((row) => row.dataset.state === 'alarm').length, decisions = rows.filter((row) => row.dataset.state === 'decide').length;
   const reviewCount = snapshot.reviews?.rows.length ?? 0;
-  get('#counts').innerHTML = `<span class="pk health"><b>${health}</b> health</span>` + ([['alarm', alarmCount, alarmCount === 1 ? 'alarm' : 'alarms'], ['decide', decisions, decisions === 1 ? 'decision' : 'decisions'], ['warn', total.warn, 'to watch'], ['good', total.good, 'good']] as const).map(([state, count, label]) => `<span class="pk" style="--c:${colour[state]}"><i>${states[state][1]}</i><b>${count}</b> ${label}</span>`).join('') + `<button class="pk" type="button" data-rv style="--c:var(--decide)"><i>★</i>${reviewCount ? `<b>${reviewCount.toLocaleString('en-GB')}</b> ${snapshot.reviews?.mode === 'sample' ? 'sample ' : 'new '}${reviewCount === 1 ? 'review' : 'reviews'}` : esc(snapshot.reviews ? reviewsGreeting(snapshot.reviews) : 'All caught up')}</button>`;
+  get('#counts').innerHTML = `<span class="pk health"><b>${health}</b> health</span>` + ([['alarm', alarmCount, alarmCount === 1 ? 'alarm' : 'alarms'], ['decide', decisions, decisions === 1 ? 'decision' : 'decisions'], ['warn', total.warn, 'to watch'], ['good', total.good, 'good']] as const).map(([state, count, label]) => `<span class="pk" style="--c:${colour[state]}"><i>${states[state][1]}</i><b>${formatNumber(count)}</b> ${label}</span>`).join('') + `<button class="pk" type="button" data-rv style="--c:var(--decide)"><i>★</i>${reviewCount ? `<b>${formatNumber(reviewCount)}</b> ${snapshot.reviews?.mode === 'sample' ? 'sample ' : 'new '}${reviewCount === 1 ? 'review' : 'reviews'}` : esc(snapshot.reviews ? reviewsGreeting(snapshot.reviews) : 'All caught up')}</button>`;
   get('#subrv').textContent = snapshot.reviews ? ` ${reviewsGreeting(snapshot.reviews)}.` : '';
-  get('#deckcount').textContent = `${alarmCount} ${alarmCount === 1 ? 'alarm' : 'alarms'} · ${decisions} ${decisions === 1 ? 'decision' : 'decisions'}`;
+  get('#deckcount').textContent = `${formatNumber(alarmCount)} ${alarmCount === 1 ? 'alarm' : 'alarms'} · ${formatNumber(decisions)} ${decisions === 1 ? 'decision' : 'decisions'}`;
   const radarPoint = (index: number, radius: number): [number, number] => [rounded(160 + radius * Math.cos(-Math.PI / 2 + index * 2 * Math.PI / groups.length)), rounded(150 + radius * Math.sin(-Math.PI / 2 + index * 2 * Math.PI / groups.length))];
   const polygon = (points: [number, number][]): string => points.map((p) => p.join(',')).join(' ');
   let svg = '<svg viewBox="0 0 320 300" aria-hidden="true">';
   for (const scale of [0.25, 0.5, 0.75, 1]) svg += `<polygon points="${polygon(groups.map((_, index) => radarPoint(index, 108 * scale)))}" fill="none" stroke="var(--line)" stroke-width="1"/>`;
   groups.forEach((_, index) => { const [x, y] = radarPoint(index, 108); svg += `<line x1="160" y1="150" x2="${x}" y2="${y}" stroke="var(--line)" stroke-width="1"/>`; });
   svg += `<text x="160" y="172" text-anchor="middle" font-family="var(--disp)" font-size="64" font-weight="800" fill="var(--ink)" fill-opacity=".18">${health}</text><text x="160" y="190" text-anchor="middle" font-family="var(--disp)" font-size="11" font-weight="700" letter-spacing="1.5" fill="var(--ink)" fill-opacity=".45">HEALTH</text>`;
-  const measured = (key: string) => { const g = byGroup[key]; return !!g && g.good + g.warn + g.alarm > 0; };
-  const scores = groups.map(([key]) => measured(key) ? score(byGroup[key]!) : 0), points = groups.map((_, index) => radarPoint(index, 108 * scores[index]!));
+  const measures = groups.map(([key]) => radarMeasure(key, byGroup[key], snapshot.adSources));
+  const scores = measures.map(measure => measure.score), points = groups.map((_, index) => radarPoint(index, 108 * scores[index]!));
   svg += `<polygon points="${polygon(points)}" fill="var(--accent)" fill-opacity=".28" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round"/>`;
   points.forEach(([x, y]) => { svg += `<circle cx="${x}" cy="${y}" r="4.5" fill="var(--accent)" stroke="var(--pointer-ring)" stroke-width="2"/>`; });
   const described: string[] = [];
   groups.forEach(([key, name], index) => {
-    const [x, y] = radarPoint(index, 132), percent = Math.round(scores[index]! * 100);
-    svg += `<text x="${x}" y="${y}" text-anchor="${Math.abs(x - 160) < 2 ? 'middle' : x > 160 ? 'start' : 'end'}" font-family="var(--disp)" font-size="13" font-weight="600" fill="var(--ink)">${name}<tspan x="${x}" dy="14" font-size="11" font-weight="500" fill="var(--muted)">${measured(key) ? percent + '%' : 'Unknown'}</tspan></text>`;
-    described.push(`${name} ${measured(key) ? percent + '%' : 'unknown'}`);
+    const [x, y] = radarPoint(index, 132), measure = measures[index]!;
+    const statusX = Math.abs(x - 160) < 2 ? x : x > 160 ? 320 : 0;
+    const statusAnchor = Math.abs(x - 160) < 2 ? 'middle' : x > 160 ? 'end' : 'start';
+    svg += `<text x="${x}" y="${y}" text-anchor="${Math.abs(x - 160) < 2 ? 'middle' : x > 160 ? 'start' : 'end'}" font-family="var(--disp)" font-size="13" font-weight="600" fill="var(--ink)">${name}<tspan x="${statusX}" text-anchor="${statusAnchor}" dy="14" font-size="11" font-weight="500" fill="var(--muted)">${esc(measure.label)}</tspan></text>`;
+    described.push(`${name}: ${measure.label}. ${measure.reason}`);
   });
-  get('#radar').innerHTML = `${svg}</svg>`;
-  get('#radar').setAttribute('aria-label', `Shopify health ${health}. ${described.join(', ')}.`);
+  const reasons = groups.flatMap(([, name], index) => measures[index]!.label === 'No data yet' ? [`<p class="radar-reason">${name}: ${esc(measures[index]!.reason)}</p>`] : []).join('');
+  get('#radar').innerHTML = `${svg}</svg>${reasons}`;
+  get('#radar').setAttribute('aria-label', `Health ${formatNumber(health)}. ${described.join(', ')}.`);
 }
 
 function miniChart(detail: Detail, dial?: SheetDetail['dial']): string {
@@ -390,7 +395,7 @@ function showDetail(element: HTMLElement, reopen = true): void {
     const rows = activeHero().business!.orderDays;
     const high = Math.max(1, ...rows.map(r => r.total));
     const colors = { UK: '--good', US: '--info', EU: '--warn', TikTok: '--decide', unknown: '--muted' };
-    get('#sh-chart').innerHTML = `<div class="orders-bars" role="img" aria-label="Orders by UK day, UK, US, EU and TikTok separately. Spike days are marked in the chart above.">${rows.map(r => `<span title="${esc(r.day)}: UK ${r.UK}, US ${r.US}, EU ${r.EU}, TikTok ${r.TikTok}, unknown ${r.unknown}, total ${r.total}" class="order-bar">${Object.entries(colors).map(([k, c]) => `<i style="height:${40 * r[k as keyof typeof colors] / high}px;background:var(${c})"></i>`).join('')}${r.detailAvailable ? '' : `<i style="height:${40*r.total/high}px;background:var(--muted)"></i>`}</span>`).join('')}</div><p class="note">UK · US · EU · TikTok · unknown. TikTok is counted once. ${rows.length > 31 ? 'Scroll for every UK day.' : ''}</p>` + miniChart(data.detail, data.dial);
+    get('#sh-chart').innerHTML = `<div class="orders-bars" role="img" aria-label="Orders by UK day, UK, US, EU and TikTok separately. Spike days are marked in the chart above.">${rows.map(r => `<span title="${esc(r.day)}: UK ${formatNumber(r.UK)}, US ${formatNumber(r.US)}, EU ${formatNumber(r.EU)}, TikTok ${formatNumber(r.TikTok)}, unknown ${formatNumber(r.unknown)}, total ${formatNumber(r.total)}" class="order-bar">${Object.entries(colors).map(([k, c]) => `<i style="height:${40 * r[k as keyof typeof colors] / high}px;background:var(${c})"></i>`).join('')}${r.detailAvailable ? '' : `<i style="height:${40*r.total/high}px;background:var(--muted)"></i>`}</span>`).join('')}</div><p class="note">UK · US · EU · TikTok · unknown. TikTok is counted once. ${rows.length > 31 ? 'Scroll for every UK day.' : ''}</p>` + miniChart(data.detail, data.dial);
   }
   get('#sh-extra').innerHTML = data.detail.extra?.length ? `<dl class="xdl">${data.detail.extra.map(([key, value]) => `<dt>${esc(key)}</dt><dd>${esc(value)}</dd>`).join('')}</dl>` : '';
   if (reopen && !sheet.open) sheet.showModal();
@@ -425,7 +430,7 @@ function filterDials(): void {
   let matches = 0;
   tiles.forEach((tile) => { tile.hidden = !tile.textContent?.toLowerCase().includes(query); if (!tile.hidden) matches += 1; });
   all('.tab[data-tab]').forEach((tab) => tab.setAttribute('aria-selected', 'false'));
-  get('#dialcount').textContent = `${matches} ${matches === 1 ? 'dial' : 'dials'} match “${get<HTMLInputElement>('#q').value.trim()}”`;
+  get('#dialcount').textContent = `${formatNumber(matches)} ${matches === 1 ? 'dial' : 'dials'} match “${get<HTMLInputElement>('#q').value.trim()}”`;
 }
 
 function updateSnapshot(next: DashboardSnapshot, initial = false): void {
@@ -483,8 +488,8 @@ function updateSnapshot(next: DashboardSnapshot, initial = false): void {
     ['settings-count', snapshot.metaCampaigns?.unconfirmedCount ?? 0, 'campaigns to confirm'],
   ] as const) {
     const badge = get(`#${id}`);
-    badge.textContent = String(count); badge.hidden = count === 0;
-    badge.setAttribute('aria-label', `${count} ${label}`);
+    badge.textContent = formatNumber(count); badge.hidden = count === 0;
+    badge.setAttribute('aria-label', `${formatNumber(count)} ${label}`);
   }
   all('.tile[data-src]').forEach(watermark);
   all('.spark[data-spark]').forEach((element) => renderSpark(element, (element.dataset.spark ?? '').split(',').map(Number)));

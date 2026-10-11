@@ -5,7 +5,7 @@ import { costOrder, type ShopifyCost } from '../shopify/costs.js';
 import type { Order } from '../shopify/model.js';
 import { overheadsForPeriod, sampleOverheads } from '../overheads.js';
 import { profitAndMargin } from '../profit.js';
-import { formatPounds } from '../money.js';
+import { formatNumber, formatPounds } from '../money.js';
 import { adNames, decimalMicros, type AdSource } from './model.js';
 import type { SpendFacts } from './store.js';
 import { SPEND_STALE_AFTER_MS } from './worker.js';
@@ -197,7 +197,7 @@ export function applySpend(
   const overheadRows: [string, string][] = marketView
     ? [['Overheads', 'Not deducted; overheads are not split by market']]
     : [
-        ['Overheads', `${formatPounds(overheads.total)} · ${overheads.items.length} items, spread daily across each month${hero.net.mode === 'sample' ? ' · sample data' : ''}`],
+        ['Overheads', `${formatPounds(overheads.total)} · ${formatNumber(overheads.items.length)} items, spread daily across each month${hero.net.mode === 'sample' ? ' · sample data' : ''}`],
         ...overheads.items.slice(0, 8).map((item): [string, string] => [item.name, formatPounds(item.total)]),
         ...(overheads.items.length > 8 ? [['and ' + (overheads.items.length - 8) + ' more', 'Included in the Overheads total'] as [string, string]] : []),
       ];
@@ -233,12 +233,12 @@ export function applySpend(
         ...split,
         [
           'Landed costs',
-          `${formatPounds(landed / 100)}${missingLanded ? `; unknown costs on ${missingLanded} orders left out` : ''}`,
+          `${formatPounds(landed / 100)}${missingLanded ? `; unknown costs on ${formatNumber(missingLanded)} orders left out` : ''}`,
         ],
         ['Shipping charged', `${formatPounds(shippingNet / 100)} · net of tax`],
         [
           'Fulfilment',
-          `${formatPounds(fulfilment / 100)}${missingFulfilment ? `; ${missingFulfilment} unknown orders left out` : ''}`,
+          `${formatPounds(fulfilment / 100)}${missingFulfilment ? `; ${formatNumber(missingFulfilment)} unknown orders left out` : ''}`,
         ],
         [
           'Fees',
@@ -279,12 +279,12 @@ export function applySpend(
       v: value ?? 0,
       t: available && value !== null ? formatPounds(value) : '—',
       l: `${market.toUpperCase()} cost per order`,
-      s: `${gaps.length ? dependentSubtitle : label}${periodOrders.length < hero.orders.n ? '; older order market detail unavailable' : ''} · bar ${formatPounds(settings.blendedMetaTripwireGbp, String)}`,
+      s: `${gaps.length ? dependentSubtitle : label}${periodOrders.length < hero.orders.n ? '; older order market detail unavailable' : ''} · bar ${formatPounds(settings.blendedMetaTripwireGbp, formatNumber)}`,
       source: ['shopify', ...sourceIds],
       mode: spend.mode,
       cap: gaps.length ? 'warn' : to === today ? 'sofar' : 'info',
       d: {
-        why: `${market.toUpperCase()} spend ${formatPounds(cost)} ÷ ${count} Shopify orders. ${formatPounds(unknown)} unknown-market spend is not split.${periodOrders.length < hero.orders.n ? ' Older order market detail is unavailable; no denominator is guessed.' : ''}`,
+        why: `${market.toUpperCase()} spend ${formatPounds(cost)} ÷ ${formatNumber(count)} Shopify orders. ${formatPounds(unknown)} unknown-market spend is not split.${periodOrders.length < hero.orders.n ? ' Older order market detail is unavailable; no denominator is guessed.' : ''}`,
         rule: 'Meta + Google + TikTok spend in this market ÷ Shopify orders in this market. CAC awaits stage 2: stored Shopify facts do not identify first orders.',
         src: label,
         extra: split,

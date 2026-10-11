@@ -19,7 +19,7 @@ import { createTestDatabase } from './helpers/database.js';
 const now = new Date(appConfig.shopify.sampleNow);
 const settings = defaultSettings();
 function facts(orders: Order[], from = '2026-08-01', extra: Facts['records'] = []): Facts {
-  return { mode: 'live', sample: false, counts: {}, pendingWebhooks: 0, notices: [], noticeDetails: [],
+  return { mode: 'live', sample: false, counts: {}, pendingWebhooks: 0, notices: [], geoNotice: null, noticeDetails: [],
     jobs: ['backfill','poll','sessions','inventory','reconcile','subscriptions'].map(name => ({ name, state: name === 'backfill' ? { from, allOrders: true, ordersDone: true } : {}, last_success_at: now, failures: 0 })),
     records: [...orders.map(data => ({ kind: 'order', data, fetched_at: now })), ...extra] };
 }

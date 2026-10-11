@@ -211,6 +211,62 @@ async function checkNegativeProfit(context: BrowserContext): Promise<void> {
   } finally { await page.close(); }
 }
 
+async function checkGroupedDisplay(context: BrowserContext): Promise<void> {
+  const scope = step;
+  const page = await context.newPage();
+  try {
+    const response = await context.request.get('/api/dashboard');
+    assert.equal(response.status(), 200);
+    const fixture = await response.json() as FullDashboardSnapshot;
+    for (const period of periods) {
+      Object.assign(fixture.hero[period].net, { n: 1234567.89, unavailable: false, pre: '£', dp: 2 });
+      Object.assign(fixture.hero[period].orders, { n: 1560, unavailable: false, dp: 0 });
+    }
+    await page.route('**/api/dashboard', route => route.fulfill({ status: 200, json: fixture }));
+    await page.route('**/api/events', route => route.fulfill({ status: 200, contentType: 'text/event-stream',
+      body: `retry: 60000\nevent: dashboard\ndata: ${JSON.stringify(fixture)}\n\n` }));
+    const cases = [
+      { meta: { live: true, status: 'live', fetchedAt: '2026-09-30T11:00:00Z' },
+        google: { live: true, status: 'stale · last fetched 09:00', fetchedAt: '2026-09-30T08:00:00Z' }, labels: ['Live', 'Stale'] },
+      { meta: { live: true, status: 'source unavailable', fetchedAt: '2026-09-30T08:00:00Z' },
+        google: { live: false, status: 'waiting for keys', fetchedAt: null }, labels: ['Unavailable', 'Waiting for keys'] },
+      { meta: { live: true, status: 'first sync pending', fetchedAt: null },
+        google: { live: true, status: 'live', fetchedAt: '2026-09-30T11:00:00Z' }, labels: ['No data yet', 'Live'] },
+    ];
+    for (const viewport of viewports) {
+      await page.setViewportSize(viewport);
+      for (const [index, sample] of cases.entries()) {
+        step = `${scope}: grouped figures and radar ${sample.labels.join('/')} at ${viewport.width}px`;
+        fixture.adSources = [{ source: 'meta', ...sample.meta }, { source: 'google-ads', ...sample.google }];
+        await page.goto('/');
+        await page.locator('html[data-dashboard-ready="true"]').waitFor();
+        const money = page.locator('#hero [data-k="net"]');
+        assert.equal(await money.locator('.sv').innerText(), '£1,234,567.89');
+        assert.equal(await page.locator('#hero [data-k="orders"] .sv').innerText(), '1,560');
+        const fits = await money.evaluate(element => {
+          const figure = element.querySelector('.sv')!;
+          const range = document.createRange();range.selectNodeContents(figure);
+          const text = range.getBoundingClientRect(), box = element.getBoundingClientRect();
+          return text.left >= box.left && text.right <= box.right && text.bottom <= box.bottom;
+        });
+        assert.equal(fits, true, 'The full grouped decimal figure must fit inside the phone tile');
+        const radar = page.locator('#radar');
+        assert.equal(await radar.isVisible(), true);
+        for (const [name, label] of [['Meta', sample.labels[0]], ['Google', sample.labels[1]]] as const) {
+          assert.equal(await radar.locator('svg text').filter({ hasText: new RegExp(`^${name}`) }).locator('tspan').textContent(), label);
+          assert.ok((await radar.getAttribute('aria-label'))?.includes(`${name}: ${label}`));
+        }
+        assert.doesNotMatch(await radar.innerText(), /Unknown/);
+        assert.match(await radar.locator('.radar-reason').allTextContents().then(text => text.join('\n')), /Growth: Growth measures are not built yet\./);
+        assert.match(await radar.locator('.radar-reason').allTextContents().then(text => text.join('\n')), /Email: Mailchimp measures are not built yet\./);
+        if (index === 2) assert.match(await radar.innerText(), /The first ad spend sync is pending\./);
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+        if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/grouped-money-radar-${viewport.width}-${index}.png` });
+      }
+    }
+  } finally { await page.close(); }
+}
+
 async function checkReviews(context: BrowserContext): Promise<void> {
   const scope = step;
   const page = await context.newPage();
@@ -1754,6 +1810,9 @@ async function run(): Promise<void> {
 
     step = 'check a pound loss in the browser tile, accessible label and detail sheet';
     await checkNegativeProfit(context);
+
+    step = 'check grouped money and counts fit their tiles and radar uses ad source states';
+    await checkGroupedDisplay(context);
 
     step = 'check partial ad spend stays visible on every spend-dependent hero tile';
     await checkPartialAdSpend(context);

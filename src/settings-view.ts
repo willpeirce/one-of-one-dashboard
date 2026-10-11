@@ -5,7 +5,7 @@ import { monthlyOverheadTotal } from './overheads.js';
 import type { MetaCampaignView } from './ad-spend/model.js';
 import type { CampaignSyncState } from './ad-spend/campaign-cache.js';
 import { campaignSyncText } from './ad-spend/campaign-status.js';
-import { formatPounds } from './money.js';
+import { formatNumber, formatPounds } from './money.js';
 import { seriesPaceDates } from './series-pace/dates.js';
 import { paceDate } from './series-pace/model.js';
 
@@ -53,7 +53,7 @@ function fields(definitions: readonly Field[], values: object, prefix = ''): str
 function collection(key: string, label: string, definitions: readonly Field[], rows: readonly object[], note: string, costs?: Record<string, string>, options: { maxRows?: number; footer?: string; heading?: string } = {}): string {
   const row = (value: Record<string, unknown>, index: number | string) => `<fieldset class="setting-row"><legend>${escapeHtml(label)} <span data-row-number>${typeof index === 'number' ? index + 1 : ''}</span></legend><div class="setting-row-fields">${fields(definitions, value, `${key}.${index}`)}</div>${costs ? `<p class="setting-help" data-shopify-cost>${escapeHtml(costs[String(value.sku)] ?? 'Not in Shopify')}</p>` : ''}<button class="btn setting-remove" type="button" data-remove-row aria-label="Remove ${escapeHtml(label.toLowerCase())}">Remove</button></fieldset>`;
   return `<section class="setting-collection" data-settings-list="${key}"${options.maxRows === undefined ? '' : ` data-list-max="${options.maxRows}"`} aria-labelledby="${key}-heading">
-    <h3 id="${key}-heading">${escapeHtml(options.heading ?? label)} <span class="setting-count" data-list-count>${rows.length}</span></h3>
+    <h3 id="${key}-heading">${escapeHtml(options.heading ?? label)} <span class="setting-count" data-list-count>${formatNumber(rows.length)}</span></h3>
     <p class="setting-help">${escapeHtml(note)}</p>
     <div data-list-rows${costs ? ` data-shopify-cost-map="${escapeHtml(JSON.stringify(costs))}"` : ''}>${rows.map((value, index) => row(value as Record<string, unknown>, index)).join('')}</div>
     <p class="setting-empty" data-list-empty${rows.length ? ' hidden' : ''}>None added yet.</p>
@@ -84,7 +84,7 @@ function campaignOwners(campaigns: readonly MetaCampaignView[], sync: CampaignSy
   };
   const active = newest.filter((campaign) => campaign.status === 'ACTIVE');
   const inactive = newest.filter((campaign) => campaign.status !== 'ACTIVE');
-  return `<section class="setting-collection" aria-labelledby="metaOwners-heading"><h3 id="metaOwners-heading">Meta campaigns <span class="setting-count">${campaigns.length}</span></h3><p class="setting-help" data-campaign-sync data-state="${sync.state}">${escapeHtml(campaignSyncText(sync))}</p><p class="setting-help">Campaigns appear automatically. New campaigns count as Ours until you check the owner. Save each row to confirm it; this saves a local rule and does not change Meta.</p><div class="setting-campaigns">${active.map(row).join('')}</div>${inactive.length ? `<details class="setting-campaign-inactive"><summary>Show ${inactive.length} inactive</summary><div class="setting-campaigns">${inactive.map(row).join('')}</div></details>` : ''}</section>`;
+  return `<section class="setting-collection" aria-labelledby="metaOwners-heading"><h3 id="metaOwners-heading">Meta campaigns <span class="setting-count">${formatNumber(campaigns.length)}</span></h3><p class="setting-help" data-campaign-sync data-state="${sync.state}">${escapeHtml(campaignSyncText(sync))}</p><p class="setting-help">Campaigns appear automatically. New campaigns count as Ours until you check the owner. Save each row to confirm it; this saves a local rule and does not change Meta.</p><div class="setting-campaigns">${active.map(row).join('')}</div>${inactive.length ? `<details class="setting-campaign-inactive"><summary>Show ${formatNumber(inactive.length)} inactive</summary><div class="setting-campaigns">${inactive.map(row).join('')}</div></details>` : ''}</section>`;
 }
 
 export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly ShopifyCost[] = [], mode: 'sample' | 'live' = 'sample', now = new Date(), metaCampaigns: readonly MetaCampaignView[] = [], campaignSync: CampaignSyncState = { state: 'pending', at: null }): string {
@@ -92,7 +92,7 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
   const costLabels: Record<string, string> = Object.create(null);
   for (const c of shopifyCosts) if (c.sku) {
     const seen = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(c.last_seen_at));
-    const amount = c.amount_pence === null ? 'no cost set' : c.currency === 'GBP' ? formatPounds(Number(c.amount_pence) / 100) : `${c.currency} ${(Number(c.amount_pence)/100).toFixed(2)}`;
+    const amount = c.amount_pence === null ? 'no cost set' : c.currency === 'GBP' ? formatPounds(Number(c.amount_pence) / 100) : `${c.currency} ${formatNumber(Number(c.amount_pence)/100, 2)}`;
     costLabels[c.sku] = `Shopify · ${mode === 'sample' ? 'sample data' : 'live'}: ${amount} · last seen ${seen}`;
   }
   const goals = section('Goals & overheads', 'The targets behind your business.', `<div class="settings-grid">${fields([

@@ -2,7 +2,7 @@ import { glance } from './fulfilment/view.js';
 import type { DashboardSnapshot } from './dashboard-types.js';
 import { liveHtml, needsHtml, storePanelsHtml } from './shopify/presentation.js';
 import { dashboardTemplate } from './dashboard-template.js';
-import { formatMetricNumber } from './money.js';
+import { formatNumber, formatMetricNumber } from './money.js';
 import { seriesPaceCardHtml } from './series-pace/presentation.js';
 import { reviewsGreeting, reviewsPanelHtml } from './judgeme/presentation.js';
 
@@ -14,9 +14,10 @@ function escapeHtml(value: string): string {
 
 /** All business copy and numbers come from the same server snapshot used by SSE. */
 export function dashboardPage(snapshot: DashboardSnapshot): string {
-  const moneyBindings = { t0038: snapshot.hero.today.net, t0050: snapshot.hero.today.spend };
+  const metricBindings = { t0038: snapshot.hero.today.net, t0042: snapshot.hero.today.orders, t0046: snapshot.hero.today.cr,
+    t0050: snapshot.hero.today.spend, t0054: snapshot.hero.today.roas, t0058: snapshot.hero.today.margin };
   let content = dashboardTemplate.replace(/\{\{(sample|widget):([a-z0-9]+)\}\}/g, (_token, kind: string, key: string) => {
-    const metric = kind === 'sample' ? moneyBindings[key as keyof typeof moneyBindings] : undefined;
+    const metric = kind === 'sample' ? metricBindings[key as keyof typeof metricBindings] : undefined;
     const value = metric ? metric.unavailable ? metric.unavailableLabel ?? 'No data' : formatMetricNumber(metric.n, metric)
       : kind === 'sample' ? snapshot.textValues[key]?.value : JSON.stringify(snapshot.widgets[key]?.value);
     if (value === undefined) throw new Error('Dashboard sample binding is missing');
@@ -33,6 +34,8 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
   const profit = snapshot.hero.today.profit;
   const profitDisplay = profit.unavailable ? profit.unavailableLabel ?? 'No data' : formatMetricNumber(profit.n, profit);
   content = content.replace(/(<button[^>]*data-k="profit"[^>]*>)[\s\S]*?<\/button>/, `$1<span class="sl">Net profit · <span class="per">${escapeHtml(snapshot.hero.today.per)}</span></span><span class="sv" data-pre="£" data-dp="2" data-n="${profit.n}">${escapeHtml(profitDisplay)}</span><span class="ss">${escapeHtml(profit.ss)}</span></button>`);
+  content = content.replace(/(<span class="sv(?: big)?"[^>]*)(>)([^<]*)(<\/span>)/g,
+    (_match, tag: string, _close: string, value: string, end: string) => `${tag} style="--number-chars:${value.length}">${value}${end}`);
   // Partial totals must name their missing source even before browser hydration.
   content = content.replace(/(<button\b[^>]*data-k="(spend|roas|margin|profit)"[^>]*>)([\s\S]*?)<\/button>/g, (_button, tag: string, key: 'spend'|'roas'|'margin'|'profit', inner: string) => {
     const metric = snapshot.hero.today[key];
@@ -65,7 +68,7 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
   content = content.replace('<main class="wrap">', '<main class="wrap" id="main">');
   const failing = snapshot.shopify?.checks.filter(check => check.status === 'tripped').length ?? 0;
   const unconfirmed = snapshot.metaCampaigns?.unconfirmedCount ?? 0;
-  const badge = (id: string, count: number, label: string): string => `<span id="${id}" class="menu-count"${count ? '' : ' hidden'} aria-label="${count} ${label}">${count}</span>`;
+  const badge = (id: string, count: number, label: string): string => `<span id="${id}" class="menu-count"${count ? '' : ' hidden'} aria-label="${formatNumber(count)} ${label}">${formatNumber(count)}</span>`;
   content = content.replace(/<span class="avatar"[\s\S]*?<\/span><\/span>/, `<details class="account-menu" id="account-menu">
     <summary class="avatar" aria-label="Account menu">W</summary>
     <nav class="account-links" aria-label="Account">

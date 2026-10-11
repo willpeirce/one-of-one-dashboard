@@ -4,6 +4,14 @@ import type { Auth } from './auth.js';
 interface Subscriber {
   request: FastifyRequest;
   reply: FastifyReply;
+  content: string;
+}
+
+function snapshotContent(value: unknown): string {
+  // The timestamp describes this read, rather than a change to the dashboard.
+  return JSON.stringify(value, function (key, item) {
+    return this === value && key === 'generatedAt' ? undefined : item;
+  });
 }
 
 // One authenticated snapshot stream per tab. No data or credentials enter logs.
@@ -14,6 +22,7 @@ export function registerDashboardEvents(
 ) {
   const subscribers = new Set<Subscriber>();
   let publishing: Promise<void> | undefined;
+  let pinging: Promise<void> | undefined;
   let publishAgain = false;
   let pending = 0;
   let closing = false;
@@ -39,10 +48,27 @@ export function registerDashboardEvents(
   async function update(): Promise<void> {
     if (subscribers.size === 0) return;
     try {
-      const data = `event: dashboard\ndata: ${JSON.stringify(await snapshot())}\n\n`;
+      const value = await snapshot(), content = snapshotContent(value);
+      const data = `event: dashboard\ndata: ${JSON.stringify(value)}\n\n`;
       for (const subscriber of subscribers) {
         if (!await auth.session(subscriber.request)) close(subscriber, 'signed-out');
-        else send(subscriber, data);
+        else if (subscriber.content !== content) {
+          send(subscriber, data);
+          subscriber.content = content;
+        }
+      }
+    } catch {
+      for (const subscriber of subscribers) close(subscriber, 'unavailable');
+    }
+  }
+
+  async function ping(): Promise<void> {
+    try {
+      for (const subscriber of subscribers) {
+        if (!await auth.session(subscriber.request)) close(subscriber, 'signed-out');
+        // A large changed snapshot may still be draining from this same heartbeat.
+        // The optional comment must not mistake that healthy write for a slow tab.
+        else if (!subscriber.reply.raw.writableNeedDrain) send(subscriber, ': ping\n\n');
       }
     } catch {
       for (const subscriber of subscribers) close(subscriber, 'unavailable');
@@ -73,7 +99,7 @@ export function registerDashboardEvents(
     pending++;
     try {
       // Load before hijacking so failures still follow the normal safe error handler.
-      const data = JSON.stringify(await snapshot());
+      const value = await snapshot(), data = JSON.stringify(value);
       if (!await auth.session(request)) return reply.code(401).send({ error: 'Sign in to continue.' });
       if (closing) return reply.code(503).send({ error: 'The service is restarting.' });
       reply.hijack();
@@ -86,14 +112,19 @@ export function registerDashboardEvents(
         'Connection': 'keep-alive',
         'X-Accel-Buffering': 'no',
       });
-      const subscriber = { request, reply };
+      const subscriber = { request, reply, content: snapshotContent(value) };
       subscribers.add(subscriber);
       reply.raw.once('close', () => { subscribers.delete(subscriber); });
       send(subscriber, `retry: 15000\nevent: dashboard\ndata: ${data}\n\n`);
     } finally { pending--; }
   });
 
-  const heartbeat = setInterval(() => { void publish(); }, 15_000);
+  const heartbeat = setInterval(() => {
+    // Source workers commit in the background, so check for changed content here
+    // as well as after actions. Unchanged dashboards receive only the comment.
+    if (!pinging) pinging = (async () => { await publish(); await ping(); })()
+      .finally(() => { pinging = undefined; });
+  }, 15_000);
   heartbeat.unref();
   app.addHook('onResponse', async (request) => {
     if (request.method === 'POST' && request.routeOptions.url === '/auth/logout') await publish();
@@ -103,6 +134,7 @@ export function registerDashboardEvents(
     clearInterval(heartbeat);
     for (const subscriber of subscribers) close(subscriber);
     await publishing;
+    await pinging;
   });
   return { publish };
 }

@@ -14,6 +14,103 @@ function barrier() {
   return { promise, release };
 }
 
+test('SSE heartbeat pings, ignores generatedAt, and sends real background changes and reconnect snapshots', { timeout: 10_000 }, async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  const app = Fastify({ logger: false });
+  const abort = new AbortController();
+  let snapshotCalls = 0, revision = 1, signedIn = true;
+  const auth: Pick<Auth, 'session' | 'config'> = {
+    config: readRuntime({ DATABASE_URL: 'postgresql://localhost/pulse_test' }),
+    session: async () => signedIn ? 'synthetic-credential' : null,
+  };
+  const events = registerDashboardEvents(app, auth, async () => ({
+    generatedAt: new Date(Date.UTC(2026, 9, 11, 12, 0, snapshotCalls++)).toISOString(),
+    hero: { revision },
+  }));
+  t.after(async () => { abort.abort(); await app.close(); });
+  const base = await app.listen({ host: '127.0.0.1', port: 0 });
+  async function connect() {
+    const response = await fetch(`${base}/api/events`, { signal: abort.signal });
+    assert.equal(response.status, 200);
+    const reader = response.body!.getReader(), decoder = new TextDecoder();
+    let pending = '';
+    return async () => {
+      while (!pending.includes('\n\n')) {
+        const chunk = await reader.read();
+        assert.equal(chunk.done, false);
+        pending += decoder.decode(chunk.value, { stream: true });
+      }
+      const end = pending.indexOf('\n\n'), event = pending.slice(0, end);
+      pending = pending.slice(end + 2);
+      return event;
+    };
+  }
+  const next = await connect();
+  assert.match(await next(), /event: dashboard\ndata: .*"revision":1/);
+  await events.publish(); // Only generatedAt changed.
+  t.mock.timers.tick(15_000);
+  assert.equal(await next(), ': ping', 'no timestamp-only snapshot is queued before the ping');
+  assert.equal(snapshotCalls, 3, 'a heartbeat checks for source changes without emitting timestamp-only snapshots');
+
+  revision = 2;
+  await events.publish();
+  assert.match(await next(), /event: dashboard\ndata: .*"revision":2/);
+  const reconnect = await connect();
+  assert.match(await reconnect(), /event: dashboard\ndata: .*"revision":2/);
+  await events.publish();
+  t.mock.timers.tick(15_000);
+  assert.equal(await next(), ': ping');
+  assert.equal(await reconnect(), ': ping');
+
+  revision = 3; // A source worker committed new facts without an explicit publish.
+  t.mock.timers.tick(15_000);
+  assert.match(await next(), /event: dashboard\ndata: .*"revision":3/);
+  assert.equal(await next(), ': ping');
+  assert.match(await reconnect(), /event: dashboard\ndata: .*"revision":3/);
+  assert.equal(await reconnect(), ': ping');
+
+  signedIn = false;
+  t.mock.timers.tick(15_000);
+  assert.equal(await next(), 'event: signed-out\ndata: {}', 'heartbeat still checks session revocation');
+  assert.equal(await reconnect(), 'event: signed-out\ndata: {}');
+});
+
+test('a large changed heartbeat snapshot drains without its comment ping closing the stream', { timeout: 10_000 }, async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  const app = Fastify({ logger: false }), abort = new AbortController();
+  let revision = 1;
+  const detail = 'sample '.repeat(10_000);
+  const events = registerDashboardEvents(app, {
+    config: readRuntime({ DATABASE_URL: 'postgresql://localhost/pulse_test' }),
+    session: async () => 'synthetic-credential',
+  }, async () => ({ revision, detail }));
+  t.after(async () => { abort.abort(); await app.close(); });
+  const base = await app.listen({ host: '127.0.0.1', port: 0 });
+  const response = await fetch(`${base}/api/events`, { signal: abort.signal });
+  const reader = response.body!.getReader(), decoder = new TextDecoder();
+  let pending = '';
+  async function nextSnapshot() {
+    for (;;) {
+      while (!pending.includes('\n\n')) {
+        const chunk = await reader.read();
+        assert.equal(chunk.done, false, 'a healthy stream must stay open while its snapshot drains');
+        pending += decoder.decode(chunk.value, { stream: true });
+      }
+      const end = pending.indexOf('\n\n'), event = pending.slice(0, end);
+      pending = pending.slice(end + 2);
+      const data = event.split('\n').find(line => line.startsWith('data: '));
+      if (data) return JSON.parse(data.slice(6));
+    }
+  }
+  assert.deepEqual(await nextSnapshot(), { revision: 1, detail });
+  revision = 2;
+  t.mock.timers.tick(15_000);
+  assert.deepEqual(await nextSnapshot(), { revision: 2, detail });
+  revision = 3;
+  await events.publish();
+  assert.deepEqual(await nextSnapshot(), { revision: 3, detail }, 'the same connection accepts a later update');
+});
+
 test('SSE authenticates, updates without reload and closes when the session is revoked', async (t) => {
   const db = await createTestDatabase();
   const app = Fastify({ logger: false });

@@ -18,6 +18,6 @@ export const sampleReviewResponse = {
 };
 export function sampleReviews(): ReviewsPanel {
   return { mode: 'sample', status: 'waiting_for_keys', asOf: appConfig.shopify.sampleNow,
-    checkedAt: null, publishEnabled: appConfig.judgeme.publishEnabled,
-    rows: waitingReviews(sampleReviewResponse.reviews.map(cleanReview)) };
+    checkedAt: null, publishEnabled: appConfig.judgeme.publishEnabled, unreadCount: 0,
+    rows: waitingReviews(sampleReviewResponse.reviews.map(cleanReview).filter(row => row !== null)) };
 }

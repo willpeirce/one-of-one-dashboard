@@ -27,7 +27,11 @@ export class ReviewsWorker {
     if (!this.#client || now.getTime() < this.#next) return Promise.resolve();
     this.#next = now.getTime() + REVIEW_POLL_MS;
     this.#run = (async () => {
-      try { await saveReviews(this.db, await this.#client!.reviews(), now); }
+      try {
+        const result = await this.#client!.reviews();
+        await saveReviews(this.db, result.rows, now, result.unreadCount);
+        if (result.unreadCount > 0) console.warn(`Judge.me: ${result.unreadCount} reviews could not be read.`);
+      }
       catch (error) {
         const status = error instanceof JudgeMeReadError ? error.status : 0;
         const code = error instanceof JudgeMeReadError ? error.code : 'storage';

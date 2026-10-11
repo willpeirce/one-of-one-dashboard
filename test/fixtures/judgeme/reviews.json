@@ -241,6 +241,19 @@
           }
         }
       ]
+    },
+    {
+      "id": 900107,
+      "body": "An invented waiting review already curated as okay.",
+      "rating": 4,
+      "product_title": "Sample Kit",
+      "product_handle": "sample-product",
+      "curated": "ok",
+      "published": false,
+      "hidden": false,
+      "verified": "buyer",
+      "created_at": "2026-09-30T05:00:00Z",
+      "pictures": []
     }
   ]
 }

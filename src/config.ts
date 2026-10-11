@@ -90,9 +90,6 @@ export const appConfig = {
   github: { owner: 'willpeirce', repository: 'one-of-one-hq' },
   judgeme: {
     publishEnabled: false,
-    // Optional verified merchant link: {shop} is the Shopify domain; {review_id} is the review ID.
-    // Empty uses the Judge.me reviews dashboard until the exact route is confirmed.
-    reviewUrlTemplate: '',
   },
   ugc: { workingOrigin: 'https://creators.oneofonehq.com', originConfirmed: false },
   fulfilment: {

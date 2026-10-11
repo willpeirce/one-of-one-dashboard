@@ -322,7 +322,7 @@ async function checkReviews(context: BrowserContext): Promise<void> {
         for (const link of await links.all()) {
           const href = await link.getAttribute('href');
           assert.ok(href && new URL(href).protocol === 'https:');
-          assert.equal(href, 'https://app.judge.me/index', 'Unset review URL template opens the reviews dashboard');
+          assert.equal(href, 'https://app.judge.me/index', 'Review links open the Judge.me reviews dashboard');
           assert.equal(await link.getAttribute('target'), '_blank');
           assert.match(await link.getAttribute('rel') ?? '', /noopener/);
           assert.match(await link.getAttribute('rel') ?? '', /noreferrer/);
@@ -334,10 +334,27 @@ async function checkReviews(context: BrowserContext): Promise<void> {
         if (index === 0 && process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/reviews-sheet-${viewport.width}.png` });
         await page.locator('#sh-x').click();
       }
-      step = `${scope}: all caught up without changing health at ${viewport.width}px`;
-      fixture.reviews = { ...sample, mode: 'live', rows: [], status: 'live' };
+      step = `${scope}: unread review notice without changing health at ${viewport.width}px`;
+      fixture.reviews = { ...sample, unreadCount: 1 };
       await page.reload();
       await page.locator('html[data-dashboard-ready="true"]').waitFor();
+      const notice = page.locator('#reviews [data-review-notice]');
+      assert.equal(await notice.count(), 1);
+      assert.equal(await notice.innerText(), '1 reviews could not be read');
+      assert.equal(await rows.count(), sample.rows.length, 'Readable reviews remain visible');
+      assert.deepEqual(await page.locator('#counts > span').allTextContents(), health);
+      assert.equal(await page.locator('#radar').getAttribute('aria-label'), radar);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      fixture.reviews.rows = [];
+      await page.reload();
+      await page.locator('html[data-dashboard-ready="true"]').waitFor();
+      assert.equal(await notice.count(), 1);
+      assert.doesNotMatch(await page.locator('#reviews').innerText(), /All caught up/);
+      step = `${scope}: all caught up without changing health at ${viewport.width}px`;
+      fixture.reviews = { ...sample, mode: 'live', rows: [], status: 'live', unreadCount: 0 };
+      await page.reload();
+      await page.locator('html[data-dashboard-ready="true"]').waitFor();
+      assert.equal(await notice.count(), 0, 'The next clean poll clears the notice');
       assert.equal(await rows.count(), 0);
       assert.match(await page.locator('#counts button[data-rv]').innerText(), /All caught up/);
       assert.match(await page.locator('#subrv').innerText(), /All caught up/);

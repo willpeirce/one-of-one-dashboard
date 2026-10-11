@@ -27,7 +27,7 @@ const token = () => randomBytes(24).toString('hex');
 
 test('v1 review projection excludes identity and IP, filters moderation state, and puts low stars before newest', () => {
   const clean = fixture.reviews.map(cleanReview);
-  assert.deepEqual(waitingReviews(clean).map(r => r.id), ['900101', '900102', '900103']);
+  assert.deepEqual(waitingReviews(clean).map(r => r.id), ['900101', '900102', '900103', '900107']);
   const serialized = JSON.stringify(clean);
   for (const privateValue of ['Invented Reviewer', 'reviewer@example.test', '203.0.113.8', 'phone', 'reviewer', 'ip_address']) assert.ok(!serialized.includes(privateValue));
   assert.equal(clean[0].market, null);
@@ -47,14 +47,66 @@ test('GET-only client sends documented pagination/auth fields, walks all pages a
     assert.equal(url.searchParams.get('api_token'), credential);
     assert.equal(url.searchParams.get('shop_domain'), appConfig.shopify.storeDomain);
     assert.equal(url.searchParams.get('per_page'), '100');
+    assert.equal(url.searchParams.get('published'), 'false');
     return Response.json({ current_page: calls.length, per_page: 100, reviews: calls.length === 1
       ? Array.from({ length: 100 }, (_, i) => ({ ...fixture.reviews[0], id: 901000 + i })) : [fixture.reviews[1]] });
   } });
-  const rows = await client.reviews();
+  const { rows, unreadCount } = await client.reviews();
+  assert.equal(unreadCount, 0);
   assert.equal(rows.length, 101); assert.equal(calls.length, 2);
   assert.deepEqual(calls.map(u => u.searchParams.get('page')), ['1', '2']);
   assert.deepEqual(Object.getOwnPropertyNames(JudgeMeClient.prototype).sort(), ['constructor', 'reviews']);
   assert.doesNotMatch(JSON.stringify(rows), /Invented Reviewer|reviewer@example.test|203\.0\.113\.8/);
+});
+
+test('published is authoritative when present, with curated fallback only when absent', () => {
+  const waiting = cleanReview(fixture.reviews.find((r: any) => r.id === 900107))!;
+  assert.equal(waiting.curated, 'ok'); assert.equal(waiting.published, false);
+  assert.deepEqual(waitingReviews([waiting]).map(r => r.id), ['900107']);
+  assert.equal(cleanReview({ ...fixture.reviews[0], published: true })!.published, true);
+  assert.equal(cleanReview(fixture.reviews[0])!.published, false);
+  assert.equal(cleanReview(fixture.reviews[3])!.published, true);
+  for (const published of [null, 'false', 0]) assert.equal(cleanReview({ ...fixture.reviews[0], published }), null);
+});
+
+test('malformed JSON values and text unsupported by Postgres are unreadable without throwing', () => {
+  for (const row of [null, 1, '', {},
+    { ...fixture.reviews[0], curated: { toString: null, valueOf: null } },
+    { ...fixture.reviews[0], curated: 'unexpected' },
+    { ...fixture.reviews[0], pictures: null },
+    { ...fixture.reviews[0], created_at: 'not a date' },
+    { ...fixture.reviews[0], created_at: '0000-01-01T00:00:00Z' },
+    ...['body', 'product_title', 'product_handle'].flatMap(field => ['\u0000', '\uD800', '\uDC00'].map(value =>
+      ({ ...fixture.reviews[0], [field]: `Invented ${value} text` }))),
+  ]) assert.equal(cleanReview(row), null);
+  assert.equal(cleanReview({ ...fixture.reviews[0], body: 'Invented emoji review \uD83D\uDE00' })!.body, 'Invented emoji review \uD83D\uDE00');
+});
+
+test('bad rows are counted without truncating full pages, including an entirely unreadable page', async () => {
+  let calls = 0;
+  const client = new JudgeMeClient(token(), { sleep: async () => {}, fetch: async () => {
+    calls++;
+    return Response.json({ current_page: calls, reviews: calls === 1
+      ? [null, ...Array.from({ length: 99 }, (_, i) => ({ ...fixture.reviews[0], id: 902000 + i }))]
+      : calls === 2 ? Array.from({ length: 100 }, () => ({ private_field: 'Invented unreadable value' }))
+      : [fixture.reviews[1]] });
+  } });
+  const result = await client.reviews();
+  assert.equal(calls, 3); assert.equal(result.unreadCount, 101); assert.equal(result.rows.length, 100);
+  assert.equal(result.rows.at(-1)!.id, '900102');
+  assert.doesNotMatch(JSON.stringify(result), /private_field|Invented unreadable value/);
+});
+
+test('Retry-After seconds and dates cannot postpone a retry by more than 60 seconds', async () => {
+  for (const retry of ['3600', new Date(Date.now() + 3_600_000).toUTCString(), '9'.repeat(400)]) {
+    const waits: number[] = []; let calls = 0;
+    const client = new JudgeMeClient(token(), { sleep: async ms => { waits.push(ms); }, fetch: async () => {
+      calls++;
+      return calls === 1 ? new Response('', { status: 429, headers: { 'retry-after': retry } }) : Response.json(fixture);
+    } });
+    assert.equal((await client.reviews()).unreadCount, 0);
+    assert.deepEqual(waits, [60_000]);
+  }
 });
 
 test('failing reads expose only fixed status/code diagnostics; URL, token and response errors never escape', async () => {
@@ -79,12 +131,12 @@ test('complete polls upsert panel-only fields, remove published/hidden/deleted r
   const db = await createTestDatabase(); t.after(() => db.close());
   await syncSourceHealth(db, { JUDGEME_API_TOKEN: token() });
   await saveReviews(db, fixture.reviews.map(cleanReview), now);
-  assert.deepEqual((await readReviews(db, now)).rows.map(r => r.id), ['900101', '900102', '900103']);
+  assert.deepEqual((await readReviews(db, now)).rows.map(r => r.id), ['900101', '900102', '900103', '900107']);
   const stored = JSON.stringify((await db.query('SELECT * FROM pulse.judgeme_reviews')).rows);
   assert.doesNotMatch(stored, /Invented Reviewer|reviewer@example.test|203\.0\.113\.8|reviewer|ip_address/);
   const next = fixture.reviews.map((r: any) => ({ ...r, ...(r.id === 900101 ? { curated: 'ok' } : r.id === 900102 ? { hidden: true } : {}) }));
   await saveReviews(db, next.map(cleanReview), new Date(now.getTime() + REVIEW_POLL_MS));
-  assert.deepEqual((await readReviews(db, now)).rows.map(r => r.id), ['900103']);
+  assert.deepEqual((await readReviews(db, now)).rows.map(r => r.id), ['900103', '900107']);
   await saveReviews(db, [], now);
   assert.equal((await db.query('SELECT * FROM pulse.judgeme_reviews')).rows.length, 0);
   assert.equal(reviewsGreeting(await readReviews(db, now)), 'All caught up');
@@ -101,9 +153,9 @@ test('live worker polls once per five minutes, shares in-flight runs and recover
   t.after(() => worker.stop());
   const first = worker.tick(); assert.equal(worker.tick(), first); await first;
   await worker.tick(); assert.equal(count, 1);
-  let panel = await readReviews(db, clock); assert.equal(panel.status, 'live'); assert.equal(panel.rows.length, 3);
+  let panel = await readReviews(db, clock); assert.equal(panel.status, 'live'); assert.equal(panel.rows.length, 4);
   clock = new Date(now.getTime() + REVIEW_POLL_MS); fail = true; await worker.tick();
-  panel = await readReviews(db, clock); assert.equal(panel.status, 'unavailable'); assert.equal(panel.rows.length, 3);
+  panel = await readReviews(db, clock); assert.equal(panel.status, 'unavailable'); assert.equal(panel.rows.length, 4);
   assert.deepEqual(logs, ['Judge.me poll failed (status: 403, code: http).']);
   clock = new Date(clock.getTime() + REVIEW_POLL_MS); await worker.tick();
   const failedHealth = await readSourceHealth(db);
@@ -115,6 +167,44 @@ test('live worker polls once per five minutes, shares in-flight runs and recover
   const health = (await readSourceHealth(db)).find(row => row.source === 'judgeme')!;
   assert.equal(health.status, 'healthy'); assert.equal(health.consecutiveFailures, 0);
   assert.match(sourceHealthPage([health]), />Live<\/td>/);
+});
+
+test('one bad row keeps good reviews live, logs only its count and clears one durable notice on a clean poll', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const env = { JUDGEME_API_TOKEN: token() }; await syncSourceHealth(db, env);
+  const logs: string[] = []; t.mock.method(console, 'warn', (s: string) => logs.push(s));
+  t.mock.method(console, 'error', () => {});
+  let clock = now, fail = false, response = { ...fixture, reviews: [fixture.reviews[0],
+    { ...fixture.reviews[2], curated: { toString: null, valueOf: null }, body: 'Invented unreadable value' }, fixture.reviews[1]] };
+  const worker = new ReviewsWorker(db, env, { clock: () => clock, sleep: async () => {}, fetch: async () =>
+    fail ? new Response('', { status: 403 }) : Response.json(response) });
+  t.after(() => worker.stop());
+  await worker.tick();
+  let panel = await readReviews(db, clock);
+  assert.equal(panel.status, 'live'); assert.equal(panel.unreadCount, 1);
+  assert.deepEqual(panel.rows.map(r => r.id), ['900101', '900102']);
+  assert.deepEqual(logs, ['Judge.me: 1 reviews could not be read.']);
+  assert.equal((reviewsPanelHtml(panel).match(/data-review-notice/g) ?? []).length, 1);
+  assert.match(reviewsPanelHtml(panel), /1 reviews could not be read/);
+  assert.deepEqual((await db.query('SELECT unread_count FROM pulse.judgeme_sync')).rows, [{ unread_count: 1 }]);
+  assert.doesNotMatch(JSON.stringify((await db.query('SELECT * FROM pulse.judgeme_reviews')).rows), /Invented unreadable value/);
+  // A failed request does not clear the last partial-poll notice.
+  clock = new Date(clock.getTime() + REVIEW_POLL_MS); fail = true; await worker.tick();
+  assert.equal((await readReviews(db, clock)).unreadCount, 1);
+  // A second partial poll updates good rows without deleting an unreadable cached row.
+  clock = new Date(clock.getTime() + REVIEW_POLL_MS); fail = false;
+  response = { ...fixture, reviews: [{ ...fixture.reviews[0], body: 'Invented \u0000 text' }, { ...fixture.reviews[1], rating: 4 }] };
+  await worker.tick(); panel = await readReviews(db, clock);
+  assert.deepEqual(panel.rows.map(r => r.id), ['900101', '900102']);
+  assert.equal(panel.rows[1]!.rating, 4); assert.equal(panel.unreadCount, 1);
+  assert.equal((reviewsPanelHtml(panel).match(/data-review-notice/g) ?? []).length, 1);
+  clock = new Date(clock.getTime() + REVIEW_POLL_MS);
+  response = { ...fixture, reviews: [fixture.reviews[1]] }; await worker.tick();
+  panel = await readReviews(db, clock);
+  assert.equal(panel.status, 'live'); assert.equal(panel.unreadCount, 0);
+  assert.deepEqual(panel.rows.map(r => r.id), ['900102']);
+  assert.doesNotMatch(reviewsPanelHtml(panel), /data-review-notice|reviews could not be read/);
+  assert.deepEqual((await db.query('SELECT unread_count FROM pulse.judgeme_sync')).rows, [{ unread_count: 0 }]);
 });
 
 test('review polling starts only after listen and a failed poll cannot fail startup or health', async t => {
@@ -147,25 +237,14 @@ test('without a token Judge.me waits for keys and its sample worker never reads 
   assert.match(sourceHealthPage([row]), /Waiting for keys/); assert.equal(row.lastAttemptAt, null);
 });
 
-test('an unset review URL template sends every Open and Read action to the Judge.me dashboard', () => {
-  assert.equal(appConfig.judgeme.reviewUrlTemplate, '');
+test('every Open and Read action uses the final Judge.me reviews dashboard URL', () => {
   const panel = sampleReviews();
-  assert.equal(reviewLink('900201'), 'https://app.judge.me/index');
-  assert.equal(reviewLink('900201', '   '), 'https://app.judge.me/index');
+  assert.equal(reviewLink(), 'https://app.judge.me/index');
   for (const html of [reviewsPanelHtml(panel), ...panel.rows.map(row => reviewSheetHtml(row, panel))]) {
     const links = [...html.matchAll(/data-review-link href="([^"]+)"/g)];
     assert.ok(links.length > 0);
     for (const [, href] of links) assert.equal(href, 'https://app.judge.me/index');
   }
-});
-
-test('a configured review URL template replaces and encodes shop and review ID placeholders', () => {
-  // Invented template for substitution coverage, not a claimed Judge.me merchant route.
-  const template = 'https://app.judge.me/example-review/{review_id}?shop={shop}&review={review_id}';
-  assert.equal(reviewLink('900201', template, 'sample-shop.myshopify.com'),
-    'https://app.judge.me/example-review/900201?shop=sample-shop.myshopify.com&review=900201');
-  assert.equal(reviewLink('sample/id', template, 'sample shop&extra'),
-    'https://app.judge.me/example-review/sample%2Fid?shop=sample%20shop%26extra&review=sample%2Fid');
 });
 
 test('reviews share sample/live rendering, safely escape full text, disable Publish and supply greeting/empty state', () => {
@@ -175,7 +254,7 @@ test('reviews share sample/live rendering, safely escape full text, disable Publ
   const html = reviewsPanelHtml(panel), sheet = reviewSheetHtml(row, panel);
   assert.match(html, /id="review-publish"[^>]*disabled/); assert.match(html, /Verified buyer/); assert.match(html, /1 photo/);
   assert.ok(sheet.indexOf('Read in Judge.me') < sheet.indexOf('Open in Judge.me'));
-  assert.equal((sheet.match(/data-review-link/g) ?? []).length, 2); assert.ok(sheet.includes(reviewLink(row.id)));
+  assert.equal((sheet.match(/data-review-link/g) ?? []).length, 2); assert.ok(sheet.includes(reviewLink()));
   assert.match(sheet, /Sample data/); assert.match(sheet, new RegExp(row.body.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.doesNotMatch(html, /data-state="alarm"|Not built yet|reviewer/);
   row.body = '<script>sample attack</script>'; assert.ok(!reviewSheetHtml(row, panel).includes(row.body));

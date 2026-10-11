@@ -1,16 +1,12 @@
 import { formatNumber } from '../money.js';
-import { appConfig } from '../config.js';
 import type { Review, ReviewsPanel } from './model.js';
 
 const esc = (text: string): string => text.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const count = formatNumber;
-export function reviewLink(id: string, template: string = appConfig.judgeme.reviewUrlTemplate, shop: string = appConfig.shopify.storeDomain): string {
-  return template.trim()
-    ? template.replaceAll('{shop}', encodeURIComponent(shop)).replaceAll('{review_id}', encodeURIComponent(id))
-    : 'https://app.judge.me/index';
-}
+export function reviewLink(): string { return 'https://app.judge.me/index'; }
 export function reviewsGreeting(panel: ReviewsPanel): string {
   const n = panel.rows.length, low = panel.rows.filter(row => row.rating <= 3).length;
+  if (!n && panel.unreadCount > 0) return 'Some reviews could not be read';
   if (!n) return panel.status === 'pending' ? 'Reviews: first sync pending' : panel.status === 'unavailable' ? 'Reviews unavailable' : 'All caught up';
   return `${count(n)} ${panel.mode === 'sample' ? 'sample' : 'new'} ${n === 1 ? 'review' : 'reviews'}${low ? `, ${count(low)} needs reading first` : ' to check'}`;
 }
@@ -19,7 +15,7 @@ export function reviewAge(createdAt: string, asOf: string): string {
   return minutes < 60 ? `${count(minutes)} min` : minutes < 1440 ? `${count(Math.floor(minutes / 60))} h` : `${count(Math.floor(minutes / 1440))} d`;
 }
 function links(review: Review): string {
-  const href = esc(reviewLink(review.id));
+  const href = esc(reviewLink());
   return `${review.rating <= 3 ? `<a class="act primary" data-review-link href="${href}" target="_blank" rel="noopener noreferrer">Read in Judge.me</a>` : ''}<a class="act" data-review-link href="${href}" target="_blank" rel="noopener noreferrer">Open in Judge.me</a>`;
 }
 export function reviewsPanelHtml(panel: ReviewsPanel): string {
@@ -30,6 +26,7 @@ export function reviewsPanelHtml(panel: ReviewsPanel): string {
   return `<div class="rvhead"><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-review"></use></svg></span>
     <div><h2>New reviews <span class="chip ${panel.rows.length ? 'decide' : 'info'}" id="rvcount">${panel.rows.length ? `${count(panel.rows.length)} waiting` : esc(reviewsGreeting(panel))}</span></h2><span class="shm">${esc(status)}</span></div>
     <button class="act" id="review-publish" type="button" disabled title="Publishing from Pulse is not enabled">Publish</button></div>
+    ${panel.unreadCount > 0 ? `<p class="note" data-review-notice>${count(panel.unreadCount)} reviews could not be read</p>` : ''}
     <div class="rvlist">${panel.rows.length ? panel.rows.map(row => `<article class="rv" data-state="${row.rating <= 3 ? 'warn' : 'decide'}" data-review-id="${esc(row.id)}" data-source="judgeme" data-mode="${panel.mode}">
       <div class="rvr"><span class="rvs"><span class="stars" role="img" aria-label="${row.rating} out of 5 stars" data-stars="${row.rating}">${[1, 2, 3, 4, 5].map(star => `<svg class="${star <= row.rating ? 'on' : 'off'}" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-star"/></svg>`).join('')}</span><span class="chip ${row.rating <= 3 ? 'warn' : 'decide'}">${row.rating <= 3 ? 'Read first' : 'New'}</span></span>
       <button class="rt" type="button" data-review-open="${esc(row.id)}"><h3>${esc(row.productTitle)} · ${esc(row.market ?? 'Market unknown')}</h3>

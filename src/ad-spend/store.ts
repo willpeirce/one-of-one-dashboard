@@ -80,6 +80,7 @@ export async function readMetaCampaigns(
   if (!live) return sampleMetaCampaigns(settings);
   return (await cachedMetaCampaigns(db, account)).map((row) => ({
     ...row,
+    name: row.name.trim() || `(no name) · ${row.id.slice(-4)}`,
     owner: ownerFor('meta', row.id, settings),
     confirmed: settings.metaOwners.some((rule) => rule.campaignId === row.id),
     mode: 'live' as const,

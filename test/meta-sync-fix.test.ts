@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import test from 'node:test';
+import type { Database } from '../src/db.js';
 import { MetaSpend } from '../src/ad-spend/clients.js';
 import { AdTransport } from '../src/ad-spend/http.js';
 import { AdError, adErrorCode } from '../src/ad-spend/model.js';
@@ -106,6 +107,34 @@ test('spend failure stays unavailable even when the independent campaign read su
   assert.deepEqual(logs, ['Ad spend meta failed (http 400, meta 100/1487694).']);
 });
 
+test('campaign state persistence errors never mark a successful spend sync unavailable or log database values', async (t) => {
+  const db = await createTestDatabase();
+  t.after(() => db.close());
+  const s = settings(), e = env(), logs: string[] = [];
+  t.mock.method(console, 'error', (line: string) => logs.push(line));
+  await syncSourceHealth(db, e);
+  await db.query('INSERT INTO pulse.settings(values) VALUES($1)', [JSON.stringify(s)]);
+  await db.query('INSERT INTO pulse.ad_spend_jobs(source,account_id,backfill_done) VALUES ($1,$2,true)', ['meta', s.metaAdAccountId]);
+  const failingStateDb: Database = {
+    ...db,
+    async query<Row extends Record<string, unknown>>(text: string, values?: unknown[]) {
+      if (text.includes('INSERT INTO pulse.meta_campaign_sync')) throw new Error('invented-private-database-value');
+      return db.query<Row>(text, values);
+    },
+  };
+  const worker = new SpendWorker(failingStateDb, e, {
+    clock: () => now,
+    readers: { meta: { read: async () => [], readCampaigns: async () => [] } },
+  });
+  t.after(() => worker.stop());
+  await worker.tick('meta');
+  const health = (await db.query<{ status: string; consecutive_failures: number }>(
+    "SELECT status,consecutive_failures FROM pulse.source_health WHERE source='meta'",
+  )).rows[0]!;
+  assert.deepEqual(health, { status: 'healthy', consecutive_failures: 0 });
+  assert.deepEqual(logs, ['Meta campaigns read failed (unknown).']);
+});
+
 test('one malformed campaign is counted and skipped while good rows are saved', async (t) => {
   const db = await createTestDatabase();
   t.after(() => db.close());
@@ -126,7 +155,7 @@ test('campaign validation skips bad identifiers, names, unknown statuses and inv
   t.mock.method(console, 'info', (line: string) => logs.push(line));
   const invalid = [
     { ...campaign, id: 'bad/id' }, { ...campaign, id: '' },
-    { ...campaign, name: '' }, { ...campaign, name: '   ' },
+    { ...campaign, name: null }, { ...campaign, name: 42 },
     { ...campaign, effective_status: 'UNRECOGNISED' },
     { ...campaign, created_time: 'not-a-date' },
     { ...campaign, created_time: '2026-02-30T10:00:00+0000' },

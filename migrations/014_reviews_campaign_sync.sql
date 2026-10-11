@@ -18,3 +18,13 @@ CREATE TABLE pulse.judgeme_reviews (
 );
 
 REVOKE ALL ON pulse.judgeme_reviews FROM PUBLIC;
+
+CREATE TABLE pulse.meta_campaign_sync (
+  account_id text PRIMARY KEY,
+  last_success_at timestamptz,
+  last_error_at timestamptz,
+  last_error_code text
+);
+INSERT INTO pulse.meta_campaign_sync (account_id, last_success_at)
+SELECT account_id, max(last_seen) FROM pulse.meta_campaigns GROUP BY account_id;
+REVOKE ALL ON pulse.meta_campaign_sync FROM PUBLIC;

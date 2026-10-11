@@ -161,10 +161,10 @@ export class SpendWorker {
     if (source === 'meta' && reader.readCampaigns) {
       try {
         await saveMetaCampaigns(this.db, account, await reader.readCampaigns(account), now);
-        recordCampaignSync(this.db, account, { state: 'success', at: now.toISOString() });
+        await recordCampaignSync(this.db, account, { state: 'success', at: now.toISOString() });
       } catch (error) {
         const code = adErrorCode(error, 'meta');
-        recordCampaignSync(this.db, account, { state: 'error', at: now.toISOString(), code });
+        await recordCampaignSync(this.db, account, { state: 'error', at: now.toISOString(), code }).catch(() => {});
         console.error(`Meta campaigns read failed (${code}).`);
       }
     }

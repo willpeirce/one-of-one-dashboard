@@ -164,8 +164,9 @@ export class MetaSpend implements SpendReader {
           if (!row || typeof row !== 'object') throw new AdError('invalid');
           const status = label(row.effective_status);
           if (!campaignStatuses.has(status)) throw new AdError('invalid');
+          if (typeof row.name !== 'string' || row.name.length > 300) throw new AdError('invalid');
           rows.push({
-            id: identifier(row.id), name: label(row.name), status,
+            id: identifier(row.id), name: row.name.trim(), status,
             createdAt: campaignCreatedAt(row.created_time),
           });
         } catch {

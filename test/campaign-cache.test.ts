@@ -147,28 +147,59 @@ test('campaign sync state covers pending, failed, recovered and successful-empty
   assert.deepEqual(await readCampaignSync(db, s, env), { state: 'pending', at: null });
   assert.deepEqual(await readMetaCampaigns(db, s, env), []);
   assert.equal(reads(), 1);
-  recordCampaignSync(db, s.metaAdAccountId, { state: 'error', at: now.toISOString(), code: 'http 400, meta 100/1487694' });
+  await recordCampaignSync(db, s.metaAdAccountId, { state: 'error', at: now.toISOString(), code: 'http 400, meta 100/1487694' });
   assert.deepEqual(await readCampaignSync(db, s, env), {
     state: 'error', at: now.toISOString(), code: 'http 400, meta 100/1487694',
   });
   assert.deepEqual(await readCampaignSync(db, { ...s, metaAdAccountId: '9000000001' }, env), { state: 'pending', at: null });
 
   await saveMetaCampaigns(db, s.metaAdAccountId, [campaign], now);
-  recordCampaignSync(db, s.metaAdAccountId, { state: 'success', at: now.toISOString() });
+  await recordCampaignSync(db, s.metaAdAccountId, { state: 'success', at: now.toISOString() });
   const recovered = await readCampaignSync(db, s, env);
   assert.deepEqual(recovered, { state: 'success', at: now.toISOString() });
   recovered.at = later.toISOString();
   assert.deepEqual(await readCampaignSync(db, s, env), { state: 'success', at: now.toISOString() });
   const rows = await readMetaCampaigns(db, s, env);
-  recordCampaignSync(db, s.metaAdAccountId, { state: 'error', at: later.toISOString(), code: 'timeout' });
+  await recordCampaignSync(db, s.metaAdAccountId, { state: 'error', at: later.toISOString(), code: 'timeout' });
   assert.deepEqual(await readMetaCampaigns(db, s, env), rows);
   assert.deepEqual(await readCampaignSync(db, s, env), { state: 'error', at: later.toISOString(), code: 'timeout' });
-  assert.deepEqual(await readCampaignSync({ ...db }, s, env), { state: 'success', at: now.toISOString() },
-    'restart infers the last stored successful non-empty read');
+  assert.deepEqual(await readCampaignSync({ ...db }, s, env), { state: 'error', at: later.toISOString(), code: 'timeout' },
+    'a fresh process recovers the persisted failure instead of inferring success from old rows');
+  const persisted = (await db.query<{ last_success_at: Date | string; last_error_code: string }>(
+    'SELECT last_success_at,last_error_code FROM pulse.meta_campaign_sync WHERE account_id=$1', [s.metaAdAccountId],
+  )).rows[0]!;
+  assert.equal(new Date(persisted.last_success_at).toISOString(), now.toISOString());
+  assert.equal(persisted.last_error_code, 'timeout');
 
   await saveMetaCampaigns(db, s.metaAdAccountId, [], later);
-  recordCampaignSync(db, s.metaAdAccountId, { state: 'success', at: later.toISOString() });
+  await recordCampaignSync(db, s.metaAdAccountId, { state: 'success', at: later.toISOString() });
   assert.deepEqual(await readCampaignSync(db, s, env), { state: 'success', at: later.toISOString() });
   assert.deepEqual(await readMetaCampaigns(db, s, env), rows);
   assert.deepEqual(await readCampaignSync(db, s, {}), { state: 'success', at: '2026-09-30T12:00:00.000Z' });
+});
+
+test('campaign sync persists first failures and successful empty catalogues per account across restarts', async (t) => {
+  const db = await createTestDatabase();
+  t.after(() => db.close());
+  const s = settings(), env = liveEnv(), other = { ...s, metaAdAccountId: '9000000001' };
+  await recordCampaignSync(db, s.metaAdAccountId, { state: 'error', at: now.toISOString(), code: 'http 400, meta 100/42' });
+  assert.deepEqual(await readCampaignSync({ ...db }, s, env), {
+    state: 'error', at: now.toISOString(), code: 'http 400, meta 100/42',
+  });
+  assert.deepEqual(await readCampaignSync({ ...db }, other, env), { state: 'pending', at: null });
+
+  await saveMetaCampaigns(db, other.metaAdAccountId, [], now);
+  await recordCampaignSync(db, other.metaAdAccountId, { state: 'success', at: now.toISOString() });
+  assert.deepEqual(await readCampaignSync({ ...db }, other, env), { state: 'success', at: now.toISOString() });
+  assert.equal((await db.query('SELECT * FROM pulse.meta_campaigns')).rowCount, 0);
+  assert.deepEqual(await readCampaignSync({ ...db }, s, env), {
+    state: 'error', at: now.toISOString(), code: 'http 400, meta 100/42',
+  }, 'another account succeeding never clears this account failure');
+
+  await recordCampaignSync(db, s.metaAdAccountId, { state: 'success', at: later.toISOString() });
+  assert.deepEqual(await readCampaignSync({ ...db }, s, env), { state: 'success', at: later.toISOString() });
+  const rows = (await db.query<{ last_error_at: null; last_error_code: null }>(
+    'SELECT last_error_at,last_error_code FROM pulse.meta_campaign_sync WHERE account_id=$1', [s.metaAdAccountId],
+  )).rows;
+  assert.deepEqual(rows, [{ last_error_at: null, last_error_code: null }]);
 });

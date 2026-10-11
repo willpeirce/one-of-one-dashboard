@@ -7,6 +7,7 @@ import { AdError, type MetaCampaign, type SpendRow } from '../src/ad-spend/model
 import { readMetaCampaigns, sampleSpend, saveMetaCampaigns, saveSpend, spendFacts } from '../src/ad-spend/store.js';
 import { SpendWorker } from '../src/ad-spend/worker.js';
 import { defaultSettings, readSettings, saveSettings } from '../src/settings.js';
+import { settingsPage } from '../src/settings-view.js';
 import { syncSourceHealth } from '../src/sources.js';
 import { createTestDatabase } from './helpers/database.js';
 
@@ -48,6 +49,26 @@ test('Meta campaign reads follow every cursor on the fixed read-only edge, inclu
     fetch: async () => response({ data: [], paging: { next: 'ignored', cursors: { after: 'repeated' } } }),
   });
   await assert.rejects(invalid.readCampaigns('9000000000'), AdError);
+});
+
+test('Meta retains empty campaign names and Settings displays a no-name label with the final four id characters', async (t) => {
+  const db = await createTestDatabase();
+  t.after(() => db.close());
+  const s = settings(), rows = (await fixture()).data.slice(0, 2);
+  rows[0].name = '';
+  rows[1].name = '   ';
+  const client = new MetaSpend(randomBytes(16).toString('hex'), {
+    sleep: async () => {}, fetch: async () => response({ data: rows }),
+  });
+  const read = await client.readCampaigns(s.metaAdAccountId);
+  assert.equal(read.length, 2);
+  assert.ok(read.every((row) => row.name === ''));
+  await saveMetaCampaigns(db, s.metaAdAccountId, read, now);
+  const displayed = await readMetaCampaigns(db, s, env());
+  assert.deepEqual(displayed.map((row) => row.name), ['(no name) · 0602', '(no name) · 0601']);
+  const html = settingsPage({ version: 0, values: s }, [], 'live', now, displayed);
+  assert.match(html, /<h4>\(no name\) · 0601<\/h4>/);
+  assert.match(html, /<h4>\(no name\) · 0602<\/h4>/);
 });
 
 test('campaign upserts preserve first seen and missing rows, scope the account and confirm default Ours through audited Settings', async (t) => {

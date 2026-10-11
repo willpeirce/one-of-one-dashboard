@@ -94,7 +94,7 @@ test('USD actual conversion retains upload rate when current setting changes; GB
 });
 
 test('each parcel Needs you rule excludes rate checks for unknown services',async()=>{
-  const o=await order(),p=parcel(parseExport(csv())[0]!,o.id),m=learn([p],[o]);
+  const o=await order(),p=parcel(parseExport(csv())[0]!,o.id),m=learn(Array.from({length:5},(_,i)=>({...p,id:`invented-peer-${i}`})),[o]);
   assert.deepEqual(parcelFlags({...p,service:'Invented Service',rateBaselinePence:1,postageMinor:10000,pickPackMinor:10000},o,m),['Unknown service']);
   assert.ok(parcelFlags({...p,warehouse:'us',service:'Ground Advantage'},o,m).includes('Wrong warehouse for destination'));
   assert.ok(parcelFlags({...p,warehouse:'unknown'},o,m).includes('Unknown fulfilment centre'));
@@ -102,6 +102,40 @@ test('each parcel Needs you rule excludes rate checks for unknown services',asyn
   assert.ok(parcelFlags({...p,pickPackMinor:1000},o,m).includes('Possible new surcharge'));
   assert.ok(!parcelFlags({...p,rateBaselinePence:400,postageMinor:339},o,m).includes('Cost more than 25% off its rate'));
 
+});
+
+test('rate and surcharge flags need five matching peers, without changing estimates',async()=>{
+  const o=await order('996001',true);
+  const p={...parcel(parseExport(csv({'Reference':o.orderNumber!,'Fulfilment Centre':'Columbus','Postage Method':'Ground Advantage','Country':'US'}))[0]!,o.id),rateBaselinePence:400,postageMinor:900,pickPackMinor:500};
+  const peers=Array.from({length:5},(_,i)=>({...p,id:`invented-peer-${i}`,postageMinor:300,pickPackMinor:100}));
+  const four=learn(peers.slice(0,4),[o]),five=learn(peers,[o]);
+  assert.deepEqual(parcelFlags(p,o,four),[]);
+  assert.deepEqual(parcelFlags(p,o,five),['Cost more than 25% off its rate','Possible new surcharge']);
+  assert.deepEqual(estimateOrder(o,[],four,settings),estimateOrder(o,[],five,settings));
+  for (const change of [{warehouse:'uk' as const},{service:'UPS Ground'},{mix:mixKey({'sample-a':2})},{state:'CA'}]) {
+    assert.deepEqual(parcelFlags(p,o,{...five,rates:five.rates.map(r=>({...r,...change}))}),[]);
+  }
+});
+
+test('rebuild clears old small-group cards without re-upload and raises them at five peers',async t=>{
+  const db=await createTestDatabase();t.after(()=>db.close());
+  const orders=await Promise.all(Array.from({length:6},(_,i)=>order(String(996100+i))));
+  const store=new ShopifyStore(db,'live');for (const o of orders) await store.put('order',o.id,o,now);
+  const rows=orders.map((o,i)=>parseExport(csv({'Reference':o.orderNumber!,'Postage Charge':'3.00','Line Total':i===0?'12.0000':'4.0000'}))[0]!);
+  const flags=['Cost more than 25% off its rate','Possible new surcharge'];
+  await confirmImport(db,'live',rows.slice(0,5),'invented-small-group.csv',.754,now);
+  assert.equal((await fulfilmentSummary(db,'live',now)).needs.filter(n=>flags.includes(n.title)).length,0);
+  const before=await readEstimates(db,'live');
+  await db.query('UPDATE pulse.fulfilment_parcels SET flags=$2 WHERE mode=$1',['live',JSON.stringify(flags)]);
+  assert.ok((await fulfilmentSummary(db,'live',now)).needs.some(n=>flags.includes(n.title)));
+  await refreshFulfilment(db,'live',now);
+  assert.equal((await fulfilmentSummary(db,'live',now)).needs.filter(n=>flags.includes(n.title)).length,0);
+  assert.deepEqual(await readEstimates(db,'live'),before);
+  assert.equal((await readUploads(db,'live')).length,1);
+  await confirmImport(db,'live',rows.slice(5),'invented-fifth-peer.csv',.754,now);
+  const target=(await readParcels(db,'live')).find(p=>p.orderId===orders[0]!.id)!;
+  assert.deepEqual(target.flags,flags);
+  assert.equal((await fulfilmentSummary(db,'live',now)).needs.filter(n=>n.id.startsWith(`parcel:${target.id}:`)).length,2);
 });
 
 test('confirmation matches and adds second parcels, records MAE, refreshes new orders, isolates modes and reuploads idempotently',async t=>{

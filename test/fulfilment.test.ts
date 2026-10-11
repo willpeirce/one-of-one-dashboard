@@ -204,6 +204,60 @@ test('stored USD parcels keep earlier invoice rates and concurrent confirmations
 
 });
 
+test('upload coverage reads UK dates from driver Date values around midnight and DST',async t=>{
+  const db=await createTestDatabase();t.after(()=>db.close());
+  await confirmImport(db,'live',parseExport(csv()),'invented-uk-dates.csv',.754,now,undefined,true);
+  for (const [from,to,expectedFrom,expectedTo] of [
+    [new Date('2026-09-29T23:00:00Z'),new Date('2026-09-30T23:00:00Z'),'2026-09-30','2026-10-01'],
+    [new Date('2026-10-24T23:00:00Z'),new Date('2026-10-26T00:00:00Z'),'2026-10-25','2026-10-26'],
+    ['2026-09-30','2026-10-01','2026-09-30','2026-10-01'],
+  ] as const) {
+    const driverDates:typeof db={...db,query:async<Row extends Record<string,unknown>>(text:string,values?:unknown[])=>{
+      const result=await db.query<Row>(text,values);
+      return {...result,rows:result.rows.map(row=>({...row,coverage_from:from,coverage_to:to}))};
+    }};
+    const upload=(await readUploads(driverDates,'live'))[0]!;
+    assert.equal(upload.coverageFrom,expectedFrom);assert.equal(upload.coverageTo,expectedTo);
+    assert.equal(upload.despatchFrom,'2026-09-30 14:00:00');
+  }
+});
+
+test('any earlier complete covering upload deduplicates narrower ranges but partial coverage does not',async t=>{
+  const db=await createTestDatabase();t.after(()=>db.close());
+  const rows=['2026-09-27','2026-09-28','2026-09-29','2026-09-30','2026-10-01'].map(day=>parseExport(csv({'Despatched':day+' 14:00:00'}))[0]!);
+  await confirmImport(db,'live',rows,'invented-incomplete.csv',.754,now);
+  // An upload without confirmed completeness cannot cover even an already stored range.
+  const complete=await confirmImport(db,'live',rows.slice(1,4),'invented-complete.csv',.754,now,undefined,true);
+  assert.equal(complete.saved,0);assert.ok(complete.uploadId);
+  const narrower=await confirmImport(db,'live',rows.slice(2,3),'invented-narrower.csv',.754,now,undefined,true);
+  assert.equal(narrower.uploadId,null);
+  assert.equal((await readUploads(db,'live')).length,2);
+  const overlap=await confirmImport(db,'live',rows.slice(0,3),'invented-overlap.csv',.754,now,undefined,true);
+  assert.equal(overlap.saved,0);assert.ok(overlap.uploadId);
+  const beyond=await confirmImport(db,'live',rows.slice(3),'invented-beyond.csv',.754,now,undefined,true);
+  assert.equal(beyond.saved,0);assert.ok(beyond.uploadId);
+  assert.equal((await readUploads(db,'live')).length,4);
+});
+
+test('upload despatch ranges retain warehouse wall dates near midnight regardless of driver timezone',async t=>{
+  const db=await createTestDatabase();t.after(()=>db.close());
+  const rows=['2026-09-30 00:15:00','2026-10-01 00:30:00'].map(despatched=>parseExport(csv({'Despatched':despatched}))[0]!);
+  await confirmImport(db,'live',rows,'invented-midnight.csv',.754,now,undefined,true);
+  // Model pg's timestamp parser on a UK host: Date-valued wall timestamps near
+  // midnight fall on the prior UTC day. Text-valued columns remain unchanged.
+  const ukDriver:typeof db={...db,query:async<Row extends Record<string,unknown>>(text:string,values?:unknown[])=>{
+    const result=await db.query<Row>(text,values);
+    return {...result,rows:result.rows.map(row=>({...row,
+      despatch_from:row.despatch_from instanceof Date?new Date('2026-09-29T23:15:00Z'):row.despatch_from,
+      despatch_to:row.despatch_to instanceof Date?new Date('2026-09-30T23:30:00Z'):row.despatch_to,
+    }))};
+  }};
+  const upload=(await readUploads(ukDriver,'live'))[0]!;
+  assert.equal(upload.despatchFrom,'2026-09-30 00:15:00');
+  assert.equal(upload.despatchTo,'2026-10-01 00:30:00');
+  assert.equal(upload.coverageFrom,'2026-09-30');assert.equal(upload.coverageTo,'2026-10-01');
+});
+
 
 test('real ExportOrders services train, including FedEx IOSS, while unknown carriers stay excluded',async()=>{
   const services=['Royal Mail Tracked 48','DPD V2 Parcel Next Day','DPD Two Day','DPD V2 Parcel Two Day','USPS GroundAdvantage','USPS Ground Advantage','UPS Ground','FedEx International Connect Plus IOSS','FedEx IOSS Economy'];

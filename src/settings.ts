@@ -3,6 +3,7 @@ import { invalidateMetaCampaigns } from './ad-spend/campaign-cache.js';
 import type { Database } from './db.js';
 import type { OverheadItem } from './overheads.js';
 import { sourceDefinitions } from './sources.js';
+import { isSeriesDate, seriesPaceDates } from './series-pace/dates.js';
 
 export const SETTINGS_KEY_NAMES = Object.freeze(sourceDefinitions.flatMap((source) => [...source.requiredKeys]));
 type KeyName = (typeof SETTINGS_KEY_NAMES)[number];
@@ -27,6 +28,11 @@ export interface Settings {
   seasonalMultiplier: number | null;
   markersPerKit: number | null;
   pencilsPerKit: number | null;
+  series1OrderDate: string;
+  series1UkLandingOffsetDays: number;
+  series1UsLandingOffsetDays: number;
+  series1UkTargetDate: string;
+  series1UsTargetDate: string;
   metaAdAccountId: string;
   googleCustomerId: string;
   googleLoginCustomerId: string;
@@ -88,6 +94,11 @@ export function defaultSettings(): Settings {
     seasonalMultiplier: null,
     markersPerKit: null,
     pencilsPerKit: null,
+    series1OrderDate: '2026-11-04',
+    series1UkLandingOffsetDays: 104,
+    series1UsLandingOffsetDays: 74,
+    series1UkTargetDate: '',
+    series1UsTargetDate: '',
     metaAdAccountId: '', googleCustomerId: '', googleLoginCustomerId: '', tiktokAdvertiserId: '',
     metaOwners: [], expectedGoogleCampaigns: [],
     blendedMetaTripwireGbp: 28,
@@ -160,6 +171,12 @@ function optionalMonth(value: unknown, field: string): string {
   return value;
 }
 
+function seriesDate(value: unknown, field: string, optional = false): string {
+  if (optional && value === '') return '';
+  if (!isSeriesDate(value)) return invalid(field);
+  return value;
+}
+
 function cutoff(value: unknown, field: string): string {
   if (typeof value !== 'string' || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value)) return invalid(field);
   return value;
@@ -222,6 +239,11 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
     seasonalMultiplier: number(value.seasonalMultiplier, 'seasonalMultiplier', 100, true, false, 0.01),
     markersPerKit: number(value.markersPerKit, 'markersPerKit', 1_000, true, true),
     pencilsPerKit: number(value.pencilsPerKit, 'pencilsPerKit', 1_000, true, true),
+    series1OrderDate: seriesDate(value.series1OrderDate, 'series1OrderDate'),
+    series1UkLandingOffsetDays: requiredNumber(value.series1UkLandingOffsetDays, 'series1UkLandingOffsetDays', 365, true),
+    series1UsLandingOffsetDays: requiredNumber(value.series1UsLandingOffsetDays, 'series1UsLandingOffsetDays', 365, true),
+    series1UkTargetDate: seriesDate(value.series1UkTargetDate, 'series1UkTargetDate', true),
+    series1UsTargetDate: seriesDate(value.series1UsTargetDate, 'series1UsTargetDate', true),
     metaAdAccountId: accountId(value.metaAdAccountId, 'metaAdAccountId'),
     googleCustomerId: accountId(value.googleCustomerId, 'googleCustomerId', true),
     googleLoginCustomerId: accountId(value.googleLoginCustomerId, 'googleLoginCustomerId', true),
@@ -263,6 +285,8 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
     morningSummaryEnabled: bool(value.morningSummaryEnabled, 'morningSummaryEnabled'),
     brand: choice(value.brand, 'brand', ['one-of-one'] as const),
   };
+  if (!seriesPaceDates(settings.series1OrderDate, settings.series1UkLandingOffsetDays)
+    || !seriesPaceDates(settings.series1OrderDate, settings.series1UsLandingOffsetDays)) invalid('series1OrderDate');
   if (settings.cppUkTargetGbp > settings.cppUkBreakEvenGbp) invalid('cppUkTargetGbp');
   if (settings.cppUsTargetGbp > settings.cppUsBreakEvenGbp) invalid('cppUsTargetGbp');
   if (Math.abs(settings.creatorRules.briefPaymentPercent + settings.creatorRules.deliveryPaymentPercent - 100) > 0.000001) {
@@ -289,7 +313,17 @@ function changedFields(previous: unknown, next: unknown, path = ''): string[] {
 
 function storedSettings(input: unknown): Settings {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return validateSettings(input);
-  const stored = input as Record<string, unknown>;
+  const defaults = defaultSettings();
+  // Older documents acquire the new pace fields on read without changing their
+  // version or creating an audit entry; the next ordinary save persists them.
+  const stored: Record<string, unknown> = {
+    series1OrderDate: defaults.series1OrderDate,
+    series1UkLandingOffsetDays: defaults.series1UkLandingOffsetDays,
+    series1UsLandingOffsetDays: defaults.series1UsLandingOffsetDays,
+    series1UkTargetDate: defaults.series1UkTargetDate,
+    series1UsTargetDate: defaults.series1UsTargetDate,
+    ...input as Record<string, unknown>,
+  };
   if (!Object.hasOwn(stored, 'overheads') && !Object.hasOwn(stored, 'monthlyOverheadsGbp')) return validateSettings(stored);
   const { monthlyOverheadsGbp, ...values } = stored;
   const overheads = Object.hasOwn(stored, 'overheads') ? stored.overheads

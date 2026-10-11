@@ -1,3 +1,4 @@
+import { missingSeriesPaceWindow, saveSeriesPaceSales, seriesPaceQuery, takeStockSnapshot } from '../series-pace/store.js';
 import { RoutineSessions, type DailySessionFallback } from './fallback.js';
 import { appConfig } from '../config.js';
 import type { Database } from '../db.js';
@@ -11,8 +12,8 @@ import { channelKey, reportRows } from './model.js';
 import { paidOrder } from './metrics.js';
 import { webhookTopics } from './webhooks.js';
 
-type Job = 'backfill' | 'poll' | 'inventory' | 'sessions' | 'subscriptions' | 'reconcile' | 'session_history';
-const intervals: Record<Job, number> = { backfill: 0, poll: 300_000, inventory: 300_000, sessions: 300_000, subscriptions: 3_600_000, reconcile: 86_400_000, session_history: 0 };
+type Job = 'backfill' | 'poll' | 'inventory' | 'sessions' | 'subscriptions' | 'reconcile' | 'session_history' | 'stock_snapshot' | 'series_pace';
+const intervals: Record<Job, number> = { backfill: 0, poll: 300_000, inventory: 300_000, sessions: 300_000, subscriptions: 3_600_000, reconcile: 86_400_000, session_history: 0, stock_snapshot: 0, series_pace: 3_600_000 };
 export function backfillWindow(now: Date, allOrders: boolean) {
   return { from: addDays(ukToday(now), -(allOrders ? 399 : 59)), olderFrom: addDays(ukToday(now), -399), olderTo: addDays(ukToday(now), -60) };
 }
@@ -31,6 +32,8 @@ export function nextNight(now: Date): Date {
   if (ukToday(new Date(value - 3_600_000)) === target) value -= 3_600_000;
   return new Date(value);
 }
+export function nextStockSnapshot(now: Date): Date { return new Date(nextNight(now).getTime() + 4 * 60_000); }
+const secondaryJob = (job: Job) => job === 'stock_snapshot' || job === 'series_pace';
 export class ShopifyWorker {
   readonly store: ShopifyStore;
   readonly client: ShopifyReader;
@@ -50,7 +53,13 @@ export class ShopifyWorker {
     this.store = new ShopifyStore(db, this.mode);
   }
   async initialize(): Promise<void> {
-    for (const job of Object.keys(intervals)) await this.db.query(`INSERT INTO pulse.shopify_jobs (mode, name, next_run_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, [this.mode, job, this.clock()]);
+    const now = this.clock();
+    for (const job of Object.keys(intervals) as Job[]) {
+      if (this.mode === 'sample' && secondaryJob(job)) continue;
+      await this.db.query(`INSERT INTO pulse.shopify_jobs (mode, name, next_run_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, [this.mode, job, job === 'stock_snapshot' ? nextStockSnapshot(now) : now]);
+    }
+    // A previously scheduled snapshot missed while down is taken only for today's UK day.
+    if (this.mode === 'live') await this.db.query(`UPDATE pulse.shopify_jobs SET state = state || '{"caughtUp":true}'::jsonb WHERE mode = 'live' AND name = 'stock_snapshot' AND next_run_at <= $1`, [now]);
   }
   start(): void {
     this.trigger();
@@ -77,16 +86,24 @@ export class ShopifyWorker {
   private async run(): Promise<void> {
     const now = this.clock();
     const due = await this.db.query<{ name: Job; state: any; last_success_at: Date | null }>(`SELECT name, state, last_success_at FROM pulse.shopify_jobs WHERE mode = $1 AND next_run_at <= $2 ORDER BY name`, [this.mode, now]);
-    let attempted = due.rows.length > 0, failed = false;
+    const attempted = due.rows.some(job => !secondaryJob(job.name)); let failed = false;
     for (const job of due.rows) {
       try {
+        // Persist the fallback attempt gate before I/O, including a crash or failed query.
+        if (job.name === 'series_pace') await this.db.query(`UPDATE pulse.shopify_jobs SET next_run_at = $3 WHERE mode = $1 AND name = $2`, [this.mode, job.name, new Date(this.clock().getTime() + intervals.series_pace)]);
         const state = await this.execute(job.name, job.state, job.last_success_at);
-        const next = state.continuing ? new Date(now.getTime() + 1000) : ['backfill', 'session_history'].includes(job.name) ? new Date('9999-01-01T00:00:00Z') : job.name === 'reconcile' ? nextNight(now) : new Date(now.getTime() + intervals[job.name]);
+        const scheduledFrom = secondaryJob(job.name) ? this.clock() : now;
+        const next = state.continuing ? new Date(now.getTime() + 1000) : ['backfill', 'session_history'].includes(job.name) ? new Date('9999-01-01T00:00:00Z') : job.name === 'stock_snapshot' ? nextStockSnapshot(scheduledFrom) : job.name === 'reconcile' ? nextNight(now) : new Date(scheduledFrom.getTime() + intervals[job.name]);
         await this.db.query(`UPDATE pulse.shopify_jobs SET state = $3, next_run_at = $4, last_success_at = $5, failures = 0 WHERE mode = $1 AND name = $2`, [this.mode, job.name, JSON.stringify(state), next, now]);
       } catch (error) {
-        failed = true;
-        const delay = error instanceof ShopifyError && error.code === 'denied' ? 3_600_000 : 60_000;
-        await this.db.query(`UPDATE pulse.shopify_jobs SET failures = failures + 1, next_run_at = $3 WHERE mode = $1 AND name = $2`, [this.mode, job.name, new Date(now.getTime() + delay)]);
+        if (!secondaryJob(job.name)) failed = true;
+        else {
+          const code = error instanceof ShopifyError ? error.code : 'unknown';
+          const status = error instanceof ShopifyError && Number.isInteger(error.status) && error.status >= 100 && error.status <= 599 ? `, http ${error.status}` : '';
+          console.error(`Shopify ${job.name} failed (${code}${status}).`);
+        }
+        const delay = job.name === 'series_pace' || error instanceof ShopifyError && error.code === 'denied' ? 3_600_000 : 60_000;
+        await this.db.query(`UPDATE pulse.shopify_jobs SET failures = failures + 1, next_run_at = $3 WHERE mode = $1 AND name = $2`, [this.mode, job.name, new Date((secondaryJob(job.name) ? this.clock() : now).getTime() + delay)]);
       }
     }
     if (this.mode === 'live' && attempted) await this.health(failed);
@@ -126,7 +143,7 @@ export class ShopifyWorker {
     if (attempted) await this.health(failed);
   }
   private async health(failed: boolean): Promise<void> {
-    const remainingFailures = await this.db.query(`SELECT name FROM pulse.shopify_jobs WHERE mode = 'live' AND failures > 0 UNION ALL SELECT source_id FROM pulse.shopify_webhook_inbox WHERE processed_at IS NULL AND attempts > 0`);
+    const remainingFailures = await this.db.query(`SELECT name FROM pulse.shopify_jobs WHERE mode = 'live' AND name NOT IN ('stock_snapshot', 'series_pace') AND failures > 0 UNION ALL SELECT source_id FROM pulse.shopify_webhook_inbox WHERE processed_at IS NULL AND attempts > 0`);
     failed ||= remainingFailures.rows.length > 0;
     await this.db.query(`UPDATE pulse.source_health SET status = $1, last_attempt_at = $2,
       last_success_at = CASE WHEN $1 = 'healthy' THEN $2 ELSE last_success_at END,
@@ -166,6 +183,22 @@ export class ShopifyWorker {
   }
   private async execute(name: Job, state: any, lastSuccess: Date | null): Promise<any> {
     const now = this.clock(), day = ukToday(now);
+    // These secondary stock reads never change the main Shopify money source state.
+    if (name === 'stock_snapshot') {
+      if (this.mode !== 'live') return { skipped: 'sample_mode' };
+      await takeStockSnapshot(this.db, await this.client.inventory('oneofone1'), this.clock(), state.caughtUp === true);
+      return {};
+    }
+    if (name === 'series_pace') {
+      if (this.mode !== 'live') return { skipped: 'sample_mode' };
+      const missing = await missingSeriesPaceWindow(this.db, now);
+      if (missing) {
+        // Gate from the actual attempt, even if earlier jobs or the local reads were slow.
+        await this.db.query(`UPDATE pulse.shopify_jobs SET next_run_at = $1 WHERE mode = 'live' AND name = 'series_pace'`, [new Date(this.clock().getTime() + intervals.series_pace)]);
+        await saveSeriesPaceSales(this.db, await this.client.report(seriesPaceQuery(missing.from, missing.to)), missing.from, missing.to, this.clock());
+      }
+      return { checkedAt: now.toISOString() };
+    }
     const checkpoint = await this.db.query<{ state: any }>(`SELECT state FROM pulse.shopify_jobs WHERE mode = $1 AND name = 'backfill'`, [this.mode]);
     const address = checkpoint.rows[0]?.state.address !== false;
     if (name === 'backfill') {

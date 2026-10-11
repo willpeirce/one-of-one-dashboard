@@ -6,6 +6,8 @@ import { rangeLabel } from './hero-range.js';
 import { installPullToRefresh } from './pull-refresh.js';
 import { greetingAt } from './greeting.js';
 import { formatLike, formatMetricNumber } from './money.js';
+import { paceState, seriesPaceCardHtml, seriesPaceDial, seriesPaceFacts, seriesPaceSheetHtml, type SeriesPaceCard } from './series-pace/presentation.js';
+import type { SeriesPaceMarket } from './series-pace/model.js';
 
 const states: Record<State, [string, string]> = {
   good: ['Good', '✓'], warn: ['Watch', '!'], decide: ['Decide', '◆'], alarm: ['Alarm', '✕'],
@@ -59,10 +61,14 @@ let selectedDeck = ['ads', 'store', 'growth', 'stock'].includes(location.hash.sl
 let snapshot: DashboardSnapshot;
 let openDetail: HTMLElement | undefined;
 let openTemplateId: string | undefined;
+let seriesSheetGeneration = 0;
 let stream: EventSource | undefined;
 
 function renderDial(element: HTMLElement, data: DialModel, mode: 'sample' | 'live'): void {
-  const { v, min, max, z } = data, activeZone = zoneIndex(v, z), state = data.cap ?? zoneOf(v, z), format = data.t === 'No data' ? (value: number) => String(Math.round(value)) : formatLike(data.t);
+  const { v, min, max, z } = data;
+  // An explicit status also owns a shared zone boundary (Series 1 includes +5 in green).
+  const cappedZone = z.findIndex(([start, end, state]) => state === data.cap && v >= start && v <= end);
+  const activeZone = cappedZone >= 0 ? cappedZone : zoneIndex(v, z), state = data.cap ?? zoneOf(v, z), format = data.t === 'No data' ? (value: number) => String(Math.round(value)) : formatLike(data.t);
   let svg = `<span class="well"><svg viewBox="0 0 100 64" aria-hidden="true"><path d="${arc(Math.PI, 0)}" fill="none" stroke="var(--line)" stroke-width="7"/>`;
   z.forEach(([start, end, status], index) => {
     const a = angle(start, min, max) - (index ? 0.035 : 0), b = angle(end, min, max) + (index < z.length - 1 ? 0.035 : 0);
@@ -75,6 +81,78 @@ function renderDial(element: HTMLElement, data: DialModel, mode: 'sample' | 'liv
   element.setAttribute('aria-label', `${data.l}: ${data.t}, ${states[state][0]}`);
   details.set(element, { state, title: data.l, detail: data.d, mode, dial: data });
   watermark(element);
+}
+
+function renderSeriesPace(element: HTMLElement, card: SeriesPaceCard, mode: 'sample' | 'live'): void {
+  if (!element.querySelector('[data-series-market]')) element.innerHTML = seriesPaceCardHtml(card, mode);
+  element.dataset.state = Object.values(card.markets).some(model => model.state === 'warn') ? 'warn' : Object.values(card.markets).every(model => model.state === 'good') ? 'good' : 'info';
+  element.querySelectorAll(':scope > .sample-label').forEach(label => label.remove());
+  if (mode === 'sample') element.insertAdjacentHTML('beforeend', '<small class="sample-label">Sample data</small>');
+  for (const market of ['UK', 'US'] as const) {
+    const button = get(`[data-series-market="${market}"]`, element), model = card.markets[market];
+    renderDial(button, seriesPaceDial(market, model), mode);
+    button.insertAdjacentHTML('beforeend', seriesPaceFacts(model));
+    button.setAttribute('aria-label', `Series 1 sell-out pace · ${market}: ${model.verdict}`);
+    button.querySelector('.well')?.insertAdjacentHTML('afterend', '<span class="pace-scale" aria-hidden="true"><span>Too slow</span><span>On pace</span><span>Too fast</span></span>');
+  }
+}
+
+function showSeriesPaceDetail(element: HTMLElement, market: SeriesPaceMarket, reopen: boolean): void {
+  const widget = snapshot.widgets.w017;
+  if (widget?.kind !== 'series-pace') return;
+  if (reopen) seriesSheetGeneration += 1;
+  // A heartbeat may update the dial, but it must never replace an unsaved date.
+  if (!reopen && document.querySelector<HTMLFormElement>('#series-target-form')?.dataset.dirty === 'true') return;
+  openDetail = element; openTemplateId = undefined;
+  const model = widget.value.markets[market], dial = seriesPaceDial(market, model), state = paceState(model);
+  get('#sh-title').textContent = `Series 1 sell-out pace · ${market}`;
+  get('#sh-dot').className = `dot ${state}`; get('#sh-dot').textContent = states[state][1];
+  get('#sh-dl').hidden = false;
+  get('#sh-why').textContent = dial.d.why;
+  get('#sh-rule').textContent = dial.d.rule;
+  get('#sh-src').textContent = `${dial.d.src} · ${widget.mode === 'sample' ? 'sample data' : 'live'}`;
+  get('#sh-chart').replaceChildren();
+  get('#sh-extra').innerHTML = seriesPaceSheetHtml(market, model, widget.mode);
+  const sheet = get<HTMLDialogElement>('#sheet');
+  if (reopen && !sheet.open) sheet.showModal();
+}
+
+async function saveSeriesTarget(value: string): Promise<void> {
+  const form = document.querySelector<HTMLFormElement>('#series-target-form'), widget = snapshot.widgets.w017;
+  if (!form || form.dataset.pending === 'true' || widget?.kind !== 'series-pace' || widget.mode === 'sample') return;
+  const market = form.dataset.market === 'US' ? 'US' : 'UK', generation = seriesSheetGeneration;
+  const targetKey = market === 'UK' ? 'series1UkTargetDate' : 'series1UsTargetDate';
+  form.dataset.pending = 'true'; form.dataset.dirty = 'true';
+  get<HTMLFieldSetElement>('fieldset', form).disabled = true;
+  const status = get('#series-target-status', form);
+  status.textContent = 'Saving target date…';
+  let saved = false;
+  try {
+    // Read the latest version and preserve every unrelated Settings field.
+    const currentResponse = await fetch('/api/settings', { credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' } });
+    if (!currentResponse.ok) throw new Error('settings-read');
+    const current = await currentResponse.json() as { version: number; values: Record<string, unknown> };
+    const response = await fetch('/api/settings', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ version: current.version, values: { ...current.values, [targetKey]: value } }) });
+    if (response.status === 409) { status.textContent = 'Settings changed on another device. Your date is still here. Try Save again to use the latest settings.'; return; }
+    if (response.status === 400) { status.textContent = 'Enter a real target date, or use the landing date.'; return; }
+    if (response.status === 401) { status.textContent = 'Your session has ended. Sign in again before saving.'; return; }
+    if (!response.ok) throw new Error('settings-save');
+    saved = true; form.dataset.dirty = 'false';
+    await refreshDashboard(new AbortController().signal);
+    // A delayed save must never claim that another sheet or a newer draft was saved.
+    const activeForm = document.querySelector<HTMLFormElement>('#series-target-form');
+    if (generation === seriesSheetGeneration && activeForm?.dataset.market === market
+      && activeForm.dataset.dirty !== 'true' && get<HTMLDialogElement>('#sheet').open
+      && get<HTMLInputElement>('#series-target-date', activeForm).value === value) {
+      get('#series-target-status', activeForm).textContent = value ? 'Target date saved.' : 'Using the landing date.';
+    }
+  } catch {
+    status.textContent = saved ? 'Target saved. Refresh to see the updated dial.' : 'Could not save the target. Your date is still here. Try again.';
+  } finally {
+    form.dataset.pending = 'false';
+    get<HTMLFieldSetElement>('fieldset', form).disabled = false;
+  }
 }
 
 function renderRing(element: HTMLElement, data: RingModel, mode: 'sample' | 'live'): void {
@@ -280,6 +358,8 @@ function miniChart(detail: Detail, dial?: SheetDetail['dial']): string {
 }
 
 function showDetail(element: HTMLElement, reopen = true): void {
+  const market = element.dataset.seriesMarket;
+  if (market === 'UK' || market === 'US') { showSeriesPaceDetail(element, market, reopen); return; }
   const data = details.get(element);
   if (!data) return;
   openDetail = element; openTemplateId = undefined;
@@ -359,8 +439,9 @@ function updateSnapshot(next: DashboardSnapshot, initial = false): void {
     element.dataset.source = widget.source.join(' ');
     if (element.hasAttribute('data-ingested-shopify')) element.querySelector('.sample-label')?.remove();
     if (element.hasAttribute('data-ingested-shopify') && element.dataset.src !== 'stock') element.dataset.src = 'shopify';
-    element.dataset[widget.kind] = JSON.stringify(widget.value);
-    if (widget.kind === 'dial') renderDial(element, widget.value, widget.mode);
+    element.setAttribute(`data-${widget.kind}`, JSON.stringify(widget.value));
+    if (widget.kind === 'series-pace') renderSeriesPace(element, widget.value, widget.mode);
+    else if (widget.kind === 'dial') renderDial(element, widget.value, widget.mode);
     else if (widget.kind === 'ring') renderRing(element, widget.value, widget.mode);
     else if (widget.kind === 'test') renderTest(element, widget.value);
     else if (widget.kind === 'sheet') {
@@ -480,7 +561,8 @@ function boot(): void {
   document.addEventListener('click', (event) => {
     const target = event.target instanceof Element ? event.target : undefined;
     if (!target) return;
-    const element = target.closest<HTMLElement>('.tile,.rt[data-sheet]');
+    if (target.closest('[data-series-use-landing]')) { void saveSeriesTarget(''); return; }
+    const element = target.closest<HTMLElement>('[data-series-market],.tile,.rt[data-sheet]');
     if (element && details.has(element)) { showDetail(element); return; }
     const period = target.closest<HTMLElement>('[data-period]')?.dataset.period;
     if (period === 'pick') { dates.open(); return; }
@@ -516,6 +598,15 @@ function boot(): void {
   });
   get('#livesets').addEventListener('click', () => showTemplate('#t-livesets', 'Sample live sets, ours'));
   get('#alldates').addEventListener('click', () => showTemplate('#t-dates', 'Sample dates'));
+  document.addEventListener('input', event => {
+    const form = event.target instanceof Element ? event.target.closest<HTMLFormElement>('#series-target-form') : null;
+    if (form) form.dataset.dirty = 'true';
+  });
+  document.addEventListener('submit', event => {
+    if (!(event.target instanceof HTMLFormElement) || event.target.id !== 'series-target-form') return;
+    event.preventDefault();
+    if (event.target.reportValidity()) void saveSeriesTarget(get<HTMLInputElement>('#series-target-date', event.target).value);
+  });
   const sheet = get<HTMLDialogElement>('#sheet');
   get('#sh-x').addEventListener('click', () => sheet.close());
   sheet.addEventListener('click', (event) => { if (event.target === sheet) sheet.close(); });

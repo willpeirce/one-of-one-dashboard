@@ -23,8 +23,9 @@ export class SampleShopify implements ShopifyReader {
     if (!address) delete order.shippingAddress;
     return order.id === id ? order : null;
   }
-  async inventory(): Promise<any[]> {
-    return this.inventoryFixture(this.cardHistory ? 'product-costs' : 'product');
+  async inventory(sku?: string): Promise<any[]> {
+    const rows = await this.inventoryFixture(this.cardHistory ? 'product-costs' : 'product');
+    return sku ? rows.filter(row => row.sku === sku) : rows;
   }
   private async inventoryFixture(name: string): Promise<any[]> {
     const product = (await fixture(name)).data.product;
@@ -38,6 +39,7 @@ export class SampleShopify implements ShopifyReader {
     return this.cardHistory ? { rows: await this.inventoryFixture('product-costs-before'), at: new Date('2026-09-28T12:00:00Z') } : null;
   }
   async report(query: string): Promise<any> {
+    if (query.includes("WHERE product_title = 'ONE OF ONE'")) return sampleKitSales(query);
     const table = (await fixture(query.includes('sales_channel') ? this.cardHistory ? 'card-channels' : 'channels' : query.startsWith('FROM sales') ? 'sales' : this.cardHistory ? 'card-sessions' : 'sessions')).data.shopifyqlQuery.tableData;
     const from = /SINCE (\d{4}-\d{2}-\d{2})/.exec(query)?.[1];
     const to = /UNTIL (\d{4}-\d{2}-\d{2})/.exec(query)?.[1] ?? appConfig.shopify.sampleNow.slice(0, 10);
@@ -46,4 +48,18 @@ export class SampleShopify implements ShopifyReader {
   }
   async subscriptions(): Promise<Page> { return (await fixture('subscriptions')).data.webhookSubscriptions; }
   async subscribe(_topic: string, _uri: string): Promise<void> { throw new Error('Sample mode cannot subscribe.'); }
+}
+
+// Invented expanded sales lines: the Duo contributes two base-kit units; accessories contribute none.
+function sampleKitSales(query: string) {
+  const lines = [
+    { day: '2026-09-29', country: 'GB', product: 'ONE OF ONE', units: 2, bundle: 'Duo' },
+    { day: '2026-09-29', country: 'GB', product: 'COLOUR EXPANSION PACK', units: 8 },
+    { day: '2026-09-29', country: 'US', product: 'ONE OF ONE', units: 1, bundle: 'Starter' },
+    { day: '2026-09-28', country: 'US', product: 'ONE OF ONE', units: 1, bundle: 'Ultimate' },
+  ];
+  const from = /SINCE (\d{4}-\d{2}-\d{2})/.exec(query)?.[1] ?? '';
+  const to = /UNTIL (\d{4}-\d{2}-\d{2})/.exec(query)?.[1] ?? '';
+  return { columns: ['day', 'shipping_country', 'net_items_sold'].map(name => ({ name, dataType: name === 'net_items_sold' ? 'INTEGER' : 'STRING', displayName: name })),
+    rows: lines.filter(line => line.product === 'ONE OF ONE' && line.day >= from && line.day <= to).map(line => [line.day, line.country, line.units]) };
 }

@@ -390,3 +390,32 @@ button[disabled]{cursor:not-allowed}.act[disabled]{opacity:.5}
 .order-bar i{display:block;width:100%}
 .pulse-need .rhead{grid-template-columns:auto auto minmax(0,1fr) auto}
 @media(max-width:760px){.pulse-need .rhead{grid-template-columns:auto 1fr}.pulse-need .rhead>div{grid-column:1/-1}.pulse-need .rhead .acts{justify-content:flex-start}.pulse-need .rhead .src{width:32px;height:32px}}
+
+/* Series 1 is a paired warehouse decision, one full row on a phone. */
+.series-pace{grid-column:span 2;cursor:default;gap:10px;align-items:stretch}
+.series-pace:hover{transform:none;background:var(--glass)}
+.series-pace>h3{font:600 18px var(--disp);margin:0}
+.series-pace-markets{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;min-width:0}
+.series-pace-market{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:5px;min-width:0;overflow:hidden;border:0;padding:0;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.series-pace-market>*:not(.wm){position:relative;z-index:1;max-width:100%}
+.series-pace-market .wm{opacity:.15}
+.series-pace-market .well{margin-bottom:0}
+.series-pace-market .dl{font-size:17px}
+.series-pace-market .ds{color:var(--ink);font-weight:700}
+.pace-scale{display:flex;justify-content:space-between;gap:3px;width:100%;font-size:9px;color:var(--muted)}
+.pace-facts{display:grid;gap:8px;min-width:0;font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.pace-facts small{font-size:10.5px;color:var(--muted)}
+.pace-facts strong{font-weight:650}
+.pace-outcome{color:var(--ink-2)}
+.series-pace-sheet{font-size:13px;overflow-wrap:anywhere}
+.pace-days{width:100%;border-collapse:collapse;font-size:12px;text-align:left}
+.pace-days th,.pace-days td{padding:8px 6px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+.pace-days tbody th{font-weight:400}
+.pace-snapshots{padding-left:18px;display:grid;gap:6px}
+#series-target-form fieldset{border:1px solid var(--line);border-radius:12px;padding:14px;min-width:0;display:grid;gap:10px}
+#series-target-form label{display:block}
+#series-target-date{box-sizing:border-box;max-width:100%;min-width:0;width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--glass);color:var(--ink);font:inherit;color-scheme:dark}
+.pace-target-actions{display:flex;gap:8px;flex-wrap:wrap}
+#series-target-form fieldset:disabled{opacity:.65}
+#series-target-status{min-height:1.5em;color:var(--muted)}
+@media(max-width:760px){.series-pace-markets{gap:12px}.series-pace{padding:12px}.pace-scale{font-size:8px}.pace-facts{font-size:11px}.pace-facts small{font-size:10px}}

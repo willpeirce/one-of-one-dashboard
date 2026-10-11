@@ -4,6 +4,8 @@ import { addDays, buildHeroRange, validateHeroRange } from './hero-range.js';
 import { sampleDays, SAMPLE_START, SAMPLE_TODAY } from './sample-days.js';
 import { greetingAt } from './greeting.js';
 import { formatPounds } from './money.js';
+import { sampleSeriesPaceCard } from './series-pace/presentation.js';
+import { appConfig } from './config.js';
 
 /**
  * Server-only presentation fixtures ported from docs/spec/mockup.html. These are
@@ -522,58 +524,7 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
         ]
       }
     },
-    "w017": {
-      "kind": "dial",
-      "source": [
-        "meta"
-      ],
-      "mode": "sample",
-      "value": {
-        "v": 466,
-        "min": 300,
-        "max": 700,
-        "t": "£466",
-        "l": "Our spend vs plan",
-        "s": "plan £470",
-        "z": [
-          [
-            300,
-            423,
-            "warn"
-          ],
-          [
-            423,
-            517,
-            "good"
-          ],
-          [
-            517,
-            564,
-            "warn"
-          ],
-          [
-            564,
-            700,
-            "alarm"
-          ]
-        ],
-        "d": {
-          "why": "£466 against a £470 day plan (99%). Green between 90% and 110%, amber to 120%, red above: runaway spend is a real failure.",
-          "rule": "Budget band from the day plan. Over 120% of plan is red because it means a set is spending outside its budget.",
-          "src": "Meta Ads Manager, our campaigns only, yesterday",
-          "hist": [
-            520,
-            498,
-            470,
-            455,
-            448,
-            452,
-            466
-          ],
-          "hp": "£"
-        }
-      }
-    },
+    "w017": { kind: 'series-pace', source: ['shopify'], mode: 'sample', value: sampleSeriesPaceCard(appConfig.shopify.sampleNow) },
     "w018": {
       "kind": "dial",
       "source": [

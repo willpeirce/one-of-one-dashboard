@@ -317,7 +317,7 @@ export const dashboardTemplate = `
 
   <div class="panel" id="p-ads" data-panel="ads">
     <div class="grid">
-      <button class="tile dial" data-src="meta" data-dial="{{widget:w017}}" data-source="meta" data-mode="sample" data-model-id="w017"></button>
+      <article class="tile series-pace" data-source="shopify" data-mode="sample" data-model-id="w017" aria-label="Series 1 sell-out pace"></article>
       <button class="tile dial" data-src="meta" data-dial="{{widget:w018}}" data-source="meta" data-mode="sample" data-model-id="w018"></button>
       <button class="tile dial" data-src="meta" data-dial="{{widget:w019}}" data-source="meta shopify" data-mode="sample" data-model-id="w019"></button>
       <button class="tile dial" data-src="meta" data-dial="{{widget:w020}}" data-source="meta" data-mode="sample" data-model-id="w020"></button>

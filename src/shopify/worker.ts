@@ -191,13 +191,14 @@ export class ShopifyWorker {
     }
     if (name === 'series_pace') {
       if (this.mode !== 'live') return { skipped: 'sample_mode' };
-      const missing = await missingSeriesPaceWindow(this.db, now);
+      const missing = await missingSeriesPaceWindow(this.db, now, state.lastAttemptedTo ?? null);
+      const nextState = { ...state, checkedAt: now.toISOString(), ...(missing ? { lastAttemptedTo: missing.to } : {}) };
       if (missing) {
-        // Gate from the actual attempt, even if earlier jobs or the local reads were slow.
-        await this.db.query(`UPDATE pulse.shopify_jobs SET next_run_at = $1 WHERE mode = 'live' AND name = 'series_pace'`, [new Date(this.clock().getTime() + intervals.series_pace)]);
+        // Advance before I/O, preserving rotation and the hourly gate across failures/restarts.
+        await this.db.query(`UPDATE pulse.shopify_jobs SET next_run_at = $1, state = $2 WHERE mode = 'live' AND name = 'series_pace'`, [new Date(this.clock().getTime() + intervals.series_pace), JSON.stringify(nextState)]);
         await saveSeriesPaceSales(this.db, await this.client.report(seriesPaceQuery(missing.from, missing.to)), missing.from, missing.to, this.clock());
       }
-      return { checkedAt: now.toISOString() };
+      return nextState;
     }
     const checkpoint = await this.db.query<{ state: any }>(`SELECT state FROM pulse.shopify_jobs WHERE mode = $1 AND name = 'backfill'`, [this.mode]);
     const address = checkpoint.rows[0]?.state.address !== false;

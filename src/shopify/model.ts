@@ -93,6 +93,7 @@ export function cleanInventory(raw: any) {
   const productId = gid('Product', raw.productId), locationId = gid('Location', raw.location.id);
   if (!appConfig.shopify.stockProducts.some(p => `gid://shopify/Product/${p.id}` === productId) || !Object.values(appConfig.shopify.locations).some(l => l.id === locationId)) return null;
   return { productId, variantId: gid('ProductVariant', raw.variantId), inventoryItemId: gid('InventoryItem', raw.inventoryItemId), locationId,
+    sku: typeof raw.sku === 'string' && /^[\w-]{1,80}$/.test(raw.sku) ? raw.sku : null,
     quantities: raw.quantities.filter((q: any) => ['available', 'on_hand', 'committed'].includes(q.name)).map((q: any) => {
       if (!Number.isInteger(q.quantity)) throw new ShopifyError('invalid');
       return { name: q.name, quantity: q.quantity };

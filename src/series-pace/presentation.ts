@@ -1,5 +1,6 @@
 import type { DialModel, State } from '../dashboard-types.js';
 import { addDays } from '../hero-range.js';
+import { formatNumber } from '../money.js';
 import { paceDate, paceNumber, sampleSeriesPace, type SeriesPaceMarket, type SeriesPaceResult } from './model.js';
 
 export interface SeriesPaceMarketView extends SeriesPaceResult {
@@ -12,7 +13,7 @@ export interface SeriesPaceMarketView extends SeriesPaceResult {
 export interface SeriesPaceCard { markets: Record<SeriesPaceMarket, SeriesPaceMarketView> }
 
 const esc = (value: string | number): string => String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!);
-const whole = (value: number): string => value.toLocaleString('en-GB', { maximumFractionDigits: 0 });
+const whole = (value: number): string => formatNumber(value, 0);
 export const seriesPaceRule = 'Only kit units (SKU oneofone1), including kits inside bundles. Complete UK days only. Daily sold is opening stock minus the next day’s opening stock when both snapshots are on time; otherwise it uses ShopifyQL. Missing days stay unknown; negative days stay signed. The last two complete days at zero or below mean PAUSED and count as zeros in the average. Needed = current stock ÷ days to target; projected sell-out = today + stock ÷ average. The dial shows target minus projected sell-out, from −90 to +90 days: TOO SLOW on the left, ON PACE within 5 days either side, TOO FAST on the right. Both extremes are amber. Kit shortfall or surplus is rounded to the nearest 10. Last 3 days is a trend only.';
 
 export function sampleSeriesPaceCard(now: Date | string): SeriesPaceCard {
@@ -24,7 +25,7 @@ export function sampleSeriesPaceCard(now: Date | string): SeriesPaceCard {
 
 export function paceState(model: SeriesPaceMarketView): State { return model.state === 'muted' ? 'info' : model.state; }
 export function seriesPaceDial(market: SeriesPaceMarket, model: SeriesPaceMarketView): DialModel {
-  return { v: model.needle, min: -90, max: 90, t: model.gap === null ? '—' : `${model.gap > 0 ? '+' : ''}${paceNumber(model.gap)}d`,
+  return { v: model.needle ?? 0, hidePointer: model.needle === null, min: -90, max: 90, t: model.gap === null ? '—' : `${model.gap > 0 ? '+' : ''}${paceNumber(model.gap)}d`,
     l: market, s: model.verdict, z: [[-90, -5, 'warn'], [-5, 5, 'good'], [5, 90, 'warn']], cap: paceState(model),
     d: { why: [model.verdict, model.outcome, model.correction].filter(Boolean).join('. '), rule: seriesPaceRule, src: 'Shopify inventory snapshots and ShopifyQL kit units' } };
 }

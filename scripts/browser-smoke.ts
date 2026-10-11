@@ -586,6 +586,49 @@ async function checkSeriesPaceSettings(page: Page, context: BrowserContext): Pro
   assert.deepEqual((await (await context.request.get('/api/settings')).json() as SettingsSnapshot).values, before.values);
 }
 
+async function checkSeriesPaceWaiting(context: BrowserContext): Promise<void> {
+  const scope = step;
+  const page = await context.newPage();
+  try {
+    const response = await context.request.get('/api/dashboard');
+    assert.equal(response.status(), 200);
+    const fixture = await response.json() as FullDashboardSnapshot;
+    const widget = fixture.widgets.w017;
+    assert.ok(widget?.kind === 'series-pace');
+    const original = structuredClone(widget.value.markets.UK);
+    await page.route('**/api/dashboard', route => route.fulfill({ status: 200, json: fixture }));
+    await page.route('**/api/events', route => route.fulfill({ status: 200, contentType: 'text/event-stream',
+      body: `retry: 60000\nevent: dashboard\ndata: ${JSON.stringify(fixture)}\n\n` }));
+    for (const viewport of viewports) {
+      await page.setViewportSize(viewport);
+      for (const sample of [
+        { input: { stock: 100, days: [] }, state: 'info', reason: 'Waiting for the first complete day', pointer: false },
+        { input: { stock: null, days: original.days }, state: 'info', reason: 'Waiting for current stock', pointer: false },
+        { input: { stock: 100, days: [{ day: addDays(original.today, -1), sold: 0, source: 'shopifyql' as const }] }, state: 'warn', reason: 'TOO SLOW', pointer: true },
+      ]) {
+        step = `${scope}: ${sample.reason} at ${viewport.width}px`;
+        widget.value.markets.UK = { ...original, ...calculateSeriesPace({ ...original, ...sample.input }) };
+        await page.goto('/');
+        await page.locator('html[data-dashboard-ready="true"]').waitFor();
+        await page.locator('#tabs [data-tab="ads"]').click();
+        const dial = page.locator('[data-model-id="w017"] [data-series-market="UK"]');
+        assert.equal(await dial.getAttribute('data-state'), sample.state);
+        assert.equal(await dial.locator('.ds').innerText(), sample.reason);
+        assert.equal(await dial.locator('.well circle').count(), sample.pointer ? 1 : 0);
+        if (sample.pointer) {
+          assert.equal(widget.value.markets.UK.needle, -90);
+          assert.match(await dial.innerText(), /no sell-out at this pace/);
+        } else {
+          assert.equal(widget.value.markets.UK.needle, null);
+          assert.equal(await dial.locator('.well svg text').first().textContent(), '—');
+        }
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+        if (!sample.pointer && process.env.PULSE_SCREENSHOT_DIR) await dial.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/series-waiting-${sample.input.stock === null ? 'stock' : 'days'}-${viewport.width}.png` });
+      }
+    }
+  } finally { await page.close(); }
+}
+
 async function checkPartialAdSpend(context: BrowserContext): Promise<void> {
   const scope = step;
   const page = await context.newPage();
@@ -1614,6 +1657,9 @@ async function run(): Promise<void> {
 
     step = 'check Series 1 sell-out pace card, signed daily facts and editable target sheets';
     await checkSeriesPace(context);
+
+    step = 'check unknown pace has a neutral reason and only measured zero pace pins left';
+    await checkSeriesPaceWaiting(context);
 
     step = 'check sample reviews, low-star sheets, greeting and recovered empty state';
     await checkReviews(context);

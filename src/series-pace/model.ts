@@ -1,4 +1,5 @@
 import { addDays, ukToday } from '../hero-range.js';
+import { formatNumber } from '../money.js';
 
 export type SeriesPaceMarket = 'UK' | 'US';
 export interface SeriesPaceDay {
@@ -26,7 +27,7 @@ export interface SeriesPaceResult {
   projectedDate: string | null;
   gap: number | null;
   gapDays: number | null;
-  needle: number;
+  needle: number | null;
   estimatedKits: number | null;
   correctionPerDay: number | null;
   trendAverage: number | null;
@@ -43,10 +44,10 @@ export interface SeriesPaceResult {
 const DAY = 86_400_000;
 const mean = (values: readonly number[]): number => values.reduce((sum, value) => sum + value, 0) / values.length;
 const oneDecimal = (value: number): number => Math.sign(value) * Math.round(Math.abs(value) * 10) / 10;
-const whole = (value: number): string => Math.round(value).toLocaleString('en-GB');
+const whole = (value: number): string => formatNumber(Math.round(value), 0);
 
 export function paceNumber(value: number): string {
-  return value.toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  return formatNumber(value, 1);
 }
 export function paceDate(day: string): string {
   return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${day}T12:00:00Z`));
@@ -75,7 +76,7 @@ export function calculateSeriesPace(input: SeriesPaceInput): SeriesPaceResult {
   const result: SeriesPaceResult = {
     today, targetDate, stock, days, dayCount: days.length, daysLeft, average, needed, projectedDays,
     projectedDate: projectedDays === null ? null : addDays(today, projectedDays), gap,
-    gapDays: gap === null ? null : Math.round(Math.abs(gap)), needle: gap === null ? -90 : Math.max(-90, Math.min(90, gap)),
+    gapDays: gap === null ? null : Math.round(Math.abs(gap)), needle: gap === null ? null : Math.max(-90, Math.min(90, gap)),
     estimatedKits: needed !== null && average !== null ? Math.round(Math.abs(average - needed) * daysLeft / 10) * 10 : null,
     correctionPerDay, trendAverage, trend, status: 'waiting', state: 'muted', verdict: 'Waiting for the first complete day', outcome: '', correction: '',
     averageLabel: `${days.length}-day average`, completeThrough,
@@ -87,8 +88,8 @@ export function calculateSeriesPace(input: SeriesPaceInput): SeriesPaceResult {
   if (average === null || needed === null) return result;
   result.correction = correctionPerDay !== null && oneDecimal(correctionPerDay) === 0 ? 'hold this pace'
     : `sell about ${paceNumber(correctionPerDay!)} ${needed > average ? 'more' : 'fewer'} a day`;
-  if (paused) return { ...result, status: 'paused', state: 'warn', verdict: 'PAUSED', outcome: 'The last two complete days were zero or below.' };
-  if (average <= 0) return { ...result, status: 'too_slow', state: 'warn', verdict: 'TOO SLOW', estimatedKits: stock,
+  if (paused) return { ...result, needle: average <= 0 ? -90 : result.needle, status: 'paused', state: 'warn', verdict: 'PAUSED', outcome: 'The last two complete days were zero or below.' };
+  if (average <= 0) return { ...result, needle: -90, status: 'too_slow', state: 'warn', verdict: 'TOO SLOW', estimatedKits: stock,
     outcome: `no sell-out at this pace · about ${whole(stock)} kits left on the target date` };
   result.outcome = gap! > 0
     ? `sells out ${whole(result.gapDays!)} days early, about ${whole(result.estimatedKits!)} kits short`

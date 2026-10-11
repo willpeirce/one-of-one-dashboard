@@ -70,14 +70,14 @@ function renderDial(element: HTMLElement, data: DialModel, mode: 'sample' | 'liv
   const { v, min, max, z } = data;
   // An explicit status also owns a shared zone boundary (Series 1 includes +5 in green).
   const cappedZone = z.findIndex(([start, end, state]) => state === data.cap && v >= start && v <= end);
-  const activeZone = cappedZone >= 0 ? cappedZone : zoneIndex(v, z), state = data.cap ?? zoneOf(v, z), format = data.t === 'No data' ? (value: number) => formatNumber(Math.round(value)) : formatLike(data.t);
+  const activeZone = cappedZone >= 0 ? cappedZone : zoneIndex(v, z), state = data.cap ?? zoneOf(v, z), format = data.hidePointer || data.t === 'No data' ? (value: number) => formatNumber(Math.round(value)) : formatLike(data.t);
   let svg = `<span class="well"><svg viewBox="0 0 100 64" aria-hidden="true"><path d="${arc(Math.PI, 0)}" fill="none" stroke="var(--line)" stroke-width="7"/>`;
   z.forEach(([start, end, status], index) => {
     const a = angle(start, min, max) - (index ? 0.035 : 0), b = angle(end, min, max) + (index < z.length - 1 ? 0.035 : 0);
     if (a > b) svg += `<path d="${arc(a, b)}" fill="none" stroke="${colour[data.cap === 'info' ? 'info' : status]}" stroke-width="7" stroke-opacity="${index === activeZone ? 1 : 0.28}"/>`;
   });
   const [x, y] = point(angle(v, min, max), 40);
-  svg += `${data.t === 'No data' ? '' : `<circle cx="${x}" cy="${y}" r="5" fill="var(--ink)" stroke="var(--pointer-ring)" stroke-width="2.5"/>`}<text x="50" y="52" text-anchor="middle" font-family="var(--disp)" font-size="15" font-weight="700" fill="var(--ink)">${esc(data.t)}</text><text x="10" y="62" text-anchor="middle" font-size="7.5" fill="var(--muted)">${esc(format(min))}</text><text x="90" y="62" text-anchor="middle" font-size="7.5" fill="var(--muted)">${esc(format(max))}</text></svg></span>`;
+  svg += `${data.hidePointer || data.t === 'No data' ? '' : `<circle cx="${x}" cy="${y}" r="5" fill="var(--ink)" stroke="var(--pointer-ring)" stroke-width="2.5"/>`}<text x="50" y="52" text-anchor="middle" font-family="var(--disp)" font-size="15" font-weight="700" fill="var(--ink)">${esc(data.t)}</text><text x="10" y="62" text-anchor="middle" font-size="7.5" fill="var(--muted)">${esc(format(min))}</text><text x="90" y="62" text-anchor="middle" font-size="7.5" fill="var(--muted)">${esc(format(max))}</text></svg></span>`;
   element.innerHTML = `${svg}<span class="dl">${esc(data.l)}</span><span class="ds">${esc(data.s)}</span>${chip(state)}`;
   element.dataset.state = state;
   element.setAttribute('aria-label', `${data.l}: ${data.t}, ${states[state][0]}`);

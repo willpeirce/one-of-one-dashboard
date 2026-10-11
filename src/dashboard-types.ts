@@ -27,6 +27,7 @@ export interface DialModel {
   z: Zone[];
   d: Detail;
   cap?: State;
+  hidePointer?: boolean;
 }
 
 export interface RingModel {

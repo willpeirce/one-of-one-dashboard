@@ -36,11 +36,12 @@ function zonedParts(now: Date, zone: string): { day: string; time: string } {
 export function usDaytime(now: Date): boolean { const { time } = zonedParts(now, 'America/New_York'); return time >= '09:00' && time < '23:00'; }
 const weekday = (day: string) => new Date(`${day}T12:00:00Z`).getUTCDay();
 export function dispatchLate(order: Order, now: Date, settings: Settings, holidays: { warehouse: string; day: string }[]): boolean | null {
-  if (['FULFILLED', 'RESTOCKED'].includes(order.fulfillmentStatus) || order.financialStatus === 'REFUNDED' && order.fulfillmentStatus === 'UNFULFILLED') return false;
-  if (!order.paidAt || !['UK', 'US', 'EU'].includes(order.market)) return null;
+  if (['FULFILLED', 'RESTOCKED', 'ON_HOLD', 'SCHEDULED'].includes(order.fulfillmentStatus) || order.financialStatus === 'REFUNDED' && order.fulfillmentStatus === 'UNFULFILLED') return false;
+  // Crown dependencies dispatch from Northampton, regardless of their reporting market.
+  const warehouse = ['JE', 'GG', 'IM'].includes(order.country ?? '') || ['UK', 'EU'].includes(order.market) ? 'uk' : order.market === 'US' ? 'us' : null;
+  if (!order.paidAt || !warehouse) return null;
   if (order.fulfillmentStatus === 'unknown') return null;
   // Shipping allocation is absent until fulfilment. Use the destination warehouse and say so.
-  const warehouse = order.market === 'US' ? 'us' : 'uk';
   const zone = warehouse === 'us' ? 'America/New_York' : 'Europe/London';
   const cutoff = warehouse === 'us' ? settings.dispatchCutoffUs : settings.dispatchCutoffUk;
   const paid = zonedParts(new Date(order.paidAt), zone), current = zonedParts(now, zone);

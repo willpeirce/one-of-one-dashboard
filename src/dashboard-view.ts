@@ -25,7 +25,7 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
   });
   const pace = snapshot.widgets.w017;
   if (snapshot.reviews) {
-    content = content.replace(/(<section class="glass revs" id="reviews"[^>]*>)[\s\S]*?<\/section>/, (_section, tag: string) => `${tag}${reviewsPanelHtml(snapshot.reviews!)}</section>`);
+    content = content.replace(/(<section class="chapter revs" id="reviews"[^>]*>)[\s\S]*?<\/section>/, (_section, tag: string) => `${tag}${reviewsPanelHtml(snapshot.reviews!)}</section>`);
     content = content.replace(/(<span id="subrv">)[\s\S]*?<\/span>/, (_span, tag: string) => `${tag}${escapeHtml(reviewsGreeting(snapshot.reviews!))}</span>`);
     content = content.replace('<div class="counts" id="counts"></div>', `<div class="counts" id="counts"><button class="pk" type="button" data-rv>${escapeHtml(reviewsGreeting(snapshot.reviews))}</button></div>`);
   }

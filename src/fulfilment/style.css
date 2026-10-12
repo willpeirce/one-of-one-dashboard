@@ -10,3 +10,8 @@
 .settings-wrap:has(.fulfilment-upload)>.sample-banner{white-space:normal}
 .fulfilment-upload #complete-period{display:inline-block;margin:0 8px 0 0;vertical-align:middle}
 #coverage-label{line-height:1.6;margin:14px 0}
+
+.fulfilment-chapter{display:grid;gap:14px;min-width:0}
+.fulfilment-chapter>.fulfilment-glance,.fulfilment-chapter>.fulfilment-upload{margin:0}
+.fulfilment-chapter>.sample-banner{white-space:normal}
+.fulfilment-chapter>.btn{justify-self:start}

@@ -136,8 +136,8 @@ export const dashboardTemplate = `
   </aside>
 </section>
 
-<section class="glass tbl" id="table">
-  <div class="sh"><h2><span data-sample-text="t0123">{{sample:t0123}}</span></h2><span class="shm" id="deckcount"><span data-sample-text="t0124">{{sample:t0124}}</span></span></div>
+<section class="chapter tbl" id="table" aria-labelledby="table-title">
+  <header class="chapter-heading"><span class="chapter-number" aria-hidden="true">1</span><div class="chapter-copy"><p class="chapter-eyebrow">Decisions</p><h2 class="chapter-title" id="table-title"><span data-sample-text="t0123">{{sample:t0123}}</span></h2></div><span class="shm" id="deckcount"><span data-sample-text="t0124">{{sample:t0124}}</span></span></header>
   <div class="deck" id="deck">
 
     <article class="dcard" data-state="alarm" data-id="slabs" data-source="shopify github-hq" data-mode="sample">
@@ -239,10 +239,10 @@ export const dashboardTemplate = `
   </div>
 </section>
 
-<section class="glass revs" id="reviews" aria-label="New reviews"></section>
+<section class="chapter revs" id="reviews" aria-labelledby="reviews-title"></section>
 
-<section class="glass tests" id="tests">
-  <div class="sh"><h2><span data-sample-text="t0200">{{sample:t0200}}</span></h2><span class="shm" id="testcount"><span data-sample-text="t0201">{{sample:t0201}}</span></span></div>
+<section class="chapter tests" id="tests" aria-labelledby="tests-title">
+  <header class="chapter-heading"><span class="chapter-number" aria-hidden="true">3</span><div class="chapter-copy"><p class="chapter-eyebrow">Experiments</p><h2 class="chapter-title" id="tests-title"><span data-sample-text="t0200">{{sample:t0200}}</span></h2></div><span class="shm" id="testcount"><span data-sample-text="t0201">{{sample:t0201}}</span></span></header>
   <article class="tcard" data-state="info" data-g="growth" data-id="t1" data-kind="coin" data-test="{{widget:w006}}" data-source="shopify" data-mode="sample" data-model-id="w006">
     <div class="thead"><span class="tlane"><span data-sample-text="t0202">{{sample:t0202}}</span></span><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-bag"></use></svg></span><button class="rt" type="button" data-sheet="{{widget:w007}}" data-model-id="w007"><h3><span data-sample-text="t0203">{{sample:t0203}}</span></h3><span class="rec"><span data-sample-text="t0204">{{sample:t0204}}</span></span></button><span class="chip info" data-tchip><span data-sample-text="t0205">{{sample:t0205}}</span></span></div>
     <div class="tbody"><div class="tbars" data-bars></div><div class="tsure" data-sure></div></div>
@@ -271,8 +271,8 @@ export const dashboardTemplate = `
   </div>
 </section>
 
-<section class="glass dials" id="dials">
-  <div class="sh"><h2><span data-sample-text="t0245">{{sample:t0245}}</span></h2><span class="shm" id="dialcount"><span data-sample-text="t0246">{{sample:t0246}}</span></span></div>
+<section class="chapter dials" id="dials" aria-labelledby="dials-title">
+  <header class="chapter-heading"><span class="chapter-number" aria-hidden="true">4</span><div class="chapter-copy"><p class="chapter-eyebrow">By source</p><h2 class="chapter-title" id="dials-title"><span data-sample-text="t0245">{{sample:t0245}}</span></h2></div><span class="shm" id="dialcount"><span data-sample-text="t0246">{{sample:t0246}}</span></span></header>
   <div class="tabs" id="tabs" role="tablist">
     <button class="tab" role="tab" data-tab="ads" aria-selected="true"><svg class="ic"><use href="#i-meta"></use></svg><span class="t"><span data-sample-text="t0247">{{sample:t0247}}</span></span><span class="dot info"></span></button>
     <button class="tab" role="tab" data-tab="store" aria-selected="false"><svg class="ic"><use href="#i-bag"></use></svg><span class="t"><span data-sample-text="t0248">{{sample:t0248}}</span></span><span class="dot info"></span></button>

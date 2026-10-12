@@ -23,9 +23,9 @@ export function reviewsPanelHtml(panel: ReviewsPanel): string {
     : panel.status === 'pending' ? 'Judge.me · first sync pending'
     : panel.status === 'unavailable' ? 'Judge.me · source unavailable · showing the last successful poll'
     : `Judge.me · live · checked ${panel.checkedAt ? new Date(panel.checkedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' }) : '—'} UK`;
-  return `<div class="rvhead"><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-review"></use></svg></span>
-    <div><h2>New reviews <span class="chip ${panel.rows.length ? 'decide' : 'info'}" id="rvcount">${panel.rows.length ? `${count(panel.rows.length)} waiting` : esc(reviewsGreeting(panel))}</span></h2><span class="shm">${esc(status)}</span></div>
-    <button class="act" id="review-publish" type="button" disabled title="Publishing from Pulse is not enabled">Publish</button></div>
+  return `<header class="chapter-heading rvhead"><span class="chapter-number" aria-hidden="true">2</span>
+    <div class="chapter-copy"><p class="chapter-eyebrow">Customers</p><h2 class="chapter-title" id="reviews-title">New reviews <span class="chip ${panel.rows.length ? 'decide' : 'info'}" id="rvcount">${panel.rows.length ? `${count(panel.rows.length)} waiting` : esc(reviewsGreeting(panel))}</span></h2><span class="shm">${esc(status)}</span></div>
+    <button class="act" id="review-publish" type="button" disabled title="Publishing from Pulse is not enabled">Publish</button></header>
     ${panel.unreadCount > 0 ? `<p class="note" data-review-notice>${count(panel.unreadCount)} reviews could not be read</p>` : ''}
     <div class="rvlist">${panel.rows.length ? panel.rows.map(row => `<article class="rv" data-state="${row.rating <= 3 ? 'warn' : 'decide'}" data-review-id="${esc(row.id)}" data-source="judgeme" data-mode="${panel.mode}">
       <div class="rvr"><span class="rvs"><span class="stars" role="img" aria-label="${row.rating} out of 5 stars" data-stars="${row.rating}">${[1, 2, 3, 4, 5].map(star => `<svg class="${star <= row.rating ? 'on' : 'off'}" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-star"/></svg>`).join('')}</span><span class="chip ${row.rating <= 3 ? 'warn' : 'decide'}">${row.rating <= 3 ? 'Read first' : 'New'}</span></span>

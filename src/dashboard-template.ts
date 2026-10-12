@@ -56,7 +56,7 @@ export const dashboardTemplate = `
         <p class="sub" id="sub"><span id="sub1"><span data-sample-text="t0034">{{sample:t0034}}</span></span><span id="subrv"></span></p>
         <div class="counts" id="counts"></div>
       </div>
-      <div class="radar" id="radar" role="img"></div>
+      <div class="radar" id="radar" role="group"></div>
     </div>
 
     <div class="four">

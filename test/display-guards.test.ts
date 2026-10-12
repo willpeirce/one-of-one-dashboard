@@ -28,7 +28,7 @@ test('Meta and Google radar use spend state even without campaign measures', () 
   }
   for (const group of ['growth', 'store', 'email', 'stock']) {
     const measure = radarMeasure(group);
-    assert.equal(measure.label, 'No data yet'); assert.ok(measure.reason.length > 10);
+    assert.equal(measure.label, 'Not built'); assert.ok(measure.reason.length > 10);
   }
   assert.equal(radarMeasure('store', { good: 3, warn: 2, alarm: 0 }).label, '80%');
 });

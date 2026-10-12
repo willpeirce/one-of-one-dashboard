@@ -1,4 +1,4 @@
-import { radarMeasure } from './radar.js';
+import { radarChartHtml, radarMeasure, radarSummary, weakestRadarGauge, type RadarArea } from './radar.js';
 import { glance } from './fulfilment/view.js';
 import { liveHtml, needsHtml, storePanelsHtml } from './shopify/presentation.js';
 import type { DashboardSnapshot, Detail, DialModel, HeroMetric, HeroPeriod, Period, RingModel, SheetModel, State, TestModel, Zone } from './dashboard-types.js';
@@ -24,6 +24,7 @@ const icons: Record<string, string> = { meta: 'i-meta', google: 'i-google', shop
 const groups = [['meta', 'Meta'], ['google', 'Google'], ['growth', 'Growth'], ['store', 'Store'], ['email', 'Email'], ['stock', 'Stock']] as const;
 const panelGroups: Record<string, string> = { ads: 'meta', store: 'store', growth: 'growth', stock: 'stock' };
 const iconGroups: Record<string, string> = { 'i-meta': 'meta', 'i-google': 'google', 'i-bag': 'store', 'i-mail': 'email', 'i-growth': 'growth', 'i-box': 'stock' };
+const sourceGroups: Record<string, string> = { meta: 'meta', google: 'google', shopify: 'store', mail: 'email', growth: 'growth', stock: 'stock' };
 const all = <T extends Element = HTMLElement>(selector: string, root: ParentNode = document): T[] => Array.from(root.querySelectorAll<T>(selector));
 function get<T extends Element = HTMLElement>(selector: string, root: ParentNode = document): T {
   const element = root.querySelector<T>(selector);
@@ -296,48 +297,49 @@ function renderTest(card: HTMLElement, data: TestModel): void {
 
 interface Tally { good: number; warn: number; alarm: number; decide: number; info: number }
 const emptyTally = (): Tally => ({ good: 0, warn: 0, alarm: 0, decide: 0, info: 0 });
-const score = (value: Tally): number => value.good + value.warn + value.alarm ? (value.good + 0.5 * value.warn) / (value.good + value.warn + value.alarm) : 1;
+const radarTargets = new Map<string, HTMLElement>();
+function radarGroup(element: HTMLElement): string | undefined {
+  const panel = element.closest<HTMLElement>('[data-panel]')?.dataset.panel ?? '';
+  const icon = element.querySelector('.src use')?.getAttribute('href')?.slice(1) ?? '';
+  return element.dataset.g || sourceGroups[element.dataset.src ?? ''] || iconGroups[icon] || panelGroups[panel];
+}
 function renderHealth(): void {
   const total = emptyTally(), byGroup: Record<string, Tally> = {};
+  const gauges: Record<string, HTMLElement[]> = {};
+  radarTargets.clear();
   all('.tile[data-state],.dcard[data-state],.tcard[data-state]').forEach((element) => {
     const state = element.dataset.state ?? '';
     if (!(state in total)) return;
+    const group = radarGroup(element);
+    if (group && group !== 'hero' && element.matches('.tile') && details.has(element)
+      && !(element.hidden && (element.dataset.k === 'ukcpo' || element.dataset.k === 'uscpo'))) {
+      (gauges[group] ??= []).push(element);
+    }
     if (snapshot.shopify && element.dataset.mode === 'sample' && !element.hasAttribute('data-ingested-shopify') && !element.closest('#shopify-needs') && !element.closest('#hero')) return;
     total[state as keyof Tally] += 1;
-    const panel = element.closest<HTMLElement>('[data-panel]')?.dataset.panel ?? '';
-    const icon = element.querySelector('.src use')?.getAttribute('href')?.slice(1) ?? '';
-    const group = element.dataset.g || panelGroups[panel] || iconGroups[icon];
-    if (!group || group === 'hero') return;
+    if (!group || group === 'hero' || element.dataset.mode !== 'live' || !element.matches('.tile')) return;
     byGroup[group] ??= emptyTally();
     byGroup[group][state as keyof Tally] += 1;
   });
-  const health = Math.round(100 * score(total));
+  const areas: RadarArea[] = groups.map(([key, name]) => {
+    const candidates = gauges[key] ?? [], live = candidates.filter(element => element.dataset.mode === 'live');
+    const weakest = weakestRadarGauge(live, element => element.dataset.state ?? '')
+      ?? weakestRadarGauge(candidates, element => element.dataset.state ?? '') ?? live[0] ?? candidates[0];
+    const measure = radarMeasure(key, byGroup[key] ? { ...byGroup[key], reason: weakest ? details.get(weakest)?.detail.why : undefined } : undefined, snapshot.adSources);
+    if (measure.score !== null && weakest) {
+      weakest.id ||= `radar-gauge-${key}-${weakest.dataset.modelId ?? weakest.dataset.k ?? candidates.indexOf(weakest)}`;
+      radarTargets.set(key, weakest);
+    }
+    return { key, name, measure, ...(measure.score !== null && weakest ? { target: weakest.id } : {}) };
+  });
+  const { health } = radarSummary(areas), healthLabel = health === null ? 'Not enough data' : `${formatNumber(health)} health`;
   const rows = snapshot.shopify ? all('#shopify-needs .dcard[data-state]') : all('.dcard[data-state]'), alarmCount = rows.filter((row) => row.dataset.state === 'alarm').length, decisions = rows.filter((row) => row.dataset.state === 'decide').length;
   const reviewCount = snapshot.reviews?.rows.length ?? 0;
-  get('#counts').innerHTML = `<span class="pk health"><b>${health}</b> health</span>` + ([['alarm', alarmCount, alarmCount === 1 ? 'alarm' : 'alarms'], ['decide', decisions, decisions === 1 ? 'decision' : 'decisions'], ['warn', total.warn, 'to watch'], ['good', total.good, 'good']] as const).map(([state, count, label]) => `<span class="pk" style="--c:${colour[state]}"><i>${states[state][1]}</i><b>${formatNumber(count)}</b> ${label}</span>`).join('') + `<button class="pk" type="button" data-rv style="--c:var(--decide)"><i>★</i>${reviewCount ? `<b>${formatNumber(reviewCount)}</b> ${snapshot.reviews?.mode === 'sample' ? 'sample ' : 'new '}${reviewCount === 1 ? 'review' : 'reviews'}` : esc(snapshot.reviews ? reviewsGreeting(snapshot.reviews) : 'All caught up')}</button>`;
+  get('#counts').innerHTML = `<span class="pk health">${health === null ? healthLabel : `<b>${formatNumber(health)}</b> health`}</span>` + ([['alarm', alarmCount, alarmCount === 1 ? 'alarm' : 'alarms'], ['decide', decisions, decisions === 1 ? 'decision' : 'decisions'], ['warn', total.warn, 'to watch'], ['good', total.good, 'good']] as const).map(([state, count, label]) => `<span class="pk" style="--c:${colour[state]}"><i>${states[state][1]}</i><b>${formatNumber(count)}</b> ${label}</span>`).join('') + `<button class="pk" type="button" data-rv style="--c:var(--decide)"><i>★</i>${reviewCount ? `<b>${formatNumber(reviewCount)}</b> ${snapshot.reviews?.mode === 'sample' ? 'sample ' : 'new '}${reviewCount === 1 ? 'review' : 'reviews'}` : esc(snapshot.reviews ? reviewsGreeting(snapshot.reviews) : 'All caught up')}</button>`;
   get('#subrv').textContent = snapshot.reviews ? ` ${reviewsGreeting(snapshot.reviews)}.` : '';
   get('#deckcount').textContent = `${formatNumber(alarmCount)} ${alarmCount === 1 ? 'alarm' : 'alarms'} · ${formatNumber(decisions)} ${decisions === 1 ? 'decision' : 'decisions'}`;
-  const radarPoint = (index: number, radius: number): [number, number] => [rounded(160 + radius * Math.cos(-Math.PI / 2 + index * 2 * Math.PI / groups.length)), rounded(150 + radius * Math.sin(-Math.PI / 2 + index * 2 * Math.PI / groups.length))];
-  const polygon = (points: [number, number][]): string => points.map((p) => p.join(',')).join(' ');
-  let svg = '<svg viewBox="0 0 320 300" aria-hidden="true">';
-  for (const scale of [0.25, 0.5, 0.75, 1]) svg += `<polygon points="${polygon(groups.map((_, index) => radarPoint(index, 108 * scale)))}" fill="none" stroke="var(--line)" stroke-width="1"/>`;
-  groups.forEach((_, index) => { const [x, y] = radarPoint(index, 108); svg += `<line x1="160" y1="150" x2="${x}" y2="${y}" stroke="var(--line)" stroke-width="1"/>`; });
-  svg += `<text x="160" y="172" text-anchor="middle" font-family="var(--disp)" font-size="64" font-weight="800" fill="var(--ink)" fill-opacity=".18">${health}</text><text x="160" y="190" text-anchor="middle" font-family="var(--disp)" font-size="11" font-weight="700" letter-spacing="1.5" fill="var(--ink)" fill-opacity=".45">HEALTH</text>`;
-  const measures = groups.map(([key]) => radarMeasure(key, byGroup[key], snapshot.adSources));
-  const scores = measures.map(measure => measure.score), points = groups.map((_, index) => radarPoint(index, 108 * scores[index]!));
-  svg += `<polygon points="${polygon(points)}" fill="var(--accent)" fill-opacity=".28" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round"/>`;
-  points.forEach(([x, y]) => { svg += `<circle cx="${x}" cy="${y}" r="4.5" fill="var(--accent)" stroke="var(--pointer-ring)" stroke-width="2"/>`; });
-  const described: string[] = [];
-  groups.forEach(([key, name], index) => {
-    const [x, y] = radarPoint(index, 132), measure = measures[index]!;
-    const statusX = Math.abs(x - 160) < 2 ? x : x > 160 ? 320 : 0;
-    const statusAnchor = Math.abs(x - 160) < 2 ? 'middle' : x > 160 ? 'end' : 'start';
-    svg += `<text x="${x}" y="${y}" text-anchor="${Math.abs(x - 160) < 2 ? 'middle' : x > 160 ? 'start' : 'end'}" font-family="var(--disp)" font-size="13" font-weight="600" fill="var(--ink)">${name}<tspan x="${statusX}" text-anchor="${statusAnchor}" dy="14" font-size="11" font-weight="500" fill="var(--muted)">${esc(measure.label)}</tspan></text>`;
-    described.push(`${name}: ${measure.label}. ${measure.reason}`);
-  });
-  const reasons = groups.flatMap(([, name], index) => measures[index]!.label === 'No data yet' ? [`<p class="radar-reason">${name}: ${esc(measures[index]!.reason)}</p>`] : []).join('');
-  get('#radar').innerHTML = `${svg}</svg>${reasons}`;
-  get('#radar').setAttribute('aria-label', `Health ${formatNumber(health)}. ${described.join(', ')}.`);
+  get('#radar').innerHTML = radarChartHtml(areas);
+  get('#radar').setAttribute('aria-label', `${healthLabel}. ${areas.map(area => `${area.name}: ${area.measure.label}. ${area.measure.reason}`).join(', ')}.`);
 }
 
 function miniChart(detail: Detail, dial?: SheetDetail['dial']): string {
@@ -581,6 +583,12 @@ function boot(): void {
   document.addEventListener('click', (event) => {
     const target = event.target instanceof Element ? event.target : undefined;
     if (!target) return;
+    const radarLink = target.closest('[data-radar-key]');
+    if (radarLink) {
+      const gauge = radarTargets.get(radarLink.getAttribute('data-radar-key') ?? '');
+      if (gauge) { event.preventDefault(); showDetail(gauge); }
+      return;
+    }
     const review = target.closest<HTMLElement>('[data-review-open]');
     if (review) { showDetail(review); return; }
     if (target.closest('[data-series-use-landing]')) { void saveSeriesTarget(''); return; }

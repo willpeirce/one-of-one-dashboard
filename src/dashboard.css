@@ -107,6 +107,10 @@ svg.ic{width:1.1em;height:1.1em;fill:none;stroke:currentColor;stroke-width:2;str
 .radar{width:100%;max-width:300px;justify-self:center}
 .radar-reason{font-size:10px;line-height:1.3;color:var(--muted);margin:3px 0;overflow-wrap:anywhere}
 .radar svg{width:100%;height:auto;display:block;overflow:visible}
+.radar-target{cursor:pointer;text-decoration:none}
+.radar-target:focus-visible{outline:none}
+.radar-target:hover text,.radar-target:focus-visible text{text-decoration:underline}
+.radar-target:focus-visible .radar-hit{stroke:var(--ink);stroke-width:2}
 
 .four{display:grid;grid-template-columns:1.35fr 1fr 1fr;gap:12px}
 .four [data-k="net"]{grid-row:span 2;justify-content:center}

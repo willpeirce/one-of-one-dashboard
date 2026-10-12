@@ -5,7 +5,7 @@
         "campaign": {
           "resourceName": "customers/9000000000/campaigns/900000000201",
           "id": "900000000201",
-          "name": "Invented UK campaign"
+          "name": "Invented search campaign UK"
         },
         "segments": {
           "date": "2026-09-29",

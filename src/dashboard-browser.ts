@@ -1,7 +1,7 @@
 import { radarChartHtml, radarMeasure, radarSummary, weakestRadarGauge, type RadarArea } from './radar.js';
 import { glance } from './fulfilment/view.js';
 import { liveHtml, needsHtml, storePanelsHtml } from './shopify/presentation.js';
-import type { DashboardSnapshot, Detail, DialModel, HeroMetric, HeroPeriod, Period, RingModel, SheetModel, State, TestModel, Zone } from './dashboard-types.js';
+import type { DashboardSnapshot, Detail, DialModel, HeroMarket, HeroMetric, HeroPeriod, Period, RingModel, SheetModel, State, TestModel, Zone } from './dashboard-types.js';
 import { createDatePicker } from './dashboard-dates.js';
 import { rangeLabel } from './hero-range.js';
 import { installPullToRefresh } from './pull-refresh.js';
@@ -57,6 +57,7 @@ function watermark(element: HTMLElement): void {
 interface SheetDetail { state: State; title: string; detail: Detail; mode: 'sample' | 'live'; dial?: Pick<DialModel, 'min' | 'max' | 'z' | 't'> }
 const details = new WeakMap<HTMLElement, SheetDetail>();
 let selectedPeriod: Period | 'pick' = 'today';
+let selectedMarket: HeroMarket = 'all';
 let pickedHero: HeroPeriod | undefined;
 let rangeRequest: AbortController | undefined;
 let rangeGeneration = 0;
@@ -177,9 +178,9 @@ function renderSpark(element: HTMLElement, values: number[], detail?: Detail): v
   }).join('')}</svg>`;
 }
 
-function statChip(element: HTMLElement, state: State): void {
+function statChip(element: HTMLElement, state: State, label?: string): void {
   element.querySelector(':scope > .chip')?.remove();
-  element.insertAdjacentHTML('beforeend', chip(state));
+  element.insertAdjacentHTML('beforeend', label ? `<span class="chip ${state}">${states[state][1]} ${esc(label)}</span>` : chip(state));
   watermark(element);
 }
 
@@ -202,7 +203,8 @@ function metricNumber(element: HTMLElement, data: HeroMetric, animate: boolean):
 }
 
 function activeHero(): HeroPeriod {
-  return selectedPeriod === 'pick' && pickedHero ? pickedHero : snapshot.hero[selectedPeriod === 'pick' ? 'today' : selectedPeriod];
+  const period = selectedPeriod === 'pick' && pickedHero ? pickedHero : snapshot.hero[selectedPeriod === 'pick' ? 'today' : selectedPeriod];
+  return selectedMarket === 'all' ? period : period.markets?.[selectedMarket] ?? period;
 }
 function cancelRangeRequest(): void {
   rangeGeneration += 1; rangeRequest?.abort(); rangeRequest = undefined;
@@ -214,6 +216,9 @@ function setPeriod(period: Period, animate = true): void {
   renderHero(snapshot.hero[period], animate);
 }
 function renderHero(hero: HeroPeriod, animate = false): void {
+  hero = selectedMarket === 'all' ? hero : hero.markets?.[selectedMarket] ?? hero;
+  all('#market [data-market]').forEach(element => element.setAttribute('aria-selected', String(element.dataset.market === selectedMarket)));
+  get('#hero').dataset.market = selectedMarket;
   const period = selectedPeriod;
   all('#period [data-period]').forEach((element) => element.setAttribute('aria-selected', String(element.dataset.period === period)));
   get('#picklbl').textContent = period === 'pick' ? hero.short : 'Dates';
@@ -221,23 +226,23 @@ function renderHero(hero: HeroPeriod, animate = false): void {
   get('#hero').dataset.from = hero.from; get('#hero').dataset.to = hero.to;
   get('#eyebrow').textContent = hero.eyebrow;
   get('#sub1').textContent = hero.sub1;
-  for (const key of ['net', 'orders', 'cr', 'spend', 'roas', 'margin', 'profit'] as const) {
-    const element = get(`#hero .tile[data-k="${key}"]`), metric = hero[key];
+  for (const key of ['net', 'orders', 'aov', 'cac', 'cr', 'spend', 'roas', 'margin', 'profit'] as const) {
+    const element = get(`#hero [data-k="${key}"]`), metric = hero[key];
     element.dataset.mode = metric.mode;
     element.dataset.source = metric.source.join(' ');
     if (metric.mode === 'live') element.querySelector('.sample-label')?.remove();
-    get('.per', element).textContent = `${hero.per} · ${metric.unavailable ? 'unavailable' : metric.mode === 'live' ? 'live' : 'sample'}`;
     metricNumber(get('.sv', element), metric, animate);
     get('.ss', element).textContent = metric.ss;
     element.dataset.state = metric.state;
     element.dataset.detail = JSON.stringify(metric.d);
-    statChip(element, metric.state);
+    statChip(element, metric.state, metric.statusLabel);
     details.set(element, { state: metric.state, title: key === 'profit' ? 'Net profit' : key === 'margin' ? 'Net margin' : get('.sl', element).textContent ?? '', detail: metric.d, mode: metric.mode });
     const spark = element.querySelector<HTMLElement>('.spark');
     if (spark) renderSpark(spark, hero.spark, metric.d);
   }
   for (const key of ['ukcpo', 'uscpo'] as const) {
-    const element = get(`#hero [data-k="${key}"]`);
+    const element = get(`[data-k="${key}"]`);
+    element.hidden = selectedMarket !== 'all' && element.dataset.marketOnly !== selectedMarket;
     element.dataset.dial = JSON.stringify(hero[key]);
     element.dataset.source = hero[key].source.join(' ');
     element.dataset.mode = hero[key].mode;
@@ -423,14 +428,14 @@ function filterDials(): void {
   const query = get<HTMLInputElement>('#q').value.trim().toLowerCase();
   const tiles = all('[data-panel] .tile');
   if (!query) {
-    tiles.forEach((tile) => { tile.hidden = false; });
+    tiles.forEach((tile) => { tile.hidden = !!tile.dataset.marketOnly && selectedMarket !== 'all' && tile.dataset.marketOnly !== selectedMarket; });
     selectDeck(selectedDeck);
     get('#dialcount').textContent = 'Tap any dial for the detail';
     return;
   }
   all('[data-panel]').forEach((panel) => { panel.hidden = false; });
   let matches = 0;
-  tiles.forEach((tile) => { tile.hidden = !tile.textContent?.toLowerCase().includes(query); if (!tile.hidden) matches += 1; });
+  tiles.forEach((tile) => { tile.hidden = (!!tile.dataset.marketOnly && selectedMarket !== 'all' && tile.dataset.marketOnly !== selectedMarket) || !tile.textContent?.toLowerCase().includes(query); if (!tile.hidden) matches += 1; });
   all('.tab[data-tab]').forEach((tab) => tab.setAttribute('aria-selected', 'false'));
   get('#dialcount').textContent = `${formatNumber(matches)} ${matches === 1 ? 'dial' : 'dials'} match “${get<HTMLInputElement>('#q').value.trim()}”`;
 }
@@ -572,9 +577,11 @@ function boot(): void {
   get('#dashboard-state').remove();
   const dates = createDatePicker({ bounds: () => snapshot.bounds, selected: activeHero, apply: applyPickedRange, cancel: cancelRangeRequest });
   get('#q').addEventListener('input', filterDials);
-  get('#period').addEventListener('keydown', (event) => {
+  get('.hero-controls').addEventListener('keydown', (event) => {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-    const tabs = all<HTMLButtonElement>('#period [data-period]');
+    const group = (event.target as Element).closest('[role=tablist]');
+    if (!group) return;
+    const tabs = all<HTMLButtonElement>('[role=tab]', group);
     const index = tabs.findIndex((tab) => tab === event.target);
     if (index < 0) return;
     event.preventDefault();
@@ -592,8 +599,10 @@ function boot(): void {
     const review = target.closest<HTMLElement>('[data-review-open]');
     if (review) { showDetail(review); return; }
     if (target.closest('[data-series-use-landing]')) { void saveSeriesTarget(''); return; }
-    const element = target.closest<HTMLElement>('[data-series-market],.tile,.rt[data-sheet]');
+    const element = target.closest<HTMLElement>('[data-series-market],.tile,[data-k="profit"],.rt[data-sheet]');
     if (element && details.has(element)) { showDetail(element); return; }
+    const market = target.closest<HTMLElement>('#market [data-market]')?.dataset.market;
+    if (market === 'all' || market === 'uk' || market === 'us') { selectedMarket = market; renderHero(activeHero()); filterDials(); return; }
     const period = target.closest<HTMLElement>('[data-period]')?.dataset.period;
     if (period === 'pick') { dates.open(); return; }
     if (period === 'today' || period === 'yday' || period === '7d' || period === '30d') { setPeriod(period); return; }

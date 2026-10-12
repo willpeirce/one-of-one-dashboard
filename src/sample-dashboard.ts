@@ -1,4 +1,4 @@
-import type { DashboardSnapshot, DialModel, HeroPeriod, Period } from './dashboard-types.js';
+import type { DashboardSnapshot, DialModel, HeroMarket, HeroPeriod, Period } from './dashboard-types.js';
 import type { Settings } from './settings.js';
 import { addDays, buildHeroRange, validateHeroRange } from './hero-range.js';
 import { sampleDays, SAMPLE_START, SAMPLE_TODAY } from './sample-days.js';
@@ -4478,7 +4478,7 @@ export const samplePresets: Record<Period, { from: string; to: string; name: str
   '30d': { from: addDays(SAMPLE_TODAY, -30), to: addDays(SAMPLE_TODAY, -1), name: 'last 30 days' },
 };
 
-export function getSampleHero(from: string, to: string, settings?: Settings): HeroPeriod {
+export function getSampleHero(from: string, to: string, settings?: Settings, market: HeroMarket = 'all', includeMarkets = true): HeroPeriod {
   validateHeroRange(from, to);
   // The public API also validates actual UK today. The dated fixture never
   // invents days beyond its available Jan–Sep scenario or silently clamps input.
@@ -4492,8 +4492,17 @@ export function getSampleHero(from: string, to: string, settings?: Settings): He
     { from: `${lastMonthEnd.slice(0, 7)}-01`, to: lastMonthEnd, name: 'last month' },
     { from: `${SAMPLE_TODAY.slice(0, 4)}-01-01`, to: SAMPLE_TODAY, name: 'year to date' },
   ];
-  const hero = buildHeroRange(sampleDays(), from, to, {
-    today: SAMPLE_TODAY,
+  const rows = sampleDays().map(row => {
+    if (market === 'all') return row;
+    const orders = market === 'uk' ? row.uk : row.us;
+    return { ...row, net: row.o ? row.net * orders / row.o : 0, o: orders,
+      sess: market === 'uk' ? row.ukS : row.sess - row.ukS,
+      uk: market === 'uk' ? orders : 0, us: market === 'us' ? orders : 0,
+      ukS: market === 'uk' ? row.ukS : 0, usS: market === 'us' ? row.sess - row.ukS : 0,
+      ukM: market === 'uk' ? row.ukM : 0, usM: market === 'us' ? row.usM : 0, g: 0 };
+  });
+  const hero = buildHeroRange(rows, from, to, {
+    today: SAMPLE_TODAY, market,
     name: names.find((range) => range.from === from && range.to === to)?.name,
     blendedMetaTripwireGbp: settings?.blendedMetaTripwireGbp,
   });
@@ -4506,7 +4515,7 @@ export function getSampleHero(from: string, to: string, settings?: Settings): He
     hero.net.d.why = `${hero.net.d.why} 4 orders by this time yesterday.`;
     // The original Today readout compares with completed days. Other one-day
     // selections use the generic seven bars ending on their selected day.
-    const week = getSampleHero(samplePresets['7d'].from, samplePresets['7d'].to, settings);
+    const week = getSampleHero(samplePresets['7d'].from, samplePresets['7d'].to, settings, market, false);
     hero.spark = [...week.spark];
     hero.net.ss = `${formatNumber(hero.orders.n)} orders · 7-day avg ${formatPounds(week.net.n / 7, value => formatNumber(Math.round(value), 0))} a day`;
     for (const key of ['net', 'orders', 'cr', 'spend', 'roas', 'margin', 'ukcpo', 'uscpo'] as const) {
@@ -4516,6 +4525,8 @@ export function getSampleHero(from: string, to: string, settings?: Settings): He
       if (week[key].d.hm) hero[key].d.hm = [...week[key].d.hm!];
     }
   }
+  if (market !== 'all') hero.eyebrow = `${market.toUpperCase()} · ${hero.eyebrow}`;
+  if (includeMarkets) hero.markets = { all: { ...hero }, uk: getSampleHero(from, to, settings, 'uk', false), us: getSampleHero(from, to, settings, 'us', false) };
   return hero;
 }
 

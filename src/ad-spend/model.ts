@@ -79,27 +79,6 @@ export function decimalMicros(value: unknown): bigint {
 export function microsDecimal(value: bigint): string {
   return `${value / 1_000_000n}.${(value % 1_000_000n).toString().padStart(6, '0')}`;
 }
-export function nameMarket(...names: (string | null)[]): SpendRow['market'] {
-  const text = names.join(' '),
-    uk = /\bUK\b/i.test(text),
-    us = /\bUS\b/i.test(text);
-  return uk && !us ? 'uk' : us && !uk ? 'us' : 'unknown';
-}
-export function marketFor(
-  names: (string | null)[],
-  countries: readonly string[] = [],
-): SpendRow['market'] {
-  const named = nameMarket(...names);
-  if (named !== 'unknown') return named;
-  const unique = [...new Set(countries)];
-  return unique.length === 1
-    ? unique[0] === 'GB'
-      ? 'uk'
-      : unique[0] === 'US'
-        ? 'us'
-        : 'unknown'
-    : 'unknown';
-}
 export function ownerFor(
   source: AdSource,
   campaignId: string,

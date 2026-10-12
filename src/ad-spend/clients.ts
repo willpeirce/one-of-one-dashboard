@@ -7,12 +7,12 @@ import {
   decimalMicros,
   microsDecimal,
   hourDay,
-  marketFor,
   ownerFor,
   type SpendRow,
   type AdSource,
   type MetaCampaign,
 } from './model.js';
+import { spendMarket } from './placement.js';
 export interface SpendReader {
   read(account: string, from: string, to: string, settings: Settings): Promise<SpendRow[]>;
   readCampaigns?(account: string): Promise<MetaCampaign[]>;
@@ -53,56 +53,62 @@ export function parseMeta(
   curr: string,
   zone: string,
   settings: Settings,
-  targets: Record<string, string[]> = {},
 ): SpendRow[] {
-  return list(body.data).map((r) => ({
-    source: 'meta',
-    accountId: account,
-    campaignId: identifier(r.campaign_id),
-    campaignName: label(r.campaign_name),
-    adSetId: identifier(r.adset_id),
-    adSetName: label(r.adset_name),
-    day:
-      zone === 'Europe/London'
-        ? label(r.date_start)
-        : hourDay(
-            label(r.date_start),
-            Number(
-              /^([0-2]\d):/.exec(r.hourly_stats_aggregated_by_advertiser_time_zone ?? '')?.[1],
+  return list(body.data).map((r) => {
+    const campaignId = identifier(r.campaign_id),
+      campaignName = label(r.campaign_name),
+      adSetName = label(r.adset_name),
+      owner = ownerFor('meta', campaignId, settings);
+    return {
+      source: 'meta',
+      accountId: account,
+      campaignId,
+      campaignName,
+      adSetId: identifier(r.adset_id),
+      adSetName,
+      day:
+        zone === 'Europe/London'
+          ? label(r.date_start)
+          : hourDay(
+              label(r.date_start),
+              Number(
+                /^([0-2]\d):/.exec(r.hourly_stats_aggregated_by_advertiser_time_zone ?? '')?.[1],
+              ),
+              zone,
             ),
-            zone,
-          ),
-    amount: microsDecimal(decimalMicros(r.spend)),
-    currency: currency(curr),
-    // This compatibility field is not authoritative; spendFacts applies local ownership.
-    owner: 'ours',
-    market: marketFor([r.campaign_name, r.adset_name], targets[r.adset_id]),
-  }));
+      amount: microsDecimal(decimalMicros(r.spend)),
+      currency: currency(curr),
+      owner,
+      market: spendMarket({ source: 'meta', campaignName, adSetName, owner }),
+    };
+  });
 }
 export function parseGoogle(
   body: any,
   account: string,
   curr: string,
   settings: Settings,
-  targets: Record<string, string[]> = {},
 ): SpendRow[] {
   return list(body)
     .flatMap((chunk) => list(chunk.results ?? []))
     .map((r) => {
-      const micros = String(r.metrics?.costMicros ?? '0');
+      const micros = String(r.metrics?.costMicros ?? '0'),
+        campaignId = identifier(r.campaign.id),
+        campaignName = label(r.campaign.name),
+        owner = ownerFor('google-ads', campaignId, settings);
       if (!/^\d+$/.test(micros)) throw new AdError('invalid');
       return {
         source: 'google-ads',
         accountId: account,
-        campaignId: identifier(r.campaign.id),
-        campaignName: label(r.campaign.name),
+        campaignId,
+        campaignName,
         adSetId: null,
         adSetName: null,
         day: hourDay(label(r.segments.date), r.segments.hour ?? 0),
         amount: microsDecimal(BigInt(micros)),
         currency: currency(curr),
-        owner: ownerFor('google-ads', r.campaign.id, settings),
-        market: marketFor([r.campaign.name], targets[r.campaign.id]),
+        owner,
+        market: spendMarket({ source: 'google-ads', campaignName, adSetName: null, owner }),
       };
     });
 }
@@ -116,18 +122,21 @@ export function parseTikTok(
     const instant = label(r.dimensions.stat_time_hour),
       match = /^(20\d{2}-\d{2}-\d{2}) ([0-2]\d):00:00$/.exec(instant);
     if (!match) throw new AdError('invalid');
+    const campaignId = identifier(r.dimensions.campaign_id),
+      campaignName = label(r.metrics.campaign_name),
+      owner = ownerFor('tiktok', campaignId, settings);
     return {
       source: 'tiktok',
       accountId: account,
-      campaignId: identifier(r.dimensions.campaign_id),
-      campaignName: label(r.metrics.campaign_name),
+      campaignId,
+      campaignName,
       adSetId: null,
       adSetName: null,
       day: hourDay(match[1]!, Number(match[2])),
       amount: microsDecimal(decimalMicros(r.metrics.spend)),
       currency: currency(curr),
-      owner: ownerFor('tiktok', r.dimensions.campaign_id, settings),
-      market: marketFor([r.metrics.campaign_name]),
+      owner,
+      market: spendMarket({ source: 'tiktok', campaignName, adSetName: null, owner }),
     };
   });
 }
@@ -184,7 +193,6 @@ export class MetaSpend implements SpendReader {
     const metadata = await this.get(`act_${account}`, { fields: 'currency,timezone_name' }),
       zone = label(metadata.timezone_name),
       curr = currency(metadata.currency);
-    const targets: Record<string, string[]> = {};
     const rows: SpendRow[] = [];
     let after: string | undefined;
     do {
@@ -202,12 +210,7 @@ export class MetaSpend implements SpendReader {
           : { breakdowns: 'hourly_stats_aggregated_by_advertiser_time_zone' }),
         ...(after ? { after } : {}),
       });
-      for (const r of list(body.data))
-        if (marketFor([r.campaign_name, r.adset_name]) === 'unknown' && !targets[r.adset_id]) {
-          const adset = await this.get(identifier(r.adset_id), { fields: 'targeting' });
-          targets[r.adset_id] = list(adset.targeting?.geo_locations?.countries ?? []);
-        }
-      rows.push(...parseMeta(body, account, curr, zone, settings, targets));
+      rows.push(...parseMeta(body, account, curr, zone, settings));
       const next = body.paging?.next;
       const cursor = body.paging?.cursors?.after;
       if (next && (!cursor || cursor === after)) throw new AdError('invalid');
@@ -225,7 +228,6 @@ export class GoogleSpend implements SpendReader {
   private metadata?: {
     account: string;
     currency: string;
-    targets: Record<string, string[]>;
     at: number;
   };
   constructor(
@@ -295,41 +297,9 @@ export class GoogleSpend implements SpendReader {
         settings,
         'SELECT customer.currency_code FROM customer',
       );
-      const locations = await this.query(
-        account,
-        settings,
-        "SELECT campaign.id, campaign_criterion.location.geo_target_constant FROM campaign_criterion WHERE campaign_criterion.type = 'LOCATION' AND campaign_criterion.negative = FALSE",
-      );
-      const ids = [
-        ...new Set(
-          locations.map((r) =>
-            String(r.campaignCriterion.location.geoTargetConstant).split('/').at(-1),
-          ),
-        ),
-      ];
-      if (ids.some((id) => !/^\d+$/.test(id!))) throw new AdError('invalid');
-      const geo = ids.length
-        ? await this.query(
-            account,
-            settings,
-            `SELECT geo_target_constant.id, geo_target_constant.country_code FROM geo_target_constant WHERE geo_target_constant.id IN (${ids.join(',')})`,
-          )
-        : [];
-      const byId = new Map(
-          geo.map((r) => [String(r.geoTargetConstant.id), r.geoTargetConstant.countryCode]),
-        ),
-        targets: Record<string, string[]> = {};
-      for (const r of locations) {
-        const id = identifier(r.campaign.id),
-          country = byId.get(
-            String(r.campaignCriterion.location.geoTargetConstant).split('/').at(-1)!,
-          );
-        (targets[id] ??= []).push(country ?? 'unknown');
-      }
       this.metadata = {
         account,
         currency: currency(info[0]?.customer?.currencyCode),
-        targets,
         at: now,
       };
     }
@@ -339,7 +309,7 @@ export class GoogleSpend implements SpendReader {
       `SELECT campaign.id, campaign.name, segments.date, segments.hour, metrics.cost_micros FROM campaign WHERE segments.date BETWEEN '${addDays(from, -1)}' AND '${to}'`,
     );
     return aggregateHours(
-      parseGoogle([{ results }], account, this.metadata.currency, settings, this.metadata.targets),
+      parseGoogle([{ results }], account, this.metadata.currency, settings),
       from,
       to,
     );

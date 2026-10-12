@@ -31,17 +31,15 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
   }
   if (pace?.kind === 'series-pace') content = content.replace(/<article\b[^>]*data-model-id="w017"[^>]*><\/article>/,
     `<article class="tile series-pace" data-source="shopify" data-mode="${pace.mode}" data-model-id="w017" aria-label="Series 1 sell-out pace">${seriesPaceCardHtml(pace.value, pace.mode)}</article>`);
-  const profit = snapshot.hero.today.profit;
-  const profitDisplay = profit.unavailable ? profit.unavailableLabel ?? 'No data' : formatMetricNumber(profit.n, profit);
-  content = content.replace(/(<button[^>]*data-k="profit"[^>]*>)[\s\S]*?<\/button>/, `$1<span class="sl">Net profit · <span class="per">${escapeHtml(snapshot.hero.today.per)}</span></span><span class="sv" data-pre="£" data-dp="2" data-n="${profit.n}">${escapeHtml(profitDisplay)}</span><span class="ss">${escapeHtml(profit.ss)}</span></button>`);
-  content = content.replace(/(<span class="sv(?: big)?"[^>]*)(>)([^<]*)(<\/span>)/g,
-    (_match, tag: string, _close: string, value: string, end: string) => `${tag} style="--number-chars:${value.length}">${value}${end}`);
-  // Partial totals must name their missing source even before browser hydration.
-  content = content.replace(/(<button\b[^>]*data-k="(spend|roas|margin|profit)"[^>]*>)([\s\S]*?)<\/button>/g, (_button, tag: string, key: 'spend'|'roas'|'margin'|'profit', inner: string) => {
-    const metric = snapshot.hero.today[key];
-    if (metric.state !== 'warn') return `${tag}${inner}</button>`;
-    return `${tag.replace(/data-state="[^"]+"/, 'data-state="warn"')}${inner.replace(/<span class="ss">(?:<span\b[^>]*>[\s\S]*?<\/span>|[^<]*)<\/span>/, () => `<span class="ss">${escapeHtml(metric.ss)}</span>`)}<span class="chip warn">! Watch</span></button>`;
-  });
+  const heroKeys = ['net', 'orders', 'aov', 'cac', 'cr', 'spend', 'roas', 'margin', 'profit'] as const;
+  const heroLabels = { net: 'Net sales', orders: 'Orders', aov: 'AOV', cac: 'CAC', cr: 'Conversion rate', spend: 'Ad spend', roas: 'Overall ROAS', margin: 'Net margin', profit: 'Net profit' };
+  content = content.replace(/(<button\b[^>]*data-k="(net|orders|aov|cac|cr|spend|roas|margin|profit)"[^>]*>)[\s\S]*?<\/button>/g,
+    (_button, tag: string, key: typeof heroKeys[number]) => {
+      const metric = snapshot.hero.today[key], display = metric.unavailable ? metric.unavailableLabel ?? 'No data' : formatMetricNumber(metric.n, metric);
+      const status = metric.statusLabel ?? ({ good: 'Good', warn: 'Watch', decide: 'Decide', alarm: 'Alarm', info: 'Info', sofar: 'So far', est: 'Estimate' }[metric.state]);
+      const opening = tag.replace(/data-mode="[^"]+"/, `data-mode="${metric.mode}"`).replace(/data-source="[^"]+"/, `data-source="${metric.source.join(' ')}"`).replace(/data-state="[^"]+"/, `data-state="${metric.state}"`);
+      return `${opening}<span class="sl">${heroLabels[key]}</span><span class="sv${key === 'net' ? ' big' : ''}" style="--number-chars:${display.length}">${escapeHtml(display)}</span>${key === 'net' ? `<span class="spark" data-spark="${snapshot.hero.today.spark.join(',')}" aria-hidden="true"></span>` : ''}<span class="ss">${escapeHtml(metric.ss)}</span><span class="chip ${metric.state}">${({ good: '✓', warn: '!', decide: '◆', alarm: '✕', info: 'i', sofar: '·', est: '≈' }[metric.state])} ${escapeHtml(status)}</span></button>`;
+    });
   if (snapshot.shopify) {
     content = content.replace('<div class="deck" id="deck">', `<div class="deck" id="deck"><div id="shopify-needs">${needsHtml(snapshot.shopify)}</div><p class="note">Sample decisions from later stages</p>`);
     content = content.replace(/(<div class="srows" data-sp="live">)[\s\S]*?(?=<div class="srows" data-sp="wins")/, `$1${liveHtml(snapshot.shopify)}</div>\n`);
@@ -51,7 +49,7 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
       const widget = snapshot.widgets[key];
       return widget ? tag.replace(/data-mode="[^"]+"/, `data-mode="${widget.mode}"`).replace(/data-source="[^"]+"/, `data-source="${widget.source.join(' ')}"`) : tag;
     });
-    content = content.replace(/<button\b[^>]*data-k="(net|orders|cr|spend|roas|margin|profit)"[^>]*>/g, (tag, key: 'net'|'orders'|'cr'|'spend'|'roas'|'margin'|'profit') => tag.replace(/data-mode="[^"]+"/, `data-mode="${snapshot.hero.today[key].mode}"`).replace(/data-source="[^"]+"/, `data-source="${snapshot.hero.today[key].source.join(' ')}"`).replace(/data-state="[^"]+"/, `data-state="${snapshot.hero.today[key].state}"`));
+    content = content.replace(/<button\b[^>]*data-k="(net|orders|aov|cac|cr|spend|roas|margin|profit)"[^>]*>/g, (tag, key: 'net'|'orders'|'aov'|'cac'|'cr'|'spend'|'roas'|'margin'|'profit') => tag.replace(/data-mode="[^"]+"/, `data-mode="${snapshot.hero.today[key].mode}"`).replace(/data-source="[^"]+"/, `data-source="${snapshot.hero.today[key].source.join(' ')}"`).replace(/data-state="[^"]+"/, `data-state="${snapshot.hero.today[key].state}"`));
     // Label surviving mockup examples individually when a live source sits beside them.
     content = content.replace(/(<(?:article|button|div)\b[^>]*data-mode="sample"[^>]*>)/g, '$1<span class="sample-label">Sample data</span>');
   }

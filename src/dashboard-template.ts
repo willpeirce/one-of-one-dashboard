@@ -49,8 +49,8 @@ export const dashboardTemplate = `
 <section class="hero" id="hero">
   <div class="left">
     <div class="glass greet">
+        <div class="hero-controls"><div class="seg" role="tablist" id="period" aria-label="Period"><button role="tab" type="button" aria-selected="true" data-period="today">Today</button><button role="tab" type="button" aria-selected="false" data-period="yday">Yesterday</button><button role="tab" type="button" aria-selected="false" data-period="7d">7 days</button><button role="tab" type="button" aria-selected="false" data-period="30d">30 days</button><button role="tab" type="button" aria-selected="false" data-period="pick" id="pickbtn" aria-haspopup="dialog" aria-label="Pick a day or dates"><svg class="ic" aria-hidden="true"><use href="#i-cal"/></svg><span id="picklbl">Dates</span></button></div><div class="seg" role="tablist" id="market" aria-label="Market"><button role="tab" type="button" aria-selected="true" data-market="all">All</button><button role="tab" type="button" aria-selected="false" data-market="uk">UK</button><button role="tab" type="button" aria-selected="false" data-market="us">US</button></div></div>
       <div>
-        <div class="seg" role="tablist" id="period" aria-label="Period"><button role="tab" type="button" aria-selected="true" data-period="today">Today</button><button role="tab" type="button" aria-selected="false" data-period="yday">Yesterday</button><button role="tab" type="button" aria-selected="false" data-period="7d">7 days</button><button role="tab" type="button" aria-selected="false" data-period="30d">30 days</button><button role="tab" type="button" aria-selected="false" data-period="pick" id="pickbtn" aria-haspopup="dialog" aria-label="Pick a day or dates"><svg class="ic" aria-hidden="true"><use href="#i-cal"/></svg><span id="picklbl">Dates</span></button></div>
         <span class="eyebrow" id="eyebrow"><span data-sample-text="t0032">{{sample:t0032}}</span></span>
         <h1><span id="greeting" data-sample-text="t0033">{{sample:t0033}}</span></h1>
         <p class="sub" id="sub"><span id="sub1"><span data-sample-text="t0034">{{sample:t0034}}</span></span><span id="subrv"></span></p>
@@ -59,49 +59,17 @@ export const dashboardTemplate = `
       <div class="radar" id="radar" role="group"></div>
     </div>
 
-    <div class="four">
-      <button class="tile coral stat" data-k="net" data-state="sofar" data-g="hero" data-src="shopify" data-source="shopify" data-mode="sample">
-        <span class="sl"><span data-sample-text="t0036">{{sample:t0036}}</span><span class="per"><span data-sample-text="t0037">{{sample:t0037}}</span></span></span>
-        <span class="sv big" data-n="{{sample:t0001}}" data-pre="£" data-sample-attributes="{&quot;data-n&quot;:&quot;t0001&quot;}"><span data-sample-text="t0038">{{sample:t0038}}</span></span>
-        <span class="spark" data-spark="{{sample:t0002}}" aria-hidden="true" data-sample-attributes="{&quot;data-spark&quot;:&quot;t0002&quot;}"></span>
-        <span class="ss"><span data-sample-text="t0039">{{sample:t0039}}</span></span>
-      </button>
-      <button class="tile stat" data-k="orders" data-state="sofar" data-g="hero" data-src="shopify" data-source="shopify" data-mode="sample">
-        <span class="sl"><span data-sample-text="t0040">{{sample:t0040}}</span><span class="per"><span data-sample-text="t0041">{{sample:t0041}}</span></span></span>
-        <span class="sv big" data-n="{{sample:t0003}}" data-sample-attributes="{&quot;data-n&quot;:&quot;t0003&quot;}"><span data-sample-text="t0042">{{sample:t0042}}</span></span>
-        <span class="ss"><span data-sample-text="t0043">{{sample:t0043}}</span></span>
-      </button>
-      <button class="tile stat" data-k="cr" data-state="sofar" data-g="hero" data-src="shopify" data-source="shopify" data-mode="sample">
-        <span class="sl"><span data-sample-text="t0044">{{sample:t0044}}</span><span class="per"><span data-sample-text="t0045">{{sample:t0045}}</span></span></span>
-        <span class="sv big" data-n="{{sample:t0004}}" data-dp="1" data-suf="%" data-sample-attributes="{&quot;data-n&quot;:&quot;t0004&quot;}"><span data-sample-text="t0046">{{sample:t0046}}</span></span>
-        <span class="ss"><span data-sample-text="t0047">{{sample:t0047}}</span></span>
-      </button>
-      <button class="tile solid stat" data-k="spend" data-state="sofar" data-g="hero" data-source="meta google-ads tiktok" data-mode="sample">
-        <span class="sl"><span data-sample-text="t0048">{{sample:t0048}}</span><span class="per"><span data-sample-text="t0049">{{sample:t0049}}</span></span></span>
-        <span class="sv big" data-n="{{sample:t0005}}" data-pre="£" data-sample-attributes="{&quot;data-n&quot;:&quot;t0005&quot;}"><span data-sample-text="t0050">{{sample:t0050}}</span></span>
-        <span class="ss"><span data-sample-text="t0051">{{sample:t0051}}</span></span>
-      </button>
-      <button class="tile stat" data-k="roas" data-state="info" data-g="hero" data-source="shopify meta google-ads" data-mode="sample">
-        <span class="sl"><span data-sample-text="t0052">{{sample:t0052}}</span><span class="per"><span data-sample-text="t0053">{{sample:t0053}}</span></span></span>
-        <span class="sv" data-n="{{sample:t0006}}" data-dp="2" data-suf="×" data-sample-attributes="{&quot;data-n&quot;:&quot;t0006&quot;}"><span data-sample-text="t0054">{{sample:t0054}}</span></span>
-        <span class="ss"><span data-sample-text="t0055">{{sample:t0055}}</span></span>
-      </button>
+    <div class="four hero-grid">
+      <button type="button" class="tile coral stat" data-k="net" data-g="hero" data-src="shopify" data-state="info" data-source="shopify" data-mode="sample"><span class="sl">Net sales</span><span class="sv big"></span><span class="spark" aria-hidden="true"></span><span class="ss"></span></button>
+      <button type="button" class="tile stat" data-k="orders" data-g="hero" data-src="shopify" data-state="info" data-source="shopify" data-mode="sample"><span class="sl">Orders</span><span class="sv"></span><span class="ss"></span></button>
+      <button type="button" class="tile stat" data-k="aov" data-g="hero" data-src="shopify" data-state="info" data-source="shopify" data-mode="sample"><span class="sl">AOV</span><span class="sv"></span><span class="ss"></span></button>
+      <button type="button" class="tile stat" data-k="cac" data-g="hero" data-state="info" data-source="shopify" data-mode="sample"><span class="sl">CAC</span><span class="sv"></span><span class="ss"></span></button>
+      <button type="button" class="tile stat" data-k="cr" data-g="hero" data-src="shopify" data-state="info" data-source="shopify" data-mode="sample"><span class="sl">Conversion rate</span><span class="sv"></span><span class="ss"></span></button>
+      <button type="button" class="tile solid stat" data-k="spend" data-g="hero" data-state="info" data-source="shopify" data-mode="sample"><span class="sl">Ad spend</span><span class="sv"></span><span class="ss"></span></button>
+      <button type="button" class="tile stat" data-k="roas" data-g="hero" data-state="info" data-source="shopify" data-mode="sample"><span class="sl">Overall ROAS</span><span class="sv"></span><span class="ss"></span></button>
+      <button type="button" class="tile stat" data-k="margin" data-g="hero" data-state="info" data-source="shopify" data-mode="sample"><span class="sl">Net margin</span><span class="sv"></span><span class="ss"></span></button>
     </div>
-
-    <div class="quad">
-      <button class="tile dial" data-k="ukcpo" data-src="meta" data-g="meta" data-dial="{{widget:w001}}" data-source="meta shopify" data-mode="sample" data-model-id="w001"></button>
-      <button class="tile dial" data-k="uscpo" data-src="meta" data-g="meta" data-dial="{{widget:w002}}" data-source="meta shopify" data-mode="sample" data-model-id="w002"></button>
-      <button class="tile stat" data-k="margin" data-state="est" data-g="hero" data-source="shopify meta google-ads github-hq" data-mode="sample">
-        <span class="sl"><span data-sample-text="t0056">{{sample:t0056}}</span><span class="per"><span data-sample-text="t0057">{{sample:t0057}}</span></span></span>
-        <span class="sv" data-n="{{sample:t0007}}" data-suf="%" data-sample-attributes="{&quot;data-n&quot;:&quot;t0007&quot;}"><span data-sample-text="t0058">{{sample:t0058}}</span></span>
-        <span class="ss"><span data-sample-text="t0059">{{sample:t0059}}</span></span>
-      </button>
-      <button class="tile stat" data-k="profit" data-state="est" data-g="hero" data-source="shopify meta google-ads github-hq" data-mode="sample">
-        <span class="sl">Net profit · <span class="per"></span></span>
-        <span class="sv" data-pre="£" data-dp="2"></span>
-        <span class="ss"></span>
-      </button>
-    </div>
+    <button type="button" class="profit-line" data-k="profit" data-g="hero" data-state="est" data-source="shopify meta google-ads tiktok" data-mode="sample"><span class="sl">Net profit</span><span class="sv"></span><span class="ss"></span></button>
   </div>
 
   <aside class="glass score" id="score" aria-label="Live, wins and coming up">
@@ -282,6 +250,8 @@ export const dashboardTemplate = `
 
   <div class="panel" id="p-ads" data-panel="ads">
     <div class="grid">
+      <button type="button" class="tile dial" data-k="ukcpo" data-market-only="uk" data-src="meta" data-g="meta" data-dial="{{widget:w001}}" data-source="meta shopify" data-mode="sample" data-model-id="w001"></button>
+      <button type="button" class="tile dial" data-k="uscpo" data-market-only="us" data-src="meta" data-g="meta" data-dial="{{widget:w002}}" data-source="meta shopify" data-mode="sample" data-model-id="w002"></button>
       <article class="tile series-pace" data-source="shopify" data-mode="sample" data-model-id="w017" aria-label="Series 1 sell-out pace"></article>
       <button class="tile dial" data-src="meta" data-dial="{{widget:w018}}" data-source="meta" data-mode="sample" data-model-id="w018"></button>
       <button class="tile dial" data-src="meta" data-dial="{{widget:w019}}" data-source="meta shopify" data-mode="sample" data-model-id="w019"></button>

@@ -15,12 +15,18 @@ export interface DailyMetrics {
   us: number;
   sess: number;
   ukS: number;
+  usS?: number;
+  adSpend?: number;
+  spendKnown?: boolean;
+  netKnown?: boolean;
+  countsKnown?: boolean;
+  sessionsKnown?: boolean;
   ukM: number;
   usM: number;
   g: number;
   ours: number;
 }
-export type Totals = Omit<DailyMetrics, 'date'> & {
+export type Totals = Omit<DailyMetrics, 'date' | 'usS' | 'adSpend' | 'spendKnown' | 'netKnown' | 'countsKnown' | 'sessionsKnown'> & {
   days: number; usS: number; meta: number; spend: number; ours: number;
 };
 
@@ -59,9 +65,9 @@ export function validateHeroRange(from: unknown, to: unknown, now = new Date()):
 export function aggregateDays(rows: readonly DailyMetrics[]): Totals {
   const totals: Totals = { net: 0, o: 0, uk: 0, us: 0, sess: 0, ukS: 0, ukM: 0, usM: 0, g: 0, days: rows.length, usS: 0, meta: 0, spend: 0, ours: 0 };
   for (const row of rows) for (const field of fields) totals[field] += row[field];
-  totals.usS = totals.sess - totals.ukS;
+  totals.usS = rows.reduce((sum, row) => sum + (row.usS ?? row.sess - row.ukS), 0);
   totals.meta = totals.ukM + totals.usM;
-  totals.spend = totals.meta + totals.g;
+  totals.spend = rows.reduce((sum, row) => sum + (row.adSpend ?? row.ukM + row.usM + row.g), 0);
   return totals;
 }
 
@@ -87,11 +93,13 @@ export function spikeMarkets(date: string): ('UK' | 'US')[] {
     .filter((market): market is 'UK' | 'US' => market !== null);
 }
 
-type Metric = 'net' | 'orders' | 'cr' | 'spend' | 'roas' | 'margin' | 'ukcpo' | 'uscpo';
+type Metric = 'net' | 'aov' | 'cac' | 'orders' | 'cr' | 'spend' | 'roas' | 'margin' | 'ukcpo' | 'uscpo';
 const additive = new Set<Metric>(['net', 'orders', 'spend']);
 const metrics: Record<Metric, (totals: Totals) => number> = {
   net: (t) => t.net,
   orders: (t) => t.o,
+  aov: (t) => divide(t.net, t.o),
+  cac: (t) => divide(t.spend, t.o),
   cr: (t) => 100 * divide(t.o, t.sess),
   spend: (t) => t.spend,
   roas: (t) => divide(t.net, t.spend),
@@ -103,6 +111,7 @@ const metrics: Record<Metric, (totals: Totals) => number> = {
 export interface HeroRangeOptions {
   today: string;
   name?: string;
+  market?: import('./dashboard-types.js').HeroMarket;
   blendedMetaTripwireGbp?: number;
 }
 
@@ -119,6 +128,7 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
     return result;
   };
   const selected = select(from, to);
+  const marketSpikes = (date: string) => spikeMarkets(date).filter(market => !options.market || options.market === 'all' || market.toLowerCase() === options.market);
   const n = dayCount(from, to);
   if (selected.length !== n) throw new HeroRangeError();
   const t = aggregateDays(selected);
@@ -131,10 +141,12 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
   const comparisonDays = one ? 7 : n;
   const previous = select(addDays(from, -comparisonDays), addDays(from, -1));
   const base = previous.length === comparisonDays ? aggregateDays(previous) : null;
-  const comparison = (metric: Metric): number | null => base ? metrics[metric](base) / (one && additive.has(metric) ? 7 : 1) : null;
-  const spikeRows = selected.filter((row) => spikeMarkets(row.date).length);
+  const countMetrics = new Set<Metric>(['orders', 'aov', 'cac', 'cr']);
+  const salesMetrics = new Set<Metric>(['net', 'aov', 'roas', 'margin']);
+  const comparison = (metric: Metric): number | null => base && !(metric === 'cac' && previous.some(row => row.spendKnown === false)) && !(salesMetrics.has(metric) && previous.some(row => row.netKnown === false)) && !(countMetrics.has(metric) && previous.some(row => row.countsKnown === false)) && !(metric === 'cr' && previous.some(row => row.sessionsKnown === false)) ? metrics[metric](base) / (one && additive.has(metric) ? 7 : 1) : null;
+  const spikeRows = selected.filter((row) => marketSpikes(row.date).length);
   const spikeSummary = spikeRows.length > 5 ? `${formatNumber(spikeRows.length)} spike days in this range`
-    : `Spike days: ${spikeRows.map((row) => `${shortDate(row.date)} (${spikeMarkets(row.date).join(' and ')})`).join(', ')}`;
+    : `Spike days: ${spikeRows.map((row) => `${shortDate(row.date)} (${marketSpikes(row.date).join(' and ')})`).join(', ')}`;
   const spikeNote = spikeRows.length ? `${spikeSummary}. Do not base a verdict on a spike day alone.` : '';
   const state = (value: number, compared: number | null): State => partial ? 'sofar' : one && spikeRows.length ? 'info'
     : compared === null ? 'info' : value >= compared ? 'good' : value < 0.85 * compared ? 'warn' : 'info';
@@ -159,11 +171,11 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
   const hl: [string, string] = weekly ? [`week of ${shortDate(from)}`, `week of ${shortDate(lastBinStart)}`]
     : [shortDate(firstChartDate), partial ? 'today so far' : shortDate(to)];
   const hm = bins.map((bin) => {
-    const marks = bin.filter((row) => spikeMarkets(row.date).length).map((row) => `${shortDate(row.date)} (${spikeMarkets(row.date).join(' and ')})`);
+    const marks = bin.filter((row) => marketSpikes(row.date).length).map((row) => `${shortDate(row.date)} (${marketSpikes(row.date).join(' and ')})`);
     return marks.length ? `Spike days: ${marks.join(', ')}` : '';
   });
   const ha = `${weekly ? 'Week by week, average a day' : 'Day by day'}, ${rangeLabel(firstChartDate, to)}${spikeNote ? `. ${spikeNote}` : ''}`;
-  const history = (metric: Metric): number[] => bins.map((bin) => {
+  const history = (metric: Metric): number[] => (metric === 'cac' && chartRows.some(row => row.spendKnown === false) || salesMetrics.has(metric) && chartRows.some(row => row.netKnown === false) || countMetrics.has(metric) && chartRows.some(row => row.countsKnown === false) || metric === 'cr' && chartRows.some(row => row.sessionsKnown === false)) ? [] : bins.map((bin) => {
     const total = aggregateDays(bin);
     const value = metrics[metric](total);
     return additive.has(metric) ? Math.round(value / total.days) : rounded(value, metric === 'cr' ? 1 : metric === 'margin' ? 0 : 2);
@@ -176,6 +188,9 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
   const cNet = comparison('net');
   const cOrders = comparison('orders');
   const cCr = comparison('cr');
+  const aov = metrics.aov(t), cac = metrics.cac(t);
+  const cAov = comparison('aov'), cCac = comparison('cac');
+  const ratioComparison = (value: number, base: number | null): string => base === null ? 'no earlier days to compare' : `${one ? '7-day avg' : `prev ${n} days`} ${formatPounds(base)}${!partial && base ? ` · ${value >= base ? '+' : '−'}${percent(value, base)}%` : ''}`;
   const cr = metrics.cr(t);
   const roas = metrics.roas(t);
   const margin = metrics.margin(t);
@@ -207,7 +222,7 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
     };
   };
   return {
-    from, to, short: label, spark: history('net'),
+    market: options.market ?? 'all', from, to, short: label, spark: history('net'),
     eyebrow: one ? `${weekday} · ${partial ? 'today so far' : 'one day'}` : `${label} · ${options.name ?? `${n} days`}${partial ? ', today so far' : ''}`,
     sub1: one ? `${integer(t.o)} orders on ${weekday}${partial ? ' so far' : ''}.` : `${integer(t.o)} orders over ${label}${partial ? ' so far' : ''}, avg ${integer(t.o / n)} a day.`,
     per: options.name ?? (one ? weekday : label),
@@ -222,6 +237,18 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
       d: detail('orders', { src: `Shopify orders, paid, both markets, ${when}`,
         why: `${integer(t.o)} orders ${on}. UK ${integer(t.uk)}, US ${integer(t.us)}.${one ? '' : ` Best day ${weekdayDate(best.date)} with ${integer(best.o)}.`}${spikeNote ? ` ${spikeNote}` : ''}` }),
     }, ['shopify']),
+    aov: metric({ n: rounded(aov), state: state(aov, cAov), pre: '£', dp: 2,
+      ss: ratioComparison(aov, cAov),
+      d: detail('aov', { hp: '£', src: `Shopify net sales ÷ counted orders, ${when}`,
+        why: `${formatPounds(t.net)} net sales ÷ ${integer(t.o)} orders = ${formatPounds(aov)}.`,
+        rule: `Net sales ÷ orders. ${rule}` }),
+    }, ['shopify']),
+    cac: metric({ n: rounded(cac), state: partial ? 'sofar' : one && spikeRows.length ? 'info' : cCac === null ? 'info' : cac <= cCac ? 'good' : cac > 1.15 * cCac ? 'warn' : 'info', pre: '£', dp: 2,
+      ss: ratioComparison(cac, cCac),
+      d: detail('cac', { hp: '£', src: `Meta + Google + TikTok spend ÷ counted Shopify orders, ${when}`,
+        why: `${formatPounds(t.spend)} all ad spend ÷ ${integer(t.o)} orders = ${formatPounds(cac)}.`,
+        rule: `Cost per order until first orders can be told apart; no bar of its own yet, the Meta cost-per-order dials carry the bar. ${later(`Green when at or below ${one ? 'the 7-day average' : `the previous ${n} days`}; amber over 115% of it. Red is never used here.`)}${spikeNote ? ` ${spikeNote}` : ''}` }),
+    }, ['shopify', 'meta', 'google-ads', 'tiktok']),
     cr: metric({ n: rounded(cr, 1), state: state(cr, cCr), suf: '%', dp: 1,
       ss: `${integer(t.o)} of ${integer(t.sess)} sessions · ${marketRates}`,
       d: detail('cr', { hs: '%', src: `Shopify Analytics, orders ÷ sessions, both markets, ${when}`,

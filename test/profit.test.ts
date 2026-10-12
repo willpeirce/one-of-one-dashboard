@@ -54,7 +54,7 @@ test('profit equals the margin numerator for every period and All, UK and US', a
     spend.rows = dates.flatMap((day) => (['uk', 'us', 'unknown'] as const)
       .filter((country) => market === 'all' || country === market)
       .map((country) => ({ ...prototype, day, market: country,
-        campaignId: `invented-profit-${country}`, amount: country === 'uk' ? '20.000000' : country === 'us' ? '30.000000' : '3.000000' })));
+        campaignId: `invented-profit-${country}`, campaignName: country === 'unknown' ? 'Invented unplaced profit' : `Invented profit ${country.toUpperCase()}`, adSetName: country === 'unknown' ? 'Invented unplaced set' : `Invented profit — ${country.toUpperCase()} — base`, amount: country === 'uk' ? '20.000000' : country === 'us' ? '30.000000' : '3.000000' })));
     applySpend(hero, orders, settings, '2026-10-09', { spend, costs: [], market, now,
       estimates: orders.map((order) => ({ orderId: order.id, costPence: order.market === 'UK' ? 500 : 700, source: 'exact' })) });
     const overhead = market === 'all' ? dates.reduce((sum, day) => sum + 300 / (day.startsWith('2026-09') ? 30 : 31) * (day === '2026-10-09' ? 0.5 : 1), 0) : 0;
@@ -67,7 +67,7 @@ test('profit equals the margin numerator for every period and All, UK and US', a
     assert.equal(hero.margin.n, 100 * hero.profit.n / hero.net.n);
     assert.equal(hero.profit.dp, 2);
     assert.equal(hero.profit.pre, '£');
-    assert.equal(hero.profit.state, period.to === '2026-10-09' ? 'sofar' : 'est');
+    assert.equal(hero.profit.state, 'est');
     assert.equal(hero.profit.state, hero.margin.state);
     assert.equal(hero.profit.ss, hero.margin.ss);
     assert.equal(hero.profit.unavailable, hero.margin.unavailable);
@@ -78,8 +78,8 @@ test('profit equals the margin numerator for every period and All, UK and US', a
     assert.deepEqual(hero.profit.d.extra!.at(-1), ['Net profit', `£${expected.toFixed(2)}`]);
     assert.equal(hero.profit.d.hist, undefined);
     assert.match(hero.profit.d.why, /same pound total used to calculate net margin/);
-    if (market !== 'all') assert.match(hero.profit.ss, /before overheads/);
-    if (period.to === '2026-10-09') assert.match(hero.profit.ss, /so far/);
+    if (market !== 'all') assert.match(hero.profit.ss, /store-wide/);
+    if (period.to === '2026-10-09') assert.doesNotMatch(hero.profit.ss, /so far/);
   });
 });
 

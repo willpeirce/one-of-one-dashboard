@@ -25,14 +25,14 @@ function facts(orders: Order[], from = '2026-08-01', extra: Facts['records'] = [
 }
 async function order(): Promise<Order> { return cleanOrder((await fixture('order')).data.order); }
 
-test('zero-total paid orders without transactions count as paid and do not hold order/dispatch checks unknown', async () => {
+test('zero-total paid orders remain dispatch facts but are excluded from counted hero orders', async () => {
   const o = cleanOrder((await fixture('order-zero-total-paid')).data.order) as Order;
   assert.equal(o.itemsAfterDiscountsPence, 0);
   assert.equal(o.paidAt, o.createdAt);
   const checks = evaluateWatchdogs(facts([o]), now, settings, blankObservation(), [], []);
   assert.equal(checks.find(c => c.id === 'orders')!.status, 'pass');
   assert.equal(checks.find(c => c.id === 'dispatch')!.status, 'pass');
-  assert.equal(shopifyHero(facts([o]), '2026-09-30', '2026-09-30', '2026-09-30', settings).orders.n, 1);
+  assert.equal(shopifyHero(facts([o]), '2026-09-30', '2026-09-30', '2026-09-30', settings).orders.n, 0);
   assert.equal(dispatchLate({ ...o, paidAt: null, market: 'unknown' }, now, settings, []), false);
 });
 

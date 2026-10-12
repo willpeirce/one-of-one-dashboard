@@ -8,32 +8,45 @@ import { googleSpendMarket, metaSpendMarket, spendMarket, tiktokSpendMarket } fr
 import { sampleMetaCampaigns, sampleSpend, saveSpend, spendFacts } from '../src/ad-spend/store.js';
 import { createTestDatabase } from './helpers/database.js';
 
-test('Meta places our exact set markers first and otherwise uses the campaign name', () => {
+test('Meta places our exact set markers, then set market words, then the campaign name', () => {
   assert.equal(metaSpendMarket('Invented discovery US', 'Invented — UK — Discovery', 'ours'), 'uk');
   assert.equal(metaSpendMarket('Invented discovery UK', 'Invented — US — Discovery', 'ours'), 'us');
-  assert.equal(metaSpendMarket('Invented campaign US', 'Invented UK set', 'ours'), 'us');
+  assert.equal(metaSpendMarket('Invented campaign US', 'Invented UK set', 'ours'), 'uk');
+  assert.equal(metaSpendMarket('Invented campaign UK', 'Invented discovery us set', 'ours'), 'us');
   assert.equal(metaSpendMarket('Invented campaign UK', null, 'ours'), 'uk');
-  assert.equal(metaSpendMarket('Invented campaign', 'Invented — uk — Discovery', 'ours'), 'unknown');
-  assert.equal(metaSpendMarket('Invented campaign', 'Invented - UK - Discovery', 'ours'), 'unknown');
-  assert.equal(metaSpendMarket('Invented campaign', 'Invented— UK —Discovery', 'ours'), 'unknown');
+  assert.equal(metaSpendMarket('Invented campaign', 'Invented — uk — Discovery', 'ours'), 'uk');
+  assert.equal(metaSpendMarket('Invented campaign', 'Invented - UK - Discovery', 'ours'), 'uk');
+  assert.equal(metaSpendMarket('Invented campaign', 'Invented— UK —Discovery', 'ours'), 'uk');
+  assert.equal(metaSpendMarket('Invented campaign US', 'Invented — UK — US discovery', 'ours'), 'uk');
+  assert.equal(metaSpendMarket('Invented campaign US', 'Invented ordinary set', 'ours'), 'us');
+  assert.equal(metaSpendMarket('Invented campaign', 'Invented UK and US set', 'ours'), 'unknown');
+  assert.equal(metaSpendMarket('Invented campaign UK', 'Invented UK and US set', 'ours'), 'unknown');
+  assert.equal(metaSpendMarket('Invented campaign', 'Invented UKulele and bonus set', 'ours'), 'unknown');
 });
 
 test('Meta freelancer and unassigned campaigns ignore all set markers', () => {
   for (const owner of ['freelancer', 'unassigned'] as const) {
     assert.equal(metaSpendMarket('Invented campaign US', 'Invented — UK — Discovery', owner), 'us');
+    assert.equal(metaSpendMarket('Invented campaign US', 'Invented UK set', owner), 'us');
     assert.equal(metaSpendMarket('Invented campaign', 'Invented — UK — Discovery', owner), 'unknown');
+    assert.equal(metaSpendMarket('Invented campaign', 'Invented UK set', owner), 'unknown');
   }
   assert.equal(metaSpendMarket('Invented campaign UK US', 'Invented ordinary set', 'ours'), 'unknown');
   assert.equal(metaSpendMarket('Invented campaign UK', 'Invented — UK — US — Discovery', 'ours'), 'unknown');
 });
 
-test('Google uses only the market at the end of its campaign name', () => {
+test('Google uses whole market words anywhere and leaves ambiguous or unmatched names unknown', () => {
   assert.equal(googleSpendMarket('Invented search UK'), 'uk');
   assert.equal(googleSpendMarket('Invented search US'), 'us');
   assert.equal(googleSpendMarket('Invented search uk  '), 'uk');
-  assert.equal(googleSpendMarket('Invented UK discovery'), 'unknown');
+  assert.equal(googleSpendMarket('UK invented discovery'), 'uk');
+  assert.equal(googleSpendMarket('Invented UK discovery'), 'uk');
+  assert.equal(googleSpendMarket('Invented discovery us video'), 'us');
+  assert.equal(googleSpendMarket('Invented UK-search UK'), 'uk');
   assert.equal(googleSpendMarket('Invented bonus'), 'unknown');
-  assert.equal(googleSpendMarket('Invented UK search US'), 'us');
+  assert.equal(googleSpendMarket('Invented UKulele discovery'), 'unknown');
+  assert.equal(googleSpendMarket('Invented discovery'), 'unknown');
+  assert.equal(googleSpendMarket('Invented UK search US'), 'unknown');
 });
 
 test('TikTok uses the campaign market anywhere and keeps ambiguous or unnamed rows under All', () => {

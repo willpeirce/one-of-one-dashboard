@@ -17,13 +17,14 @@ export function metaSpendMarket(
     const uk = adSetName?.includes(' — UK — ') ?? false,
       us = adSetName?.includes(' — US — ') ?? false;
     if (uk || us) return uk && !us ? 'uk' : us && !uk ? 'us' : 'unknown';
+    const setName = adSetName ?? '';
+    if (/\b(?:UK|US)\b/i.test(setName)) return campaignMarket(setName);
   }
   return campaignMarket(campaignName);
 }
 
 export function googleSpendMarket(campaignName: string): Market {
-  const ending = /\b(UK|US)$/i.exec(campaignName.trim())?.[1]?.toUpperCase();
-  return ending === 'UK' ? 'uk' : ending === 'US' ? 'us' : 'unknown';
+  return campaignMarket(campaignName);
 }
 
 export function tiktokSpendMarket(campaignName: string): Market {

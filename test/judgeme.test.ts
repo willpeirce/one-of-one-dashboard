@@ -264,3 +264,17 @@ test('reviews share sample/live rendering, safely escape full text, disable Publ
   const dashboard = getSampleDashboard(); const rendered = dashboardPage(dashboard);
   assert.match(rendered, /data-review-open="900101"/); assert.match(rendered, /data-rv>3 sample reviews, 1 needs reading first/);
 });
+
+test('empty reviews use only the title chip and preserve pending, unavailable and unreadable states', () => {
+  const empty = { ...sampleReviews(), mode: 'live' as const, rows: [], unreadCount: 0 };
+  for (const [status, unreadCount, label] of [
+    ['live', 0, 'All caught up'], ['pending', 0, 'Reviews: first sync pending'],
+    ['unavailable', 0, 'Reviews unavailable'], ['live', 2, 'Some reviews could not be read'],
+  ] as const) {
+    const html = reviewsPanelHtml({ ...empty, status, unreadCount });
+    assert.ok(html.includes(`class="chip info" id="rvcount">${label}</span>`));
+    assert.match(html, /<div class="rvlist"><\/div>/);
+    assert.doesNotMatch(html, /<p class="note">All caught up<\/p>/);
+    assert.equal((html.match(/data-review-notice/g) ?? []).length, unreadCount ? 1 : 0);
+  }
+});

@@ -47,6 +47,8 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
       hero.from = from; hero.to = to; hero.short = name; hero.eyebrow = `${from}–${to} · history unavailable`;
       for (const view of [hero, ...Object.values(hero.markets ?? {})]) {
       view.grossUnavailable = true; view.from = from; view.to = to; view.short = name; view.eyebrow = `${view.market === 'all' ? '' : `${view.market?.toUpperCase()} · `}${from}–${to} · history unavailable`;
+      view.net.d.extra = view.net.d.extra?.map(([label, value]) => [label,
+        label === 'Gross (incl. shipping and tax)' ? 'Unavailable; history unavailable for this range' : value]);
       for (const metric of [view.net, view.orders, view.aov, view.cac, view.cr, view.spend, view.roas, view.margin, view.profit]) { metric.unavailable = true; metric.ss = 'History unavailable for this range'; }
       for(const dial of [view.ukcpo,view.uscpo]){dial.t='—';dial.s='History unavailable for this range';}
       }

@@ -286,6 +286,7 @@ export function applySpend(
   hero.profit = {
     ...hero.margin,
     n: result.profit,
+    unavailable: !available || hero.net.unavailable || !Number.isFinite(result.profit),
     pre: '£',
     suf: '',
     dp: 2,

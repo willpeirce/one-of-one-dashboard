@@ -99,7 +99,7 @@ async function assertHeroModel(page: Page, metrics: HeroPeriod): Promise<void> {
     assert.equal(await page.locator(`[data-k="${key}"]`).count(), 1);
   }
   const margin = metrics.margin as HeroMetric, profit = metrics.profit as HeroMetric, net = metrics.net as HeroMetric;
-  assert.equal(profit.unavailable, margin.unavailable);
+  if (!margin.unavailable) assert.equal(profit.unavailable, false, 'A measured margin requires a measured profit numerator');
   assert.equal(profit.ss, margin.ss);
   if (!margin.unavailable && net.n && typeof margin.n === 'number' && typeof profit.n === 'number') {
     assert.ok(Math.abs(profit.n - net.n * margin.n / 100) < 1e-8, 'Profit must equal the margin numerator in every preset and picked range');

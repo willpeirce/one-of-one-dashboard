@@ -7,6 +7,7 @@ import { fixture, SampleShopify } from '../src/shopify/sample.js';
 import { defaultSettings } from '../src/settings.js';
 import { getSampleDashboard } from '../src/sample-dashboard.js';
 import { dashboardPage } from '../src/dashboard-view.js';
+import { applyShopifyDashboard } from '../src/shopify/dashboard.js';
 import { ShopifyWorker } from '../src/shopify/worker.js';
 import { createTestDatabase } from './helpers/database.js';
 import { readSourceHealth, syncSourceHealth } from '../src/sources.js';
@@ -67,6 +68,27 @@ test('old gross history refresh runs in seven-day blocks, stores authoritative z
 test('gross remains unavailable during first backfill and cannot masquerade as a measured zero', () => {
   const pending = facts([]); pending.jobs[0]!.state.ordersDone = false;
   const hero = shopifyHero(pending, '2026-10-01', '2026-09-30', '2026-09-30', defaultSettings()); for (const view of [hero, ...Object.values(hero.markets!)]) { assert.equal(view.net.unavailable, true); assert.equal(view.grossUnavailable, true); }
+});
+
+test('presets before available history keep Gross unavailable in every market sheet', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const raw = (await fixture('order-uk-tax-inclusive-refund')).data.order;
+  raw.createdAt = raw.updatedAt = '2026-10-01T09:00:00Z'; raw.refunds = [];
+  const data = facts([cleanOrder(raw)]);
+  data.jobs[0]!.state.from = '2026-10-01';
+  const snapshot = await applyShopifyDashboard(getSampleDashboard(), db, data, defaultSettings(), [], now);
+  assert.equal(snapshot.hero.today.gross, 114);
+  assert.equal(snapshot.hero.today.grossUnavailable, false);
+  for (const period of ['yday', '7d', '30d'] as const) {
+    for (const view of [snapshot.hero[period], ...Object.values(snapshot.hero[period].markets!)]) {
+      assert.equal(view.grossUnavailable, true);
+      assert.equal(view.net.unavailable, true);
+      const row = view.net.d.extra!.find(([label]) => label === 'Gross (incl. shipping and tax)');
+      assert.ok(row);
+      assert.match(row[1], /Unavailable.*history unavailable/);
+      assert.doesNotMatch(row[1], /£/);
+    }
+  }
 });
 test('an empty report without the gross column preserves cached historical money and retry position', async t => {
   const db = await createTestDatabase(); t.after(() => db.close()); const credentials = { SHOPIFY_CLIENT_ID: randomUUID(), SHOPIFY_CLIENT_SECRET: randomUUID() }; const clock = new Date('2026-09-30T12:00:00Z');

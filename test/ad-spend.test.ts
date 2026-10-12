@@ -653,7 +653,7 @@ test('margin adds shipping charged net of tax while retaining net sales as its d
       assert.match(h.margin.d.why, /fulfilment.*postage/i);
       assert.match(h.margin.d.rule, /shipping income/i);
       assert.match(h.margin.d.rule, /fulfilment.*postage/i);
-      assert.match(h.margin.d.rule, /shipping refunds not yet deducted/);
+      assert.match(h.margin.d.rule, /shipping refunds are deducted net of tax on their refund UK day/);
     });
   }
 });

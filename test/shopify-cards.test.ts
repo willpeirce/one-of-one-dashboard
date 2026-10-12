@@ -19,7 +19,7 @@ import { createTestDatabase } from './helpers/database.js';
 const now = new Date(appConfig.shopify.sampleNow);
 const settings = defaultSettings();
 function facts(orders: Order[], from = '2026-08-01', extra: Facts['records'] = []): Facts {
-  return { mode: 'live', sample: false, counts: {}, pendingWebhooks: 0, notices: [], noticeDetails: [],
+  return { mode: 'live', sample: false, counts: {}, pendingWebhooks: 0, notices: [], geoNotice: null, noticeDetails: [],
     jobs: ['backfill','poll','sessions','inventory','reconcile','subscriptions'].map(name => ({ name, state: name === 'backfill' ? { from, allOrders: true, ordersDone: true } : {}, last_success_at: now, failures: 0 })),
     records: [...orders.map(data => ({ kind: 'order', data, fetched_at: now })), ...extra] };
 }
@@ -113,6 +113,43 @@ test('stock uses allocated lines by warehouse, 60 complete days and Settings; mi
   assert.equal(stockCover(f,'2026-09-30',settings).find(s=>s.name===cover.name)!.cover,null);
   assert.equal(stockCover(facts([o],'2026-09-01',[{kind:'inventory',data:stock,fetched_at:now}]),'2026-09-30',{...settings,seasonalMultiplier:1}).find(s=>s.name===cover.name)!.cover,null);
   assert.ok(stockCover(f,'2026-09-30',settings).some(s=>s.available===null));
+});
+
+test('email explanations use human weekday dates for one day, a range and a year boundary', async () => {
+  const o = await order();
+  const oneDay = shopifyHero(facts([o]), '2026-09-30', '2026-09-30', '2026-09-30', settings).business!.email.detail.why;
+  assert.match(oneDay, /net sales, Wed 30 Sep\./);
+  assert.doesNotMatch(oneDay, /\d{4}-\d{2}-\d{2}/);
+  const range = shopifyHero(facts([o]), '2026-09-30', '2026-09-29', '2026-09-30', settings).business!.email.detail.why;
+  assert.match(range, /Tue 29 Sep–Wed 30 Sep\./);
+  assert.doesNotMatch(range, /\d{4}-\d{2}-\d{2}/);
+  const yearBoundary = shopifyHero(facts([o], '2025-12-01'), '2026-09-30', '2025-12-31', '2026-01-01', settings).business!.email.detail.why;
+  assert.match(yearBoundary, /Wed 31 Dec 2025–Thu 1 Jan 2026\./);
+});
+
+test('unfulfilled Crown dependency orders use Northampton cut-off and holidays before warehouse allocation', async () => {
+  for (const country of ['JE', 'GG', 'IM']) {
+    const raw = (await fixture('order')).data.order;
+    raw.shippingAddress.countryCodeV2 = country; raw.fulfillments = [];
+    raw.displayFulfillmentStatus = 'UNFULFILLED';
+    raw.transactions = [{ status: 'SUCCESS', kind: 'SALE', processedAt: '2026-08-28T14:30:00Z' }];
+    const o = cleanOrder(raw);
+    assert.equal(o.market, 'unknown'); // Reporting market is unchanged; dispatch knows the destination.
+    assert.equal(o.fulfillments.length, 0);
+    const holidays = [{ warehouse: 'uk', day: '2026-08-31' }];
+    assert.equal(dispatchLate(o, new Date('2026-09-01T14:59:00Z'), settings, holidays), false, country);
+    assert.equal(dispatchLate(o, new Date('2026-09-01T15:00:00Z'), settings, holidays), true, country);
+  }
+});
+
+test('on-hold and scheduled fulfilment orders are not due for dispatch', async () => {
+  const o = await order(); o.paidAt = '2026-09-21T10:00:00Z';
+  for (const fulfillmentStatus of ['ON_HOLD', 'SCHEDULED']) {
+    const held = { ...o, fulfillmentStatus };
+    assert.equal(dispatchLate(held, now, settings, []), false);
+    assert.equal(evaluateWatchdogs(facts([held]), now, settings, blankObservation(), [], []).find(check => check.id === 'dispatch')!.status, 'pass');
+  }
+  assert.equal(dispatchLate({ ...o, fulfillmentStatus: 'UNFULFILLED' }, now, settings, []), true);
 });
 
 test('dispatch uses payment time, working days, bank holidays, both cutoffs and unknowns', async () => {

@@ -89,6 +89,7 @@ test('two non-positive complete days pause the card and count only those paused 
   assert.equal(result.trendAverage, 10 / 3);
   assert.deepEqual(result.days.map(day => day.sold), [-7, 10, -3, 0]);
   assert.equal(pace([0, 0]).average, 0);
+  assert.equal(pace([0, 0]).needle, -90);
   assert.equal(pace([-2, -1]).average, 0);
   assert.equal(pace([0]).status, 'too_slow');
 });
@@ -148,7 +149,15 @@ test('without a complete day the card waits, and missing stock is never treated 
   assert.equal(result.projectedDate, null);
   assert.equal(result.dayCount, 0);
   assert.equal(result.trendAverage, null);
-  assert.equal(pace([10], { stock: null }).status, 'stock_unknown');
+  assert.equal(result.gap, null);
+  assert.equal(result.needle, null);
+  assert.equal(result.state, 'muted');
+  const missingStock = pace([10], { stock: null });
+  assert.equal(missingStock.status, 'stock_unknown');
+  assert.equal(missingStock.verdict, 'Waiting for current stock');
+  assert.equal(missingStock.gap, null);
+  assert.equal(missingStock.needle, null);
+  assert.equal(missingStock.state, 'muted');
 });
 
 test('only the last seven complete UK calendar days count, even when the input has today and older days', () => {

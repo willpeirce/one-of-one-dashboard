@@ -239,42 +239,7 @@ export const dashboardTemplate = `
   </div>
 </section>
 
-<section class="glass revs" id="reviews" aria-label="New reviews">
-  <div class="rvhead">
-    <span class="src" aria-hidden="true"><svg class="ic"><use href="#i-review"></use></svg></span>
-    <div><h2><span data-sample-text="t0185">{{sample:t0185}}</span><span class="chip decide" id="rvcount"><span data-sample-text="t0186">{{sample:t0186}}</span></span></h2><span class="shm"><span data-sample-text="t0187">{{sample:t0187}}</span></span></div>
-    <button class="act" type="button" disabled title="All in Judge.me · Not built yet" aria-label="All in Judge.me · Not built yet">Not built yet</button>
-  </div>
-  <div class="rvlist">
-  <article class="rv" data-state="warn" data-id="rv1" data-source="judgeme" data-mode="sample">
-    <div class="rvr">
-      <span class="rvs"><span class="stars" data-stars="{{sample:t0014}}" data-sample-attributes="{&quot;data-stars&quot;:&quot;t0014&quot;}"></span><span class="chip warn"><span data-sample-text="t0188">{{sample:t0188}}</span></span></span>
-      <button class="rt" type="button" data-sheet="{{widget:w003}}" data-model-id="w003"><h3><span data-sample-text="t0189">{{sample:t0189}}</span></h3><span class="rec"><span data-sample-text="t0190">{{sample:t0190}}</span></span></button>
-      <div class="rvm"><span class="age"><span data-sample-text="t0191">{{sample:t0191}}</span></span><div class="acts"><button class="act primary" type="button" disabled title="Read in Judge.me · Not built yet" aria-label="Read in Judge.me · Not built yet">Not built yet</button></div></div>
-    </div>
-
-
-  </article>
-  <article class="rv" data-state="decide" data-id="rv2" data-source="judgeme" data-mode="sample">
-    <div class="rvr">
-      <span class="rvs"><span class="stars" data-stars="{{sample:t0015}}" data-sample-attributes="{&quot;data-stars&quot;:&quot;t0015&quot;}"></span><span class="chip decide"><span data-sample-text="t0192">{{sample:t0192}}</span></span></span>
-      <button class="rt" type="button" data-sheet="{{widget:w004}}" data-model-id="w004"><h3><span data-sample-text="t0193">{{sample:t0193}}</span></h3><span class="rec"><span data-sample-text="t0194">{{sample:t0194}}</span></span></button>
-      <div class="rvm"><span class="age"><span data-sample-text="t0195">{{sample:t0195}}</span></span><div class="acts"><button class="act" type="button" disabled title="Open · Not built yet" aria-label="Open · Not built yet">Not built yet</button></div></div>
-    </div>
-
-
-  </article>
-  <article class="rv" data-state="decide" data-id="rv3" data-source="judgeme" data-mode="sample">
-    <div class="rvr">
-      <span class="rvs"><span class="stars" data-stars="{{sample:t0016}}" data-sample-attributes="{&quot;data-stars&quot;:&quot;t0016&quot;}"></span><span class="chip decide"><span data-sample-text="t0196">{{sample:t0196}}</span></span></span>
-      <button class="rt" type="button" data-sheet="{{widget:w005}}" data-model-id="w005"><h3><span data-sample-text="t0197">{{sample:t0197}}</span></h3><span class="rec"><span data-sample-text="t0198">{{sample:t0198}}</span></span></button>
-      <div class="rvm"><span class="age"><span data-sample-text="t0199">{{sample:t0199}}</span></span><div class="acts"><button class="act" type="button" disabled title="Open · Not built yet" aria-label="Open · Not built yet">Not built yet</button></div></div>
-    </div>
-
-
-  </article>
-  </div>
-</section>
+<section class="glass revs" id="reviews" aria-label="New reviews"></section>
 
 <section class="glass tests" id="tests">
   <div class="sh"><h2><span data-sample-text="t0200">{{sample:t0200}}</span></h2><span class="shm" id="testcount"><span data-sample-text="t0201">{{sample:t0201}}</span></span></div>

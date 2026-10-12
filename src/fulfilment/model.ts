@@ -22,6 +22,7 @@ export interface Estimate {
   costPence: number | null; source: 'actual'|'exact'|'ladder'|'flat'|'unknown';
   warehouse: Warehouse; service: string | null; guess: boolean;
 }
+export const MIN_FULFILMENT_FLAG_PEERS = 5;
 export const emptyModel = (): Model => ({ rates: [], warehouses: {} });
 export function destination(country: string | null): Warehouse {
   const value = country?.trim().toUpperCase() ?? '';
@@ -231,9 +232,13 @@ export function parcelFlags(p: Parcel, order: Order | undefined, model: Model): 
   const expected=destination(order?.country??p.country);
   if (expected!=='unknown'&&p.warehouse!==expected) flags.push('Wrong warehouse for destination');
   if (!knownService(p.warehouse,p.service)) return flags;
+  // The rebuild supplies a leave-one-out model: only comparable peers count.
+  const q=order&&quantities(order);
+  const peers=q&&model.rates.find(r=>r.warehouse===p.warehouse&&normaliseService(r.service)===normaliseService(p.service)&&r.mix===mixKey(q)&&r.state===(p.warehouse==='us'?order!.region:''));
+  if (!peers || peers.count<MIN_FULFILMENT_FLAG_PEERS) return flags;
   const actual=actualPence(p);
   if (actual!==null&&p.rateBaselinePence!==null&&p.rateBaselinePence>0&&Math.abs(actual-p.rateBaselinePence)/p.rateBaselinePence>.25) flags.push('Cost more than 25% off its rate');
-  const q=order&&quantities(order), m=p.warehouse==='unknown'?undefined:model.warehouses[p.warehouse];
+  const m=p.warehouse==='unknown'?undefined:model.warehouses[p.warehouse];
   if (q&&m) {
     const expectedPick=Math.max(0,predict(m.ladder,{items:Object.values(q).reduce((a,b)=>a+b,0)}));
     if (expectedPick>0&&p.pickPackMinor>expectedPick*1.25) flags.push('Possible new surcharge');

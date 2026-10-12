@@ -27,12 +27,15 @@ import { HeroRangeError, validateHeroRange, ukToday } from './hero-range.js';
 import { registerDashboardEvents } from './events.js';
 import { readSettings, saveSettings, SettingsValidationError, SettingsConflictError } from './settings.js';
 import { settingsPage } from './settings-view.js';
+import { ReviewsWorker, type ReviewsWorkerOptions } from './judgeme/worker.js';
+import { readReviews } from './judgeme/store.js';
+import { sampleReviews } from './judgeme/sample.js';
 
 declare module 'fastify' {
   interface FastifyInstance { startBackgroundWork(): Promise<void> }
 }
 
-export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: NodeJS.ProcessEnv = {}, shopifyOptions: ConstructorParameters<typeof ShopifyWorker>[3] = {}, adOptions:SpendWorkerOptions = {}) {
+export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: NodeJS.ProcessEnv = {}, shopifyOptions: ConstructorParameters<typeof ShopifyWorker>[3] = {}, adOptions:SpendWorkerOptions = {}, reviewOptions: ReviewsWorkerOptions = {}) {
   // Request/error logging is deliberately off: authentication bodies contain private material.
   const app = Fastify({ logger: false, bodyLimit: 32_768, trustProxy: false, requestTimeout: 15_000 });
   await app.register(cookie);
@@ -44,7 +47,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   if (shopify.mode === 'sample') await shopify.tick();
   const sourceNow = () => shopifyOptions.clock?.() ?? (shopify.mode === 'sample' ? new Date(appConfig.shopify.sampleNow) : new Date());
   async function runWatchdogs() {
-    const facts = await shopify.store.facts();
+    const facts = await shopify.store.facts(sourceNow());
     const [settings, health, context] = await Promise.all([readSettings(db), readSourceHealth(db), readWatchdogContext(db, facts)]);
     const now = sourceNow();
     const observation = await updateObservation(db, shopify.mode, facts, now);
@@ -53,6 +56,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   }
   await seedFulfilment(db, shopify.mode, sourceNow());
   const ads=new SpendWorker(db,sourceEnv,adOptions);
+  const reviews = new ReviewsWorker(db, sourceEnv, reviewOptions);
   let observationRun: Promise<unknown> | undefined;
   let observationTimer: ReturnType<typeof setInterval> | undefined;
   let startupRun: Promise<void> | undefined;
@@ -66,6 +70,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   function startBackgroundWork(): Promise<void> {
     if (startupRun) return startupRun;
     ads.start();
+    reviews.start();
     observationTimer = setInterval(() => { void observe(); }, 60_000);
     observationTimer.unref();
     startupRun = (async () => {
@@ -84,6 +89,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   app.addHook('onClose', async () => {
     if (observationTimer) clearInterval(observationTimer);
     await ads.stop();
+    await reviews.stop();
     await startupRun;
     await observationRun;
   });
@@ -137,9 +143,13 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   let unconfirmedCampaigns: { scope: string; count: number } | undefined;
   async function snapshot() {
     const [settings, sourceHealth] = await Promise.all([readSettings(db), readSourceHealth(db)]);
-    const facts=await shopify.store.facts();
+    const facts=await shopify.store.facts(sourceNow());
     const adInputs=await heroInputs(facts,settings.values);
     const result = await applyShopifyDashboard({ ...getSampleDashboard(settings.values), generatedAt: new Date().toISOString(), sourceHealth }, db, facts, settings.values, sourceHealth, sourceNow(), adInputs, shopifyOptions.clock?.() ?? new Date());
+    // Radar describes actual ad connections even when Shopify numbers use sample data.
+    result.adSources = await spendHealth(db, sourceEnv, settings.values, adOptions.clock?.() ?? new Date());
+    result.reviews = reviews.mode === 'sample' ? sampleReviews() : await readReviews(db, reviewOptions.clock?.() ?? new Date());
+    result.banner = result.banner?.replace('reviews and other stages: sample data', `reviews: ${reviews.mode === 'sample' ? 'sample data' : 'live Judge.me'}; other stages: sample data`);
     const campaignScope = JSON.stringify([settings.values.metaAdAccountId, getSourceStates(sourceEnv).find(source => source.source === 'meta')!.mode]);
     try {
       unconfirmedCampaigns = { scope: campaignScope, count: (await readMetaCampaigns(db, settings.values, sourceEnv)).filter(campaign => !campaign.confirmed).length };
@@ -167,19 +177,19 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     if (Object.keys(query).some((key) => key !== 'from' && key !== 'to')) throw new HeroRangeError();
     const { from, to } = validateHeroRange(query.from, query.to);
     const settings = await readSettings(db);
-    const facts=await shopify.store.facts();
+    const facts=await shopify.store.facts(sourceNow());
     return shopifyHero(facts, ukToday(sourceNow()), from, to, settings.values,undefined,undefined,await heroInputs(facts,settings.values),sourceNow());
   });
   app.get('/sources', async (request, reply) => {
     if (!await auth.session(request)) return reply.redirect('/login');
-    const [dashboard, imports, costs, settings] = await Promise.all([snapshot(), shopify.store.summary(), shopify.store.costSummary(), readSettings(db)]);
+    const [dashboard, imports, costs, settings] = await Promise.all([snapshot(), shopify.store.summary(sourceNow()), shopify.store.costSummary(), readSettings(db)]);
     return reply.type('text/html; charset=utf-8').send(sourceHealthPage(dashboard.sourceHealth ?? [], imports, costs, await spendHealth(db, sourceEnv, settings.values, sourceNow()), {
       summary: dashboard.banner ?? '', shopify: dashboard.shopify!, checkedAt: sourceNow().toISOString(), campaigns: await readCampaignSync(db, settings.values, sourceEnv),
     }));
   });
   app.get('/api/shopify', async (request, reply) => {
     if (!await auth.session(request)) return reply.code(401).send({ error: 'Sign in to continue.' });
-    return shopify.store.summary();
+    return shopify.store.summary(sourceNow());
   });
   app.get('/settings', async (request, reply) => {
     if (!await auth.session(request)) return reply.redirect('/login');

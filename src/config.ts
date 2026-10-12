@@ -88,7 +88,9 @@ export const appConfig = {
     ignoreOneOffCampaigns: true,
   },
   github: { owner: 'willpeirce', repository: 'one-of-one-hq' },
-  judgeme: { publishEnabled: false },
+  judgeme: {
+    publishEnabled: false,
+  },
   ugc: { workingOrigin: 'https://creators.oneofonehq.com', originConfirmed: false },
   fulfilment: {
     knownServices: { uk: ['DPD', 'DPD Next Day', 'DPD V2 Parcel Next Day', 'DPD Two Day', 'DPD V2 Parcel Two Day', 'Royal Mail Tracked 48', 'Royal Mail Tracked48', 'UPS Ground'], us: ['Ground Advantage', 'USPS Ground Advantage', 'USPS GroundAdvantage', 'UPS Ground'] },

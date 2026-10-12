@@ -211,6 +211,161 @@ async function checkNegativeProfit(context: BrowserContext): Promise<void> {
   } finally { await page.close(); }
 }
 
+async function checkGroupedDisplay(context: BrowserContext): Promise<void> {
+  const scope = step;
+  const page = await context.newPage();
+  try {
+    const response = await context.request.get('/api/dashboard');
+    assert.equal(response.status(), 200);
+    const fixture = await response.json() as FullDashboardSnapshot;
+    for (const period of periods) {
+      Object.assign(fixture.hero[period].net, { n: 1234567.89, unavailable: false, pre: '£', dp: 2 });
+      Object.assign(fixture.hero[period].orders, { n: 1560, unavailable: false, dp: 0 });
+    }
+    await page.route('**/api/dashboard', route => route.fulfill({ status: 200, json: fixture }));
+    await page.route('**/api/events', route => route.fulfill({ status: 200, contentType: 'text/event-stream',
+      body: `retry: 60000\nevent: dashboard\ndata: ${JSON.stringify(fixture)}\n\n` }));
+    const cases = [
+      { meta: { live: true, status: 'live', fetchedAt: '2026-09-30T11:00:00Z' },
+        google: { live: true, status: 'stale · last fetched 09:00', fetchedAt: '2026-09-30T08:00:00Z' }, labels: ['Live', 'Stale'] },
+      { meta: { live: true, status: 'source unavailable', fetchedAt: '2026-09-30T08:00:00Z' },
+        google: { live: false, status: 'waiting for keys', fetchedAt: null }, labels: ['Unavailable', 'Waiting for keys'] },
+      { meta: { live: true, status: 'first sync pending', fetchedAt: null },
+        google: { live: true, status: 'live', fetchedAt: '2026-09-30T11:00:00Z' }, labels: ['No data yet', 'Live'] },
+    ];
+    for (const viewport of viewports) {
+      await page.setViewportSize(viewport);
+      for (const [index, sample] of cases.entries()) {
+        step = `${scope}: grouped figures and radar ${sample.labels.join('/')} at ${viewport.width}px`;
+        fixture.adSources = [{ source: 'meta', ...sample.meta }, { source: 'google-ads', ...sample.google }];
+        await page.goto('/');
+        await page.locator('html[data-dashboard-ready="true"]').waitFor();
+        const money = page.locator('#hero [data-k="net"]');
+        assert.equal(await money.locator('.sv').innerText(), '£1,234,567.89');
+        assert.equal(await page.locator('#hero [data-k="orders"] .sv').innerText(), '1,560');
+        const fits = await money.evaluate(element => {
+          const figure = element.querySelector('.sv')!;
+          const range = document.createRange();range.selectNodeContents(figure);
+          const text = range.getBoundingClientRect(), box = element.getBoundingClientRect();
+          return text.left >= box.left && text.right <= box.right && text.bottom <= box.bottom;
+        });
+        assert.equal(fits, true, 'The full grouped decimal figure must fit inside the phone tile');
+        const radar = page.locator('#radar');
+        assert.equal(await radar.isVisible(), true);
+        for (const [name, label] of [['Meta', sample.labels[0]], ['Google', sample.labels[1]]] as const) {
+          assert.equal(await radar.locator('svg text').filter({ hasText: new RegExp(`^${name}`) }).locator('tspan').textContent(), label);
+          assert.ok((await radar.getAttribute('aria-label'))?.includes(`${name}: ${label}`));
+        }
+        assert.doesNotMatch(await radar.innerText(), /Unknown/);
+        assert.match(await radar.locator('.radar-reason').allTextContents().then(text => text.join('\n')), /Growth: Growth measures are not built yet\./);
+        assert.match(await radar.locator('.radar-reason').allTextContents().then(text => text.join('\n')), /Email: Mailchimp measures are not built yet\./);
+        if (index === 2) assert.match(await radar.innerText(), /The first ad spend sync is pending\./);
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+        if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/grouped-money-radar-${viewport.width}-${index}.png` });
+      }
+    }
+  } finally { await page.close(); }
+}
+
+async function checkReviews(context: BrowserContext): Promise<void> {
+  const scope = step;
+  const page = await context.newPage();
+  try {
+    const response = await context.request.get('/api/dashboard');
+    assert.equal(response.status(), 200);
+    const fixture = await response.json() as FullDashboardSnapshot;
+    assert.ok(fixture.reviews);
+    const sample = structuredClone(fixture.reviews);
+    assert.equal(sample.mode, 'sample');
+    assert.equal(sample.rows.length, 3);
+    assert.equal(sample.publishEnabled, false);
+    assert.ok(sample.rows[0]!.rating <= 3, 'Low-star reviews come before newer high-star reviews');
+    assert.ok(sample.rows.slice(1).every(review => review.rating > 3));
+    assert.ok(sample.rows.every(review => !review.published && !review.hidden));
+    assert.doesNotMatch(JSON.stringify(sample.rows), /reviewer|email|ip_address/i);
+    await page.route('**/api/dashboard', route => route.fulfill({ status: 200, json: fixture }));
+    await page.route('**/api/events', route => route.fulfill({ status: 200, contentType: 'text/event-stream',
+      body: `retry: 60000\nevent: dashboard\ndata: ${JSON.stringify(fixture)}\n\n` }));
+    for (const viewport of viewports) {
+      step = `${scope}: sample review panel and greeting at ${viewport.width}px`;
+      fixture.reviews = structuredClone(sample);
+      // Invented, explicitly excluded identity metadata must never reach the UI.
+      Object.assign(fixture.reviews.rows[0]!, { reviewer: { name: 'Invented browser private reviewer', email: 'invented-browser-private@example.invalid' } });
+      await page.setViewportSize(viewport);
+      await page.goto('/');
+      await page.locator('html[data-dashboard-ready="true"]').waitFor();
+      const rows = page.locator('#reviews .rv[data-review-id]');
+      assert.equal(await rows.count(), 3);
+      assert.deepEqual(await rows.evaluateAll(elements => elements.map(element => element.getAttribute('data-review-id'))), sample.rows.map(review => review.id));
+      assert.match(await page.locator('#counts button[data-rv]').innerText(), /3.*sample.*reviews/is);
+      assert.equal((await page.locator('#subrv').innerText()).trim(), '3 sample reviews, 1 needs reading first.');
+      assert.match(await page.locator('#reviews').innerText(), /sample/i);
+      const health = await page.locator('#counts > span').allTextContents();
+      const radar = await page.locator('#radar').getAttribute('aria-label');
+      await page.locator('#counts button[data-rv]').click();
+      await page.locator('#reviews').scrollIntoViewIfNeeded();
+      assert.equal(await rows.first().isVisible(), true);
+      assert.match(await rows.first().innerText(), /Read first/i);
+      assert.equal(await page.locator('#reviews [data-unbuilt]').count(), 0);
+      assert.doesNotMatch(await page.locator('#reviews').innerHTML(), /Invented browser private reviewer|invented-browser-private@example\.invalid/);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/reviews-panel-${viewport.width}.png` });
+      for (const [index, review] of sample.rows.entries()) {
+        step = `${scope}: review sheet ${index + 1} at ${viewport.width}px`;
+        await rows.nth(index).locator('button[data-review-open]').click();
+        assert.equal(await page.locator('#sheet').isVisible(), true);
+        assert.equal(await page.locator('#sh-extra .review-body').innerText(), review.body);
+        assert.match(await page.locator('#sheet').innerText(), /sample data/i);
+        const links = page.locator('#sh-extra [data-review-link]');
+        assert.equal(await links.first().innerText(), review.rating <= 3 ? 'Read in Judge.me' : 'Open in Judge.me');
+        assert.ok(await links.count() >= 1);
+        for (const link of await links.all()) {
+          const href = await link.getAttribute('href');
+          assert.ok(href && new URL(href).protocol === 'https:');
+          assert.equal(href, 'https://app.judge.me/index', 'Review links open the Judge.me reviews dashboard');
+          assert.equal(await link.getAttribute('target'), '_blank');
+          assert.match(await link.getAttribute('rel') ?? '', /noopener/);
+          assert.match(await link.getAttribute('rel') ?? '', /noreferrer/);
+        }
+        assert.equal(await page.locator('#review-publish').isDisabled(), true);
+        assert.doesNotMatch(await page.locator('#sheet').innerHTML(), /Invented browser private reviewer|invented-browser-private@example\.invalid/);
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+        assert.equal(await page.locator('#sheet').evaluate(element => element.scrollWidth <= element.clientWidth), true);
+        if (index === 0 && process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/reviews-sheet-${viewport.width}.png` });
+        await page.locator('#sh-x').click();
+      }
+      step = `${scope}: unread review notice without changing health at ${viewport.width}px`;
+      fixture.reviews = { ...sample, unreadCount: 1 };
+      await page.reload();
+      await page.locator('html[data-dashboard-ready="true"]').waitFor();
+      const notice = page.locator('#reviews [data-review-notice]');
+      assert.equal(await notice.count(), 1);
+      assert.equal(await notice.innerText(), '1 reviews could not be read');
+      assert.equal(await rows.count(), sample.rows.length, 'Readable reviews remain visible');
+      assert.deepEqual(await page.locator('#counts > span').allTextContents(), health);
+      assert.equal(await page.locator('#radar').getAttribute('aria-label'), radar);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      fixture.reviews.rows = [];
+      await page.reload();
+      await page.locator('html[data-dashboard-ready="true"]').waitFor();
+      assert.equal(await notice.count(), 1);
+      assert.doesNotMatch(await page.locator('#reviews').innerText(), /All caught up/);
+      step = `${scope}: all caught up without changing health at ${viewport.width}px`;
+      fixture.reviews = { ...sample, mode: 'live', rows: [], status: 'live', unreadCount: 0 };
+      await page.reload();
+      await page.locator('html[data-dashboard-ready="true"]').waitFor();
+      assert.equal(await notice.count(), 0, 'The next clean poll clears the notice');
+      assert.equal(await rows.count(), 0);
+      assert.match(await page.locator('#counts button[data-rv]').innerText(), /All caught up/);
+      assert.match(await page.locator('#subrv').innerText(), /All caught up/);
+      assert.match(await page.locator('#rvcount').innerText(), /All caught up/);
+      assert.deepEqual(await page.locator('#counts > span').allTextContents(), health);
+      assert.equal(await page.locator('#radar').getAttribute('aria-label'), radar);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    }
+  } finally { await page.close(); }
+}
+
 async function checkSeriesPace(context: BrowserContext): Promise<void> {
   const scope = step;
   const page = await context.newPage();
@@ -446,6 +601,49 @@ async function checkSeriesPaceSettings(page: Page, context: BrowserContext): Pro
   for (const key of keys) await input(key).fill(String(before.values[key]));
   await save();
   assert.deepEqual((await (await context.request.get('/api/settings')).json() as SettingsSnapshot).values, before.values);
+}
+
+async function checkSeriesPaceWaiting(context: BrowserContext): Promise<void> {
+  const scope = step;
+  const page = await context.newPage();
+  try {
+    const response = await context.request.get('/api/dashboard');
+    assert.equal(response.status(), 200);
+    const fixture = await response.json() as FullDashboardSnapshot;
+    const widget = fixture.widgets.w017;
+    assert.ok(widget?.kind === 'series-pace');
+    const original = structuredClone(widget.value.markets.UK);
+    await page.route('**/api/dashboard', route => route.fulfill({ status: 200, json: fixture }));
+    await page.route('**/api/events', route => route.fulfill({ status: 200, contentType: 'text/event-stream',
+      body: `retry: 60000\nevent: dashboard\ndata: ${JSON.stringify(fixture)}\n\n` }));
+    for (const viewport of viewports) {
+      await page.setViewportSize(viewport);
+      for (const sample of [
+        { input: { stock: 100, days: [] }, state: 'info', reason: 'Waiting for the first complete day', pointer: false },
+        { input: { stock: null, days: original.days }, state: 'info', reason: 'Waiting for current stock', pointer: false },
+        { input: { stock: 100, days: [{ day: addDays(original.today, -1), sold: 0, source: 'shopifyql' as const }] }, state: 'warn', reason: 'TOO SLOW', pointer: true },
+      ]) {
+        step = `${scope}: ${sample.reason} at ${viewport.width}px`;
+        widget.value.markets.UK = { ...original, ...calculateSeriesPace({ ...original, ...sample.input }) };
+        await page.goto('/');
+        await page.locator('html[data-dashboard-ready="true"]').waitFor();
+        await page.locator('#tabs [data-tab="ads"]').click();
+        const dial = page.locator('[data-model-id="w017"] [data-series-market="UK"]');
+        assert.equal(await dial.getAttribute('data-state'), sample.state);
+        assert.equal(await dial.locator('.ds').innerText(), sample.reason);
+        assert.equal(await dial.locator('.well circle').count(), sample.pointer ? 1 : 0);
+        if (sample.pointer) {
+          assert.equal(widget.value.markets.UK.needle, -90);
+          assert.match(await dial.innerText(), /no sell-out at this pace/);
+        } else {
+          assert.equal(widget.value.markets.UK.needle, null);
+          assert.equal(await dial.locator('.well svg text').first().textContent(), '—');
+        }
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+        if (!sample.pointer && process.env.PULSE_SCREENSHOT_DIR) await dial.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/series-waiting-${sample.input.stock === null ? 'stock' : 'days'}-${viewport.width}.png` });
+      }
+    }
+  } finally { await page.close(); }
 }
 
 async function checkPartialAdSpend(context: BrowserContext): Promise<void> {
@@ -805,7 +1003,9 @@ async function assertSampleTextStyles(page: Page): Promise<void> {
 
 async function assertUnbuiltActions(page: Page): Promise<void> {
   const buttons = page.locator('button[data-unbuilt]');
-  assert.ok(await buttons.count() >= 17);
+  assert.equal(await page.locator('#table button[data-unbuilt]').count(), 12);
+  assert.equal(await page.locator('#tests button[data-unbuilt]').count(), 1);
+  assert.equal(await page.locator('#review-publish').isDisabled(), true);
   for (const button of await buttons.all()) {
     const label = await button.getAttribute('aria-label');
     assert.ok(label);
@@ -1360,7 +1560,8 @@ async function run(): Promise<void> {
         assert.equal(await page.locator('#sh-extra dt:text-is("Shipping charged") + dd').innerText(),
           (snapshot.hero.today.margin as HeroMetric).d?.extra?.find(([key]) => key === 'Shipping charged')?.[1]);
         assert.match(await page.locator('#sh-why').innerText(), /shipping income.*fulfilment includes postage/i);
-        assert.match(await page.locator('#sh-rule').innerText(), /shipping refunds not yet deducted/);
+        assert.match(await page.locator('#sh-rule').innerText(), /shipping refunds are deducted net of tax on their refund UK day/);
+        assert.doesNotMatch(await page.locator('#sh-rule').innerText(), /shipping refunds not yet deducted/);
         step = `check daily overhead shares in margin detail at ${viewport.width}px`;
         assert.ok(marginRows.includes('Overheads'));
         const overheads = page.locator('#sh-extra dt:text-is("Overheads") + dd');
@@ -1473,6 +1674,12 @@ async function run(): Promise<void> {
 
     step = 'check Series 1 sell-out pace card, signed daily facts and editable target sheets';
     await checkSeriesPace(context);
+
+    step = 'check unknown pace has a neutral reason and only measured zero pace pins left';
+    await checkSeriesPaceWaiting(context);
+
+    step = 'check sample reviews, low-star sheets, greeting and recovered empty state';
+    await checkReviews(context);
 
     step = 'check same-origin manifest and installation icons';
     await checkManifest(page, context, origin);
@@ -1667,6 +1874,9 @@ async function run(): Promise<void> {
 
     step = 'check a pound loss in the browser tile, accessible label and detail sheet';
     await checkNegativeProfit(context);
+
+    step = 'check grouped money and counts fit their tiles and radar uses ad source states';
+    await checkGroupedDisplay(context);
 
     step = 'check partial ad spend stays visible on every spend-dependent hero tile';
     await checkPartialAdSpend(context);

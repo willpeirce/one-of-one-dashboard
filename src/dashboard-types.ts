@@ -27,6 +27,7 @@ export interface DialModel {
   z: Zone[];
   d: Detail;
   cap?: State;
+  hidePointer?: boolean;
 }
 
 export interface RingModel {
@@ -138,8 +139,10 @@ export interface DashboardSnapshot {
   widgets: Record<string, DashboardWidget>;
   textValues: Record<string, SampleText>;
   sourceHealth?: SourceHealth[];
+  adSources?: import('./radar.js').RadarAdSource[];
   shopify?: import('./shopify/dashboard.js').ShopifyDashboard;
   banner?: string;
   fulfilment?: import('./fulfilment/view.js').Summary;
   metaCampaigns?: { unconfirmedCount: number };
+  reviews?: import('./judgeme/model.js').ReviewsPanel;
 }

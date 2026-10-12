@@ -125,7 +125,7 @@ test('Today retains the supplied complete-week history and never judges a partia
   assert.ok(today.orders.d.hm?.some((mark) => mark.includes('24 Sep (UK)')));
 });
 
-test('source actions are disabled while account navigation and sign-out remain available', () => {
+test('unbuilt source actions stay disabled while read-only review links and account navigation are available', () => {
   const page = dashboardPage(getSampleDashboard());
   const unavailableButtons = [...page.matchAll(/<button\b[^>]*\bdata-unbuilt\b[^>]*>/g)];
   assert.ok(unavailableButtons.length > 0);
@@ -133,5 +133,8 @@ test('source actions are disabled while account navigation and sign-out remain a
   assert.ok(!/\bdata-(act|copy|confirm|undo)=/.test(page));
   assert.ok(!/<button[^>]*id="sign-out"[^>]*data-unbuilt/.test(page));
   for (const path of ['/sources', '/settings', '/audit']) assert.ok(page.includes(`href="${path}"`));
-  assert.ok(!/\b(?:src|href)="https?:/.test(page));
+  assert.ok(!/\bsrc="https?:/.test(page), 'no third-party assets');
+  const external = [...page.matchAll(/<a\b[^>]*href="https?:[^>]*>/g)];
+  assert.ok(external.length > 0);
+  assert.ok(external.every(([link]) => link.includes('data-review-link') && link.includes('rel="noopener noreferrer"')));
 });

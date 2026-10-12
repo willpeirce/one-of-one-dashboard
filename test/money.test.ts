@@ -2,17 +2,17 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { dashboardPage } from '../src/dashboard-view.js';
 import { buildHeroRange } from '../src/hero-range.js';
-import { formatLike, formatMetricNumber, formatPounds } from '../src/money.js';
+import { formatDollars, formatNumber, formatLike, formatMetricNumber, formatPounds } from '../src/money.js';
 import { getSampleDashboard } from '../src/sample-dashboard.js';
 
 test('shared money formatting puts loss signs first and preserves precision and grouping', () => {
   assert.equal(formatPounds(-10), '-£10.00');
   assert.equal(formatPounds(10), '£10.00');
   assert.equal(formatPounds(0), '£0.00');
-  assert.equal(formatPounds(-1234.5), '-£1234.50');
-  assert.equal(formatPounds(1234.5), '£1234.50');
+  assert.equal(formatPounds(-1234.5), '-£1,234.50');
+  assert.equal(formatPounds(1234.5), '£1,234.50');
   assert.equal(formatPounds(-10.129), '-£10.13');
-  assert.equal(formatPounds(0.123456, value => value.toFixed(6)), '£0.123456');
+  assert.equal(formatPounds(0.123456, value => formatNumber(value, 6)), '£0.123456');
   assert.equal(formatMetricNumber(-10, { pre: '£', dp: 2 }), '-£10.00');
   assert.equal(formatMetricNumber(-1234.5, { pre: '£' }), '-£1,234');
   assert.equal(formatMetricNumber(1234.5, { pre: '£' }), '£1,235');
@@ -53,4 +53,27 @@ test('negative net sales in range descriptions keep the sign before pounds', () 
   assert.match(hero.net.d.why, /-£10/);
   assert.match(hero.profit.d.why, /-£7\.50/);
   assert.deepEqual(hero.profit.d.extra, [['Net profit', '-£7.50']]);
+});
+
+test('en-GB display grouping covers decimal money, counts and both currencies', () => {
+  for (const [value, expected] of [[0, '0'], [999, '999'], [1000, '1,000'], [1234567.89, '1,234,567.89'], [-1234, '-1,234']] as const)
+    assert.equal(formatNumber(value), expected);
+  assert.equal(formatNumber(1560, 0), '1,560');
+  assert.equal(formatNumber(1.23456789), '1.23456789');
+  assert.equal(formatPounds(1234567.89), '£1,234,567.89');
+  assert.equal(formatMetricNumber(1234567.89, { pre: '£', dp: 2 }), '£1,234,567.89');
+  assert.equal(formatPounds(-1234), '-£1,234.00');
+  assert.equal(formatDollars(1234567.89), '$1,234,567.89');
+  assert.equal(formatDollars(-1234), '-$1,234.00');
+});
+
+
+test('server-rendered order counts and decimal money are grouped before hydration', () => {
+  const snapshot = getSampleDashboard();
+  snapshot.hero.today.orders.n = 1560;
+  snapshot.hero.today.net.n = 1234567.89;
+  snapshot.hero.today.net.dp = 2;
+  const html = dashboardPage(snapshot);
+  assert.match(html, /1,560<\/span>/);
+  assert.match(html, /£1,234,567\.89<\/span>/);
 });

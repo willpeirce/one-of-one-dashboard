@@ -3,9 +3,10 @@ import type { Settings } from './settings.js';
 import { addDays, buildHeroRange, validateHeroRange } from './hero-range.js';
 import { sampleDays, SAMPLE_START, SAMPLE_TODAY } from './sample-days.js';
 import { greetingAt } from './greeting.js';
-import { formatPounds } from './money.js';
+import { formatNumber, formatPounds } from './money.js';
 import { sampleSeriesPaceCard } from './series-pace/presentation.js';
 import { appConfig } from './config.js';
+import { sampleReviews } from './judgeme/sample.js';
 
 /**
  * Server-only presentation fixtures ported from docs/spec/mockup.html. These are
@@ -4463,6 +4464,7 @@ export function getSampleDashboard(settings?: Settings): DashboardSnapshot {
   const hero = Object.fromEntries(Object.entries(samplePresets).map(([period, range]) => [period, getSampleHero(range.from, range.to, settings)])) as Record<Period, HeroPeriod>;
   const snapshot: DashboardSnapshot = { ...structuredClone(fixture), hero,
     bounds: { min: SAMPLE_START, max: SAMPLE_TODAY, today: SAMPLE_TODAY }, generatedAt: new Date().toISOString() };
+  snapshot.reviews = sampleReviews();
   snapshot.textValues.t0033!.value = greetingAt(new Date());
   const bar = settings?.blendedMetaTripwireGbp;
   if (bar !== undefined) applyBlendedBar(snapshot, bar);
@@ -4498,7 +4500,7 @@ export function getSampleHero(from: string, to: string, settings?: Settings): He
   if (from === SAMPLE_TODAY && to === SAMPLE_TODAY) {
     // The intraday comparison is a supplied sample observation, not a fabricated
     // daily-rate extrapolation: four orders at this time yesterday.
-    hero.sub1 = `${hero.orders.n} orders so far, 4 by this time yesterday.`;
+    hero.sub1 = `${formatNumber(hero.orders.n)} orders so far, 4 by this time yesterday.`;
     hero.orders.ss = 'UK 2 · US 4 · 4 by this time yesterday';
     hero.orders.d.why = `${hero.orders.d.why} 4 orders by this time yesterday.`;
     hero.net.d.why = `${hero.net.d.why} 4 orders by this time yesterday.`;
@@ -4506,7 +4508,7 @@ export function getSampleHero(from: string, to: string, settings?: Settings): He
     // selections use the generic seven bars ending on their selected day.
     const week = getSampleHero(samplePresets['7d'].from, samplePresets['7d'].to, settings);
     hero.spark = [...week.spark];
-    hero.net.ss = `${hero.orders.n} orders · 7-day avg ${formatPounds(week.net.n / 7, value => Math.round(value).toLocaleString('en-GB'))} a day`;
+    hero.net.ss = `${formatNumber(hero.orders.n)} orders · 7-day avg ${formatPounds(week.net.n / 7, value => formatNumber(Math.round(value), 0))} a day`;
     for (const key of ['net', 'orders', 'cr', 'spend', 'roas', 'margin', 'ukcpo', 'uscpo'] as const) {
       hero[key].d.hist = [...week[key].d.hist!];
       hero[key].d.hl = [...week[key].d.hl!];
@@ -4518,7 +4520,7 @@ export function getSampleHero(from: string, to: string, settings?: Settings): He
 }
 
 function applyBlendedBar(snapshot: DashboardSnapshot, bar: number): void {
-  const pounds = (value: number): string => formatPounds(value, number => number.toLocaleString('en-GB', { maximumFractionDigits: 2 }));
+  const pounds = (value: number): string => formatPounds(value, number => formatNumber(Math.round(number * 100) / 100));
   const amber = Math.round(bar * 90) / 100;
   const replace = (text: string): string => text.replace(/£25\.20|£28(?!\d|\.\d)/g, (value) => value === '£25.20' ? pounds(amber) : pounds(bar));
   const update = (model: DialModel): void => {

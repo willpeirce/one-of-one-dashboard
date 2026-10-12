@@ -72,7 +72,8 @@ export async function takeStockSnapshot(db: Database, rows: any[], now: Date, ca
 export async function readSeriesPaceFacts(db: Database, now: Date): Promise<SeriesPaceFacts> {
   const today = ukToday(now), from = addDays(today, -7), to = addDays(today, -1);
   // Keep these sequential: callers may supply a transaction connection.
-  const inventory = await db.query<{ data: Inventory }>(`SELECT data FROM pulse.shopify_records WHERE mode = 'live' AND kind = 'inventory' AND data->>'productId' = $1`, [kitProductId]);
+  // Older records without a SKU stay unknown until the next inventory poll.
+  const inventory = await db.query<{ data: Inventory }>(`SELECT data FROM pulse.shopify_records WHERE mode = 'live' AND kind = 'inventory' AND data->>'productId' = $1 AND data->>'sku' = 'oneofone1'`, [kitProductId]);
   const snapshots = await db.query<{ day: string; location_id: string; inventory_item_id: string; available: number; taken_at: Date; late: boolean }>(
     `SELECT day::text, location_id, inventory_item_id, available, taken_at, late FROM pulse.stock_snapshots WHERE day BETWEEN $1::date AND $2::date ORDER BY day`, [from, today]);
   const fallback = await db.query<{ day: string; market: SeriesPaceMarket; sold: number }>(`SELECT day::text, market, sold FROM pulse.series_pace_sales WHERE day BETWEEN $1::date AND $2::date ORDER BY day`, [from, to]);
@@ -92,10 +93,20 @@ export async function readSeriesPaceFacts(db: Database, now: Date): Promise<Seri
   }
   return result;
 }
-export async function missingSeriesPaceWindow(db: Database, now: Date): Promise<{ from: string; to: string } | null> {
-  const facts = await readSeriesPaceFacts(db, now), today = ukToday(now), missing: string[] = [];
+export async function missingSeriesPaceWindow(db: Database, now: Date, after: string | null = null): Promise<{ from: string; to: string } | null> {
+  const facts = await readSeriesPaceFacts(db, now), today = ukToday(now);
+  // A cached report day is immutable even when the other market was unreported.
+  // Rotate contiguous gaps so an empty or failed report cannot starve newer days.
+  const cached = await db.query<{ day: string }>('SELECT DISTINCT day::text FROM pulse.series_pace_sales WHERE day >= $1::date AND day < $2::date', [addDays(today, -7), today]);
+  const held = new Set(cached.rows.map(row => row.day));
+  const windows: { from: string; to: string }[] = [];
   for (let day = addDays(today, -7); day < today; day = addDays(day, 1)) {
-    if (markets.some(market => !facts[market].days.some(row => row.day === day && row.source === 'snapshot'))) missing.push(day);
+    const missing = !held.has(day) && markets.some(market => !facts[market].days.some(row => row.day === day));
+    if (missing) {
+      const previous = windows.at(-1);
+      if (previous && addDays(previous.to, 1) === day) previous.to = day;
+      else windows.push({ from: day, to: day });
+    }
   }
-  return missing.length ? { from: missing[0]!, to: missing.at(-1)! } : null;
+  return windows.find(window => after === null || window.to > after) ?? windows[0] ?? null;
 }

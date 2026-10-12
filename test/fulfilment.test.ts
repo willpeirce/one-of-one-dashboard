@@ -94,7 +94,7 @@ test('USD actual conversion retains upload rate when current setting changes; GB
 });
 
 test('each parcel Needs you rule excludes rate checks for unknown services',async()=>{
-  const o=await order(),p=parcel(parseExport(csv())[0]!,o.id),m=learn([p],[o]);
+  const o=await order(),p=parcel(parseExport(csv())[0]!,o.id),m=learn(Array.from({length:5},(_,i)=>({...p,id:`invented-peer-${i}`})),[o]);
   assert.deepEqual(parcelFlags({...p,service:'Invented Service',rateBaselinePence:1,postageMinor:10000,pickPackMinor:10000},o,m),['Unknown service']);
   assert.ok(parcelFlags({...p,warehouse:'us',service:'Ground Advantage'},o,m).includes('Wrong warehouse for destination'));
   assert.ok(parcelFlags({...p,warehouse:'unknown'},o,m).includes('Unknown fulfilment centre'));
@@ -102,6 +102,40 @@ test('each parcel Needs you rule excludes rate checks for unknown services',asyn
   assert.ok(parcelFlags({...p,pickPackMinor:1000},o,m).includes('Possible new surcharge'));
   assert.ok(!parcelFlags({...p,rateBaselinePence:400,postageMinor:339},o,m).includes('Cost more than 25% off its rate'));
 
+});
+
+test('rate and surcharge flags need five matching peers, without changing estimates',async()=>{
+  const o=await order('996001',true);
+  const p={...parcel(parseExport(csv({'Reference':o.orderNumber!,'Fulfilment Centre':'Columbus','Postage Method':'Ground Advantage','Country':'US'}))[0]!,o.id),rateBaselinePence:400,postageMinor:900,pickPackMinor:500};
+  const peers=Array.from({length:5},(_,i)=>({...p,id:`invented-peer-${i}`,postageMinor:300,pickPackMinor:100}));
+  const four=learn(peers.slice(0,4),[o]),five=learn(peers,[o]);
+  assert.deepEqual(parcelFlags(p,o,four),[]);
+  assert.deepEqual(parcelFlags(p,o,five),['Cost more than 25% off its rate','Possible new surcharge']);
+  assert.deepEqual(estimateOrder(o,[],four,settings),estimateOrder(o,[],five,settings));
+  for (const change of [{warehouse:'uk' as const},{service:'UPS Ground'},{mix:mixKey({'sample-a':2})},{state:'CA'}]) {
+    assert.deepEqual(parcelFlags(p,o,{...five,rates:five.rates.map(r=>({...r,...change}))}),[]);
+  }
+});
+
+test('rebuild clears old small-group cards without re-upload and raises them at five peers',async t=>{
+  const db=await createTestDatabase();t.after(()=>db.close());
+  const orders=await Promise.all(Array.from({length:6},(_,i)=>order(String(996100+i))));
+  const store=new ShopifyStore(db,'live');for (const o of orders) await store.put('order',o.id,o,now);
+  const rows=orders.map((o,i)=>parseExport(csv({'Reference':o.orderNumber!,'Postage Charge':'3.00','Line Total':i===0?'12.0000':'4.0000'}))[0]!);
+  const flags=['Cost more than 25% off its rate','Possible new surcharge'];
+  await confirmImport(db,'live',rows.slice(0,5),'invented-small-group.csv',.754,now);
+  assert.equal((await fulfilmentSummary(db,'live',now)).needs.filter(n=>flags.includes(n.title)).length,0);
+  const before=await readEstimates(db,'live');
+  await db.query('UPDATE pulse.fulfilment_parcels SET flags=$2 WHERE mode=$1',['live',JSON.stringify(flags)]);
+  assert.ok((await fulfilmentSummary(db,'live',now)).needs.some(n=>flags.includes(n.title)));
+  await refreshFulfilment(db,'live',now);
+  assert.equal((await fulfilmentSummary(db,'live',now)).needs.filter(n=>flags.includes(n.title)).length,0);
+  assert.deepEqual(await readEstimates(db,'live'),before);
+  assert.equal((await readUploads(db,'live')).length,1);
+  await confirmImport(db,'live',rows.slice(5),'invented-fifth-peer.csv',.754,now);
+  const target=(await readParcels(db,'live')).find(p=>p.orderId===orders[0]!.id)!;
+  assert.deepEqual(target.flags,flags);
+  assert.equal((await fulfilmentSummary(db,'live',now)).needs.filter(n=>n.id.startsWith(`parcel:${target.id}:`)).length,2);
 });
 
 test('confirmation matches and adds second parcels, records MAE, refreshes new orders, isolates modes and reuploads idempotently',async t=>{
@@ -168,6 +202,60 @@ test('stored USD parcels keep earlier invoice rates and concurrent confirmations
   assert.equal(complete.saved,0);assert.equal((await readUploads(db,'live')).filter(u=>u.coverageFrom==='2026-09-30'&&u.coverageTo==='2026-09-30').length,1);
   const repeated=await confirmImport(db,'live',row,'invented-us.csv',.5,now,undefined,true);assert.equal(repeated.uploadId,null);
 
+});
+
+test('upload coverage reads UK dates from driver Date values around midnight and DST',async t=>{
+  const db=await createTestDatabase();t.after(()=>db.close());
+  await confirmImport(db,'live',parseExport(csv()),'invented-uk-dates.csv',.754,now,undefined,true);
+  for (const [from,to,expectedFrom,expectedTo] of [
+    [new Date('2026-09-29T23:00:00Z'),new Date('2026-09-30T23:00:00Z'),'2026-09-30','2026-10-01'],
+    [new Date('2026-10-24T23:00:00Z'),new Date('2026-10-26T00:00:00Z'),'2026-10-25','2026-10-26'],
+    ['2026-09-30','2026-10-01','2026-09-30','2026-10-01'],
+  ] as const) {
+    const driverDates:typeof db={...db,query:async<Row extends Record<string,unknown>>(text:string,values?:unknown[])=>{
+      const result=await db.query<Row>(text,values);
+      return {...result,rows:result.rows.map(row=>({...row,coverage_from:from,coverage_to:to}))};
+    }};
+    const upload=(await readUploads(driverDates,'live'))[0]!;
+    assert.equal(upload.coverageFrom,expectedFrom);assert.equal(upload.coverageTo,expectedTo);
+    assert.equal(upload.despatchFrom,'2026-09-30 14:00:00');
+  }
+});
+
+test('any earlier complete covering upload deduplicates narrower ranges but partial coverage does not',async t=>{
+  const db=await createTestDatabase();t.after(()=>db.close());
+  const rows=['2026-09-27','2026-09-28','2026-09-29','2026-09-30','2026-10-01'].map(day=>parseExport(csv({'Despatched':day+' 14:00:00'}))[0]!);
+  await confirmImport(db,'live',rows,'invented-incomplete.csv',.754,now);
+  // An upload without confirmed completeness cannot cover even an already stored range.
+  const complete=await confirmImport(db,'live',rows.slice(1,4),'invented-complete.csv',.754,now,undefined,true);
+  assert.equal(complete.saved,0);assert.ok(complete.uploadId);
+  const narrower=await confirmImport(db,'live',rows.slice(2,3),'invented-narrower.csv',.754,now,undefined,true);
+  assert.equal(narrower.uploadId,null);
+  assert.equal((await readUploads(db,'live')).length,2);
+  const overlap=await confirmImport(db,'live',rows.slice(0,3),'invented-overlap.csv',.754,now,undefined,true);
+  assert.equal(overlap.saved,0);assert.ok(overlap.uploadId);
+  const beyond=await confirmImport(db,'live',rows.slice(3),'invented-beyond.csv',.754,now,undefined,true);
+  assert.equal(beyond.saved,0);assert.ok(beyond.uploadId);
+  assert.equal((await readUploads(db,'live')).length,4);
+});
+
+test('upload despatch ranges retain warehouse wall dates near midnight regardless of driver timezone',async t=>{
+  const db=await createTestDatabase();t.after(()=>db.close());
+  const rows=['2026-09-30 00:15:00','2026-10-01 00:30:00'].map(despatched=>parseExport(csv({'Despatched':despatched}))[0]!);
+  await confirmImport(db,'live',rows,'invented-midnight.csv',.754,now,undefined,true);
+  // Model pg's timestamp parser on a UK host: Date-valued wall timestamps near
+  // midnight fall on the prior UTC day. Text-valued columns remain unchanged.
+  const ukDriver:typeof db={...db,query:async<Row extends Record<string,unknown>>(text:string,values?:unknown[])=>{
+    const result=await db.query<Row>(text,values);
+    return {...result,rows:result.rows.map(row=>({...row,
+      despatch_from:row.despatch_from instanceof Date?new Date('2026-09-29T23:15:00Z'):row.despatch_from,
+      despatch_to:row.despatch_to instanceof Date?new Date('2026-09-30T23:30:00Z'):row.despatch_to,
+    }))};
+  }};
+  const upload=(await readUploads(ukDriver,'live'))[0]!;
+  assert.equal(upload.despatchFrom,'2026-09-30 00:15:00');
+  assert.equal(upload.despatchTo,'2026-10-01 00:30:00');
+  assert.equal(upload.coverageFrom,'2026-09-30');assert.equal(upload.coverageTo,'2026-10-01');
 });
 
 

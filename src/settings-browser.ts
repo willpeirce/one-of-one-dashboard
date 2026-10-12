@@ -1,5 +1,5 @@
 import { ukToday } from './hero-range.js';
-import { formatPounds } from './money.js';
+import { formatNumber, formatPounds } from './money.js';
 import { monthlyOverheadTotal, type OverheadItem } from './overheads.js';
 import { installPullToRefresh, reloadPageForRefresh } from './pull-refresh.js';
 import { seriesPaceDates } from './series-pace/dates.js';
@@ -128,7 +128,7 @@ function initializeSettings(form: HTMLFormElement): void {
     const key = list.dataset.settingsList!;
     const rows = Array.from(list.querySelectorAll<HTMLElement>('[data-list-rows] > .setting-row'));
     rows.forEach((row, index) => {
-      row.querySelector('[data-row-number]')!.textContent = String(index + 1);
+      row.querySelector('[data-row-number]')!.textContent = formatNumber(index + 1);
       row.querySelectorAll<SettingInput>('[data-setting-path]').forEach((input) => {
         const oldId = input.id;
         const leaf = input.dataset.settingPath!.split('.').at(-1)!;
@@ -140,7 +140,7 @@ function initializeSettings(form: HTMLFormElement): void {
       });
       enhanceMonthInputs(row);
     });
-    list.querySelector('[data-list-count]')!.textContent = String(rows.length);
+    list.querySelector('[data-list-count]')!.textContent = formatNumber(rows.length);
     list.querySelector<HTMLElement>('[data-list-empty]')!.hidden = rows.length > 0;
     const maxRows = list.dataset.listMax;
     if (maxRows) list.querySelector<HTMLButtonElement>('[data-add-row]')!.disabled = rows.length >= Number(maxRows);

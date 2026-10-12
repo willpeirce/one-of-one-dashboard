@@ -1,15 +1,16 @@
 import { applySpend, type AdHeroInputs } from '../ad-spend/metrics.js';
 import { sampleSpend } from '../ad-spend/store.js';
 import { appConfig } from '../config.js';
-import { formatPounds } from '../money.js';
-import { addDays, buildHeroRange, dayCount, HeroRangeError, rangeLabel, ukToday, type DailyMetrics } from '../hero-range.js';
+import { formatNumber, formatPounds } from '../money.js';
+import { addDays, buildHeroRange, dayCount, HeroRangeError, rangeLabel, ukToday, weekdayDate, type DailyMetrics } from '../hero-range.js';
 import type { HeroPeriod } from '../dashboard-types.js';
 import type { Order, Inventory, Sessions } from './model.js';
 import type { Settings } from '../settings.js';
 import type { ShopifyStore } from './store.js';
 
 export type Facts = Awaited<ReturnType<ShopifyStore['facts']>>;
-export const paidOrder = (o: Order): boolean => !o.test && !o.cancelledAt && ['PAID', 'PARTIALLY_REFUNDED', 'REFUNDED'].includes(o.financialStatus);
+export { paidOrder } from './model.js';
+import { paidOrder } from './model.js';
 export const ratio = (n: number, d: number): number | null => d > 0 ? n / d : null;
 export const kitIds = appConfig.shopify.stockProducts.slice(0, 4).map(p => `gid://shopify/Product/${p.id}`);
 export const isKit = (o: Order): boolean => o.lines.some(l => kitIds.includes(l.productId ?? '') || appConfig.shopify.tiktokOrderOnlyProductIds.some(id => l.productId === `gid://shopify/Product/${id}`));
@@ -80,20 +81,20 @@ export function shopifyHero(facts: Facts, today: string, from: string, to: strin
     if (!data.ready) { hero[key].n = 0; hero[key].unavailable = true; hero[key].state = 'info'; hero[key].ss = 'First backfill in progress'; }
   }
   const count = (market: string) => orders.filter(o => o.market === market).length;
-  const breakdown = `UK ${count('UK')} · US ${count('US')} · EU ${count('EU')} · unknown ${count('unknown')} · TikTok ${orders.filter(isTikTok).length} (included)`;
-  hero.orders.ss = `${breakdown} · ${Math.round(hero.orders.n / days * 10) / 10}/day`;
+  const breakdown = `UK ${formatNumber(count('UK'))} · US ${formatNumber(count('US'))} · EU ${formatNumber(count('EU'))} · unknown ${formatNumber(count('unknown'))} · TikTok ${formatNumber(orders.filter(isTikTok).length)} (included)`;
+  hero.orders.ss = `${breakdown} · ${formatNumber(Math.round(hero.orders.n / days * 10) / 10)}/day`;
   const lastWorked = facts.jobs.find(j => j.name === 'poll')?.last_success_at;
   const lastLabel = lastWorked ? `Last order poll ${new Date(lastWorked).toISOString()}` : 'First sync pending';
   for (const metric of [hero.net, hero.orders, hero.cr]) metric.d.src += ` · ${lastLabel}`;
   const kitOrders = orders.filter(isKit);
-  hero.orders.d.extra = [...(hero.orders.d.extra ?? []), ['Orders by market', breakdown], ['Average order', ratio(hero.net.n, hero.orders.n) === null ? 'No paid orders' : formatPounds(hero.net.n / hero.orders.n)], ['Upgrade rate', kitOrders.length ? `${(100 * orders.filter(isUpgrade).length / kitOrders.length).toFixed(1)}% · tiers from ordered products` : 'No kit orders'], ['Coverage', `Order details from ${data.from}. Earlier sales are store-wide ShopifyQL only; no invented market split.`]];
-  const orderLabel = `${hero.orders.n} ${hero.orders.n === 1 ? 'order' : 'orders'}`;
+  hero.orders.d.extra = [...(hero.orders.d.extra ?? []), ['Orders by market', breakdown], ['Average order', ratio(hero.net.n, hero.orders.n) === null ? 'No paid orders' : formatPounds(hero.net.n / hero.orders.n)], ['Upgrade rate', kitOrders.length ? `${formatNumber(100 * orders.filter(isUpgrade).length / kitOrders.length, 1)}% · tiers from ordered products` : 'No kit orders'], ['Coverage', `Order details from ${data.from}. Earlier sales are store-wide ShopifyQL only; no invented market split.`]];
+  const orderLabel = `${formatNumber(hero.orders.n)} ${hero.orders.n === 1 ? 'order' : 'orders'}`;
   hero.sub1 = `${orderLabel}${to === today ? ' so far' : ''}.`;
   if (from === today && to === today) {
     const currentTime = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(facts.jobs.find(j => j.name === 'poll')?.last_success_at ?? `${today}T00:00:00Z`));
     const yesterday = addDays(today, -1);
     const byNow = data.orders.filter(o => o.day === yesterday && new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(o.createdAt)) <= currentTime).length;
-    hero.sub1 += data.ready && data.from <= yesterday ? ` ${byNow} by ${currentTime} UK yesterday (last order poll).` : ' Yesterday comparison unavailable.';
+    hero.sub1 += data.ready && data.from <= yesterday ? ` ${formatNumber(byNow)} by ${currentTime} UK yesterday (last order poll).` : ' Yesterday comparison unavailable.';
   }
   hero.net.ss = `${orderLabel} · ${provenance}`;
   if (from < data.from) hero.orders.ss = `${orderLabel} · older market detail unavailable`;
@@ -102,20 +103,22 @@ export function shopifyHero(facts: Facts, today: string, from: string, to: strin
   const usSessions = sessions.reduce((n, s) => n + s.us, 0);
   const ukSessions = sessions.reduce((n, s) => n + s.uk, 0);
   hero.cr.unavailable = !data.ready || !sessionComplete || totalSessions === 0;
-  hero.cr.ss = !sessionComplete ? 'Sessions unavailable for part of this range' : !marketReliable ? 'Market conversion unknown · geo guard' : `UK ${ukSessions ? (100 * count('UK') / ukSessions).toFixed(1) + '%' : 'unknown'} · US ${usSessions ? (100 * count('US') / usSessions).toFixed(1) + '%' : 'unknown'}`;
+  hero.cr.ss = !sessionComplete ? 'Sessions unavailable for part of this range' : !marketReliable ? 'Market conversion unknown · geo guard' : `UK ${ukSessions ? formatNumber(100 * count('UK') / ukSessions, 1) + '%' : 'unknown'} · US ${usSessions ? formatNumber(100 * count('US') / usSessions, 1) + '%' : 'unknown'}`;
   hero.cr.d.why = `Orders divided by clean Shopify sessions. ${hero.cr.ss}. Only the specified /pages/inside desktop/Google/no-cart phantom traffic is removed. ${sessions.some(s => s.provenance === 'routine_daily') ? 'Routine daily fallback: conversion is daily, not live.' : ''}`;
   const inputs=adInputs ?? {spend:facts.mode==='sample'?sampleSpend(from,to):{mode:'live' as const,rows:[],sources:[],days:[]},costs:[],estimates:[]};
   applySpend(hero,data.orders,settings,today,{ ...inputs, now: inputs.now ?? now });
   const periodEmail = orders.filter(o => emailFlow(o) !== null);
   const refill = orders.filter(isRefill);
   const emailNet = data.orders.filter(o => emailFlow(o) !== null).reduce((n, o) => n + orderNet(o, from, to), 0) / 100;
+  const emailDate = (day: string) => `${weekdayDate(day)}${from.slice(0, 4) !== to.slice(0, 4) ? ` ${day.slice(0, 4)}` : ''}`;
+  const emailDates = from === to ? emailDate(from) : `${emailDate(from)}–${emailDate(to)}`;
   const ordersByDay = new Map<string, Order[]>();
   for (const order of data.orders) { const list = ordersByDay.get(order.day) ?? []; list.push(order); ordersByDay.set(order.day, list); }
   hero.business = {
-    email: { count: periodEmail.length, detail: { why: `${periodEmail.length} last-visit email orders; ${formatPounds(emailNet)} net sales, ${from}–${to}. ${from < '2026-09-27' ? 'Attribution partial before 27 Sep 2026.' : ''}`, rule: 'UTM medium=email, grouped by last-visit campaign; first visit is assisted only. SLABPACK is never an email signal. Sends, reachable-by-email and Mailchimp credit await their source.', src: provenance,
-      extra: appConfig.mailchimp.flows.filter(f => f.status === 'live').map(f => [f.name, `${periodEmail.filter(o => emailFlow(o) === f.name).length} Shopify orders · Mailchimp figures unavailable`]) } },
-    refill: { count: refill.length, detail: { why: `${refill.length} ${refill.length === 1 ? 'order' : 'orders'} containing SKU REFILL in ${rangeLabel(from, to)}.`, rule: 'D30 attribution needs a refill campaign or REFILLSHIP. Early for 4 weeks from first send on 25 Sep 2026; sends threshold awaits Mailchimp. Before launch on 11 Sep 2026 has no refill history.', src: provenance,
-      extra: [['D30 email', String(refill.filter(o => emailFlow(o)?.startsWith('D30 refill')).length)], ['Site / other', String(refill.filter(o => !emailFlow(o)?.startsWith('D30 refill')).length)], ['Since launch', `${data.orders.filter(o => o.day >= '2026-09-11' && isRefill(o)).length}${data.from > '2026-09-11' ? ' (partial history)' : ''}`], ['Stock', 'Open Stock and cover for configured warehouse stock.']] } },
+    email: { count: periodEmail.length, detail: { why: `${formatNumber(periodEmail.length)} last-visit email orders; ${formatPounds(emailNet)} net sales, ${emailDates}. ${from < '2026-09-27' ? 'Attribution partial before 27 Sep 2026.' : ''}`, rule: 'UTM medium=email, grouped by last-visit campaign; first visit is assisted only. SLABPACK is never an email signal. Sends, reachable-by-email and Mailchimp credit await their source.', src: provenance,
+      extra: appConfig.mailchimp.flows.filter(f => f.status === 'live').map(f => [f.name, `${formatNumber(periodEmail.filter(o => emailFlow(o) === f.name).length)} Shopify orders · Mailchimp figures unavailable`]) } },
+    refill: { count: refill.length, detail: { why: `${formatNumber(refill.length)} ${refill.length === 1 ? 'order' : 'orders'} containing SKU REFILL in ${rangeLabel(from, to)}.`, rule: 'D30 attribution needs a refill campaign or REFILLSHIP. Early for 4 weeks from first send on 25 Sep 2026; sends threshold awaits Mailchimp. Before launch on 11 Sep 2026 has no refill history.', src: provenance,
+      extra: [['D30 email', formatNumber(refill.filter(o => emailFlow(o)?.startsWith('D30 refill')).length)], ['Site / other', formatNumber(refill.filter(o => !emailFlow(o)?.startsWith('D30 refill')).length)], ['Since launch', `${formatNumber(data.orders.filter(o => o.day >= '2026-09-11' && isRefill(o)).length)}${data.from > '2026-09-11' ? ' (partial history)' : ''}`], ['Stock', 'Open Stock and cover for configured warehouse stock.']] } },
     orderDays: rows.filter(r => r.date >= from && r.date <= to).map(r => { const dayOrders = ordersByDay.get(r.date) ?? []; return { day: r.date, UK: dayOrders.filter(o => o.market === 'UK' && !isTikTok(o)).length, US: dayOrders.filter(o => o.market === 'US' && !isTikTok(o)).length, EU: dayOrders.filter(o => o.market === 'EU' && !isTikTok(o)).length, TikTok: dayOrders.filter(isTikTok).length, unknown: dayOrders.filter(o => o.market === 'unknown' && !isTikTok(o)).length, total: r.o, detailAvailable: r.date >= data.from }; }),
   };
   return hero;
@@ -144,7 +147,7 @@ export function stockCover(facts: Facts, today: string, settings: Settings): Sto
     const cover = kits && available !== null && rate !== null && rate > 0 ? available / rate : null;
     rows.push({ productId, locationId: location.id, name: `${product.name} · ${location.name}`, available, required, dailyRate: rate, cover,
       runOut: cover !== null ? addDays(today, Math.floor(cover)) : null,
-      basis: kits ? '60 complete UK days × seasonal multiplier; fulfilled warehouse orders only. Series 1: run-out, no restock.' : `Attach rate × remaining kits: ${required === null ? 'unknown' : Math.ceil(required) + ' needed'}. Accessories have no daily-rate cover.` });
+      basis: kits ? '60 complete UK days × seasonal multiplier; fulfilled warehouse orders only. Series 1: run-out, no restock.' : `Attach rate × remaining kits: ${required === null ? 'unknown' : formatNumber(Math.ceil(required)) + ' needed'}. Accessories have no daily-rate cover.` });
   }
   return rows;
 }

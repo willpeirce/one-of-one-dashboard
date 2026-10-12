@@ -5,6 +5,7 @@ import { dashboardTemplate } from '../src/dashboard-template.js';
 import { defaultSettings } from '../src/settings.js';
 import { getSampleDashboard } from '../src/sample-dashboard.js';
 import { sampleSeriesPaceCard, seriesPaceDial, seriesPaceFacts, seriesPaceSheetHtml } from '../src/series-pace/presentation.js';
+import { calculateSeriesPace } from '../src/series-pace/model.js';
 
 test('Series 1 replaces only the Meta spend dial and keeps both markets and Google spend', () => {
   const snapshot = getSampleDashboard();
@@ -51,4 +52,24 @@ test('pace sheet shows signed days, missing days, snapshot time and late flag, a
   assert.match(sample, /<fieldset disabled>/);
   assert.match(sample, /Target dates cannot be changed in sample mode/);
   assert.match(sample, /data-series-use-landing>Use landing date/);
+});
+
+test('a missing pace hides the pointer and gives a neutral reason; a non-positive average still points left', () => {
+  const view = sampleSeriesPaceCard('2026-09-30T06:41:00Z').markets.UK;
+  for (const input of [{ stock: 100, days: [] }, { stock: null, days: view.days }]) {
+    const model = { ...view, ...calculateSeriesPace({ today: view.today, targetDate: view.targetDate, ...input }) };
+    const dial = seriesPaceDial('UK', model);
+    assert.equal(dial.cap, 'info');
+    assert.equal(dial.t, '—');
+    assert.equal(dial.hidePointer, true);
+    assert.notEqual(dial.v, -90);
+    assert.match(dial.s, /^Waiting for/);
+    assert.match(dial.d.why, /^Waiting for/);
+  }
+  const zero = { ...view, ...calculateSeriesPace({ today: view.today, targetDate: view.targetDate, stock: 100,
+    days: [{ day: '2026-09-29', sold: 0, source: 'shopifyql' }] }) };
+  const dial = seriesPaceDial('UK', zero);
+  assert.equal(dial.v, -90);
+  assert.equal(dial.cap, 'warn');
+  assert.equal(dial.hidePointer, false);
 });

@@ -1,12 +1,13 @@
 import { refreshFulfilment } from '../fulfilment/store.js';
 import type { Database } from '../db.js';
-import { ukToday } from '../hero-range.js';
+import { addDays, ukToday } from '../hero-range.js';
 import type { SourceMode } from '../sources.js';
 import { cleanInventory, cleanOrder, cleanSales, cleanSessions } from './model.js';
 import { gid } from './model.js';
 import { appConfig } from '../config.js';
 import { ShopifyError } from './http.js';
 import type { ShopifyCost } from './costs.js';
+import { GEO_NOTICE_ID, geoNotice } from './geo-notice.js';
 export class ShopifyStore {
   constructor(readonly db: Database, readonly mode: SourceMode) {}
   async put(kind: string, id: string, data: unknown, fetched: Date, updated = fetched): Promise<void> {
@@ -67,9 +68,22 @@ export class ShopifyStore {
   async sessions(table: any, fetched: Date, provenance: 'shopifyql' | 'routine_daily' = 'shopifyql'): Promise<void> {
     for (const row of cleanSessions(table)) {
       await this.put('sessions', row.day, { ...row, provenance, partial: row.day === ukToday(fetched) }, fetched);
-      if (!row.marketReliable) await this.notice('geo_unreliable', `geo:${row.day}`, fetched);
-      else await this.clearNotice(`geo:${row.day}`);
     }
+    await this.rebuildGeoNotice(fetched);
+  }
+  async rebuildGeoNotice(now: Date): Promise<void> {
+    const detail = await this.currentGeoNotice(now);
+    await this.db.transaction(async tx => {
+      // Retire every old daily notice, including dates that have aged out of the window.
+      await tx.query("DELETE FROM pulse.shopify_notices WHERE mode=$1 AND kind='geo_unreliable'", [this.mode]);
+      if (detail) await new ShopifyStore(tx, this.mode).notice('geo_unreliable', GEO_NOTICE_ID, now, detail);
+    });
+  }
+  private async currentGeoNotice(now: Date) {
+    const rows = await this.db.query<{ data: { day: string; marketReliable: boolean } }>(
+      "SELECT data FROM pulse.shopify_records WHERE mode=$1 AND kind='sessions' AND source_id >= $2 AND source_id <= $3",
+      [this.mode, addDays(ukToday(now), -6), ukToday(now)]);
+    return geoNotice(rows.rows.map(row => row.data), now);
   }
   async sales(table: any, fetched: Date): Promise<void> { for (const row of cleanSales(table)) await this.put('sales', row.day, row, fetched); }
   async notice(kind: string, id: string, fetched: Date, detail: unknown = {}): Promise<void> {
@@ -77,17 +91,23 @@ export class ShopifyStore {
       ON CONFLICT (mode, source_id) DO UPDATE SET fetched_at = EXCLUDED.fetched_at, detail = EXCLUDED.detail`, [this.mode, kind, id, fetched, JSON.stringify(detail)]);
   }
   async clearNotice(id: string): Promise<void> { await this.db.query('DELETE FROM pulse.shopify_notices WHERE mode = $1 AND source_id = $2', [this.mode, id]); }
-  async facts() {
+  async facts(now = this.mode === 'sample' ? new Date(appConfig.shopify.sampleNow) : new Date()) {
     const records = await this.db.query<{ kind: string; data: any; fetched_at: Date }>('SELECT kind, data, fetched_at FROM pulse.shopify_records WHERE mode = $1', [this.mode]);
-    const summary = await this.summary();
+    const summary = await this.summary(now);
     const notices = await this.db.query<{ kind: string; source_id: string; detail: any; fetched_at: Date }>('SELECT kind, source_id, detail, fetched_at FROM pulse.shopify_notices WHERE mode = $1', [this.mode]);
-    return { ...summary, records: records.rows, noticeDetails: notices.rows };
+    const detail = geoNotice(records.rows.filter(row => row.kind === 'sessions').map(row => row.data), now);
+    const noticeDetails = notices.rows.filter(row => row.kind !== 'geo_unreliable');
+    if (detail) noticeDetails.push({ kind: 'geo_unreliable', source_id: GEO_NOTICE_ID, detail, fetched_at: now });
+    return { ...summary, records: records.rows, noticeDetails };
   }
-  async summary() {
+  async summary(now = this.mode === 'sample' ? new Date(appConfig.shopify.sampleNow) : new Date()) {
     const counts = await this.db.query<{ kind: string; count: string }>('SELECT kind, count(*)::text AS count FROM pulse.shopify_records WHERE mode = $1 GROUP BY kind', [this.mode]);
     const jobs = await this.db.query<{ name: string; state: any; last_success_at: Date | null; failures: number }>('SELECT name, state, last_success_at, failures FROM pulse.shopify_jobs WHERE mode = $1 ORDER BY name', [this.mode]);
     const notices = await this.db.query<{ kind: string }>('SELECT kind FROM pulse.shopify_notices WHERE mode = $1 ORDER BY source_id', [this.mode]);
     const pending = await this.db.query<{ count: string }>('SELECT count(*)::text AS count FROM pulse.shopify_webhook_inbox WHERE processed_at IS NULL');
-    return { mode: this.mode, sample: this.mode === 'sample', counts: Object.fromEntries(counts.rows.map(r => [r.kind, Number(r.count)])), jobs: jobs.rows, notices: notices.rows.map(r => r.kind), pendingWebhooks: this.mode === 'live' ? Number(pending.rows[0]!.count) : 0 };
+    const geo = await this.currentGeoNotice(now);
+    return { mode: this.mode, sample: this.mode === 'sample', counts: Object.fromEntries(counts.rows.map(r => [r.kind, Number(r.count)])), jobs: jobs.rows,
+      notices: [...notices.rows.filter(row => row.kind !== 'geo_unreliable').map(row => row.kind), ...(geo ? ['geo_unreliable'] : [])],
+      geoNotice: geo?.why ?? null, pendingWebhooks: this.mode === 'live' ? Number(pending.rows[0]!.count) : 0 };
   }
 }

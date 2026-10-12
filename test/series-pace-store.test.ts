@@ -91,7 +91,91 @@ test('daily source prefers usable snapshots, falls back across late/missing pair
   assert.deepEqual(facts.US.days, [{ day: '2026-09-28', sold: 15, source: 'snapshot' }, { day: '2026-09-29', sold: 6, source: 'shopifyql' }]);
   assert.equal(facts.UK.snapshots.at(-1)!.late, true);
   assert.equal(facts.UK.snapshots[0]!.takenAt, '2026-09-27T23:05:00.000Z');
-  assert.deepEqual(await missingSeriesPaceWindow(db, now), { from: '2026-09-23', to: '2026-09-29' });
+  assert.deepEqual(await missingSeriesPaceWindow(db, now), { from: '2026-09-23', to: '2026-09-27' });
+});
+
+test('current pace stock selects only the explicit kit SKU and leaves old unlabelled inventory unknown', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const store = new ShopifyStore(db, 'live');
+  const kit = stock(83, 142), accessory = stock(900, 950).map(row => ({ ...row,
+    variantId: 'gid://shopify/ProductVariant/990002', inventoryItemId: 'gid://shopify/InventoryItem/990002', sku: 'invented-accessory',
+  }));
+  await store.inventory([...kit, ...accessory], now);
+  assert.deepEqual(Object.values(await readSeriesPaceFacts(db, now)).map(market => market.stock), [83, 142]);
+  await db.query("UPDATE pulse.shopify_records SET data = data - 'sku' WHERE kind = 'inventory' AND data->>'sku' = 'oneofone1'");
+  assert.deepEqual(Object.values(await readSeriesPaceFacts(db, now)).map(market => market.stock), [null, null]);
+  await store.inventory(kit, now);
+  assert.deepEqual(Object.values(await readSeriesPaceFacts(db, now)).map(market => market.stock), [83, 142]);
+});
+
+test('fallback fetches one missing window per hour and never crosses or re-fetches a held day, even with one market missing', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  // Holding only UK for the middle day must not re-request that date to fill US.
+  await saveSeriesPaceSales(db, table([['2026-09-25', 'GB', 3]]), '2026-09-25', '2026-09-25', now);
+  const queries: string[] = [];
+  class FillingReader extends PaceReader {
+    override async report(query: string) {
+      queries.push(query);
+      const from = /SINCE (\d{4}-\d{2}-\d{2})/.exec(query)![1]!, to = /UNTIL (\d{4}-\d{2}-\d{2})/.exec(query)![1]!;
+      const rows: unknown[][] = [];
+      for (let day = from; day <= to; day = addDays(day, 1)) rows.push([day, 'GB', 4], [day, 'US', 2]);
+      return table(rows);
+    }
+  }
+  let clock = now;
+  const worker = new ShopifyWorker(db, env(), 'https://pulse.example.test', { reader: new FillingReader(), clock: () => clock });
+  await worker.initialize();
+  await db.query("UPDATE pulse.shopify_jobs SET next_run_at='9999-01-01' WHERE name <> 'series_pace'");
+  await worker.tick();
+  assert.deepEqual(queries, [seriesPaceQuery('2026-09-23', '2026-09-24')]);
+  await worker.tick(); assert.equal(queries.length, 1);
+  clock = new Date(now.getTime() + 3_600_000);
+  await worker.tick();
+  assert.deepEqual(queries, [seriesPaceQuery('2026-09-23', '2026-09-24'), seriesPaceQuery('2026-09-26', '2026-09-29')]);
+  clock = new Date(clock.getTime() + 3_600_000);
+  await worker.tick(); assert.equal(queries.length, 2);
+  const facts = await readSeriesPaceFacts(db, clock);
+  assert.deepEqual(facts.UK.days.find(day => day.day === '2026-09-25'), { day: '2026-09-25', sold: 3, source: 'shopifyql' });
+  assert.ok(!facts.US.days.some(day => day.day === '2026-09-25'));
+  assert.equal(await missingSeriesPaceWindow(db, clock), null);
+});
+
+test('empty and failing fallback gaps rotate after restart without starving newer days or re-fetching held dates', async t => {
+  for (const outcome of ['empty', 'failure'] as const) await t.test(outcome, async t => {
+    const db = await createTestDatabase(); t.after(() => db.close());
+    await saveSeriesPaceSales(db, table([['2026-09-25', 'GB', 3]]), '2026-09-25', '2026-09-25', now);
+    const queries: string[] = [], credentials = env();
+    class GapReader extends PaceReader {
+      override async report(query: string) {
+        queries.push(query);
+        if (query.includes('SINCE 2026-09-23')) {
+          if (outcome === 'failure') throw new ShopifyError('denied', 403);
+          return table([]);
+        }
+        return table([26, 27, 28, 29].flatMap(day => [[`2026-09-${day}`, 'GB', 4], [`2026-09-${day}`, 'US', 2]]));
+      }
+    }
+    const reader = new GapReader(); let clock = now;
+    let worker = new ShopifyWorker(db, credentials, 'https://pulse.example.test', { reader, clock: () => clock });
+    await worker.initialize();
+    await db.query("UPDATE pulse.shopify_jobs SET next_run_at='9999-01-01' WHERE name <> 'series_pace'");
+    t.mock.method(console, 'error', () => {});
+    await worker.tick();
+    assert.deepEqual(queries, [seriesPaceQuery('2026-09-23', '2026-09-24')]);
+    const state = (await db.query<{ state: { lastAttemptedTo: string } }>("SELECT state FROM pulse.shopify_jobs WHERE mode='live' AND name='series_pace'")).rows[0]!.state;
+    assert.equal(state.lastAttemptedTo, '2026-09-24');
+    worker = new ShopifyWorker(db, credentials, 'https://pulse.example.test', { reader, clock: () => clock });
+    await worker.initialize(); await worker.tick(); assert.equal(queries.length, 1);
+    clock = new Date(now.getTime() + 3_600_000); await worker.tick();
+    assert.deepEqual(queries, [seriesPaceQuery('2026-09-23', '2026-09-24'), seriesPaceQuery('2026-09-26', '2026-09-29')]);
+    const facts = await readSeriesPaceFacts(db, clock);
+    assert.ok(facts.UK.days.some(day => day.day === '2026-09-29'));
+    assert.ok(!facts.UK.days.some(day => day.day === '2026-09-23'));
+    assert.ok(!facts.US.days.some(day => day.day === '2026-09-25'));
+    // After the newer gap is stored, retry the remaining unknown gap, never the held days.
+    clock = new Date(clock.getTime() + 3_600_000); await worker.tick();
+    assert.equal(queries[2], seriesPaceQuery('2026-09-23', '2026-09-24'));
+  });
 });
 
 test('fallback maps island and EU countries to UK, only US to US, preserves explicit zeros and ignores elsewhere', () => {

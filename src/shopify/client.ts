@@ -5,6 +5,7 @@ import { TokenManager } from './token.js';
 const page = 'pageInfo { hasNextPage endCursor }';
 const money = 'shopMoney { amount currencyCode }';
 const lineFields = `id sku quantity variant { id } product { id } taxLines { priceSet { ${money} } }`;
+const refundShippingFields = `subtotalAmountSet { ${money} } taxAmountSet { ${money} }`;
 export const orderFields = (address: boolean) => `
   id name createdAt updatedAt cancelledAt test displayFinancialStatus displayFulfillmentStatus currencyCode taxesIncluded
   sourceName channelInformation { channelDefinition { channelName } }
@@ -16,7 +17,7 @@ export const orderFields = (address: boolean) => `
   ${address ? 'shippingAddress { countryCodeV2 provinceCode zip }' : ''}
   customAttributes { key value }
   lineItems(first: 100) { nodes { ${lineFields} } ${page} }
-  refunds { id createdAt refundLineItems(first: 100) { nodes { quantity subtotalSet { ${money} } totalTaxSet { ${money} } } ${page} } }
+  refunds { id createdAt refundLineItems(first: 100) { nodes { quantity subtotalSet { ${money} } totalTaxSet { ${money} } } ${page} } refundShippingLines(first: 100) { nodes { ${refundShippingFields} } ${page} } }
   fulfillments(first: 250) { id status createdAt updatedAt location { id } fulfillmentLineItems(first: 100) { nodes { quantity lineItem { id } } ${page} } }
   customerJourneySummary { firstVisit { landingPage utmParameters { source medium campaign } } lastVisit { landingPage utmParameters { source medium campaign } } }
 `;
@@ -92,6 +93,14 @@ export class ShopifyClient implements ShopifyReader {
         const next = nextCursor(data.node.refundLineItems);
         if (next === cursor) throw new ShopifyError('invalid');
         refund.refundLineItems.nodes.push(...data.node.refundLineItems.nodes); refund.refundLineItems.pageInfo = data.node.refundLineItems.pageInfo; cursor = next;
+      }
+      cursor = refund.refundShippingLines ? nextCursor(refund.refundShippingLines) : null;
+      while (cursor) {
+        const data = await this.#graphql(`query PulseRefundShippingLines($id: ID!, $after: String!) { node(id: $id) { ... on Refund { refundShippingLines(first: 100, after: $after) { nodes { ${refundShippingFields} } ${page} } } } }`, { id: refund.id, after: cursor });
+        const next = nextCursor(data.node.refundShippingLines);
+        if (next === cursor) throw new ShopifyError('invalid');
+        refund.refundShippingLines.nodes.push(...data.node.refundShippingLines.nodes);
+        refund.refundShippingLines.pageInfo = data.node.refundShippingLines.pageInfo; cursor = next;
       }
     }
   }

@@ -37,7 +37,7 @@ function journey(visit: any): Record<string, unknown> | null {
 }
 export function cleanOrder(raw: any) {
   if (typeof raw.taxesIncluded !== 'boolean') throw new ShopifyError('invalid');
-  if (raw.lineItems.pageInfo.hasNextPage || raw.refunds.some((r: any) => r.refundLineItems.pageInfo.hasNextPage)) throw new ShopifyError('invalid');
+  if (raw.lineItems.pageInfo.hasNextPage || raw.refunds.some((r: any) => r.refundLineItems.pageInfo.hasNextPage || r.refundShippingLines?.pageInfo.hasNextPage)) throw new ShopifyError('invalid');
   // Order tax also includes shipping tax. Only item tax belongs in the item subtotal.
   const itemTaxPence = raw.lineItems.nodes.reduce((total: number, line: any) => {
     if (!Array.isArray(line.taxLines)) throw new ShopifyError('invalid');
@@ -48,7 +48,11 @@ export function cleanOrder(raw: any) {
     const taxPence = r.refundLineItems.nodes.reduce((n: number, l: any) => n + pence(l.totalTaxSet), 0);
     // Refunded item subtotals follow the order's inclusive/exclusive tax basis.
     const itemsPence = r.refundLineItems.nodes.reduce((n: number, l: any) => n + pence(l.subtotalSet), 0) - (raw.taxesIncluded ? taxPence : 0);
-    return { id: gid('Refund', r.id), createdAt: instant(r.createdAt), itemsPence, taxPence };
+    // Shipping refund subtotals already exclude tax, even when item prices include it.
+    const shippingNetPence = r.refundShippingLines?.nodes.reduce((n: number, line: any) => n + pence(line.subtotalAmountSet), 0);
+    const shippingTaxPence = r.refundShippingLines?.nodes.reduce((n: number, line: any) => n + pence(line.taxAmountSet), 0);
+    return { id: gid('Refund', r.id), createdAt: instant(r.createdAt), itemsPence, taxPence,
+      ...(shippingNetPence === undefined ? {} : { shippingNetPence, shippingTaxPence }) };
   });
   const warehouses = raw.fulfillments.map((f: any) => f.location?.id).filter((id: unknown) => Object.values(appConfig.shopify.locations).some(l => l.id === id));
   const country = /^[A-Z]{2}$/.test(raw.shippingAddress?.countryCodeV2 ?? '') ? raw.shippingAddress.countryCodeV2 : null;
@@ -89,6 +93,7 @@ export function cleanInventory(raw: any) {
   const productId = gid('Product', raw.productId), locationId = gid('Location', raw.location.id);
   if (!appConfig.shopify.stockProducts.some(p => `gid://shopify/Product/${p.id}` === productId) || !Object.values(appConfig.shopify.locations).some(l => l.id === locationId)) return null;
   return { productId, variantId: gid('ProductVariant', raw.variantId), inventoryItemId: gid('InventoryItem', raw.inventoryItemId), locationId,
+    sku: typeof raw.sku === 'string' && /^[\w-]{1,80}$/.test(raw.sku) ? raw.sku : null,
     quantities: raw.quantities.filter((q: any) => ['available', 'on_hand', 'committed'].includes(q.name)).map((q: any) => {
       if (!Number.isInteger(q.quantity)) throw new ShopifyError('invalid');
       return { name: q.name, quantity: q.quantity };
@@ -133,9 +138,10 @@ export function cleanSales(table: any) {
 
 export type Order = Omit<ReturnType<typeof cleanOrder>, 'lines' | 'refunds' | 'fulfillments'> & {
   lines: { id: string; variantId?: string | null; productId: string | null; sku: string | null; quantity: number }[];
-  refunds: { id: string; createdAt: string; itemsPence: number; taxPence: number }[];
+  refunds: { id: string; createdAt: string; itemsPence: number; taxPence: number; shippingNetPence?: number; shippingTaxPence?: number }[];
   fulfillments: { id: string; status: string; createdAt: string; updatedAt: string; locationId: string | null; lines: { lineId: string; quantity: number }[] | null }[];
 };
+export const paidOrder = (o: Order): boolean => !o.test && !o.cancelledAt && ['PAID', 'PARTIALLY_REFUNDED', 'REFUNDED'].includes(o.financialStatus);
 export type Inventory = Omit<NonNullable<ReturnType<typeof cleanInventory>>, 'quantities'> & { quantities: { name: string; quantity: number }[] };
 export interface Sessions { day: string; sessions: number; carts: number; checkouts: number; completed: number; uk: number; us: number; missouri: number; ukCarts: number; usCarts: number; ukCheckouts: number; usCheckouts: number; ukCompleted: number; usCompleted: number; marketReliable: boolean; provenance?: string; partial?: boolean }
 export function channelKey(name: string): string { return name.trim().toLowerCase().replace(/\s+/g, ' '); }

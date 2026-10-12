@@ -120,6 +120,28 @@ test('Node 20 reports its major and warns without stopping startup', (t) => {
   ]);
 });
 
+test('the no-argument startup check reads the running version and warns about older or newer majors', (t) => {
+  const info = t.mock.method(console, 'info', () => {});
+  const warn = t.mock.method(console, 'warn', () => {});
+  const version = Object.getOwnPropertyDescriptor(process.versions, 'node');
+  assert.ok(version);
+  try {
+    for (const running of ['20.19.0', '25.1.0']) {
+      Object.defineProperty(process.versions, 'node', { ...version, value: running });
+      assert.doesNotThrow(() => logNodeVersion());
+    }
+  } finally {
+    Object.defineProperty(process.versions, 'node', version);
+  }
+  assert.deepEqual(info.mock.calls.map((call) => call.arguments), [
+    ['Pulse Node major: 20'], ['Pulse Node major: 25'],
+  ]);
+  assert.deepEqual(warn.mock.calls.map((call) => call.arguments), [
+    ['Warning: Pulse expects Node 24; continuing on Node 20.'],
+    ['Warning: Pulse expects Node 24; continuing on Node 25.'],
+  ]);
+});
+
 async function closedPort(): Promise<number> {
   const server = createServer();
   await new Promise<void>((resolve, reject) => {

@@ -13,6 +13,7 @@ import { sampleSeriesPaceCard, type SeriesPaceCard, type SeriesPaceMarketView } 
 import { formatNumber, formatMetricNumber, formatPounds } from '../money.js';
 import { dailyRows, dataset, emailFlow, isRefill, isUpgrade, isKit, kitIds, orderNet, ratio, shopifyHero, stockCover, type Facts, type StockCover } from './metrics.js';
 import { blankObservation, evaluateWatchdogs, type Check, type Observation } from './watchdogs.js';
+import { isFreeOrder } from './model.js';
 
 export interface ShopifyDashboard {
   mode: 'sample' | 'live'; checks: Check[]; stock: StockCover[];
@@ -88,8 +89,8 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
   };
   const session = data.sessions.find(s => s.day === today);
   const percentage = (n: number, d: number): number | null => ratio(n, d) === null ? null : n / d * 100;
-  dial('w029', 'Conversion · UK', session?.marketReliable ? percentage(data.orders.filter(o => o.day === today && o.market === 'UK').length, session.uk) : null, '%', 'Orders ÷ sessions, today so far; guarded market data stays unknown.', 'Country guard: 22–23 September and Missouri >10% mark market conversion unknown.');
-  dial('w030', 'Conversion · US', session?.marketReliable ? percentage(data.orders.filter(o => o.day === today && o.market === 'US').length, session.us) : null, '%', 'Orders ÷ sessions, today so far; guarded market data stays unknown.', 'Store-wide conversion remains available independently of the market guard.');
+  dial('w029', 'Conversion · UK', session?.marketReliable ? percentage(data.orders.filter(o => o.day === today && o.market === 'UK' && !isFreeOrder(o)).length, session.uk) : null, '%', 'Orders ÷ sessions, today so far; free orders are left out and guarded market data stays unknown.', 'Country guard: 22–23 September and Missouri >10% mark market conversion unknown.');
+  dial('w030', 'Conversion · US', session?.marketReliable ? percentage(data.orders.filter(o => o.day === today && o.market === 'US' && !isFreeOrder(o)).length, session.us) : null, '%', 'Orders ÷ sessions, today so far; free orders are left out and guarded market data stays unknown.', 'Store-wide conversion remains available independently of the market guard.');
   const weekFrom = addDays(today, -6);
   const weekly = data.orders.filter(o => o.day >= weekFrom);
   const net = data.orders.reduce((n, o) => n + orderNet(o, weekFrom, today), 0);

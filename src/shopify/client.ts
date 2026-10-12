@@ -10,8 +10,9 @@ export const orderFields = (address: boolean) => `
   id name createdAt updatedAt cancelledAt test displayFinancialStatus displayFulfillmentStatus currencyCode taxesIncluded
   sourceName channelInformation { channelDefinition { channelName } }
   transactions(first: 250) { kind status processedAt }
-  discountCodes
+  discountCodes tags
   subtotalPriceSet { ${money} }
+  totalPriceSet { ${money} }
   totalTaxSet { ${money} } totalShippingPriceSet { ${money} }
   customer { id }
   ${address ? 'shippingAddress { countryCodeV2 provinceCode zip }' : ''}

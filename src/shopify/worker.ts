@@ -204,10 +204,10 @@ export class ShopifyWorker {
     const address = checkpoint.rows[0]?.state.address !== false;
     if (name === 'shipping_refunds') {
       if (this.mode !== 'live') return { skipped: 'sample_mode' };
-      // One legacy order per run keeps historical enrichment off startup and bounded.
+      // One legacy order per run enriches totals, replacement tags and shipping refunds without blocking startup.
       const legacy = await this.db.query<{ source_id: string }>(`SELECT source_id FROM pulse.shopify_records
         WHERE mode = 'live' AND kind = 'order' AND source_id > $1 AND data->>'day' >= $2
-          AND EXISTS (SELECT 1 FROM jsonb_array_elements(data->'refunds') AS refund WHERE NOT (refund ? 'shippingNetPence'))
+          AND (NOT (data ? 'totalPence') OR NOT (data ? 'tags') OR EXISTS (SELECT 1 FROM jsonb_array_elements(data->'refunds') AS refund WHERE NOT (refund ? 'shippingNetPence')))
         ORDER BY source_id LIMIT 1`, [state.after ?? '', checkpoint.rows[0]?.state.from ?? day]);
       const id = legacy.rows[0]?.source_id;
       if (!id) return { after: null, idle: true };

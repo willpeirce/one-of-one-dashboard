@@ -1,6 +1,7 @@
 import { appConfig } from '../config.js';
 import { ukToday } from '../hero-range.js';
 import { ShopifyError } from './http.js';
+const freeOrderTag = /^(replacement|resend-\d{4})$/i;
 export const gid = (kind: string, value: unknown): string => {
   const text = String(value ?? '');
   if (new RegExp(`^gid://shopify/${kind}/[0-9]+$`).test(text)) return text;
@@ -77,6 +78,10 @@ export function cleanOrder(raw: any) {
     currency: /^[A-Z]{3}$/.test(raw.currencyCode) ? raw.currencyCode : null,
     taxesIncluded: raw.taxesIncluded, itemTaxPence, itemsAfterDiscountsPence,
     taxPence: pence(raw.totalTaxSet), shippingPence: pence(raw.totalShippingPriceSet),
+    // Preserve the original charge: a fully refunded purchase is still a purchase.
+    totalPence: raw.totalPriceSet ? pence(raw.totalPriceSet) : pence(raw.subtotalPriceSet) + pence(raw.totalShippingPriceSet) + (raw.taxesIncluded ? 0 : pence(raw.totalTaxSet)),
+    // Keep only process tags; arbitrary tags can contain customer information.
+    tags: (Array.isArray(raw.tags) ? raw.tags : []).filter((tag: unknown): tag is string => typeof tag === 'string' && freeOrderTag.test(tag.trim())).map((tag: string) => tag.trim().toLowerCase()),
     customerId: raw.customer ? gid('Customer', raw.customer.id) : null,
     market, marketBasis: country ? 'country' : 'currency_and_warehouse', country,
     region: typeof raw.shippingAddress?.provinceCode === 'string' && /^[A-Z0-9-]{1,10}$/.test(raw.shippingAddress.provinceCode) ? raw.shippingAddress.provinceCode : null,
@@ -136,12 +141,18 @@ export function cleanSales(table: any) {
   });
 }
 
-export type Order = Omit<ReturnType<typeof cleanOrder>, 'lines' | 'refunds' | 'fulfillments'> & {
+export type Order = Omit<ReturnType<typeof cleanOrder>, 'lines' | 'refunds' | 'fulfillments' | 'totalPence' | 'tags'> & {
+  totalPence?: number;
+  tags?: string[];
   lines: { id: string; variantId?: string | null; productId: string | null; sku: string | null; quantity: number }[];
   refunds: { id: string; createdAt: string; itemsPence: number; taxPence: number; shippingNetPence?: number; shippingTaxPence?: number }[];
   fulfillments: { id: string; status: string; createdAt: string; updatedAt: string; locationId: string | null; lines: { lineId: string; quantity: number }[] | null }[];
 };
 export const paidOrder = (o: Order): boolean => !o.test && !o.cancelledAt && ['PAID', 'PARTIALLY_REFUNDED', 'REFUNDED'].includes(o.financialStatus);
+export function isFreeOrder(order: Order): boolean {
+  const originalTotal = order.totalPence ?? order.itemsAfterDiscountsPence + order.shippingPence + (order.taxesIncluded ? order.itemTaxPence : order.taxPence);
+  return originalTotal === 0 || (order.tags ?? []).some(tag => freeOrderTag.test(tag.trim()));
+}
 export type Inventory = Omit<NonNullable<ReturnType<typeof cleanInventory>>, 'quantities'> & { quantities: { name: string; quantity: number }[] };
 export interface Sessions { day: string; sessions: number; carts: number; checkouts: number; completed: number; uk: number; us: number; missouri: number; ukCarts: number; usCarts: number; ukCheckouts: number; usCheckouts: number; ukCompleted: number; usCompleted: number; marketReliable: boolean; provenance?: string; partial?: boolean }
 export function channelKey(name: string): string { return name.trim().toLowerCase().replace(/\s+/g, ' '); }

@@ -1,19 +1,22 @@
-import type { HeroPeriod } from '../dashboard-types.js';
+import type { HeroMarket, HeroPeriod } from '../dashboard-types.js';
 import { addDays, dayCount, ukToday } from '../hero-range.js';
 import type { Settings } from '../settings.js';
 import { costOrder, type ShopifyCost } from '../shopify/costs.js';
-import { paidOrder, type Order } from '../shopify/model.js';
+import { isFreeOrder, paidOrder, type Order } from '../shopify/model.js';
 import { overheadsForPeriod, sampleOverheads } from '../overheads.js';
 import { profitAndMargin } from '../profit.js';
 import { formatNumber, formatPounds } from '../money.js';
 import { adNames, decimalMicros, type AdSource } from './model.js';
 import type { SpendFacts } from './store.js';
 import { SPEND_STALE_AFTER_MS } from './worker.js';
+import { spendMarket } from './placement.js';
+import { isTikTok } from '../shopify/order-market.js';
 export interface AdHeroInputs {
   spend: SpendFacts;
   costs: ShopifyCost[];
   estimates: { orderId: string; costPence: number | null; source: string }[];
   now?: Date;
+  orderDetailsFrom?: string;
   market?: 'all' | 'uk' | 'us';
 }
 const pounds = (micros: bigint) => Number(micros) / 1_000_000;
@@ -56,6 +59,19 @@ function gapLines(gaps: SpendGap[], kind: 'spend' | 'dependent'): string {
   return [...gaps.slice(0, 2).map((gap) => gap[kind]),
     ...(gaps.length > 2 ? [`+${gaps.length - 2} more`] : [])].join('\n');
 }
+/** Re-apply current name/owner rules to cached rows as well as new API reads. */
+export function placedSpendRows(facts: SpendFacts, from: string, to: string, today: string, market: HeroMarket = 'all') {
+  const excluded = new Set(spendGaps(facts, from, to, today).filter(gap => gap.excluded).map(gap => gap.source));
+  if (facts.mode === 'live') for (const source of facts.sources) if (!source.live) excluded.add(source.source);
+  return facts.rows.map(row => ({ ...row, market: spendMarket(row) }))
+    .filter(row => row.currency === 'GBP' && !excluded.has(row.source) && (market === 'all' || row.market === market));
+}
+
+export function usableSpendSources(facts: SpendFacts, from: string, to: string, today: string) {
+  const excluded = new Set(spendGaps(facts, from, to, today).filter(gap => gap.excluded).map(gap => gap.source));
+  return facts.sources.filter(source => source.ready && !excluded.has(source.source) && (facts.mode === 'sample' || source.live));
+}
+
 export function applySpend(
   hero: HeroPeriod,
   orders: Order[],
@@ -68,9 +84,10 @@ export function applySpend(
     to = hero.to;
   const gaps = spendGaps(spend, from, to, today),
     excluded = new Set(gaps.filter((gap) => gap.excluded).map((gap) => gap.source));
-  const selected = spend.rows.filter((r) => r.day >= from && r.day <= to),
-    rows = selected.filter((r) => r.currency === 'GBP' && !excluded.has(r.source));
-  const usable = spend.sources.filter((s) => s.ready && !excluded.has(s.source) && (spend.mode === 'sample' || s.live));
+  const selected = spend.rows.filter((r) => r.day >= from && r.day <= to);
+  const allRows = placedSpendRows(spend, from, to, today).filter(row => row.day >= from && row.day <= to);
+  const rows = !inputs.market || inputs.market === 'all' ? allRows : allRows.filter(row => row.market === inputs.market);
+  const usable = usableSpendSources(spend, from, to, today);
   const covered = new Set(
     spend.days.filter((d) => d.day >= from && d.day <= to).map((d) => d.source),
   );
@@ -110,7 +127,7 @@ export function applySpend(
   const sum = (filter: (r: (typeof rows)[number]) => boolean = () => true) =>
     rows.filter(filter).reduce((s, r) => s + decimalMicros(r.amount), 0n);
   const total = pounds(sum()),
-    unknown = pounds(sum((r) => r.market === 'unknown'));
+    unknown = pounds(allRows.filter(row => row.market === 'unknown').reduce((sum, row) => sum + decimalMicros(row.amount), 0n));
   const sourceIds = usable.map((s) => s.source);
   const split: [string, string][] = (
     [
@@ -140,10 +157,10 @@ export function applySpend(
     source: sourceIds,
     unavailable: !available,
     state: gaps.length ? 'warn' : to === today ? 'sofar' : 'info',
-    ss: spendSubtitle,
+    ss: `${spendSubtitle}${inputs.market && inputs.market !== 'all' && unknown ? ' · store-wide spend stays under All' : ''}`,
     d: {
       why: `Total spend ${formatPounds(total)}. ${label}.`,
-      rule: 'GBP spend only. Re-fetches replace daily rows. Unknown-market spend counts in All and is never shared out.',
+      rule: 'GBP spend only. Re-fetches replace daily rows. Ad sets/campaign names place spend by market; unplaceable spend is store-wide under All only and is never shared out.',
       src: label,
       extra: split,
     },
@@ -166,6 +183,11 @@ export function applySpend(
     },
   };
   const eligibleOrders = orders.filter(paidOrder);
+  const countedOrders = eligibleOrders.filter(o => !isFreeOrder(o));
+  hero.cac = { ...hero.cac, n: hero.orders.n ? total / hero.orders.n : 0, dp: 2, mode: spend.mode, source: ['shopify', ...sourceIds],
+    unavailable: !available || hero.orders.unavailable, state: gaps.length ? 'warn' : hero.cac.state,
+    ss: gaps.length ? dependentSubtitle : hero.cac.ss,
+    d: { ...hero.cac.d, why: `${formatPounds(total)} all placed ad spend ÷ ${formatNumber(hero.orders.n)} counted orders = ${formatPounds(hero.orders.n ? total / hero.orders.n : 0)}.`, src: label } };
   const periodOrders = eligibleOrders.filter(
     (o) => o.day >= from && o.day <= to,
   );
@@ -213,7 +235,7 @@ export function applySpend(
     ...(missingFulfilment ? ['unknown fulfilment costs'] : []),
     ...(missingShippingRefunds ? ['older shipping refund detail'] : []),
     ...(settings.paymentFeePercent === null ? ['payment fees'] : []),
-    ...(periodOrders.length < hero.orders.n ? ['older order cost detail'] : []),
+    ...(periodOrders.length < hero.orders.n || inputs.orderDetailsFrom && from < inputs.orderDetailsFrom ? ['older order cost detail'] : []),
     ...(!marketView && overheads.items.length === 0 ? ['overheads'] : []),
   ];
   const result = profitAndMargin({
@@ -229,13 +251,14 @@ export function applySpend(
     mode: spend.mode,
     source: ['shopify', ...sourceIds],
     unavailable: !available || hero.net.unavailable || total === 0 || hero.net.n <= 0,
-    state: gaps.length ? 'warn' : to === today ? 'sofar' : 'est',
+    state: gaps.length ? 'warn' : 'est',
+    ...(marketView ? { statusLabel: 'store-wide' } : {}),
     ss: gaps.length
-      ? `${dependentSubtitle}\nEstimate${marketView ? ' before overheads' : ''}${omitted.length ? `; left out: ${omitted.join(', ')}` : ''}`
-      : `Estimate${marketView ? ' before overheads' : ''}${omitted.length ? `; left out: ${omitted.join(', ')}` : ''} · ${label}${soFar}`,
+      ? `${dependentSubtitle.replaceAll(' · so far', '')}\n${marketView ? 'store-wide' : 'Estimate'}${omitted.length ? `; left out: ${omitted.join(', ')}` : ''}`
+      : `${marketView ? 'store-wide' : 'Estimate'}${omitted.length ? `; left out: ${omitted.join(', ')}` : ''} · ${label}`,
     d: {
-      why: `Net sales plus shipping income net of tax, less shipping refunds, less available landed costs, fulfilment, payment fees and all counted ad spend${marketView ? '' : ' and overheads'}, divided by net sales. ${marketView ? 'In this market view, overheads are not split by market and are not deducted.' : 'Margin is after overheads.'} Shipping income is added because fulfilment includes postage.`,
-      rule: `Monthly overhead items are spread evenly over each calendar month's days; today uses the elapsed fraction of the real UK day. ${marketView ? 'In this market view, overheads are not split by market and are not deducted.' : 'Margin is after overheads.'} Shipping income is added net of tax because fulfilment includes postage; shipping refunds are deducted net of tax on their refund UK day. Net sales remains the divisor and the payment-fee basis. The same paid orders as net sales supply shipping income and costs; unpaid, cancelled and test orders are excluded. Discounts are already deducted in Shopify net sales, so are not subtracted twice. Unknown costs and older shipping refund detail awaiting refresh are named and left out. Item refunds reduce sales on their UK day; no unobserved stock returns or fee refunds are assumed.`,
+      why: `Net sales plus shipping income net of tax, less shipping refunds, less available landed costs, fulfilment, payment fees and all counted ad spend${marketView ? '' : ' and overheads'}, divided by net sales. ${marketView ? 'Store-wide: overheads are not split by market until the costs sheet is.' : 'Margin is after overheads.'} Shipping income is added because fulfilment includes postage.`,
+      rule: `Monthly overhead items are spread evenly over each calendar month's days; today uses the elapsed fraction of the real UK day. ${marketView ? 'Store-wide: overheads are not split by market until the costs sheet is.' : 'Margin is after overheads.'} Shipping income is added net of tax because fulfilment includes postage; shipping refunds are deducted net of tax on their refund UK day. Net sales remains the divisor and the payment-fee basis. The same paid orders as net sales supply shipping income and costs; unpaid, cancelled and test orders are excluded. Discounts are already deducted in Shopify net sales, so are not subtracted twice. Unknown costs and older shipping refund detail awaiting refresh are named and left out. Item refunds reduce sales on their UK day; no unobserved stock returns or fee refunds are assumed.`,
       src: label,
       extra: [
         ...split,
@@ -263,21 +286,34 @@ export function applySpend(
   hero.profit = {
     ...hero.margin,
     n: result.profit,
+    unavailable: !available || hero.net.unavailable || !Number.isFinite(result.profit),
     pre: '£',
     suf: '',
     dp: 2,
     d: {
       ...hero.margin.d,
-      why: `Net profit is net sales plus shipping income net of tax, less shipping refunds, less available landed costs, fulfilment, payment fees and all counted ad spend${marketView ? '' : ' and overheads'}. ${marketView ? 'This market view is before overheads; overheads are not split by market.' : 'Profit is after overheads.'} Shipping income is added because fulfilment includes postage. This is the same pound total used to calculate net margin.`,
+      why: `Net profit is net sales plus shipping income net of tax, less shipping refunds, less available landed costs, fulfilment, payment fees and all counted ad spend${marketView ? '' : ' and overheads'}. ${marketView ? 'Store-wide: overheads are not split by market until the costs sheet is.' : 'Profit is after overheads.'} Shipping income is added because fulfilment includes postage. This is the same pound total used to calculate net margin.`,
       extra: [...hero.margin.d.extra!, ['Net profit', formatPounds(result.profit)]],
     },
   };
+  const meta = spend.sources.find(source => source.source === 'meta');
+  const metaGaps = gaps.filter(gap => gap.source === 'meta');
+  const metaAvailable = usable.some(source => source.source === 'meta' && covered.has('meta'));
+  const metaCoveragePartial = metaAvailable && spend.days.filter(day => day.source === 'meta' && day.day >= from && day.day <= to).length < dayCount(from, to);
+  const metaLabel = spend.mode === 'sample' ? 'Sample Meta spend' : metaAvailable ? `Meta${metaCoveragePartial ? '; incomplete range coverage' : ''}` : meta?.live ? 'No Meta spend available' : 'Meta waiting for keys';
+  const metaSubtitle = metaGaps.length ? gapLines(metaGaps, 'dependent') + soFar : metaLabel + soFar;
+  const metaUnknown = pounds(allRows.filter(row => row.source === 'meta' && row.market === 'unknown').reduce((sum, row) => sum + decimalMicros(row.amount), 0n));
+  const metaSplit: [string, string][] = [
+    ...split.filter(([name]) => name.startsWith('Meta ')),
+    ['Unknown Meta market', `${formatPounds(metaUnknown)} not split into UK or US`],
+    ...(selected.some(row => row.source === 'meta' && row.currency !== 'GBP') ? [['Meta currency', `${[...new Set(selected.filter(row => row.source === 'meta' && row.currency !== 'GBP').map(row => row.currency))].join(', ')} not counted; no conversion`] as [string, string]] : []),
+  ];
   for (const [key, market] of [
     ['ukcpo', 'uk'],
     ['uscpo', 'us'],
   ] as const) {
-    const count = periodOrders.filter((o) => o.market === market.toUpperCase()).length,
-      cost = pounds(sum((r) => r.market === market)),
+    const count = countedOrders.filter(o => o.day >= from && o.day <= to && o.market === market.toUpperCase() && !isTikTok(o)).length,
+      cost = pounds(sum((r) => r.market === market && r.source === 'meta')),
       value =
         count && periodOrders.length >= hero.orders.n && !hero.orders.unavailable
           ? cost / count
@@ -285,17 +321,18 @@ export function applySpend(
     hero[key] = {
       ...hero[key],
       v: value ?? 0,
-      t: available && value !== null ? formatPounds(value) : '—',
-      l: `${market.toUpperCase()} cost per order`,
-      s: `${gaps.length ? dependentSubtitle : label}${periodOrders.length < hero.orders.n ? '; older order market detail unavailable' : ''} · bar ${formatPounds(settings.blendedMetaTripwireGbp, formatNumber)}`,
-      source: ['shopify', ...sourceIds],
+      t: metaAvailable && value !== null ? formatPounds(value) : '—',
+      hidePointer: !metaAvailable || value === null,
+      l: `${market.toUpperCase()} Meta cost per order`,
+      s: `${metaSubtitle}${periodOrders.length < hero.orders.n ? '; older order market detail unavailable' : ''} · bar ${formatPounds(settings.blendedMetaTripwireGbp, formatNumber)}`,
+      source: ['shopify', 'meta'],
       mode: spend.mode,
-      cap: gaps.length ? 'warn' : to === today ? 'sofar' : 'info',
+      cap: metaGaps.length ? 'warn' : !metaAvailable ? 'info' : to === today ? 'sofar' : 'info',
       d: {
-        why: `${market.toUpperCase()} spend ${formatPounds(cost)} ÷ ${formatNumber(count)} Shopify orders. ${formatPounds(unknown)} unknown-market spend is not split.${periodOrders.length < hero.orders.n ? ' Older order market detail is unavailable; no denominator is guessed.' : ''}`,
-        rule: 'Meta + Google + TikTok spend in this market ÷ Shopify orders in this market. CAC awaits stage 2: stored Shopify facts do not identify first orders.',
-        src: label,
-        extra: split,
+        why: `${market.toUpperCase()} spend ${formatPounds(cost)} ÷ ${formatNumber(count)} Shopify orders. ${formatPounds(metaUnknown)} unknown-market Meta spend is not split.${periodOrders.length < hero.orders.n ? ' Older order market detail is unavailable; no denominator is guessed.' : ''}`,
+        rule: 'Meta spend placed in this market ÷ counted Shopify orders in this market. Free orders and TikTok orders are excluded. CAC remains all placed ad spend per order until first orders can be told apart.',
+        src: metaLabel,
+        extra: metaSplit,
       },
     };
   }

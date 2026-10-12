@@ -10,6 +10,9 @@ import type { SpendFacts } from '../src/ad-spend/store.js';
 import { defaultSettings, type SettingsSnapshot } from '../src/settings.js';
 import { calculateSeriesPace, paceDate, paceNumber } from '../src/series-pace/model.js';
 import type { SeriesPaceMarketView } from '../src/series-pace/presentation.js';
+import { checkHomeChapters, checkFulfilmentChapter } from './chapter-browser-check.js';
+import { checkRadar } from './browser-radar.js';
+import { checkMarketHero, installMarketUpdateHook } from './browser-market.js';
 
 let step = 'read test configuration';
 
@@ -60,9 +63,21 @@ async function dashboardSnapshot(context: BrowserContext): Promise<DashboardSnap
   return await response.json() as DashboardSnapshot;
 }
 
+// Legacy scenarios edit the compatibility All fields; keep its carried view identical.
+function withAllMarketFixture<T>(fixture: T): T {
+  for (const hero of Object.values((fixture as unknown as FullDashboardSnapshot).hero)) {
+    if (hero.markets) {
+      const all = { ...hero };
+      delete all.markets;
+      hero.markets.all = all;
+    }
+  }
+  return fixture;
+}
+
 async function assertHeroModel(page: Page, metrics: HeroPeriod): Promise<void> {
   const expected: Record<string, string> = {};
-  for (const key of ['net', 'orders', 'cr', 'spend', 'roas', 'margin', 'profit', 'ukcpo', 'uscpo']) {
+  for (const key of ['net', 'orders', 'aov', 'cac', 'cr', 'spend', 'roas', 'margin', 'profit', 'ukcpo', 'uscpo']) {
     const metric = metrics[key];
     assert.ok(metric && typeof metric !== 'string' && !Array.isArray(metric));
     if (typeof metric.n === 'number') {
@@ -73,7 +88,7 @@ async function assertHeroModel(page: Page, metrics: HeroPeriod): Promise<void> {
     }
   }
   await page.waitForFunction((values) => Object.entries(values).every(([key, value]) => {
-    const tile = document.querySelector(`#hero [data-k="${key}"]`);
+    const tile = document.querySelector(`[data-k="${key}"]`);
     const actual = tile?.querySelector('.sv, .well svg text')?.textContent;
     return actual?.trim() === value;
   }), expected);
@@ -81,10 +96,10 @@ async function assertHeroModel(page: Page, metrics: HeroPeriod): Promise<void> {
   assert.equal(await page.locator('#sub1').textContent(), metrics.sub1);
   for (const key of ['t0267', 't0270']) assert.ok((await page.locator(`[data-sample-text="${key}"]`).textContent())?.startsWith(`${rangeLabel(metrics.from, metrics.to)} · Shopify `));
   for (const key of Object.keys(expected)) {
-    assert.equal(await page.locator(`#hero [data-k="${key}"]`).count(), 1);
+    assert.equal(await page.locator(`[data-k="${key}"]`).count(), 1);
   }
   const margin = metrics.margin as HeroMetric, profit = metrics.profit as HeroMetric, net = metrics.net as HeroMetric;
-  assert.equal(profit.unavailable, margin.unavailable);
+  if (!margin.unavailable) assert.equal(profit.unavailable, false, 'A measured margin requires a measured profit numerator');
   assert.equal(profit.ss, margin.ss);
   if (!margin.unavailable && net.n && typeof margin.n === 'number' && typeof profit.n === 'number') {
     assert.ok(Math.abs(profit.n - net.n * margin.n / 100) < 1e-8, 'Profit must equal the margin numerator in every preset and picked range');
@@ -100,14 +115,14 @@ async function assertHeroModel(page: Page, metrics: HeroPeriod): Promise<void> {
 }
 
 async function assertHeroLayout(page: Page): Promise<void> {
-  const tiles = await page.locator('#hero .tile[data-k]').evaluateAll(elements => elements.map(element => {
+  const tiles = await page.locator('#hero .hero-grid > .tile[data-k]').evaluateAll(elements => elements.map(element => {
     const box = element.getBoundingClientRect();
     return { key: element.getAttribute('data-k'), x: box.left, y: box.top, right: box.right, bottom: box.bottom };
   }));
-  const margin = tiles.find(tile => tile.key === 'margin'), profit = tiles.find(tile => tile.key === 'profit');
-  assert.ok(margin && profit);
-  assert.ok(Math.abs(margin.y - profit.y) <= 1 && Math.abs(margin.bottom - profit.bottom) <= 1, 'Net margin and Net profit must sit side by side');
-  assert.ok(margin.right <= profit.x || profit.right <= margin.x);
+  assert.equal(tiles.length, 8, 'Eight hero cards remain in the number grid');
+  const columns = await page.locator('#hero .hero-grid').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length);
+  assert.equal(columns, page.viewportSize()!.width <= 760 ? 2 : 4);
+  assert.equal(await page.locator('#hero [data-k="profit"]').isVisible(), true, 'Net profit remains visible with its own sheet');
   for (const tile of tiles) {
     const row = tiles.filter(other => other.y <= tile.y + 1 && other.bottom > tile.y + 1);
     assert.ok(row.length >= 2, `Hero ${tile.key} must not sit alone on a row`);
@@ -193,9 +208,9 @@ async function checkNegativeProfit(context: BrowserContext): Promise<void> {
       profit.dp = 2;
       profit.d = { ...profit.d!, extra: [...(profit.d?.extra?.filter(([label]) => label !== 'Net profit') ?? []), ['Net profit', formatPounds(-10)]] };
     }
-    await page.route('**/api/dashboard', route => route.fulfill({ status: 200, json: fixture }));
+    await page.route('**/api/dashboard', route => route.fulfill({ status: 200, json: withAllMarketFixture(fixture) }));
     await page.route('**/api/events', route => route.fulfill({ status: 200, contentType: 'text/event-stream',
-      body: `retry: 60000\nevent: dashboard\ndata: ${JSON.stringify(fixture)}\n\n` }));
+      body: `retry: 60000\nevent: dashboard\ndata: ${JSON.stringify(withAllMarketFixture(fixture))}\n\n` }));
     await page.goto('/');
     await page.locator('html[data-dashboard-ready="true"]').waitFor();
     for (const viewport of viewports) {
@@ -222,9 +237,9 @@ async function checkGroupedDisplay(context: BrowserContext): Promise<void> {
       Object.assign(fixture.hero[period].net, { n: 1234567.89, unavailable: false, pre: '£', dp: 2 });
       Object.assign(fixture.hero[period].orders, { n: 1560, unavailable: false, dp: 0 });
     }
-    await page.route('**/api/dashboard', route => route.fulfill({ status: 200, json: fixture }));
+    await page.route('**/api/dashboard', route => route.fulfill({ status: 200, json: withAllMarketFixture(fixture) }));
     await page.route('**/api/events', route => route.fulfill({ status: 200, contentType: 'text/event-stream',
-      body: `retry: 60000\nevent: dashboard\ndata: ${JSON.stringify(fixture)}\n\n` }));
+      body: `retry: 60000\nevent: dashboard\ndata: ${JSON.stringify(withAllMarketFixture(fixture))}\n\n` }));
     const cases = [
       { meta: { live: true, status: 'live', fetchedAt: '2026-09-30T11:00:00Z' },
         google: { live: true, status: 'stale · last fetched 09:00', fetchedAt: '2026-09-30T08:00:00Z' }, labels: ['Live', 'Stale'] },
@@ -257,9 +272,11 @@ async function checkGroupedDisplay(context: BrowserContext): Promise<void> {
           assert.ok((await radar.getAttribute('aria-label'))?.includes(`${name}: ${label}`));
         }
         assert.doesNotMatch(await radar.innerText(), /Unknown/);
-        assert.match(await radar.locator('.radar-reason').allTextContents().then(text => text.join('\n')), /Growth: Growth measures are not built yet\./);
-        assert.match(await radar.locator('.radar-reason').allTextContents().then(text => text.join('\n')), /Email: Mailchimp measures are not built yet\./);
-        if (index === 2) assert.match(await radar.innerText(), /The first ad spend sync is pending\./);
+        assert.match(await radar.getAttribute('aria-label') ?? '', /Growth: Not built/);
+        assert.match(await radar.getAttribute('aria-label') ?? '', /Email: Not built/);
+        assert.equal(await radar.locator('.radar-weakest').count(), 1);
+        assert.match(await radar.innerText(), /Not enough data/);
+        if (index === 2) assert.match(await radar.locator('[data-radar-key="meta"] title').first().textContent() ?? '', /The first ad spend sync is pending\./);
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
         if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/grouped-money-radar-${viewport.width}-${index}.png` });
       }
@@ -283,9 +300,9 @@ async function checkReviews(context: BrowserContext): Promise<void> {
     assert.ok(sample.rows.slice(1).every(review => review.rating > 3));
     assert.ok(sample.rows.every(review => !review.published && !review.hidden));
     assert.doesNotMatch(JSON.stringify(sample.rows), /reviewer|email|ip_address/i);
-    await page.route('**/api/dashboard', route => route.fulfill({ status: 200, json: fixture }));
+    await page.route('**/api/dashboard', route => route.fulfill({ status: 200, json: withAllMarketFixture(fixture) }));
     await page.route('**/api/events', route => route.fulfill({ status: 200, contentType: 'text/event-stream',
-      body: `retry: 60000\nevent: dashboard\ndata: ${JSON.stringify(fixture)}\n\n` }));
+      body: `retry: 60000\nevent: dashboard\ndata: ${JSON.stringify(withAllMarketFixture(fixture))}\n\n` }));
     for (const viewport of viewports) {
       step = `${scope}: sample review panel and greeting at ${viewport.width}px`;
       fixture.reviews = structuredClone(sample);
@@ -613,9 +630,9 @@ async function checkSeriesPaceWaiting(context: BrowserContext): Promise<void> {
     const widget = fixture.widgets.w017;
     assert.ok(widget?.kind === 'series-pace');
     const original = structuredClone(widget.value.markets.UK);
-    await page.route('**/api/dashboard', route => route.fulfill({ status: 200, json: fixture }));
+    await page.route('**/api/dashboard', route => route.fulfill({ status: 200, json: withAllMarketFixture(fixture) }));
     await page.route('**/api/events', route => route.fulfill({ status: 200, contentType: 'text/event-stream',
-      body: `retry: 60000\nevent: dashboard\ndata: ${JSON.stringify(fixture)}\n\n` }));
+      body: `retry: 60000\nevent: dashboard\ndata: ${JSON.stringify(withAllMarketFixture(fixture))}\n\n` }));
     for (const viewport of viewports) {
       await page.setViewportSize(viewport);
       for (const sample of [
@@ -683,9 +700,9 @@ async function checkPartialAdSpend(context: BrowserContext): Promise<void> {
         assert.match(hero[key].ss, /Excludes Meta spend/);
       }
     }
-    await page.route('**/api/dashboard', route => route.fulfill({ status: 200, json: fixture }));
+    await page.route('**/api/dashboard', route => route.fulfill({ status: 200, json: withAllMarketFixture(fixture) }));
     await page.route('**/api/events', route => route.fulfill({ status: 200, contentType: 'text/event-stream',
-      body: `retry: 60000\nevent: dashboard\ndata: ${JSON.stringify(fixture)}\n\n` }));
+      body: `retry: 60000\nevent: dashboard\ndata: ${JSON.stringify(withAllMarketFixture(fixture))}\n\n` }));
     for (const viewport of viewports) {
       step = `${scope}: source warning at ${viewport.width}px`;
       await page.setViewportSize(viewport);
@@ -730,8 +747,8 @@ async function checkPartialAdSpend(context: BrowserContext): Promise<void> {
       assert.equal(bounds.sideways, false);
       assert.equal(bounds.subtitleOverflow, false);
       step = `${scope}: dependent tiles at ${viewport.width}px`;
-      for (const key of ['margin', 'profit', 'roas', 'ukcpo', 'uscpo']) {
-        const tile = page.locator(`#hero [data-k="${key}"]`);
+      for (const key of ['margin', 'profit', 'cac', 'roas', 'ukcpo', 'uscpo']) {
+        const tile = page.locator(`[data-k="${key}"]`);
         assert.equal(await tile.getAttribute('data-state'), 'warn');
         assert.equal(await tile.locator('.chip.good').count(), 0);
         assert.match(await tile.locator('.ss, .ds').innerText(), /Excludes Meta spend/);
@@ -743,7 +760,7 @@ async function checkPartialAdSpend(context: BrowserContext): Promise<void> {
 async function checkCampaignOwners(page: Page, context: BrowserContext, dashboard: Page): Promise<void> {
   const scope = step;
   const rows = page.locator('[data-meta-campaign]');
-  assert.equal(await rows.count(), 3);
+  assert.equal(await rows.count(), 4);
   assert.equal(await page.locator('[data-campaign-new]').count(), 1);
   assert.equal(await page.locator('[data-settings-list="metaOwners"]').count(), 0);
   assert.equal(await page.locator('input[name^="metaOwners."], input[name*="campaignId"]').count(), 0);
@@ -753,7 +770,7 @@ async function checkCampaignOwners(page: Page, context: BrowserContext, dashboar
   const campaign = page.locator(`[data-meta-campaign="${campaignId}"]`);
   assert.equal(await campaign.locator('[data-campaign-owner]').inputValue(), 'ours');
   const dates = await rows.locator('time').evaluateAll(elements => elements.map(element => element.getAttribute('datetime')));
-  assert.equal(dates.length, 3);
+  assert.equal(dates.length, 4);
   assert.ok(dates.every(date => date && Number.isFinite(Date.parse(date))));
   assert.ok(Date.parse(dates[0]!) >= Date.parse(dates[1]!), 'Active campaigns are newest first');
   assert.equal(await page.locator('.setting-campaign-inactive > summary').innerText(), 'Show 1 inactive');
@@ -1386,6 +1403,7 @@ async function run(): Promise<void> {
   });
   try {
     const context = await browser.newContext({ baseURL: origin, reducedMotion: 'reduce' });
+    await installMarketUpdateHook(context);
     // Older builds saved this preference. It must no longer change any screen.
     await context.addInitScript(() => {
       if (location.protocol === 'http:' || location.protocol === 'https:') localStorage.setItem('pulse-theme', 'light');
@@ -1517,6 +1535,8 @@ async function run(): Promise<void> {
         await hideAccountMenu(page);
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
         await assertHeroLayout(page);
+        await checkMarketHero(page, snapshot as unknown as FullDashboardSnapshot, viewport.width);
+        await checkHomeChapters(page);
         if (process.env.PULSE_SCREENSHOT_DIR) await page.locator('#hero').screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/hero-profit-${viewport.width}-${preference}.png` });
         await assertLocalFonts(page);
         await assertSampleTextStyles(page);
@@ -1681,6 +1701,9 @@ async function run(): Promise<void> {
     step = 'check sample reviews, low-star sheets, greeting and recovered empty state';
     await checkReviews(context);
 
+    step = 'check measured-only radar, weakest area and spoke actions at phone and desktop widths';
+    await checkRadar(context);
+
     step = 'check same-origin manifest and installation icons';
     await checkManifest(page, context, origin);
 
@@ -1760,7 +1783,7 @@ async function run(): Promise<void> {
     await settingsPage.locator('#settings-save').click();
     assert.equal((await settingsSaved).status(), 200);
     step = 'apply the Settings tripwire to the existing dashboard over SSE';
-    await page.waitForFunction((bar) => document.querySelector('#hero [data-k="ukcpo"] .ds')?.textContent?.includes(`bar £${bar}`), updatedBar);
+    await page.waitForFunction((bar) => document.querySelector('[data-k="ukcpo"] .ds')?.textContent?.includes(`bar £${bar}`), updatedBar);
     assert.equal(page.url(), beforeUpdate.url);
     assert.ok(Math.abs(await page.evaluate(() => window.scrollY) - beforeUpdate.scroll) <= 2);
     assert.equal(dashboardFetches, beforeUpdate.fetches);
@@ -1792,6 +1815,7 @@ async function run(): Promise<void> {
     for (const viewport of viewports) {
       await fulfilmentPage.setViewportSize(viewport);
       await fulfilmentPage.goto('/fulfilment');
+      await checkFulfilmentChapter(fulfilmentPage);
       await fulfilmentPage.locator('#export-file').waitFor();
       step = `check fulfilment banner at ${viewport.width}px`;
       assert.match(await fulfilmentPage.locator('.sample-banner').innerText(), /Sample data/);
@@ -1974,7 +1998,7 @@ async function run(): Promise<void> {
     assert.equal(consoleErrors.length, 0);
     assert.equal(externalRequests, 0);
     await context.close();
-    console.log('Browser checks passed: passkeys and replay/origin/signature rejection; all hero presets and custom dates, paired margin/profit tiles, correctly signed pound losses and shared breakdown, bounded keyboard calendars, decks, search and details; Series 1 two-market pace card, signed daily sources and snapshot times, sample-disabled target controls, real Settings target save/clear and date previews; named overhead Settings and margin shares; automatic campaign list, sync state, local confirmation and owner changes; Settings persistence and SSE without replacing picked dates; safe-area nav clearance on every signed-in page with normal and simulated top insets; standalone touch refresh, menu counts, excluded controls, failure retention and unsaved edits; UK greeting rollover and moved source status; live sheet labels, audit, local fonts and PWA; dark-only phone/desktop with both browser preferences and no external requests.');
+    console.log('Browser checks passed: passkeys and replay/origin/signature rejection; all hero presets and custom dates, eight market-aware cards and the Net profit strip, Gross, AOV and CAC, chapter headers and measured-only radar actions, correctly signed pound losses and shared breakdown, bounded keyboard calendars, decks, search and details; Series 1 two-market pace card, signed daily sources and snapshot times, sample-disabled target controls, real Settings target save/clear and date previews; named overhead Settings and margin shares; automatic campaign list, sync state, local confirmation and owner changes; Settings persistence and SSE without replacing picked dates; safe-area nav clearance on every signed-in page with normal and simulated top insets; standalone touch refresh, menu counts, excluded controls, failure retention and unsaved edits; UK greeting rollover and moved source status; live sheet labels, audit, local fonts and PWA; dark-only phone/desktop with both browser preferences and no external requests.');
   } finally {
     await browser.close();
   }
@@ -1983,7 +2007,7 @@ async function run(): Promise<void> {
 run().catch((error: unknown) => {
   // Authentication exceptions must never print browser credentials or the setup phrase.
   console.error(`Browser checks failed during: ${step}.`);
-  const frames = error instanceof Error ? error.stack?.match(/\/scripts\/browser-smoke\.ts:\d+:\d+/g) ?? [] : [];
+  const frames = error instanceof Error ? error.stack?.match(/\/scripts\/[a-z-]+\.ts:\d+:\d+/g) ?? [] : [];
   if (frames.length) console.error(`Check location: ${frames.join(', ')}.`);
   process.exitCode = 1;
 });

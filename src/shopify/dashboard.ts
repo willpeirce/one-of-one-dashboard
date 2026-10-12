@@ -13,6 +13,7 @@ import { sampleSeriesPaceCard, type SeriesPaceCard, type SeriesPaceMarketView } 
 import { formatNumber, formatMetricNumber, formatPounds } from '../money.js';
 import { dailyRows, dataset, emailFlow, isRefill, isUpgrade, isKit, kitIds, orderNet, ratio, shopifyHero, stockCover, type Facts, type StockCover } from './metrics.js';
 import { blankObservation, evaluateWatchdogs, type Check, type Observation } from './watchdogs.js';
+import { isFreeOrder } from './model.js';
 
 export interface ShopifyDashboard {
   mode: 'sample' | 'live'; checks: Check[]; stock: StockCover[];
@@ -44,8 +45,13 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
     else {
       const hero = shopifyHero(facts, today, today, today, settings, name, preparedRows, adInputs, now);
       hero.from = from; hero.to = to; hero.short = name; hero.eyebrow = `${from}–${to} · history unavailable`;
-      for (const metric of [hero.net, hero.orders, hero.cr, hero.spend, hero.roas, hero.margin, hero.profit]) { metric.unavailable = true; metric.ss = 'History unavailable for this range'; }
-      for(const dial of [hero.ukcpo,hero.uscpo]){dial.t='—';dial.s='History unavailable for this range';}
+      for (const view of [hero, ...Object.values(hero.markets ?? {})]) {
+      view.grossUnavailable = true; view.from = from; view.to = to; view.short = name; view.eyebrow = `${view.market === 'all' ? '' : `${view.market?.toUpperCase()} · `}${from}–${to} · history unavailable`;
+      view.net.d.extra = view.net.d.extra?.map(([label, value]) => [label,
+        label === 'Gross (incl. shipping and tax)' ? 'Unavailable; history unavailable for this range' : value]);
+      for (const metric of [view.net, view.orders, view.aov, view.cac, view.cr, view.spend, view.roas, view.margin, view.profit]) { metric.unavailable = true; metric.ss = 'History unavailable for this range'; }
+      for(const dial of [view.ukcpo,view.uscpo]){dial.t='—';dial.s='History unavailable for this range';}
+      }
       snapshot.hero[key as Period] = hero;
     }
   }
@@ -88,8 +94,8 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
   };
   const session = data.sessions.find(s => s.day === today);
   const percentage = (n: number, d: number): number | null => ratio(n, d) === null ? null : n / d * 100;
-  dial('w029', 'Conversion · UK', session?.marketReliable ? percentage(data.orders.filter(o => o.day === today && o.market === 'UK').length, session.uk) : null, '%', 'Orders ÷ sessions, today so far; guarded market data stays unknown.', 'Country guard: 22–23 September and Missouri >10% mark market conversion unknown.');
-  dial('w030', 'Conversion · US', session?.marketReliable ? percentage(data.orders.filter(o => o.day === today && o.market === 'US').length, session.us) : null, '%', 'Orders ÷ sessions, today so far; guarded market data stays unknown.', 'Store-wide conversion remains available independently of the market guard.');
+  dial('w029', 'Conversion · UK', session?.marketReliable ? percentage(data.orders.filter(o => o.day === today && o.market === 'UK' && !isFreeOrder(o)).length, session.uk) : null, '%', 'Orders ÷ sessions, today so far; free orders are left out and guarded market data stays unknown.', 'Country guard: 22–23 September and Missouri >10% mark market conversion unknown.');
+  dial('w030', 'Conversion · US', session?.marketReliable ? percentage(data.orders.filter(o => o.day === today && o.market === 'US' && !isFreeOrder(o)).length, session.us) : null, '%', 'Orders ÷ sessions, today so far; free orders are left out and guarded market data stays unknown.', 'Store-wide conversion remains available independently of the market guard.');
   const weekFrom = addDays(today, -6);
   const weekly = data.orders.filter(o => o.day >= weekFrom);
   const net = data.orders.reduce((n, o) => n + orderNet(o, weekFrom, today), 0);

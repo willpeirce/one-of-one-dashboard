@@ -171,12 +171,12 @@ test('Meta worker refreshes the catalogue once per actual poll, outside backfill
   assert.equal(catalogueReads, 2);
 });
 
-test('sample campaigns are three invented rows with one unconfirmed and no unrelated saved data', async (t) => {
+test('sample campaigns are four invented rows with one unconfirmed and no unrelated saved data', async (t) => {
   const db = await createTestDatabase();
   t.after(() => db.close());
   const s = { ...defaultSettings(), metaOwners: [{ campaignId: '900000000999', owner: 'freelancer' as const }] };
   const initial = await readMetaCampaigns(db, s, {});
-  assert.equal(initial.length, 3);
+  assert.equal(initial.length, 4);
   assert.equal(initial.filter((row) => !row.confirmed).length, 1);
   assert.ok(initial.every((row) => row.mode === 'sample' && row.name.startsWith('Invented ')));
   assert.equal(JSON.stringify(initial).includes('900000000999'), false);

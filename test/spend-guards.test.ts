@@ -71,8 +71,8 @@ test('a failed source excludes its cached rows and names the gap on every spend-
     assert.equal(dial.cap, 'warn');
     assert.match(dial.s, /^Excludes Meta spend/);
   }
-  assert.equal(hero.ukcpo.t, '£0.00');
-  assert.equal(hero.uscpo.t, '£10.00');
+  assert.equal(hero.ukcpo.t, '—');
+  assert.equal(hero.uscpo.t, '—');
   assert.deepEqual(hero.spend.d.extra!.find(([name]) => name === 'Meta ours'), ['Meta ours', '£0.00']);
 });
 
@@ -82,7 +82,7 @@ test('per-market calculations use the same excluded source and warning', () => {
     spend.rows = spend.rows.filter((row) => row.market === market);
     const hero = calculate(spend, { market });
     for (const metric of [hero.spend, hero.margin, hero.profit, hero.roas]) assert.equal(metric.state, 'warn');
-    assert.match(hero.margin.ss, /^Excludes Meta spend\nEstimate before overheads/);
+    assert.match(hero.margin.ss, /^Excludes Meta spend\nstore-wide/);
     assert.equal(hero.spend.n, market === 'uk' ? 0 : 10);
   }
 });
@@ -102,14 +102,15 @@ test('healthy sources keep the existing totals, subtitles, states and provenance
     assert.deepEqual(metric.source, key === 'spend' ? ['meta', 'google-ads'] : ['shopify', 'meta', 'google-ads']);
   }
   assert.equal(hero.ukcpo.t, '£20.00');
-  assert.equal(hero.uscpo.t, '£10.00');
+  assert.equal(hero.uscpo.t, '£0.00');
   assert.equal(hero.ukcpo.cap, 'info');
   assert.equal(hero.uscpo.cap, 'info');
   const soFar = calculate(facts(), {}, day, day, day);
-  for (const metric of [soFar.spend, soFar.margin, soFar.profit, soFar.roas]) {
+  for (const metric of [soFar.spend, soFar.roas]) {
     assert.equal(metric.state, 'sofar');
     assert.match(metric.ss, / · so far$/);
   }
+  for (const metric of [soFar.margin, soFar.profit]) { assert.equal(metric.state, 'est'); assert.doesNotMatch(metric.ss, /so far/); }
 });
 
 test('stale sources name UK fetch time; a failure takes precedence and today stays amber', () => {

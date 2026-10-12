@@ -48,7 +48,7 @@ test('rendered sample strings cannot inject HTML, attributes or an executable in
   assert.ok(!/<script\b(?![^>]*\bsrc=)/.test(page));
 });
 
-test('Home opens on the greeting with paired margin and profit, and status only in menu badges', () => {
+test('Home opens on the greeting with eight hero cards and a paired compact profit strip, and status only in menu badges', () => {
   const snapshot = getSampleDashboard();
   snapshot.metaCampaigns = { unconfirmedCount: 1 };
   snapshot.shopify = {
@@ -67,7 +67,7 @@ test('Home opens on the greeting with paired margin and profit, and status only 
   assert.match(visible, /id="greeting"/);
   assert.match(visible, /id="source-health-count" class="menu-count" aria-label="1 failing checks">1<\/span>/);
   assert.match(visible, /id="settings-count" class="menu-count" aria-label="1 campaigns to confirm">1<\/span>/);
-  assert.match(visible, /data-k="margin"[\s\S]*?<\/button>\s*<button[^>]*data-k="profit"/);
+  assert.match(visible, /data-k="margin"[\s\S]*?<\/button>\s*<\/div>\s*<button[^>]*class="profit-line"[^>]*data-k="profit"/);
   const profitTile = /<button[^>]*data-k="profit"[^>]*>([\s\S]*?)<\/button>/.exec(visible)?.[1];
   assert.ok(profitTile);
   assert.ok(profitTile.includes('Net profit'));

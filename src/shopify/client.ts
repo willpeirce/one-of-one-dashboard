@@ -10,14 +10,15 @@ export const orderFields = (address: boolean) => `
   id name createdAt updatedAt cancelledAt test displayFinancialStatus displayFulfillmentStatus currencyCode taxesIncluded
   sourceName channelInformation { channelDefinition { channelName } }
   transactions(first: 250) { kind status processedAt }
-  discountCodes
+  discountCodes tags
   subtotalPriceSet { ${money} }
+  totalPriceSet { ${money} }
   totalTaxSet { ${money} } totalShippingPriceSet { ${money} }
   customer { id }
   ${address ? 'shippingAddress { countryCodeV2 provinceCode zip }' : ''}
   customAttributes { key value }
   lineItems(first: 100) { nodes { ${lineFields} } ${page} }
-  refunds { id createdAt refundLineItems(first: 100) { nodes { quantity subtotalSet { ${money} } totalTaxSet { ${money} } } ${page} } refundShippingLines(first: 100) { nodes { ${refundShippingFields} } ${page} } }
+  refunds { id createdAt totalRefundedSet { ${money} } refundLineItems(first: 100) { nodes { quantity subtotalSet { ${money} } totalTaxSet { ${money} } } ${page} } refundShippingLines(first: 100) { nodes { ${refundShippingFields} } ${page} } }
   fulfillments(first: 250) { id status createdAt updatedAt location { id } fulfillmentLineItems(first: 100) { nodes { quantity lineItem { id } } ${page} } }
   customerJourneySummary { firstVisit { landingPage utmParameters { source medium campaign } } lastVisit { landingPage utmParameters { source medium campaign } } }
 `;

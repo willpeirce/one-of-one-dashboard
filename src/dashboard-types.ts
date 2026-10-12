@@ -2,6 +2,7 @@ import type { SourceHealth, SourceId } from './sources.js';
 
 export type State = 'good' | 'warn' | 'decide' | 'alarm' | 'info' | 'sofar' | 'est';
 export type Period = 'today' | 'yday' | '7d' | '30d';
+export type HeroMarket = 'all' | 'uk' | 'us';
 export type Zone = [number, number, State];
 
 export interface Detail {
@@ -85,12 +86,16 @@ export interface HeroMetric extends SampleProvenance {
   state: State;
   d: Detail;
   ss: string;
+  statusLabel?: string;
   pre?: string;
   suf?: string;
   dp?: number;
 }
 
 export interface HeroPeriod {
+  market?: HeroMarket;
+  /** All three independent market views travel with each period; children have no markets map. */
+  markets?: Record<HeroMarket, HeroPeriod>;
   from: string;
   to: string;
   short: string;
@@ -99,7 +104,11 @@ export interface HeroPeriod {
   sub1: string;
   per: string;
   net: HeroMetric;
+  gross: number;
+  grossUnavailable?: boolean;
   orders: HeroMetric;
+  aov: HeroMetric;
+  cac: HeroMetric;
   cr: HeroMetric;
   spend: HeroMetric;
   roas: HeroMetric;

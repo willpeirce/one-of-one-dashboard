@@ -4,6 +4,7 @@ import { readSettings, type Settings } from '../settings.js';
 import { getSourceStates, type SourceMode } from '../sources.js';
 import { cachedMetaCampaigns, invalidateMetaCampaigns, storedCampaignSync, type CampaignSyncState } from './campaign-cache.js';
 import { SPEND_STALE_AFTER_MS } from './worker.js';
+import { spendMarket } from './placement.js';
 export { recordCampaignSync, type CampaignSyncState } from './campaign-cache.js';
 import {
   accountFor,
@@ -50,12 +51,16 @@ export function sampleMetaCampaigns(settings: Pick<Settings, 'metaOwners'>): Met
       createdAt: '2026-09-01T08:00:00Z', owner: 'ours', confirmed: true,
     },
     {
-      id: '900000000602', name: 'Invented Cedar retargeting', status: 'PAUSED',
+      id: '900000000602', name: 'Invented Cedar retargeting UK', status: 'PAUSED',
       createdAt: '2026-09-12T09:00:00Z', owner: 'freelancer', confirmed: true,
     },
     {
       id: '900000000603', name: 'Invented Lumen launch', status: 'ACTIVE',
       createdAt: '2026-09-29T10:00:00Z', owner: 'ours', confirmed: false,
+    },
+    {
+      id: '900000000604', name: 'Invented Willow discovery US', status: 'ACTIVE',
+      createdAt: '2026-09-20T11:00:00Z', owner: 'freelancer', confirmed: true,
     },
   ];
   return campaigns.map((campaign) => {
@@ -143,7 +148,7 @@ export async function saveSpend(
               campaign_name: r.campaignName,
               ad_set_id: r.adSetId,
               ad_set_name: r.adSetName,
-              market: r.market,
+              market: spendMarket(r),
               owner: r.owner,
               day: r.day,
               amount: r.amount,
@@ -203,23 +208,26 @@ export async function spendFacts(
   for (const source of sources.filter((s) => s.live)) {
     const account = accountFor(source.source, settings);
     const stored = await db.query<any>(
-      `SELECT campaign_id,campaign_name,ad_set_id,ad_set_name,market,uk_day::text,spend_amount::text,currency FROM pulse.ad_spend WHERE mode='live' AND source=$1 AND account_id=$2 AND uk_day BETWEEN $3 AND $4`,
+      `SELECT campaign_id,campaign_name,ad_set_id,ad_set_name,uk_day::text,spend_amount::text,currency FROM pulse.ad_spend WHERE mode='live' AND source=$1 AND account_id=$2 AND uk_day BETWEEN $3 AND $4`,
       [source.source, account, from, to],
     );
     rows.push(
-      ...stored.rows.map((r) => ({
-        source: source.source,
-        accountId: account,
-        campaignId: r.campaign_id,
-        campaignName: r.campaign_name,
-        adSetId: r.ad_set_id,
-        adSetName: r.ad_set_name,
-        market: r.market,
-        owner: ownerFor(source.source, r.campaign_id, settings),
-        day: r.uk_day,
-        amount: r.spend_amount,
-        currency: r.currency,
-      })),
+      ...stored.rows.map((r) => {
+        const owner = ownerFor(source.source, r.campaign_id, settings);
+        return {
+          source: source.source,
+          accountId: account,
+          campaignId: r.campaign_id,
+          campaignName: r.campaign_name,
+          adSetId: r.ad_set_id,
+          adSetName: r.ad_set_name,
+          market: spendMarket({ source: source.source, campaignName: r.campaign_name, adSetName: r.ad_set_name, owner }),
+          owner,
+          day: r.uk_day,
+          amount: r.spend_amount,
+          currency: r.currency,
+        };
+      }),
     );
     const coverage = await db.query<{ day: string }>(
       'SELECT uk_day::text AS day FROM pulse.ad_spend_days WHERE source=$1 AND account_id=$2 AND uk_day BETWEEN $3 AND $4',
@@ -251,17 +259,20 @@ export function sampleSpend(
       ['tiktok', 'freelancer', 'uk', '12.40'],
     ] as const) {
       const campaign = source === 'meta'
-        ? campaigns.find((row) => row.id === (owner === 'ours' ? '900000000601' : '900000000602'))!
+        ? campaigns.find((row) => row.id === (owner === 'ours' ? '900000000601' : market === 'uk' ? '900000000602' : '900000000604'))!
         : null;
+      const campaignName = campaign?.name ?? `Invented ${source} ${market.toUpperCase()}`,
+        adSetName = source === 'meta' ? `Invented discovery — ${market.toUpperCase()} — Set` : null,
+        currentOwner = campaign?.owner ?? owner;
       rows.push({
         source,
         accountId: `sample-${source}-account`,
         campaignId: campaign?.id ?? `sample-${source}-${owner}-${market}`,
-        campaignName: campaign?.name ?? `Invented ${source} ${market.toUpperCase()}`,
+        campaignName,
         adSetId: source === 'meta' ? `sample-adset-${owner}-${market}` : null,
-        adSetName: source === 'meta' ? 'Invented ad set' : null,
-        market,
-        owner: campaign?.owner ?? owner,
+        adSetName,
+        market: spendMarket({ source, campaignName, adSetName, owner: currentOwner }),
+        owner: currentOwner,
         day,
         amount: microsDecimal(decimalMicros(amount)),
         currency: 'GBP',

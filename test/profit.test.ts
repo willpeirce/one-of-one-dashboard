@@ -54,7 +54,7 @@ test('profit equals the margin numerator for every period and All, UK and US', a
     spend.rows = dates.flatMap((day) => (['uk', 'us', 'unknown'] as const)
       .filter((country) => market === 'all' || country === market)
       .map((country) => ({ ...prototype, day, market: country,
-        campaignId: `invented-profit-${country}`, amount: country === 'uk' ? '20.000000' : country === 'us' ? '30.000000' : '3.000000' })));
+        campaignId: `invented-profit-${country}`, campaignName: country === 'unknown' ? 'Invented unplaced profit' : `Invented profit ${country.toUpperCase()}`, adSetName: country === 'unknown' ? 'Invented unplaced set' : `Invented profit — ${country.toUpperCase()} — base`, amount: country === 'uk' ? '20.000000' : country === 'us' ? '30.000000' : '3.000000' })));
     applySpend(hero, orders, settings, '2026-10-09', { spend, costs: [], market, now,
       estimates: orders.map((order) => ({ orderId: order.id, costPence: order.market === 'UK' ? 500 : 700, source: 'exact' })) });
     const overhead = market === 'all' ? dates.reduce((sum, day) => sum + 300 / (day.startsWith('2026-09') ? 30 : 31) * (day === '2026-10-09' ? 0.5 : 1), 0) : 0;
@@ -67,7 +67,7 @@ test('profit equals the margin numerator for every period and All, UK and US', a
     assert.equal(hero.margin.n, 100 * hero.profit.n / hero.net.n);
     assert.equal(hero.profit.dp, 2);
     assert.equal(hero.profit.pre, '£');
-    assert.equal(hero.profit.state, period.to === '2026-10-09' ? 'sofar' : 'est');
+    assert.equal(hero.profit.state, 'est');
     assert.equal(hero.profit.state, hero.margin.state);
     assert.equal(hero.profit.ss, hero.margin.ss);
     assert.equal(hero.profit.unavailable, hero.margin.unavailable);
@@ -78,8 +78,8 @@ test('profit equals the margin numerator for every period and All, UK and US', a
     assert.deepEqual(hero.profit.d.extra!.at(-1), ['Net profit', `£${expected.toFixed(2)}`]);
     assert.equal(hero.profit.d.hist, undefined);
     assert.match(hero.profit.d.why, /same pound total used to calculate net margin/);
-    if (market !== 'all') assert.match(hero.profit.ss, /before overheads/);
-    if (period.to === '2026-10-09') assert.match(hero.profit.ss, /so far/);
+    if (market !== 'all') assert.match(hero.profit.ss, /store-wide/);
+    if (period.to === '2026-10-09') assert.doesNotMatch(hero.profit.ss, /so far/);
   });
 });
 
@@ -101,4 +101,39 @@ test('profit keeps missing costs, unavailable data and losses in the same neutra
   assert.equal(hero.profit.unavailable, true);
   assert.equal(hero.profit.unavailable, hero.margin.unavailable);
   assert.equal(hero.profit.unavailableLabel, '—');
+});
+
+test('known profit stays visible for free-send losses, negative net sales and zero ad spend', async () => {
+  const day = '2026-09-30', now = new Date('2026-10-01T12:00:00Z');
+  const free = cleanOrder((await fixture('order-zero-total-paid')).data.order) as Order;
+  free.lines = [{ ...free.lines[0]!, sku: 'invented-free-profit-kit', quantity: 2, variantId: null }];
+  const settings = { ...defaultSettings(), paymentFeePercent: 0,
+    startingCogs: [{ sku: 'invented-free-profit-kit', unitCostGbp: 4 }],
+    overheads: [{ name: 'Invented zero service', monthlyGbp: 0, startMonth: '', endMonth: '' }],
+  };
+  for (const scenario of [
+    { net: 0, spend: 0, orders: [free], count: 0, profit: -13 },
+    { net: 0, spend: 3, orders: [free], count: 0, profit: -16 },
+    { net: -20, spend: 0, orders: [], count: 0, profit: -20 },
+    { net: 100, spend: 0, orders: [{ ...free, totalPence: 10000, itemsAfterDiscountsPence: 10000 }], count: 1, profit: 87 },
+  ]) {
+    const hero = buildHeroRange([{ date: day, net: scenario.net, o: scenario.count, uk: scenario.count, us: 0,
+      sess: 100, ukS: 100, ukM: 0, usM: 0, g: 0, ours: 0 }], day, day, { today: '2026-10-01' });
+    hero.net.mode = 'live';
+    const spend = sampleSpend(day, day);
+    spend.mode = 'live';
+    spend.sources = spend.sources.map(source => ({ ...source, live: true, status: 'live', fetchedAt: now.toISOString() }));
+    spend.rows = scenario.spend ? [{ ...spend.rows[0]!, amount: '3.000000' }] : [];
+    const inputs = { spend, costs: [], now, estimates: scenario.orders.map(order => ({ orderId: order.id, costPence: 500, source: 'exact' })) };
+    applySpend(hero, scenario.orders, settings, '2026-10-01', inputs);
+    assert.equal(hero.profit.n, scenario.profit);
+    assert.equal(hero.profit.unavailable, false);
+    assert.equal(hero.margin.unavailable, true);
+    hero.net.unavailable = true;
+    applySpend(hero, scenario.orders, settings, '2026-10-01', inputs);
+    assert.equal(hero.profit.unavailable, true);
+    hero.net.unavailable = false;
+    applySpend(hero, scenario.orders, settings, '2026-10-01', { ...inputs, spend: { ...spend, sources: [] } });
+    assert.equal(hero.profit.unavailable, true);
+  }
 });

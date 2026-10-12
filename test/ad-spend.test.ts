@@ -14,7 +14,6 @@ import {
   decimalMicros,
   microsDecimal,
   hourDay,
-  marketFor,
   ownerFor,
   adSources,
   type SpendRow,
@@ -66,7 +65,7 @@ const response = (value: unknown, status = 200, headers: Record<string, string> 
     headers: { 'content-type': 'application/json', ...headers },
   });
 
-test('API-shaped invented fixtures parse exact spend, owners and market names/targets', async () => {
+test('API-shaped invented fixtures parse exact spend, owners and market names without targeting', async () => {
   const s = settings(),
     meta = parseMeta(
       await fixture('meta', 'insights'),
@@ -74,31 +73,23 @@ test('API-shaped invented fixtures parse exact spend, owners and market names/ta
       'GBP',
       'Europe/London',
       s,
-      { '900000000102': ['US'] },
     );
   assert.equal(meta[0]!.amount, '48.200000');
   assert.equal(meta[0]!.owner, 'ours');
   assert.equal(meta[1]!.owner, 'ours');
-  assert.equal(meta[1]!.market, 'us');
-  const google = parseGoogle(await fixture('google-ads', 'spend'), s.googleCustomerId, 'GBP', s, {
-    '900000000202': ['US'],
-  });
+  assert.equal(meta[1]!.market, 'unknown');
+  const google = parseGoogle(await fixture('google-ads', 'spend'), s.googleCustomerId, 'GBP', s);
   assert.equal(google[0]!.day, '2026-09-30');
   assert.equal(google[0]!.amount, '70.000001');
   assert.equal(google[1]!.owner, 'freelancer');
-  assert.equal(google[1]!.market, 'us');
+  assert.equal(google[0]!.market, 'uk');
+  assert.equal(google[1]!.market, 'unknown');
   const tiktok = parseTikTok(await fixture('tiktok', 'spend'), s.tiktokAdvertiserId, 'GBP', s);
   assert.equal(tiktok[0]!.market, 'uk');
   assert.equal(tiktok[0]!.amount, '12.400000');
   assert.equal(microsDecimal(decimalMicros('999999999999.990001')), '999999999999.990001');
   for (const value of ['nan', '1e4', '-1', '1.1234567'])
     assert.throws(() => decimalMicros(value), AdError);
-  assert.equal(marketFor(['Invented US']), 'us');
-  assert.equal(marketFor(['Invented UK']), 'uk');
-  assert.equal(marketFor(['RUSSELL']), 'unknown');
-  assert.equal(marketFor(['Invented'], ['GB']), 'uk');
-  assert.equal(marketFor(['Invented'], ['US']), 'us');
-  assert.equal(marketFor(['Invented'], ['US', 'GB']), 'unknown');
   assert.equal(ownerFor('meta', 'invented-missing', s), 'ours');
   assert.equal(ownerFor('google-ads', 'invented-missing', s), 'freelancer');
 });
@@ -177,7 +168,7 @@ test('Settings start blank, strip Google dashes, validate identifiers and never 
   );
 });
 
-test('Meta and TikTok clients GET only, safely paginate and Meta targeting resolves unnamed campaigns', async () => {
+test('Meta and TikTok clients GET only, safely paginate and retain unnamed markets under All', async () => {
   const s = settings(),
     seen: { url: URL; method: string }[] = [],
     metaBody = await fixture('meta', 'insights');
@@ -199,14 +190,13 @@ test('Meta and TikTok clients GET only, safely paginate and Meta targeting resol
               }
             : { data: [] },
         );
-      if (u.searchParams.get('fields') === 'targeting')
-        return response(await fixture('meta', 'targeting'));
+      assert.notEqual(u.searchParams.get('fields'), 'targeting');
       return response(await fixture('meta', 'account'));
     },
   });
   const rows = await meta.read(s.metaAdAccountId, '2026-09-30', '2026-09-30', s);
   assert.equal(rows.length, 2);
-  assert.equal(rows[1]!.market, 'us');
+  assert.equal(rows[1]!.market, 'unknown');
   assert.equal(insightPage, 2);
   assert.ok(
     seen.every(
@@ -282,10 +272,10 @@ test('Google uses OAuth and fixed searchStream reads without a developer token; 
   });
   const rows = await google.read(s.googleCustomerId, '2026-09-30', '2026-09-30', s);
   assert.equal(rows[0]!.amount, '70.000001');
-  assert.equal(rows[1]!.market, 'us');
-  assert.equal(requests.length, 5);
+  assert.equal(rows[1]!.market, 'unknown');
+  assert.equal(requests.length, 3);
   await google.read(s.googleCustomerId, '2026-09-30', '2026-09-30', s);
-  assert.equal(requests.length, 6, 'metadata and access token are reused');
+  assert.equal(requests.length, 4, 'metadata and access token are reused');
 });
 
 test('transport retries throttles and reports only request ids/status; rejected developer-token requirement stays safe', async () => {
@@ -761,7 +751,7 @@ test('margin deducts active overhead items, distinguishes missing items from zer
 
   for (const market of ['uk', 'us'] as const) await t.test(`${market.toUpperCase()} margin does not invent an overhead allocation`, () => {
     const h = liveHero();
-    applySpend(h, [o], { ...s, overheads: [{ name: 'Sample service', monthlyGbp: 300, startMonth: '', endMonth: '' }] }, '2026-10-09', { ...inputs, market });
+    applySpend(h, [o], { ...s, overheads: [{ name: 'Sample service', monthlyGbp: 300, startMonth: '', endMonth: '' }] }, '2026-10-09', { ...inputs, market, spend: { ...inputs.spend, rows: inputs.spend.rows.map(row => ({ ...row, campaignName: `Invented market ${market.toUpperCase()}`, adSetName: `Invented market — ${market.toUpperCase()} — base` })) } });
     assert.equal(h.margin.n, 63);
     assert.equal(leftOut(h), 'None of these components');
     assert.ok(h.margin.d.extra!.some(([name, value]) => name === 'Overheads' && value === 'Not deducted; overheads are not split by market'));
@@ -781,12 +771,12 @@ test('margin deducts active overhead items, distinguishes missing items from zer
     assert.ok(h.margin.d.extra!.some(([name]) => name === 'and 2 more'));
   });
 
-  await t.test('today uses the supplied clock and remains so far without a judgement', () => {
+  await t.test('today uses the supplied clock while margin keeps its estimate status', () => {
     const h = liveHero();
     applySpend(h, [o], { ...s, overheads: [{ name: 'Sample service', monthlyGbp: 300, startMonth: '', endMonth: '' }] }, '2026-09-30', { ...inputs, now: new Date('2026-09-30T11:00:00Z') });
     assert.equal(h.margin.n, 58);
-    assert.equal(h.margin.state, 'sofar');
-    assert.match(h.margin.ss, /so far/);
+    assert.equal(h.margin.state, 'est');
+    assert.doesNotMatch(h.margin.ss, /so far/);
     assert.ok(h.margin.d.extra!.some(([name, value]) => name === 'Sample service' && value === '£5.00'));
   });
 

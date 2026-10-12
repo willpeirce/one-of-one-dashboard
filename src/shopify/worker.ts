@@ -2,7 +2,7 @@ import { missingSeriesPaceWindow, saveSeriesPaceSales, seriesPaceQuery, takeStoc
 import { RoutineSessions, type DailySessionFallback } from './fallback.js';
 import { appConfig } from '../config.js';
 import type { Database } from '../db.js';
-import { addDays, ukToday } from '../hero-range.js';
+import { addDays, dayCount, ukToday } from '../hero-range.js';
 import type { SourceMode } from '../sources.js';
 import { nextCursor, ShopifyClient, type ShopifyReader } from './client.js';
 import { ShopifyError, Transport, type TransportOptions } from './http.js';
@@ -34,6 +34,27 @@ export function nextNight(now: Date): Date {
 }
 export function nextStockSnapshot(now: Date): Date { return new Date(nextNight(now).getTime() + 4 * 60_000); }
 const secondaryJob = (job: Job) => ['stock_snapshot', 'series_pace', 'shipping_refunds', 'gross_history'].includes(job);
+export interface GrossHistoryBlock { from: string; to: string }
+export interface GrossHistoryState {
+  first: string;
+  last: string;
+  next: string;
+  filled: GrossHistoryBlock[];
+  skipped: GrossHistoryBlock[];
+  logged: GrossHistoryBlock[];
+  retry: (GrossHistoryBlock & { count: number }) | null;
+  idle: boolean;
+  outcome: 'filled' | 'retry' | 'skipped' | 'idle';
+}
+const grossDay = (value: unknown): value is string => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+const sameGrossBlock = (left: GrossHistoryBlock, right: GrossHistoryBlock) => left.from === right.from && left.to === right.to;
+function grossBlocks(value: unknown): GrossHistoryBlock[] {
+  if (!Array.isArray(value)) return [];
+  const blocks: GrossHistoryBlock[] = [];
+  for (const block of value) if (block && grossDay(block.from) && grossDay(block.to) && block.from <= block.to && !blocks.some(existing => sameGrossBlock(existing, block))) blocks.push({ from: block.from, to: block.to });
+  return blocks;
+}
+
 export class ShopifyWorker {
   readonly store: ShopifyStore;
   readonly client: ShopifyReader;
@@ -94,8 +115,15 @@ export class ShopifyWorker {
         const state = await this.execute(job.name, job.state, job.last_success_at);
         const scheduledFrom = secondaryJob(job.name) ? this.clock() : now;
         const next = state.continuing ? new Date(now.getTime() + 1000) : ['backfill', 'session_history'].includes(job.name) ? new Date('9999-01-01T00:00:00Z') : job.name === 'stock_snapshot' ? nextStockSnapshot(scheduledFrom) : job.name === 'reconcile' ? nextNight(now) : new Date(scheduledFrom.getTime() + ((job.name === 'shipping_refunds' || job.name === 'gross_history') && state.idle ? 3_600_000 : intervals[job.name]));
-        await this.db.query(`UPDATE pulse.shopify_jobs SET state = $3, next_run_at = $4, last_success_at = $5, failures = 0 WHERE mode = $1 AND name = $2`, [this.mode, job.name, JSON.stringify(state), next, now]);
+        const gross = job.name === 'gross_history';
+        const failures = gross ? state.outcome === 'skipped' ? 3 : state.retry?.count ?? 0 : 0;
+        await this.db.query(`UPDATE pulse.shopify_jobs SET state = $3, next_run_at = $4, last_success_at = CASE WHEN $7::boolean THEN $5 ELSE last_success_at END, failures = $6 WHERE mode = $1 AND name = $2`, [this.mode, job.name, JSON.stringify(state), next, now, failures, !gross || state.outcome === 'filled']);
       } catch (error) {
+        // Gross report failures are bounded inside the block; infrastructure failures stay quiet.
+        if (job.name === 'gross_history') {
+          await this.db.query(`UPDATE pulse.shopify_jobs SET failures = failures + 1, next_run_at = $3 WHERE mode = $1 AND name = $2`, [this.mode, job.name, new Date(this.clock().getTime() + intervals.gross_history)]);
+          continue;
+        }
         if (!secondaryJob(job.name)) failed = true;
         else {
           const code = error instanceof ShopifyError ? error.code : 'unknown';
@@ -181,6 +209,73 @@ export class ShopifyWorker {
         { channel: `Unknown / unmatched (${unmatched.map(([channel]) => channel).join(', ')})`, stored: unknown, reported, from, to });
     });
   }
+  private async grossHistory(state: any, checkpoint: any, now: Date): Promise<GrossHistoryState | { idle: true; outcome: 'idle' }> {
+    const olderFrom = checkpoint.olderFrom, olderTo = checkpoint.olderTo;
+    if (!grossDay(olderFrom) || !grossDay(olderTo)) return { idle: true, outcome: 'idle' };
+    let first = grossDay(state.first) ? state.first : olderFrom;
+    if (!grossDay(state.first)) {
+      const evidence = await this.db.query<{ day: string | null }>(`SELECT min(data->>'day') AS day FROM pulse.shopify_records
+        WHERE mode='live' AND (kind='order' OR (kind='sales' AND
+          (COALESCE(data->>'netSalesPence','0') <> '0' OR COALESCE(data->>'orders','0') <> '0' OR COALESCE(data->>'grossSalesPence','0') <> '0')))`, []);
+      const earliest = evidence.rows[0]?.day;
+      if (grossDay(earliest) && earliest > first) first = earliest;
+    }
+    const last = grossDay(state.last) ? state.last : olderTo;
+    let next = grossDay(state.next) && state.next > first ? state.next : first;
+    // Old next-only jobs use the new first-based blocks without dropping a partial prefix.
+    if (next <= last) next = addDays(first, Math.floor((dayCount(first, next) - 1) / 7) * 7);
+    const progress: GrossHistoryState = { first, last, next, filled: grossBlocks(state.filled), skipped: grossBlocks(state.skipped), logged: grossBlocks(state.logged), retry: null, idle: false, outcome: 'retry' };
+    if (next > last) return { ...progress, next: first, idle: true, outcome: 'idle' };
+    const block = { from: next, to: addDays(next, 6) < last ? addDays(next, 6) : last };
+    if (state.retry && sameGrossBlock(state.retry, block) && Number.isInteger(state.retry.count) && state.retry.count >= 0 && state.retry.count < 3) progress.retry = { ...block, count: state.retry.count };
+    // Freeze the startup boundary and minute gate before I/O, including a crash or restart.
+    await this.db.query(`UPDATE pulse.shopify_jobs SET state=$1, next_run_at=$2 WHERE mode='live' AND name='gross_history'`, [JSON.stringify(progress), new Date(this.clock().getTime() + intervals.gross_history)]);
+    try {
+      const table = await this.client.report(salesQuery(block.from, block.to));
+      if (!table || !Array.isArray(table.columns) || !Array.isArray(table.rows)) throw new ShopifyError('invalid');
+      const empty = table.columns.length === 0 && table.rows.length === 0;
+      if (!empty) {
+        const names = table.columns.map((column: { name?: unknown } | null) => column?.name);
+        const columns = new Set(names);
+        if (names.some((name: unknown) => typeof name !== 'string' || !name) || columns.size !== names.length || !['day', 'orders', 'net_sales', 'total_sales'].every(column => columns.has(column))) throw new ShopifyError('invalid');
+      }
+      const rawRows = reportRows(table);
+      const seen = new Set<string>();
+      for (const row of rawRows) {
+        if (!row || !grossDay(row.day) || row.day < block.from || row.day > block.to || seen.has(row.day) || !['number', 'string'].includes(typeof row.orders) || !/^\d+$/.test(String(row.orders))) throw new ShopifyError('invalid');
+        seen.add(row.day);
+      }
+      const rows = cleanSales(table);
+      if (rows.some(row => row.grossSalesPence === undefined)) throw new ShopifyError('invalid');
+      const success: GrossHistoryState = { ...progress, next: addDays(block.to, 1), retry: null, outcome: 'filled',
+        filled: [...progress.filled.filter(value => !sameGrossBlock(value, block)), block],
+        skipped: progress.skipped.filter(value => !sameGrossBlock(value, block)) };
+      await this.db.transaction(async tx => {
+        const store = new ShopifyStore(tx, this.mode);
+        for (let date = block.from; date <= block.to; date = addDays(date, 1)) {
+          const row = rows.find(value => value.day === date) ?? { day: date, orders: 0, netSalesPence: 0, grossSalesPence: 0, provenance: 'shopifyql', market: 'unknown' };
+          await store.put('sales', date, row, now);
+        }
+        await tx.query(`UPDATE pulse.shopify_jobs SET state=$1 WHERE mode='live' AND name='gross_history'`, [JSON.stringify(success)]);
+      });
+      return success;
+    } catch {
+      const count = (progress.retry?.count ?? 0) + 1;
+      if (count < 3) return { ...progress, retry: { ...block, count } };
+      const alreadyLogged = progress.logged.some(value => sameGrossBlock(value, block));
+      const skipped: GrossHistoryState = { ...progress, next: addDays(block.to, 1), retry: null, outcome: 'skipped',
+        filled: progress.filled.filter(value => !sameGrossBlock(value, block)),
+        skipped: [...progress.skipped.filter(value => !sameGrossBlock(value, block)), block],
+        logged: alreadyLogged ? progress.logged : [...progress.logged, block] };
+      await this.db.transaction(async tx => {
+        // A skipped read cannot leave old Gross looking measured; preserve net sales and order facts.
+        await tx.query(`UPDATE pulse.shopify_records SET data=data-'grossSalesPence' WHERE mode='live' AND kind='sales' AND data->>'day' BETWEEN $1 AND $2`, [block.from, block.to]);
+        await tx.query(`UPDATE pulse.shopify_jobs SET state=$1, next_run_at=$2 WHERE mode='live' AND name='gross_history'`, [JSON.stringify(skipped), new Date(this.clock().getTime() + intervals.gross_history)]);
+      });
+      if (!alreadyLogged) console.error(`Shopify gross_history skipped ${block.from} to ${block.to} after 3 failed runs.`);
+      return skipped;
+    }
+  }
   private async execute(name: Job, state: any, lastSuccess: Date | null): Promise<any> {
     const now = this.clock(), day = ukToday(now);
     // Secondary reads never change the main Shopify money source state.
@@ -203,23 +298,8 @@ export class ShopifyWorker {
     const checkpoint = await this.db.query<{ state: any }>(`SELECT state FROM pulse.shopify_jobs WHERE mode = $1 AND name = 'backfill'`, [this.mode]);
     const address = checkpoint.rows[0]?.state.address !== false;
     if (name === 'gross_history') {
-      if (this.mode !== 'live' || checkpoint.rows[0]?.state.allOrders || !checkpoint.rows[0]?.state.historyDone) return { idle: true };
-      const first = checkpoint.rows[0].state.olderFrom, last = checkpoint.rows[0].state.olderTo;
-      if (!first || !last) return { idle: true };
-      // Fill one seven-day block per minute; empty report days are authoritative zeroes.
-      const from = state.next ?? first;
-      if (from > last) return { idle: true, next: first };
-      const to = addDays(from, 6) < last ? addDays(from, 6) : last;
-      const table = await this.client.report(salesQuery(from, to));
-      const columns = new Set(Array.isArray(table.columns) ? table.columns.map((column: { name?: string }) => column.name) : []);
-      if (!['day', 'orders', 'net_sales', 'total_sales'].every(column => columns.has(column))) throw new ShopifyError('invalid');
-      const rows = cleanSales(table);
-      if (rows.some(row => row.grossSalesPence === undefined)) throw new ShopifyError('invalid');
-      for (let date = from; date <= to; date = addDays(date, 1)) {
-        const row = rows.find(value => value.day === date) ?? { day: date, orders: 0, netSalesPence: 0, grossSalesPence: 0, provenance: 'shopifyql', market: 'unknown' };
-        await this.store.put('sales', date, row, this.clock());
-      }
-      return { next: addDays(to, 1) };
+      if (this.mode !== 'live' || checkpoint.rows[0]?.state.allOrders || !checkpoint.rows[0]?.state.historyDone) return { ...state, idle: true, outcome: 'idle' };
+      return this.grossHistory(state, checkpoint.rows[0].state, now);
     }
     if (name === 'shipping_refunds') {
       if (this.mode !== 'live') return { skipped: 'sample_mode' };

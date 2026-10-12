@@ -13,6 +13,7 @@ import type { SeriesPaceMarketView } from '../src/series-pace/presentation.js';
 import { checkHomeChapters, checkFulfilmentChapter } from './chapter-browser-check.js';
 import { checkRadar } from './browser-radar.js';
 import { checkMarketHero, installMarketUpdateHook } from './browser-market.js';
+import { checkGrossHistoryProgress } from './browser-gross-history.js';
 
 let step = 'read test configuration';
 
@@ -1878,6 +1879,8 @@ async function run(): Promise<void> {
     await page.goto('/sources');
     await page.locator('#source-health tbody tr').last().waitFor();
     assert.equal(await page.locator('#source-health tbody tr').count(), 11);
+    step = 'check gross-history progress beside unchanged Shopify Healthy at phone and desktop widths';
+    await checkGrossHistoryProgress(context);
     step = 'check source and mode summary is the first Source health panel';
     assert.equal(await page.locator('main section').first().getAttribute('id'), 'source-summary');
     assert.match(await page.locator('#source-summary').innerText(), /Ad spend uses separately labelled source connections/);

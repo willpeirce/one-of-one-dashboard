@@ -57,6 +57,28 @@ test('the source page labels samples and does not mistake key presence for a wor
   assert.ok(!html.includes('<td>Healthy</td>'));
 });
 
+test('Shopify health shows gross-history weeks from its job without changing Healthy', () => {
+  // Invented history blocks; the last week is deliberately shorter than seven days.
+  const imports: NonNullable<Parameters<typeof sourceHealthPage>[1]> = {
+    mode: 'live', sample: false, counts: {}, notices: [], geoNotice: null, pendingWebhooks: 0,
+    jobs: [{ name: 'gross_history', last_success_at: null, failures: 0, state: {
+      first: '2026-03-01', last: '2026-03-17', next: '2026-03-15',
+      filled: [{ from: '2026-03-01', to: '2026-03-07' }],
+      skipped: [{ from: '2026-03-08', to: '2026-03-14' }],
+    } }],
+  };
+  const health = source({ mode: 'live', status: 'healthy' });
+  const html = sourceHealthPage([health], imports);
+  const row = html.match(/<th scope="row">Shopify<\/th>([\s\S]*?)<\/tr>/)![1]!;
+  assert.match(row, /Healthy<br><small data-gross-history>Gross history: 1 of 3 weeks filled, 1 skipped/);
+  assert.equal((html.match(/data-gross-history/g) ?? []).length, 1);
+  imports.jobs[0]!.state.filled.push({ from: '2026-03-15', to: '2026-03-17' });
+  assert.match(sourceHealthPage([health], imports), /Gross history: 2 of 3 weeks filled, 1 skipped/);
+  imports.jobs[0]!.state = {};
+  assert.match(sourceHealthPage([health], imports), /Gross history: 0 of 0 weeks filled, 0 skipped/);
+  assert.doesNotMatch(sourceHealthPage([source()], { ...imports, mode: 'sample', sample: true }), /data-gross-history/);
+});
+
 test('setup phrase form is available only when configured and can never submit it in a URL', () => {
   const enabled = loginPage(true);
   assert.match(enabled, /id="register-device" method="post" action="\/auth\/register\/options"/);

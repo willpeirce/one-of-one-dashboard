@@ -100,7 +100,7 @@ test('an empty report without the gross column preserves cached historical money
   const rows = (await db.query<{ data: { netSalesPence: number; grossSalesPence?: number } }>("SELECT data FROM pulse.shopify_records WHERE kind='sales'")).rows;
   assert.equal(rows.length, 1); assert.equal(rows[0]!.data.netSalesPence, 10000); assert.equal(rows[0]!.data.grossSalesPence, undefined);
   const job = (await db.query<{ state: { next?: string }; failures: number }>("SELECT state,failures FROM pulse.shopify_jobs WHERE name='gross_history'")).rows[0]!;
-  assert.equal(job.state.next, undefined); assert.equal(job.failures, 1); assert.deepEqual(logs, ['Shopify gross_history failed (invalid).']);
+  assert.equal(job.state.next, '2026-09-01'); assert.equal(job.failures, 1); assert.deepEqual(logs, []);
 });
 test('cached orders with complete tags and shipping fields still refresh an absent original refund charge total', async t => {
   const db = await createTestDatabase(); t.after(() => db.close()); const raw = (await fixture('order-uk-tax-inclusive-refund')).data.order; raw.refunds[0].totalRefundedSet = money('57.00');

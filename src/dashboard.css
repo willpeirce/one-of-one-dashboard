@@ -450,3 +450,5 @@ button[disabled]{cursor:not-allowed}.act[disabled]{opacity:.5}
 @media (max-width:760px){.hero-controls{display:block}#market{width:max-content;min-width:180px}.hero-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 #hero .profit-line[data-state="warn"]{border-color:var(--warn);box-shadow:inset 4px 0 0 var(--warn)}
 #hero .profit-line[data-state="warn"] .ss{white-space:pre-line}
+
+.gross{font-size:12px;line-height:1.4;color:var(--muted);opacity:.7;font-variant-numeric:tabular-nums}

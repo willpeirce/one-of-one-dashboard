@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import type { BrowserContext, Page } from 'playwright';
 import type { DashboardSnapshot, HeroMarket, HeroPeriod } from '../src/dashboard-types.js';
-import { formatMetricNumber } from '../src/money.js';
+import { formatMetricNumber, formatPounds } from '../src/money.js';
 import { addDays } from '../src/hero-range.js';
 
 /** Install before page navigation, so a browser test can replay an SSE snapshot. */
@@ -25,6 +25,12 @@ export async function checkMarketHero(page: Page, snapshot: DashboardSnapshot, w
       .map(key => [key, model[key].unavailable ? model[key].unavailableLabel ?? 'No data' : formatMetricNumber(model[key].n, model[key])]));
     await page.waitForFunction(values => Object.entries(values).every(([key, value]) => document.querySelector(`#hero [data-k="${key}"] .sv`)?.textContent === value), expected);
     assert.equal(await page.locator('#eyebrow').textContent(), model.eyebrow);
+    assert.equal(await page.locator('#hero [data-k="net"] .gross').innerText(), model.grossUnavailable ? 'Gross unavailable' : `Gross ${formatPounds(model.gross)}`);
+    assert.equal(await page.locator('#hero .gross').count(), 1);
+    await page.locator('#hero [data-k="net"]').click();
+    assert.match(await page.locator('#sh-extra').textContent() ?? '', /Gross \(incl\. shipping and tax\)/);
+    if (!model.grossUnavailable) assert.ok((await page.locator('#sh-extra').textContent() ?? '').includes(formatPounds(model.gross)));
+    await page.locator('#sh-x').click();
     assert.equal(await page.locator('#market [aria-selected="true"]').getAttribute('data-market'), market);
     assert.equal(await page.locator('[data-k="ukcpo"]').isVisible(), market !== 'us');
     assert.equal(await page.locator('[data-k="uscpo"]').isVisible(), market !== 'uk');
@@ -49,6 +55,10 @@ export async function checkMarketHero(page: Page, snapshot: DashboardSnapshot, w
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     }
     assert.equal(heroRequests, 0, 'market taps use views already in the snapshot');
+    const zero = structuredClone(snapshot); zero.generatedAt = new Date(Date.parse(snapshot.generatedAt) + 500).toISOString();
+    zero.hero.today.markets!.us.gross = 0; zero.hero.today.markets!.us.grossUnavailable = false;
+    await page.evaluate(next => (window as unknown as { pulseMarketStream: EventSource }).pulseMarketStream.dispatchEvent(new MessageEvent('dashboard', { data: JSON.stringify(next) })), zero);
+    await page.waitForFunction(() => document.querySelector('#hero .gross')?.textContent === 'Gross £0.00');
     await page.locator('[data-period="7d"]').click();
     await checkView(snapshot.hero['7d'], 'us');
     const replay = structuredClone(snapshot);

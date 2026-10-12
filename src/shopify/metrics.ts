@@ -10,7 +10,7 @@ import type { ShopifyStore } from './store.js';
 
 export type Facts = Awaited<ReturnType<ShopifyStore['facts']>>;
 export { paidOrder } from './model.js';
-import { isFreeOrder, paidOrder } from './model.js';
+import { isFreeOrder, orderTotalPence, paidOrder } from './model.js';
 import { decimalMicros } from '../ad-spend/model.js';
 export const ratio = (n: number, d: number): number | null => d > 0 ? n / d : null;
 export const kitIds = appConfig.shopify.stockProducts.slice(0, 4).map(p => `gid://shopify/Product/${p.id}`);
@@ -50,16 +50,16 @@ export function dailyRows(facts: Facts, today: string, market: HeroMarket = 'all
   for (let date = data.min; date <= today; date = addDays(date, 1)) {
     const sessions = sessionMap.get(date);
     const older = market === 'all' && date < data.from ? history.get(date) : null;
-    byDay.set(date, { date, net: older ? older.netSalesPence : 0, o: 0, netKnown: market === 'all' || date >= data.from, countsKnown: date >= data.from, sessionsKnown: !!sessions && (market === 'all' || sessions.marketReliable), uk: 0, us: 0,
+    byDay.set(date, { date, net: older ? older.netSalesPence : 0, gross: older?.grossSalesPence ?? 0, grossKnown: date >= data.from || market === 'all' && older?.grossSalesPence !== undefined, o: 0, netKnown: market === 'all' || date >= data.from, countsKnown: date >= data.from, sessionsKnown: !!sessions && (market === 'all' || sessions.marketReliable), uk: 0, us: 0,
       sess: (market === 'uk' ? sessions?.uk : market === 'us' ? sessions?.us : sessions?.sessions) ?? 0, ukS: market === 'us' ? 0 : sessions?.uk ?? 0, usS: market === 'uk' ? 0 : sessions?.us ?? 0, ukM: 0, usM: 0, g: 0, ours: 0 });
   }
   for (const order of data.orders.filter(order => orderInMarket(order, market))) {
     const row = byDay.get(order.day);
-    if (row) { row.net += order.itemsAfterDiscountsPence; if (!isFreeOrder(order)) { row.o++; if (order.market === 'UK' && !isTikTok(order)) row.uk++; if (order.market === 'US' && !isTikTok(order)) row.us++; } }
-    for (const refund of order.refunds) { const day = ukToday(new Date(refund.createdAt)), row = byDay.get(day); if (row) row.net -= refund.itemsPence; }
+    if (row) { row.net += order.itemsAfterDiscountsPence; row.gross = (row.gross ?? 0) + orderTotalPence(order); if (!isFreeOrder(order)) { row.o++; if (order.market === 'UK' && !isTikTok(order)) row.uk++; if (order.market === 'US' && !isTikTok(order)) row.us++; } }
+    for (const refund of order.refunds) { const day = ukToday(new Date(refund.createdAt)), row = byDay.get(day); if (row) { row.net -= refund.itemsPence; const grossRefund = refund.totalPence ?? (refund.shippingNetPence === undefined ? null : refund.itemsPence + refund.taxPence + refund.shippingNetPence + (refund.shippingTaxPence ?? 0)); if (grossRefund === null) row.grossKnown = false; else row.gross = (row.gross ?? 0) - grossRefund; } }
   }
   // Accumulate only integer pence, convert once at the display boundary.
-  return [...byDay.values()].map(row => ({ ...row, net: row.net / 100 }));
+  return [...byDay.values()].map(row => ({ ...row, net: row.net / 100, gross: (row.gross ?? 0) / 100 }));
 }
 
 function marketHero(facts: Facts, today: string, from: string, to: string, settings: Settings, name?: string, preparedRows?: DailyMetrics[], adInputs?: AdHeroInputs, now = new Date(), market: HeroMarket = 'all'): HeroPeriod {
@@ -80,6 +80,9 @@ function marketHero(facts: Facts, today: string, from: string, to: string, setti
   const hero = buildHeroRange(rows, from, to, { today, name: resolvedName, market, blendedMetaTripwireGbp: settings.blendedMetaTripwireGbp });
   hero.net.n = Math.round(rows.filter(r => r.date >= from && r.date <= to).reduce((n, r) => n + r.net, 0) * 100) / 100;
   hero.net.dp = 2;
+  hero.gross = Math.round(hero.gross * 100) / 100;
+  if (!data.ready) hero.grossUnavailable = true;
+  hero.net.d.extra = [...(hero.net.d.extra ?? []), ['Gross (incl. shipping and tax)', hero.grossUnavailable ? 'Unavailable; older total-sales or refund detail is being refreshed' : formatPounds(hero.gross)]];
   const marketOrders = data.orders.filter(o => orderInMarket(o, market));
   const orders = marketOrders.filter(o => o.day >= from && o.day <= to && !isFreeOrder(o));
   const freeCount = marketOrders.filter(o => o.day >= from && o.day <= to && isFreeOrder(o)).length;

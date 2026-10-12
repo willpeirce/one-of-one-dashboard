@@ -10,6 +10,8 @@ const fields = ['net', 'o', 'uk', 'us', 'sess', 'ukS', 'ukM', 'usM', 'g', 'ours'
 export interface DailyMetrics {
   date: string;
   net: number;
+  gross?: number;
+  grossKnown?: boolean;
   o: number;
   uk: number;
   us: number;
@@ -26,7 +28,7 @@ export interface DailyMetrics {
   g: number;
   ours: number;
 }
-export type Totals = Omit<DailyMetrics, 'date' | 'usS' | 'adSpend' | 'spendKnown' | 'netKnown' | 'countsKnown' | 'sessionsKnown'> & {
+export type Totals = Omit<DailyMetrics, 'date' | 'gross' | 'grossKnown' | 'usS' | 'adSpend' | 'spendKnown' | 'netKnown' | 'countsKnown' | 'sessionsKnown'> & {
   days: number; usS: number; meta: number; spend: number; ours: number;
 };
 
@@ -222,7 +224,7 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
     };
   };
   return {
-    market: options.market ?? 'all', from, to, short: label, spark: history('net'),
+    market: options.market ?? 'all', from, to, short: label, gross: selected.reduce((sum, row) => sum + (row.gross ?? row.net), 0), grossUnavailable: selected.some(row => row.grossKnown === false), spark: history('net'),
     eyebrow: one ? `${weekday} · ${partial ? 'today so far' : 'one day'}` : `${label} · ${options.name ?? `${n} days`}${partial ? ', today so far' : ''}`,
     sub1: one ? `${integer(t.o)} orders on ${weekday}${partial ? ' so far' : ''}.` : `${integer(t.o)} orders over ${label}${partial ? ' so far' : ''}, avg ${integer(t.o / n)} a day.`,
     per: options.name ?? (one ? weekday : label),

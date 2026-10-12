@@ -8,12 +8,12 @@ import { nextCursor, ShopifyClient, type ShopifyReader } from './client.js';
 import { ShopifyError, Transport, type TransportOptions } from './http.js';
 import { SampleShopify } from './sample.js';
 import { ShopifyStore } from './store.js';
-import { channelKey, reportRows } from './model.js';
+import { channelKey, cleanSales, reportRows } from './model.js';
 import { paidOrder } from './metrics.js';
 import { webhookTopics } from './webhooks.js';
 
-type Job = 'backfill' | 'poll' | 'inventory' | 'sessions' | 'subscriptions' | 'reconcile' | 'session_history' | 'stock_snapshot' | 'series_pace' | 'shipping_refunds';
-const intervals: Record<Job, number> = { backfill: 0, poll: 300_000, inventory: 300_000, sessions: 300_000, subscriptions: 3_600_000, reconcile: 86_400_000, session_history: 0, stock_snapshot: 0, series_pace: 3_600_000, shipping_refunds: 60_000 };
+type Job = 'backfill' | 'poll' | 'inventory' | 'sessions' | 'subscriptions' | 'reconcile' | 'session_history' | 'stock_snapshot' | 'series_pace' | 'shipping_refunds' | 'gross_history';
+const intervals: Record<Job, number> = { backfill: 0, poll: 300_000, inventory: 300_000, sessions: 300_000, subscriptions: 3_600_000, reconcile: 86_400_000, session_history: 0, stock_snapshot: 0, series_pace: 3_600_000, shipping_refunds: 60_000, gross_history: 60_000 };
 export function backfillWindow(now: Date, allOrders: boolean) {
   return { from: addDays(ukToday(now), -(allOrders ? 399 : 59)), olderFrom: addDays(ukToday(now), -399), olderTo: addDays(ukToday(now), -60) };
 }
@@ -21,7 +21,7 @@ export function sessionQuery(from: string, to: string): string {
   return `FROM sessions SHOW sessions, sessions_with_cart_additions, sessions_that_reached_checkout, sessions_that_completed_checkout GROUP BY day, session_country, session_region, landing_page_path, session_device_type, referrer_source SINCE ${from} UNTIL ${to}`;
 }
 export function channelQuery(from: string, to: string): string { return `FROM sales SHOW orders GROUP BY day, sales_channel SINCE ${from} UNTIL ${to} ORDER BY day`; }
-function salesQuery(from: string, to: string): string { return `FROM sales SHOW orders, net_sales GROUP BY day SINCE ${from} UNTIL ${to} ORDER BY day`; }
+function salesQuery(from: string, to: string): string { return `FROM sales SHOW orders, net_sales, total_sales GROUP BY day SINCE ${from} UNTIL ${to} ORDER BY day`; }
 export function ukDayStart(day: string): Date {
   return new Date(nextNight(new Date(`${addDays(day, -1)}T12:00:00Z`)).getTime() - 60_000);
 }
@@ -33,7 +33,7 @@ export function nextNight(now: Date): Date {
   return new Date(value);
 }
 export function nextStockSnapshot(now: Date): Date { return new Date(nextNight(now).getTime() + 4 * 60_000); }
-const secondaryJob = (job: Job) => ['stock_snapshot', 'series_pace', 'shipping_refunds'].includes(job);
+const secondaryJob = (job: Job) => ['stock_snapshot', 'series_pace', 'shipping_refunds', 'gross_history'].includes(job);
 export class ShopifyWorker {
   readonly store: ShopifyStore;
   readonly client: ShopifyReader;
@@ -93,7 +93,7 @@ export class ShopifyWorker {
         if (job.name === 'series_pace') await this.db.query(`UPDATE pulse.shopify_jobs SET next_run_at = $3 WHERE mode = $1 AND name = $2`, [this.mode, job.name, new Date(this.clock().getTime() + intervals.series_pace)]);
         const state = await this.execute(job.name, job.state, job.last_success_at);
         const scheduledFrom = secondaryJob(job.name) ? this.clock() : now;
-        const next = state.continuing ? new Date(now.getTime() + 1000) : ['backfill', 'session_history'].includes(job.name) ? new Date('9999-01-01T00:00:00Z') : job.name === 'stock_snapshot' ? nextStockSnapshot(scheduledFrom) : job.name === 'reconcile' ? nextNight(now) : new Date(scheduledFrom.getTime() + (job.name === 'shipping_refunds' && state.idle ? 3_600_000 : intervals[job.name]));
+        const next = state.continuing ? new Date(now.getTime() + 1000) : ['backfill', 'session_history'].includes(job.name) ? new Date('9999-01-01T00:00:00Z') : job.name === 'stock_snapshot' ? nextStockSnapshot(scheduledFrom) : job.name === 'reconcile' ? nextNight(now) : new Date(scheduledFrom.getTime() + ((job.name === 'shipping_refunds' || job.name === 'gross_history') && state.idle ? 3_600_000 : intervals[job.name]));
         await this.db.query(`UPDATE pulse.shopify_jobs SET state = $3, next_run_at = $4, last_success_at = $5, failures = 0 WHERE mode = $1 AND name = $2`, [this.mode, job.name, JSON.stringify(state), next, now]);
       } catch (error) {
         if (!secondaryJob(job.name)) failed = true;
@@ -143,7 +143,7 @@ export class ShopifyWorker {
     if (attempted) await this.health(failed);
   }
   private async health(failed: boolean): Promise<void> {
-    const remainingFailures = await this.db.query(`SELECT name FROM pulse.shopify_jobs WHERE mode = 'live' AND name NOT IN ('stock_snapshot', 'series_pace', 'shipping_refunds') AND failures > 0 UNION ALL SELECT source_id FROM pulse.shopify_webhook_inbox WHERE processed_at IS NULL AND attempts > 0`);
+    const remainingFailures = await this.db.query(`SELECT name FROM pulse.shopify_jobs WHERE mode = 'live' AND name NOT IN ('stock_snapshot', 'series_pace', 'shipping_refunds', 'gross_history') AND failures > 0 UNION ALL SELECT source_id FROM pulse.shopify_webhook_inbox WHERE processed_at IS NULL AND attempts > 0`);
     failed ||= remainingFailures.rows.length > 0;
     await this.db.query(`UPDATE pulse.source_health SET status = $1, last_attempt_at = $2,
       last_success_at = CASE WHEN $1 = 'healthy' THEN $2 ELSE last_success_at END,
@@ -202,12 +202,31 @@ export class ShopifyWorker {
     }
     const checkpoint = await this.db.query<{ state: any }>(`SELECT state FROM pulse.shopify_jobs WHERE mode = $1 AND name = 'backfill'`, [this.mode]);
     const address = checkpoint.rows[0]?.state.address !== false;
+    if (name === 'gross_history') {
+      if (this.mode !== 'live' || checkpoint.rows[0]?.state.allOrders || !checkpoint.rows[0]?.state.historyDone) return { idle: true };
+      const first = checkpoint.rows[0].state.olderFrom, last = checkpoint.rows[0].state.olderTo;
+      if (!first || !last) return { idle: true };
+      // Fill one seven-day block per minute; empty report days are authoritative zeroes.
+      const from = state.next ?? first;
+      if (from > last) return { idle: true, next: first };
+      const to = addDays(from, 6) < last ? addDays(from, 6) : last;
+      const table = await this.client.report(salesQuery(from, to));
+      const columns = new Set(Array.isArray(table.columns) ? table.columns.map((column: { name?: string }) => column.name) : []);
+      if (!['day', 'orders', 'net_sales', 'total_sales'].every(column => columns.has(column))) throw new ShopifyError('invalid');
+      const rows = cleanSales(table);
+      if (rows.some(row => row.grossSalesPence === undefined)) throw new ShopifyError('invalid');
+      for (let date = from; date <= to; date = addDays(date, 1)) {
+        const row = rows.find(value => value.day === date) ?? { day: date, orders: 0, netSalesPence: 0, grossSalesPence: 0, provenance: 'shopifyql', market: 'unknown' };
+        await this.store.put('sales', date, row, this.clock());
+      }
+      return { next: addDays(to, 1) };
+    }
     if (name === 'shipping_refunds') {
       if (this.mode !== 'live') return { skipped: 'sample_mode' };
       // One legacy order per run enriches totals, replacement tags and shipping refunds without blocking startup.
       const legacy = await this.db.query<{ source_id: string }>(`SELECT source_id FROM pulse.shopify_records
         WHERE mode = 'live' AND kind = 'order' AND source_id > $1 AND data->>'day' >= $2
-          AND (NOT (data ? 'totalPence') OR NOT (data ? 'tags') OR EXISTS (SELECT 1 FROM jsonb_array_elements(data->'refunds') AS refund WHERE NOT (refund ? 'shippingNetPence')))
+          AND (NOT (data ? 'totalPence') OR NOT (data ? 'tags') OR EXISTS (SELECT 1 FROM jsonb_array_elements(data->'refunds') AS refund WHERE NOT (refund ? 'shippingNetPence') OR NOT (refund ? 'totalPence')))
         ORDER BY source_id LIMIT 1`, [state.after ?? '', checkpoint.rows[0]?.state.from ?? day]);
       const id = legacy.rows[0]?.source_id;
       if (!id) return { after: null, idle: true };

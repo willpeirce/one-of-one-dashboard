@@ -104,6 +104,8 @@ export interface HeroPeriod {
   sub1: string;
   per: string;
   net: HeroMetric;
+  gross: number;
+  grossUnavailable?: boolean;
   orders: HeroMetric;
   aov: HeroMetric;
   cac: HeroMetric;

@@ -6,7 +6,7 @@ import { createDatePicker } from './dashboard-dates.js';
 import { rangeLabel } from './hero-range.js';
 import { installPullToRefresh } from './pull-refresh.js';
 import { greetingAt } from './greeting.js';
-import { formatLike, formatMetricNumber, formatNumber } from './money.js';
+import { formatLike, formatMetricNumber, formatNumber, formatPounds } from './money.js';
 import { paceState, seriesPaceCardHtml, seriesPaceDial, seriesPaceFacts, seriesPaceSheetHtml, type SeriesPaceCard } from './series-pace/presentation.js';
 import type { SeriesPaceMarket } from './series-pace/model.js';
 import { reviewsGreeting, reviewsPanelHtml, reviewSheetHtml } from './judgeme/presentation.js';
@@ -232,6 +232,11 @@ function renderHero(hero: HeroPeriod, animate = false): void {
     element.dataset.source = metric.source.join(' ');
     if (metric.mode === 'live') element.querySelector('.sample-label')?.remove();
     metricNumber(get('.sv', element), metric, animate);
+    if (key === 'net') {
+      let gross = element.querySelector<HTMLElement>('.gross');
+      if (!gross) { get('.sv', element).insertAdjacentHTML('afterend', '<span class="gross"></span>'); gross = get<HTMLElement>('.gross', element); }
+      gross.textContent = hero.grossUnavailable ? 'Gross unavailable' : `Gross ${formatPounds(hero.gross)}`;
+    }
     get('.ss', element).textContent = metric.ss;
     element.dataset.state = metric.state;
     element.dataset.detail = JSON.stringify(metric.d);

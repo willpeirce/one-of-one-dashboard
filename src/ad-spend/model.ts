@@ -45,7 +45,8 @@ export class AdError extends Error {
       | 'invalid'
       | 'unauthorized'
       | 'rate_limit'
-      | 'developer_token_required',
+      | 'developer_token_required'
+      | 'unsupported_account',
     status = 0,
     providerCode?: unknown,
     providerSubcode?: unknown,

@@ -49,7 +49,7 @@ export const dashboardTemplate = `
 <section class="hero" id="hero">
   <div class="left">
     <div class="glass greet">
-        <div class="hero-controls"><div class="seg" role="tablist" id="period" aria-label="Period"><button role="tab" type="button" aria-selected="true" data-period="today">Today</button><button role="tab" type="button" aria-selected="false" data-period="yday">Yesterday</button><button role="tab" type="button" aria-selected="false" data-period="7d">7 days</button><button role="tab" type="button" aria-selected="false" data-period="30d">30 days</button><button role="tab" type="button" aria-selected="false" data-period="pick" id="pickbtn" aria-haspopup="dialog" aria-label="Pick a day or dates"><svg class="ic" aria-hidden="true"><use href="#i-cal"/></svg><span id="picklbl">Dates</span></button></div><div class="seg" role="tablist" id="market" aria-label="Market"><button role="tab" type="button" aria-selected="true" data-market="all">All</button><button role="tab" type="button" aria-selected="false" data-market="uk">UK</button><button role="tab" type="button" aria-selected="false" data-market="us">US</button></div></div>
+        <div class="hero-controls"><div class="seg" role="tablist" id="period" aria-label="Period"><button role="tab" type="button" aria-selected="true" data-period="today">Today</button><button role="tab" type="button" aria-selected="false" data-period="yday">Yesterday</button><button role="tab" type="button" aria-selected="false" data-period="7d">7 days</button><button role="tab" type="button" aria-selected="false" data-period="30d">30 days</button><button role="tab" type="button" aria-selected="false" data-period="pick" id="pickbtn" aria-haspopup="dialog" aria-label="Pick a day or dates"><svg class="ic" aria-hidden="true"><use href="#i-cal"/></svg><span id="picklbl">Dates</span></button></div></div>
       <div>
         <span class="eyebrow" id="eyebrow"><span data-sample-text="t0032">{{sample:t0032}}</span></span>
         <h1><span id="greeting" data-sample-text="t0033">{{sample:t0033}}</span></h1>
@@ -59,6 +59,7 @@ export const dashboardTemplate = `
       <div class="radar" id="radar" role="group"></div>
     </div>
 
+    <div class="seg" role="tablist" id="market" aria-label="Market"><button role="tab" type="button" aria-selected="true" data-market="all">All</button><button role="tab" type="button" aria-selected="false" data-market="uk">UK</button><button role="tab" type="button" aria-selected="false" data-market="us">US</button></div>
     <div class="four hero-grid">
       <button type="button" class="tile coral stat" data-k="net" data-g="hero" data-src="shopify" data-state="info" data-source="shopify" data-mode="sample"><span class="sl">Net sales</span><span class="sv big"></span><span class="spark" aria-hidden="true"></span><span class="ss"></span></button>
       <button type="button" class="tile stat" data-k="orders" data-g="hero" data-src="shopify" data-state="info" data-source="shopify" data-mode="sample"><span class="sl">Orders</span><span class="sv"></span><span class="ss"></span></button>

@@ -72,6 +72,14 @@ test('server-rendered hero has independent market control, eight ordered cards a
   assert.deepEqual([...grid.matchAll(/data-k="([a-z]+)"/g)].map(match => match[1]), ['net', 'orders', 'aov', 'cac', 'cr', 'spend', 'roas', 'margin']);
   assert.doesNotMatch(grid, /class="per"/); assert.match(html, /class="profit-line" data-k="profit"/); assert.ok(html.indexOf('id="p-ads"') < html.indexOf('data-k="ukcpo"'));
 });
+test('the market switch follows the radar directly before the hero tiles while periods stay above it', () => {
+  const html = dashboardPage(getSampleDashboard());
+  const period = html.indexOf('id="period"'), radar = html.indexOf('id="radar"');
+  const market = html.indexOf('id="market"'), grid = html.indexOf('<div class="four hero-grid">');
+  assert.ok(period >= 0 && period < radar && radar < market && market < grid);
+  assert.match(html.slice(market, grid), /data-market="us">US<\/button><\/div>\s*$/);
+  assert.equal((html.match(/id="market"/g) ?? []).length, 1);
+});
 test('guarded comparison/chart days never supply market conversion and aggregate history never hides omitted costs', async () => {
   const list = await orders(), stored = facts(list);
   stored.records = stored.records.map(record => record.kind === 'sessions' && record.data.day === '2026-10-07' ? { ...record, data: { ...record.data, marketReliable: false } } : record);

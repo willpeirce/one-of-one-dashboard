@@ -34,6 +34,24 @@ export interface Settings {
   series1UkTargetDate: string;
   series1UsTargetDate: string;
   metaAdAccountId: string;
+  creativeDefaultWindow: '24h' | '3d' | '7d';
+  creativeSpendFloorGbp: number;
+  creativePurchaseMinimum: number;
+  creativeFadeFrequency: number;
+  creativeFadeCtrDropPercent: number;
+  creativeWeeklyTarget: number;
+  creativeHitWinnerSpendGbp: number;
+  creativeHitKilledSpendGbp: number;
+  creativeHitKilledTargetMultiplier: number;
+  creativeLiftWindowDays: number;
+  creativeLiftMinimumGroups: number;
+  creativeLiftMinimumSpendGbp: number;
+  creativeMediaCapMb: number;
+  creativeScanModel: string;
+  creativeScanInputPrice: number;
+  creativeScanOutputPrice: number;
+  creativeScanCapGbp: number;
+  creativeFreelancerInitial: string;
   googleCustomerId: string;
   googleLoginCustomerId: string;
   tiktokAdvertiserId: string;
@@ -70,6 +88,30 @@ export class SettingsConflictError extends Error {
   constructor() { super('Settings changed on another device. Reload before saving.'); }
 }
 
+export function creativeSettingsDefaults() {
+  return {
+    creativeDefaultWindow: '3d' as const,
+    creativeSpendFloorGbp: 50,
+    creativePurchaseMinimum: 2,
+    creativeFadeFrequency: 3,
+    creativeFadeCtrDropPercent: 40,
+    creativeWeeklyTarget: 7,
+    creativeHitWinnerSpendGbp: 100,
+    creativeHitKilledSpendGbp: 75,
+    creativeHitKilledTargetMultiplier: 1.5,
+    creativeLiftWindowDays: 30,
+    creativeLiftMinimumGroups: 3,
+    creativeLiftMinimumSpendGbp: 150,
+    creativeMediaCapMb: 300,
+    creativeScanModel: 'claude-haiku-5-5',
+    // Pricing is deliberately unconfigured: the scan workflow is deferred.
+    creativeScanInputPrice: 0,
+    creativeScanOutputPrice: 0,
+    creativeScanCapGbp: 1,
+    creativeFreelancerInitial: 'F',
+  };
+}
+
 export function defaultSettings(): Settings {
   return {
     goalOrdersPerDay: 100,
@@ -99,6 +141,7 @@ export function defaultSettings(): Settings {
     series1UsLandingOffsetDays: 74,
     series1UkTargetDate: '',
     series1UsTargetDate: '',
+    ...creativeSettingsDefaults(),
     metaAdAccountId: '', googleCustomerId: '', googleLoginCustomerId: '', tiktokAdvertiserId: '',
     metaOwners: [], expectedGoogleCampaigns: [],
     blendedMetaTripwireGbp: 28,
@@ -149,6 +192,12 @@ function text(value: unknown, field: string, max = 100): string {
     || !/^[\p{L}\p{N}][\p{L}\p{N} _.,&'’()+/\-]*$/u.test(value)
     || /[A-Za-z0-9_+\/-]{24,}/.test(value)
     || /(?:sk|pk)[_-](?:live|test|ant)|github_pat_|gh[pousr]_|shpat_/i.test(value)) return invalid(field);
+  return value;
+}
+
+function scanModel(value: unknown): string {
+  // Model identifiers only: no URLs, whitespace or credential-like strings.
+  if (typeof value !== 'string' || !/^claude-[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value) || value.length > 80) return invalid('creativeScanModel');
   return value;
 }
 
@@ -245,6 +294,27 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
     series1UkTargetDate: seriesDate(value.series1UkTargetDate, 'series1UkTargetDate', true),
     series1UsTargetDate: seriesDate(value.series1UsTargetDate, 'series1UsTargetDate', true),
     metaAdAccountId: accountId(value.metaAdAccountId, 'metaAdAccountId'),
+    creativeDefaultWindow: choice(value.creativeDefaultWindow, 'creativeDefaultWindow', ['24h', '3d', '7d'] as const),
+    creativeSpendFloorGbp: requiredNumber(value.creativeSpendFloorGbp, 'creativeSpendFloorGbp', 100_000),
+    creativePurchaseMinimum: requiredNumber(value.creativePurchaseMinimum, 'creativePurchaseMinimum', 100_000, true, 1),
+    creativeFadeFrequency: requiredNumber(value.creativeFadeFrequency, 'creativeFadeFrequency', 100, false, 0.01),
+    creativeFadeCtrDropPercent: requiredNumber(value.creativeFadeCtrDropPercent, 'creativeFadeCtrDropPercent', 100, false, 0.01),
+    creativeWeeklyTarget: requiredNumber(value.creativeWeeklyTarget, 'creativeWeeklyTarget', 1_000, true, 1),
+    creativeHitWinnerSpendGbp: requiredNumber(value.creativeHitWinnerSpendGbp, 'creativeHitWinnerSpendGbp', 100_000, false, 0.01),
+    creativeHitKilledSpendGbp: requiredNumber(value.creativeHitKilledSpendGbp, 'creativeHitKilledSpendGbp', 100_000, false, 0.01),
+    creativeHitKilledTargetMultiplier: requiredNumber(value.creativeHitKilledTargetMultiplier, 'creativeHitKilledTargetMultiplier', 100, false, 1),
+    creativeLiftWindowDays: requiredNumber(value.creativeLiftWindowDays, 'creativeLiftWindowDays', 365, true, 1),
+    creativeLiftMinimumGroups: requiredNumber(value.creativeLiftMinimumGroups, 'creativeLiftMinimumGroups', 1_000, true, 1),
+    creativeLiftMinimumSpendGbp: requiredNumber(value.creativeLiftMinimumSpendGbp, 'creativeLiftMinimumSpendGbp', 100_000, false, 0.01),
+    creativeMediaCapMb: requiredNumber(value.creativeMediaCapMb, 'creativeMediaCapMb', 10_000, true, 1),
+    creativeScanModel: scanModel(value.creativeScanModel),
+    creativeScanInputPrice: requiredNumber(value.creativeScanInputPrice, 'creativeScanInputPrice', 10_000),
+    creativeScanOutputPrice: requiredNumber(value.creativeScanOutputPrice, 'creativeScanOutputPrice', 10_000),
+    creativeScanCapGbp: requiredNumber(value.creativeScanCapGbp, 'creativeScanCapGbp', 1_000),
+    creativeFreelancerInitial: (() => {
+      if (typeof value.creativeFreelancerInitial !== 'string' || !/^[A-Za-z]$/.test(value.creativeFreelancerInitial)) return invalid('creativeFreelancerInitial');
+      return value.creativeFreelancerInitial.toUpperCase();
+    })(),
     googleCustomerId: accountId(value.googleCustomerId, 'googleCustomerId', true),
     googleLoginCustomerId: accountId(value.googleLoginCustomerId, 'googleLoginCustomerId', true),
     tiktokAdvertiserId: accountId(value.tiktokAdvertiserId, 'tiktokAdvertiserId'),
@@ -314,9 +384,10 @@ function changedFields(previous: unknown, next: unknown, path = ''): string[] {
 function storedSettings(input: unknown): Settings {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return validateSettings(input);
   const defaults = defaultSettings();
-  // Older documents acquire the new pace fields on read without changing their
+  // Older documents acquire new defaults on read without changing their
   // version or creating an audit entry; the next ordinary save persists them.
   const stored: Record<string, unknown> = {
+    ...creativeSettingsDefaults(),
     series1OrderDate: defaults.series1OrderDate,
     series1UkLandingOffsetDays: defaults.series1UkLandingOffsetDays,
     series1UsLandingOffsetDays: defaults.series1UsLandingOffsetDays,

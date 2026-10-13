@@ -13,6 +13,7 @@ import type { SeriesPaceMarketView } from '../src/series-pace/presentation.js';
 import { checkHomeChapters, checkFulfilmentChapter } from './chapter-browser-check.js';
 import { checkRadar } from './browser-radar.js';
 import { checkMarketHero, installMarketUpdateHook } from './browser-market.js';
+import { checkGrossHistoryProgress } from './browser-gross-history.js';
 
 let step = 'read test configuration';
 
@@ -1878,6 +1879,8 @@ async function run(): Promise<void> {
     await page.goto('/sources');
     await page.locator('#source-health tbody tr').last().waitFor();
     assert.equal(await page.locator('#source-health tbody tr').count(), 11);
+    step = 'check gross-history progress beside unchanged Shopify Healthy at phone and desktop widths';
+    await checkGrossHistoryProgress(context);
     step = 'check source and mode summary is the first Source health panel';
     assert.equal(await page.locator('main section').first().getAttribute('id'), 'source-summary');
     assert.match(await page.locator('#source-summary').innerText(), /Ad spend uses separately labelled source connections/);
@@ -1998,7 +2001,7 @@ async function run(): Promise<void> {
     assert.equal(consoleErrors.length, 0);
     assert.equal(externalRequests, 0);
     await context.close();
-    console.log('Browser checks passed: passkeys and replay/origin/signature rejection; all hero presets and custom dates, eight market-aware cards and the Net profit strip, Gross, AOV and CAC, chapter headers and measured-only radar actions, correctly signed pound losses and shared breakdown, bounded keyboard calendars, decks, search and details; Series 1 two-market pace card, signed daily sources and snapshot times, sample-disabled target controls, real Settings target save/clear and date previews; named overhead Settings and margin shares; automatic campaign list, sync state, local confirmation and owner changes; Settings persistence and SSE without replacing picked dates; safe-area nav clearance on every signed-in page with normal and simulated top insets; standalone touch refresh, menu counts, excluded controls, failure retention and unsaved edits; UK greeting rollover and moved source status; live sheet labels, audit, local fonts and PWA; dark-only phone/desktop with both browser preferences and no external requests.');
+    console.log('Browser checks passed: passkeys and replay/origin/signature rejection; all hero presets and custom dates, eight market-aware cards and the Net profit strip, Total, AOV and CAC, chapter headers and measured-only radar actions, correctly signed pound losses and shared breakdown, bounded keyboard calendars, decks, search and details; Series 1 two-market pace card, signed daily sources and snapshot times, sample-disabled target controls, real Settings target save/clear and date previews; named overhead Settings and margin shares; automatic campaign list, sync state, local confirmation and owner changes; Settings persistence and SSE without replacing picked dates; safe-area nav clearance on every signed-in page with normal and simulated top insets; standalone touch refresh, menu counts, excluded controls, failure retention and unsaved edits; UK greeting rollover and moved source status; live sheet labels, audit, local fonts and PWA; dark-only phone/desktop with both browser preferences and no external requests.');
   } finally {
     await browser.close();
   }

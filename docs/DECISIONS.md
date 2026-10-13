@@ -388,3 +388,19 @@ AOV is market net sales divided by counted orders. CAC is all placed ad spend di
 ## 2026-10-12, Batch 2 spend-placement review fixes (Will)
 
 Use the same case-insensitive whole-word UK/US matcher for Google as for campaign placement: the word can appear anywhere, with both or neither returning unknown. For our Meta ad sets, preserve exact em-dash marker precedence, then try whole market words in the set name before falling back to the campaign when no market word appears. Ambiguous set words or exact markers remain unknown. Freelancer/unassigned sets still use the campaign only. This supersedes the previous Google end-of-name rule and allows our invented unmarked set examples to be placed without changing ownership or allocating unknown spend. Tests use invented names only.
+
+
+## 2026-10-12, fix: resilient Gross history (Will)
+
+ShopifyQL's exact empty table, columns [] and rows [], is a week of zero sales rather than an invalid reply. Write authoritative zero orders, Net and Gross for every UK day in the block with shopifyql provenance, then advance the existing seven-day cursor. Retain required-column validation for other table shapes, including rows without total_sales; malformed replies never become invented zeroes.
+
+Start at the later of olderFrom and the earliest stored order day or non-zero startup sales-history day, taking the earliest available evidence. Leave days before that boundary unchanged. Existing cursors adopt the new job-state shape without a migration. Keep one block per minute and the existing completed-pass idle/rotation, so skipped blocks are retried on the next pass.
+
+After three consecutive failed runs for a block, regardless of error type, record it as skipped and advance instead of retrying it every minute forever. Persist retries and filled/skipped blocks across restarts. Log one safe line per skipped block with its from/to dates, without raw errors, credentials, figures or identifiers. A skipped block stays Gross unavailable; preserve cached Net and order counts while removing its Gross coverage. A later successful pass clears the skip. Record progress in the existing job JSON, with no schema change.
+
+The Shopify Source health row displays Gross history: N of M weeks filled, K skipped from that state. Gross-history failures remain secondary and do not change Healthy. Existing source reads, scopes and key handling are unchanged. All test dates, figures and identifiers are invented; live deployment agreement remains Will's check after Publish.
+
+
+## 2026-10-13, Total sales label (Will)
+
+13 Oct: the hero line under Net sales is Shopify's Total sales and is now labelled Total. Will compared it with Shopify's Gross sales line (before discounts, no shipping) and chose to keep the definition and change the word.

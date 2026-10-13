@@ -4,6 +4,7 @@ import type { SourceHealth } from './sources.js';
 import type { CampaignSyncState } from './ad-spend/campaign-cache.js';
 import { campaignSyncText } from './ad-spend/campaign-status.js';
 import type { ShopifyDashboard } from './shopify/dashboard.js';
+import { dayCount } from './hero-range.js';
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({
@@ -78,6 +79,10 @@ const healthLabels: Record<SourceHealth['status'], string> = {
 };
 
 export function sourceHealthPage(rows: readonly SourceHealth[], shopify?: Awaited<ReturnType<ShopifyStore['summary']>>, costs?: Awaited<ReturnType<ShopifyStore['costSummary']>>, ads?:Awaited<ReturnType<typeof import('./ad-spend/store.js').spendHealth>>, status?: { summary: string; shopify: ShopifyDashboard; checkedAt: string; campaigns?: CampaignSyncState }): string {
+  const gross = shopify?.mode === 'live' ? shopify.jobs.find(job => job.name === 'gross_history')?.state : undefined;
+  const days = typeof gross?.first === 'string' && typeof gross?.last === 'string' ? dayCount(gross.first, gross.last) : 0;
+  const weeks = Number.isFinite(days) ? Math.max(0, Math.ceil(days / 7)) : 0;
+  const grossHistory = gross ? `Total sales history: ${formatNumber(Array.isArray(gross.filled) ? gross.filled.length : 0)} of ${formatNumber(weeks)} weeks filled, ${formatNumber(Array.isArray(gross.skipped) ? gross.skipped.length : 0)} skipped` : '';
   return page('Source health', `<h1>Source health</h1>
     <section id="source-summary" aria-label="Sources and modes"><h2>Sources and modes</h2><p class="sample-banner">${status ? escapeHtml(status.summary) : `<strong>sample data</strong> · ${shopify ? 'Shopify cards use ingested data; ad spend uses its own source connections; deferred examples remain labelled samples.' : 'No source data has been imported.'}`}</p></section>
     ${status ? `<section id="shopify-watchdogs" aria-label="Shopify watchdogs"><h2>Shopify watchdogs</h2><p>${formatNumber(status.shopify.checks.filter(check => check.status === 'pass').length)}/${formatNumber(status.shopify.checks.length)} checks passing · Shopify ${status.shopify.mode === 'live' ? 'live' : 'sample data'} · checked ${timestamp(status.checkedAt)} UK</p><ul>${status.shopify.checks.map(check => `<li><strong>${check.status === 'pass' ? '✓ Good' : check.status === 'tripped' ? '△ Watch' : '○ Unknown'} · ${escapeHtml(check.name)}</strong><p>${escapeHtml(check.why)}</p></li>`).join('')}</ul></section>` : ''}
@@ -92,7 +97,7 @@ export function sourceHealthPage(rows: readonly SourceHealth[], shopify?: Awaite
         <tbody>${rows.map((row) => { const ad = ads?.find(a => a.source === row.source); return `<tr>
           <th scope="row">${escapeHtml(row.name)}</th>
           <td>${(ad?.live??row.mode==='live') ? 'Live' : 'Sample'}</td>
-          <td>${escapeHtml(ad?.status??((row.source === 'shopify' || row.source === 'judgeme') && row.status === 'not_implemented' ? 'First sync pending' : row.source === 'judgeme' && row.status === 'healthy' ? 'Live' : healthLabels[row.status]))}${ad?.failures ? ` · ${formatNumber(ad.failures)} consecutive failure${ad.failures === 1 ? '' : 's'}` : ''}${row.source === 'meta' && status?.campaigns ? `<br><small data-campaign-sync data-state="${status.campaigns.state}">${escapeHtml(campaignSyncText(status.campaigns))}</small>` : ''}</td>
+          <td>${escapeHtml(ad?.status??((row.source === 'shopify' || row.source === 'judgeme') && row.status === 'not_implemented' ? 'First sync pending' : row.source === 'judgeme' && row.status === 'healthy' ? 'Live' : healthLabels[row.status]))}${ad?.failures ? ` · ${formatNumber(ad.failures)} consecutive failure${ad.failures === 1 ? '' : 's'}` : ''}${row.source === 'meta' && status?.campaigns ? `<br><small data-campaign-sync data-state="${status.campaigns.state}">${escapeHtml(campaignSyncText(status.campaigns))}</small>` : ''}${row.source === 'shopify' && grossHistory ? `<br><small data-gross-history>${grossHistory}</small>` : ''}</td>
           <td>${timestamp(ad ? ad.fetchedAt : row.lastSuccessAt)}</td>
           <td class="key-names">${row.requiredKeys.map((key) => `<code>${escapeHtml(key)}</code>`).join('<br>')}</td>
         </tr>`; }).join('')}</tbody>

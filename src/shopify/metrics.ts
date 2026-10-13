@@ -82,7 +82,7 @@ function marketHero(facts: Facts, today: string, from: string, to: string, setti
   hero.net.dp = 2;
   hero.gross = Math.round(hero.gross * 100) / 100;
   if (!data.ready) hero.grossUnavailable = true;
-  hero.net.d.extra = [...(hero.net.d.extra ?? []), ['Gross (incl. shipping and tax)', hero.grossUnavailable ? 'Unavailable; older total-sales or refund detail is being refreshed' : formatPounds(hero.gross)]];
+  hero.net.d.extra = [...(hero.net.d.extra ?? []), ['Total sales (incl. shipping and tax)', hero.grossUnavailable ? 'Unavailable; older total-sales or refund detail is being refreshed' : formatPounds(hero.gross)]];
   const marketOrders = data.orders.filter(o => orderInMarket(o, market));
   const orders = marketOrders.filter(o => o.day >= from && o.day <= to && !isFreeOrder(o));
   const freeCount = marketOrders.filter(o => o.day >= from && o.day <= to && isFreeOrder(o)).length;

@@ -30,6 +30,11 @@ import { settingsPage } from './settings-view.js';
 import { ReviewsWorker, type ReviewsWorkerOptions } from './judgeme/worker.js';
 import { readReviews } from './judgeme/store.js';
 import { sampleReviews } from './judgeme/sample.js';
+import { readCreativeView, registerCreatives } from './creatives/routes.js';
+import { creativeHealth } from './creatives/store.js';
+import { seedCreativeSample } from './creatives/seed.js';
+import { creativeFeatureFlags } from './creatives/config.js';
+import { dailyRows } from './shopify/metrics.js';
 
 declare module 'fastify' {
   interface FastifyInstance { startBackgroundWork(): Promise<void> }
@@ -56,6 +61,9 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   }
   await seedFulfilment(db, shopify.mode, sourceNow());
   const ads=new SpendWorker(db,sourceEnv,adOptions);
+  const creativeNow = () => adOptions.clock?.() ?? (sourceEnv.META_ACCESS_TOKEN ? new Date() : sourceNow());
+  const creativeSettings = (await readSettings(db)).values;
+  if (!sourceEnv.META_ACCESS_TOKEN || !creativeSettings.metaAdAccountId) await seedCreativeSample(db, creativeSettings, creativeNow());
   const reviews = new ReviewsWorker(db, sourceEnv, reviewOptions);
   let observationRun: Promise<unknown> | undefined;
   let observationTimer: ReturnType<typeof setInterval> | undefined;
@@ -100,7 +108,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('Referrer-Policy', 'no-referrer');
     reply.header('X-Frame-Options', 'DENY');
-    reply.header('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; font-src 'self'; connect-src 'self'; img-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
+    reply.header('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; font-src 'self'; connect-src 'self'; img-src 'self' data:; media-src 'self' https://fbcdn.net https://*.fbcdn.net https://cdninstagram.com https://*.cdninstagram.com https://fbsbx.com https://*.fbsbx.com https://facebook.com https://*.facebook.com; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
     reply.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
     if (config.secureCookies) reply.header('Strict-Transport-Security', 'max-age=31536000');
     if (request.method === 'POST' && request.url === appConfig.shopify.webhookPath) return;
@@ -149,6 +157,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     // Radar describes actual ad connections even when Shopify numbers use sample data.
     result.adSources = await spendHealth(db, sourceEnv, settings.values, adOptions.clock?.() ?? new Date());
     result.reviews = reviews.mode === 'sample' ? sampleReviews() : await readReviews(db, reviewOptions.clock?.() ?? new Date());
+    result.creatives = await readCreativeView(db, settings.values, sourceEnv, creativeNow());
     result.banner = result.banner?.replace('reviews and other stages: sample data', `reviews: ${reviews.mode === 'sample' ? 'sample data' : 'live Judge.me'}; other stages: sample data`);
     const campaignScope = JSON.stringify([settings.values.metaAdAccountId, getSourceStates(sourceEnv).find(source => source.source === 'meta')!.mode]);
     try {
@@ -163,6 +172,12 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   }
   const events = registerDashboardEvents(app, auth, snapshot);
   registerFulfilment(app, db, auth, shopify.mode, sourceNow, () => events.publish());
+  registerCreatives(app, db, auth, sourceEnv, creativeNow, async (from, to) => {
+    const facts = await shopify.store.facts(sourceNow());
+    const today = ukToday(creativeNow());
+    const data = dataset(facts, today);
+    return { mode: shopify.mode, count: !data.ready || from < data.from || to > ukToday(sourceNow()) ? null : dailyRows(facts, today).filter(row => row.date >= from && row.date <= to).reduce((sum, row) => sum + row.o, 0) };
+  }, () => events.publish());
   app.get('/', async (request, reply) => {
     if (!await auth.session(request)) return reply.redirect('/login');
     return reply.type('text/html; charset=utf-8').send(dashboardPage(await snapshot()));
@@ -184,7 +199,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     if (!await auth.session(request)) return reply.redirect('/login');
     const [dashboard, imports, costs, settings] = await Promise.all([snapshot(), shopify.store.summary(sourceNow()), shopify.store.costSummary(), readSettings(db)]);
     return reply.type('text/html; charset=utf-8').send(sourceHealthPage(dashboard.sourceHealth ?? [], imports, costs, await spendHealth(db, sourceEnv, settings.values, sourceNow()), {
-      summary: dashboard.banner ?? '', shopify: dashboard.shopify!, checkedAt: sourceNow().toISOString(), campaigns: await readCampaignSync(db, settings.values, sourceEnv),
+      summary: dashboard.banner ?? '', shopify: dashboard.shopify!, checkedAt: sourceNow().toISOString(), campaigns: await readCampaignSync(db, settings.values, sourceEnv), creatives: await creativeHealth(db, settings.values, sourceEnv, creativeNow()),
     }));
   });
   app.get('/api/shopify', async (request, reply) => {
@@ -194,7 +209,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   app.get('/settings', async (request, reply) => {
     if (!await auth.session(request)) return reply.redirect('/login');
     const settings = await readSettings(db);
-    return reply.type('text/html; charset=utf-8').send(settingsPage(settings, await shopify.store.latestCosts(), shopify.mode, new Date(), await readMetaCampaigns(db, settings.values, sourceEnv), await readCampaignSync(db, settings.values, sourceEnv)));
+    return reply.type('text/html; charset=utf-8').send(settingsPage(settings, await shopify.store.latestCosts(), shopify.mode, new Date(), await readMetaCampaigns(db, settings.values, sourceEnv), await readCampaignSync(db, settings.values, sourceEnv), creativeFeatureFlags(sourceEnv)));
   });
   app.get('/api/settings', async (request, reply) => {
     if (!await auth.session(request)) return reply.code(401).send({ error: 'Sign in to continue.' });
@@ -217,8 +232,8 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   });
   // Fixed paths only; the server never exposes repository or environment files.
   const assets = [
-    ...['browser.js', 'dashboard.js', 'settings.js', 'fulfilment.js'].map(name => [name, 'text/javascript; charset=utf-8'] as const),
-    ...['styles.css', 'dashboard.css', 'settings.css', 'fulfilment.css', 'fonts.css', 'pull-refresh.css'].map(name => [name, 'text/css; charset=utf-8'] as const),
+    ...['browser.js', 'dashboard.js', 'settings.js', 'fulfilment.js', 'creatives.js'].map(name => [name, 'text/javascript; charset=utf-8'] as const),
+    ...['styles.css', 'dashboard.css', 'settings.css', 'fulfilment.css', 'creatives.css', 'fonts.css', 'pull-refresh.css'].map(name => [name, 'text/css; charset=utf-8'] as const),
     ...['logo.png', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'].map(name => [name, 'image/png'] as const),
     ...['outfit', 'plus-jakarta-sans'].flatMap(name => [
       [`fonts/${name}-latin-wght-normal.woff2`, 'font/woff2'] as const,

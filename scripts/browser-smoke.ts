@@ -14,6 +14,8 @@ import { checkHomeChapters, checkFulfilmentChapter } from './chapter-browser-che
 import { checkRadar } from './browser-radar.js';
 import { checkMarketHero, installMarketUpdateHook } from './browser-market.js';
 import { checkGrossHistoryProgress } from './browser-gross-history.js';
+import { checkCreatives } from './browser-creatives.js';
+import { checkCreativeSettings } from './browser-creative-settings.js';
 
 let step = 'read test configuration';
 
@@ -1705,6 +1707,9 @@ async function run(): Promise<void> {
     step = 'check measured-only radar, weakest area and spoke actions at phone and desktop widths';
     await checkRadar(context);
 
+    step = 'check creative pictures, playing media, windows and gallery filters at phone and desktop widths';
+    await checkCreatives(context);
+
     step = 'check same-origin manifest and installation icons';
     await checkManifest(page, context, origin);
 
@@ -1721,6 +1726,8 @@ async function run(): Promise<void> {
     await settingsPage.setViewportSize(viewports[0]!);
     step = 'check sell-out Settings dates, persistence and sample independence';
     await checkSeriesPaceSettings(settingsPage, context);
+    step = 'check creative Settings round-trips and read-only feature states';
+    await checkCreativeSettings(settingsPage, context);
     await settingsPage.locator('summary').filter({ hasText: 'Ad spend' }).click();
     for (const name of ['metaAdAccountId', 'googleCustomerId', 'googleLoginCustomerId', 'tiktokAdvertiserId']) {
       assert.equal(await settingsPage.locator(`input[name="${name}"]`).inputValue(), '');

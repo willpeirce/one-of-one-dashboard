@@ -70,12 +70,12 @@ test('Shopify health shows gross-history weeks from its job without changing Hea
   const health = source({ mode: 'live', status: 'healthy' });
   const html = sourceHealthPage([health], imports);
   const row = html.match(/<th scope="row">Shopify<\/th>([\s\S]*?)<\/tr>/)![1]!;
-  assert.match(row, /Healthy<br><small data-gross-history>Gross history: 1 of 3 weeks filled, 1 skipped/);
+  assert.match(row, /Healthy<br><small data-gross-history>Total sales history: 1 of 3 weeks filled, 1 skipped/);
   assert.equal((html.match(/data-gross-history/g) ?? []).length, 1);
   imports.jobs[0]!.state.filled.push({ from: '2026-03-15', to: '2026-03-17' });
-  assert.match(sourceHealthPage([health], imports), /Gross history: 2 of 3 weeks filled, 1 skipped/);
+  assert.match(sourceHealthPage([health], imports), /Total sales history: 2 of 3 weeks filled, 1 skipped/);
   imports.jobs[0]!.state = {};
-  assert.match(sourceHealthPage([health], imports), /Gross history: 0 of 0 weeks filled, 0 skipped/);
+  assert.match(sourceHealthPage([health], imports), /Total sales history: 0 of 0 weeks filled, 0 skipped/);
   assert.doesNotMatch(sourceHealthPage([source()], { ...imports, mode: 'sample', sample: true }), /data-gross-history/);
 });
 

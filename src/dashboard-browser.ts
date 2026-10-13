@@ -235,7 +235,7 @@ function renderHero(hero: HeroPeriod, animate = false): void {
     if (key === 'net') {
       let gross = element.querySelector<HTMLElement>('.gross');
       if (!gross) { get('.sv', element).insertAdjacentHTML('afterend', '<span class="gross"></span>'); gross = get<HTMLElement>('.gross', element); }
-      gross.textContent = hero.grossUnavailable ? 'Gross unavailable' : `Gross ${formatPounds(hero.gross)}`;
+      gross.textContent = hero.grossUnavailable ? 'Total unavailable' : `Total ${formatPounds(hero.gross)}`;
     }
     get('.ss', element).textContent = metric.ss;
     element.dataset.state = metric.state;

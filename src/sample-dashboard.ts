@@ -4525,7 +4525,7 @@ export function getSampleHero(from: string, to: string, settings?: Settings, mar
       if (week[key].d.hm) hero[key].d.hm = [...week[key].d.hm!];
     }
   }
-  hero.net.d.extra = [...(hero.net.d.extra ?? []), ['Gross (incl. shipping and tax)', formatPounds(hero.gross)]];
+  hero.net.d.extra = [...(hero.net.d.extra ?? []), ['Total sales (incl. shipping and tax)', formatPounds(hero.gross)]];
   if (market !== 'all') hero.eyebrow = `${market.toUpperCase()} · ${hero.eyebrow}`;
   if (includeMarkets) hero.markets = { all: { ...hero }, uk: getSampleHero(from, to, settings, 'uk', false), us: getSampleHero(from, to, settings, 'us', false) };
   return hero;

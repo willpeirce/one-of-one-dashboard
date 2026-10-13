@@ -399,3 +399,8 @@ Start at the later of olderFrom and the earliest stored order day or non-zero st
 After three consecutive failed runs for a block, regardless of error type, record it as skipped and advance instead of retrying it every minute forever. Persist retries and filled/skipped blocks across restarts. Log one safe line per skipped block with its from/to dates, without raw errors, credentials, figures or identifiers. A skipped block stays Gross unavailable; preserve cached Net and order counts while removing its Gross coverage. A later successful pass clears the skip. Record progress in the existing job JSON, with no schema change.
 
 The Shopify Source health row displays Gross history: N of M weeks filled, K skipped from that state. Gross-history failures remain secondary and do not change Healthy. Existing source reads, scopes and key handling are unchanged. All test dates, figures and identifiers are invented; live deployment agreement remains Will's check after Publish.
+
+
+## 2026-10-13, Total sales label (Will)
+
+13 Oct: the hero line under Net sales is Shopify's Total sales and is now labelled Total. Will compared it with Shopify's Gross sales line (before discounts, no shipping) and chose to keep the definition and change the word.

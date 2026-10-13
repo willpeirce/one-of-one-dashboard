@@ -25,10 +25,10 @@ export async function checkMarketHero(page: Page, snapshot: DashboardSnapshot, w
       .map(key => [key, model[key].unavailable ? model[key].unavailableLabel ?? 'No data' : formatMetricNumber(model[key].n, model[key])]));
     await page.waitForFunction(values => Object.entries(values).every(([key, value]) => document.querySelector(`#hero [data-k="${key}"] .sv`)?.textContent === value), expected);
     assert.equal(await page.locator('#eyebrow').textContent(), model.eyebrow);
-    assert.equal(await page.locator('#hero [data-k="net"] .gross').innerText(), model.grossUnavailable ? 'Gross unavailable' : `Gross ${formatPounds(model.gross)}`);
+    assert.equal(await page.locator('#hero [data-k="net"] .gross').innerText(), model.grossUnavailable ? 'Total unavailable' : `Total ${formatPounds(model.gross)}`);
     assert.equal(await page.locator('#hero .gross').count(), 1);
     await page.locator('#hero [data-k="net"]').click();
-    assert.match(await page.locator('#sh-extra').textContent() ?? '', /Gross \(incl\. shipping and tax\)/);
+    assert.match(await page.locator('#sh-extra').textContent() ?? '', /Total sales \(incl\. shipping and tax\)/);
     if (!model.grossUnavailable) assert.ok((await page.locator('#sh-extra').textContent() ?? '').includes(formatPounds(model.gross)));
     await page.locator('#sh-x').click();
     assert.equal(await page.locator('#market [aria-selected="true"]').getAttribute('data-market'), market);
@@ -58,7 +58,7 @@ export async function checkMarketHero(page: Page, snapshot: DashboardSnapshot, w
     const zero = structuredClone(snapshot); zero.generatedAt = new Date(Date.parse(snapshot.generatedAt) + 500).toISOString();
     zero.hero.today.markets!.us.gross = 0; zero.hero.today.markets!.us.grossUnavailable = false;
     await page.evaluate(next => (window as unknown as { pulseMarketStream: EventSource }).pulseMarketStream.dispatchEvent(new MessageEvent('dashboard', { data: JSON.stringify(next) })), zero);
-    await page.waitForFunction(() => document.querySelector('#hero .gross')?.textContent === 'Gross £0.00');
+    await page.waitForFunction(() => document.querySelector('#hero .gross')?.textContent === 'Total £0.00');
     await page.locator('[data-period="7d"]').click();
     await checkView(snapshot.hero['7d'], 'us');
     const replay = structuredClone(snapshot);

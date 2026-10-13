@@ -232,7 +232,7 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
       ss: one ? cNet === null ? 'no earlier days to compare' : `7-day avg ${money(cNet)}${cNet && !partial ? ` · ${t.net >= cNet ? '+' : '−'}${percent(t.net, cNet)}%` : ''}`
         : `avg ${money(t.net / n)} a day${cNet === null ? '' : ` · prev ${n} days ${money(cNet)}`}`,
       d: detail('net', { hp: '£', src: `Shopify Analytics, net sales, UK and US markets, ${when}`,
-        why: `${money(t.net)} net sales ${on}${partial ? ' so far' : ''}${one ? '' : `, ${money(t.net / n)} a day`}.${cNet === null || partial ? '' : ` ${comparisonText(t.net, cNet, money)}.`}` }),
+        why: `${money(t.net)} net sales ${on}${partial ? ' so far' : ''}${one ? '' : `, ${money(t.net / n)} a day`}.${cNet === null || partial ? '' : ` ${comparisonText(t.net, cNet, money)}.`} Shopify's Total sales: items after discounts, plus shipping and tax, minus refunds.` }),
     }, ['shopify']),
     orders: metric({ n: t.o, state: state(t.o, cOrders),
       ss: `${one && cOrders !== null ? `avg ${integer(cOrders)} · ` : ''}UK ${integer(t.uk)} · US ${integer(t.us)}${!one && cOrders !== null ? ` · prev ${n} days ${integer(cOrders)}` : ''}`,

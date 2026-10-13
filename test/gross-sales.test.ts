@@ -26,7 +26,7 @@ test('gross includes paid shipping and tax once and subtracts partial item/shipp
   const uk = await refundedOrder('UK'), us = await refundedOrder('US');
   const h = shopifyHero(facts([uk, us]), '2026-10-01', '2026-09-30', '2026-09-30', defaultSettings());
   assert.equal(h.net.n, 105); assert.equal(h.gross, 131.04); assert.equal(h.markets!.uk.net.n, 45); assert.equal(h.markets!.uk.gross, 57.60); assert.equal(h.markets!.us.net.n, 60); assert.equal(h.markets!.us.gross, 73.44); assert.equal(h.grossUnavailable, false);
-  for (const view of Object.values(h.markets!)) assert.deepEqual(view.net.d.extra!.find(([key]) => key === 'Gross (incl. shipping and tax)'), ['Gross (incl. shipping and tax)', view.market === 'uk' ? '£57.60' : view.market === 'us' ? '£73.44' : '£131.04']);
+  for (const view of Object.values(h.markets!)) assert.deepEqual(view.net.d.extra!.find(([key]) => key === 'Total sales (incl. shipping and tax)'), ['Total sales (incl. shipping and tax)', view.market === 'uk' ? '£57.60' : view.market === 'us' ? '£73.44' : '£131.04']);
   const alteredTotal = { ...uk, totalPence: 99999 }, changed = shopifyHero(facts([alteredTotal, us]), '2026-10-01', '2026-09-30', '2026-09-30', defaultSettings());
   assert.equal(changed.net.n, h.net.n); assert.equal(changed.net.state, h.net.state); assert.equal(changed.net.ss, h.net.ss); assert.equal(changed.orders.n, h.orders.n);
 });
@@ -38,7 +38,7 @@ test('gross assigns the original charge and refund to separate UK dates and resp
   const empty = shopifyHero(facts([]), '2026-10-01', '2026-09-30', '2026-09-30', defaultSettings()); assert.equal(empty.gross, 0); assert.equal(empty.grossUnavailable, false);
   const snapshot = getSampleDashboard(); snapshot.hero.today = empty;
   const html = dashboardPage(snapshot), net = /<button[^>]*data-k="net"[^>]*>([\s\S]*?)<\/button>/.exec(html)![1]!;
-  assert.match(net, /class="gross">Gross £0\.00<\/span>/); assert.ok(net.indexOf('class="gross"') > net.indexOf('class="sv big"')); assert.doesNotMatch(net, /data-k="gross"|data-sheet="gross"/);
+  assert.match(net, /class="gross">Total £0\.00<\/span>/); assert.ok(net.indexOf('class="gross"') > net.indexOf('class="sv big"')); assert.doesNotMatch(net, /data-k="gross"|data-sheet="gross"/);
 });
 test('Shopify full refund total is authoritative and legacy originals have the exact inclusive-tax fallback', async () => {
   const raw = (await fixture('order-uk-tax-inclusive-refund')).data.order; raw.refunds[0].totalRefundedSet = money('57.00'); delete raw.refunds[0].refundShippingLines;
@@ -83,7 +83,7 @@ test('presets before available history keep Gross unavailable in every market sh
     for (const view of [snapshot.hero[period], ...Object.values(snapshot.hero[period].markets!)]) {
       assert.equal(view.grossUnavailable, true);
       assert.equal(view.net.unavailable, true);
-      const row = view.net.d.extra!.find(([label]) => label === 'Gross (incl. shipping and tax)');
+      const row = view.net.d.extra!.find(([label]) => label === 'Total sales (incl. shipping and tax)');
       assert.ok(row);
       assert.match(row[1], /Unavailable.*history unavailable/);
       assert.doesNotMatch(row[1], /£/);

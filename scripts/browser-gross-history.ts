@@ -24,7 +24,7 @@ export async function checkGrossHistoryProgress(context: BrowserContext): Promis
     for (const width of [390, 1280]) {
       await page.setViewportSize({ width, height: 844 });
       await page.goto('/sources');
-      assert.equal(await page.locator('[data-gross-history]').innerText(), 'Gross history: 1 of 3 weeks filled, 1 skipped');
+      assert.equal(await page.locator('[data-gross-history]').innerText(), 'Total sales history: 1 of 3 weeks filled, 1 skipped');
       assert.match(await page.locator('#source-health tbody tr td').nth(1).innerText(), /^Healthy\n/);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     }

@@ -181,7 +181,7 @@ export async function checkCreatives(context: BrowserContext): Promise<void> {
       await noOverflow(page);
       if (process.env.PULSE_SCREENSHOT_DIR) await page.locator('#creative-sheet').screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/creative-tagging-${width}.png` });
       await page.reload();
-      await page.locator('[data-group-id="sample-video-3"] [data-creative-open]').click();
+      await page.locator('#creative-gallery [data-group-id="sample-video-3"] [data-creative-open]').click();
       await page.locator('#creative-tagging').waitFor();
       assert.equal(await page.locator('#creative-tag-note').inputValue(), 'Invented browser note');
       for (const [key, value] of [['hookType', 'claim'], ['slabEarly', 'yes'], ['productEarly', 'no']]) {
@@ -206,7 +206,7 @@ export async function checkCreatives(context: BrowserContext): Promise<void> {
       assert.equal(await page.locator('#creative-note-count').innerText(), '200');
       await delayedNote;
       await page.locator('[data-creative-close]').click();
-      await page.locator('[data-group-id="sample-video-3"] [data-creative-open]').click();
+      await page.locator('#creative-gallery [data-group-id="sample-video-3"] [data-creative-open]').click();
       assert.match(await page.locator('#creative-sheet-title').innerText(), /Opening creative/);
       releaseNote();
       await page.locator('#creative-tagging').waitFor();
@@ -254,7 +254,7 @@ export async function checkCreatives(context: BrowserContext): Promise<void> {
       await page.route(scanPattern, route => route.fulfill({ json: { groupId: 'sample-image-1', attributes: scanSheet.attributes,
         scan: { ...scanSheet.scan, line: 'Scan: on · 1 scanned · 0 failed · £0.01 of £1.00 today · invented-browser-model' },
         result: { state: 'done', attempts: 1, done: 1, failed: 0 } } }));
-      await page.locator('[data-group-id="sample-image-1"] [data-creative-open]').click();
+      await page.locator('#creative-gallery [data-group-id="sample-image-1"] [data-creative-open]').click();
       await page.locator('[data-creative-scan]').waitFor();
       await page.locator('[data-creative-scan]').click();
       await page.locator('#creative-scan-result').filter({ hasText: 'Scan complete. Attributes updated.' }).waitFor();

@@ -8,6 +8,7 @@ import { campaignSyncText } from './ad-spend/campaign-status.js';
 import { formatNumber, formatPounds } from './money.js';
 import { seriesPaceDates } from './series-pace/dates.js';
 import { paceDate } from './series-pace/model.js';
+import { creativeFeatureFlags } from './creatives/config.js';
 
 function escapeHtml(value: string | number): string {
   return String(value).replace(/[&<>"']/g, (character) => ({
@@ -87,7 +88,7 @@ function campaignOwners(campaigns: readonly MetaCampaignView[], sync: CampaignSy
   return `<section class="setting-collection" aria-labelledby="metaOwners-heading"><h3 id="metaOwners-heading">Meta campaigns <span class="setting-count">${formatNumber(campaigns.length)}</span></h3><p class="setting-help" data-campaign-sync data-state="${sync.state}">${escapeHtml(campaignSyncText(sync))}</p><p class="setting-help">Campaigns appear automatically. New campaigns count as Ours until you check the owner. Save each row to confirm it; this saves a local rule and does not change Meta.</p><div class="setting-campaigns">${active.map(row).join('')}</div>${inactive.length ? `<details class="setting-campaign-inactive"><summary>Show ${formatNumber(inactive.length)} inactive</summary><div class="setting-campaigns">${inactive.map(row).join('')}</div></details>` : ''}</section>`;
 }
 
-export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly ShopifyCost[] = [], mode: 'sample' | 'live' = 'sample', now = new Date(), metaCampaigns: readonly MetaCampaignView[] = [], campaignSync: CampaignSyncState = { state: 'pending', at: null }): string {
+export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly ShopifyCost[] = [], mode: 'sample' | 'live' = 'sample', now = new Date(), metaCampaigns: readonly MetaCampaignView[] = [], campaignSync: CampaignSyncState = { state: 'pending', at: null }, creativeFlags = creativeFeatureFlags()): string {
   const values = snapshot.values;
   const costLabels: Record<string, string> = Object.create(null);
   for (const c of shopifyCosts) if (c.sku) {
@@ -141,12 +142,34 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
   const pace = section('Series 1 sell-out pace', 'Sell out when Series 2 lands, or choose your own target.', `<div class="settings-grid">${fields([
     { key: 'series1OrderDate', label: 'Drop 1 order date', type: 'date' },
   ], values)}</div>${paceMarket('UK')}${paceMarket('US')}`);
+  const creativeControls = `<section class="setting-collection" aria-labelledby="creative-settings-heading"><h3 id="creative-settings-heading">Meta creatives</h3><p class="setting-help">Rankings use Meta’s purchase claims. Targets are local rules; saving never changes an ad.</p><div class="settings-grid">${fields([
+    { key: 'creativeDefaultWindow', label: 'Top creatives default window', options: [{ value: '24h', label: '24h' }, { value: '3d', label: '3 days' }, { value: '7d', label: '7 days' }], hint: '24h means the last complete UK day plus today so far.' },
+    number('creativeSpendFloorGbp', 'Panel spend floor (£)', { max: 100_000 }),
+    number('creativePurchaseMinimum', 'Panel purchase minimum', { integer: true, min: 1, max: 100_000 }),
+    number('creativeFadeFrequency', 'Fade above frequency', { min: 0.01, max: 100 }),
+    number('creativeFadeCtrDropPercent', 'Fade after click-through drop (%)', { min: 0.01, max: 100 }),
+    number('creativeWeeklyTarget', 'New creatives weekly target', { integer: true, min: 1, max: 1_000 }),
+    number('creativeHitWinnerSpendGbp', 'Hit rate winner minimum spend (£)', { min: 0.01, max: 100_000 }),
+    number('creativeHitKilledSpendGbp', 'Hit rate killed minimum spend (£)', { min: 0.01, max: 100_000 }),
+    number('creativeHitKilledTargetMultiplier', 'Hit rate killed target multiplier', { min: 1, max: 100 }),
+    number('creativeMediaCapMb', 'Media storage cap (MB)', { integer: true, min: 1, max: 10_000 }),
+    { key: 'creativeFreelancerInitial', label: 'Freelancer initial', maxlength: 1, hint: 'One letter for the owner mark on each picture.' },
+  ], values)}</div><h3>Attribute lifts · planned</h3><p class="setting-help">These preferences are saved for the next release. Live attribute lifts and tagging are not built yet; any example is labelled sample data.</p><div class="settings-grid">${fields([
+    number('creativeLiftWindowDays', 'Lift window (days)', { integer: true, min: 1, max: 365 }),
+    number('creativeLiftMinimumGroups', 'Lift minimum groups per side', { integer: true, min: 1, max: 1_000 }),
+    number('creativeLiftMinimumSpendGbp', 'Lift minimum spend per side (£)', { min: 0.01, max: 100_000 }),
+  ], values)}</div><h3>Creative scan · planned</h3><p class="setting-help">The model scan is not built yet. Prices are pounds per million tokens; zero means not configured. Confirm the model and its current prices before enabling a future scan.</p><div class="settings-grid">${fields([
+    { key: 'creativeScanModel', label: 'Scan model ID', maxlength: 80 },
+    number('creativeScanInputPrice', 'Scan input price (£ per million tokens)', { max: 10_000 }),
+    number('creativeScanOutputPrice', 'Scan output price (£ per million tokens)', { max: 10_000 }),
+    number('creativeScanCapGbp', 'Scan daily spend cap (£)', { max: 1_000 }),
+  ], values)}</div><dl class="setting-help" aria-label="Read-only creative flags"><dt>Creative scan flag</dt><dd data-creative-scan-flag>${creativeFlags.creativeScanEnabled ? 'On' : 'Off'} · workflow not built yet</dd><dt>Meta actions</dt><dd data-meta-actions-flag>Off · read-only, no Meta actions are built</dd></dl></section>`;
   const campaigns = section('Ad spend', 'Read-only spend connections and campaign ownership.', `<div class="settings-grid">${fields([
     {key:'metaAdAccountId',label:'Meta ad account ID',optional:true,hint:'Digits only, without act_. Blank waits for keys and account setup.'},
     {key:'googleCustomerId',label:'Google customer ID',optional:true,hint:'Dashes are removed when saved.'},
     {key:'googleLoginCustomerId',label:'Google login customer ID (manager, optional)',optional:true},
     {key:'tiktokAdvertiserId',label:'TikTok advertiser ID',optional:true},
-  ], values)}</div>${campaignOwners(metaCampaigns, campaignSync)}${collection('expectedGoogleCampaigns', 'Google campaign', [
+  ], values)}</div>${campaignOwners(metaCampaigns, campaignSync)}${creativeControls}${collection('expectedGoogleCampaigns', 'Google campaign', [
     { key: 'campaignId', label: 'Campaign ID' },
   ], values.expectedGoogleCampaigns, 'Campaign IDs expected to report on complete days. This does not enable a campaign.')}`);
   const creators = section('Creator negotiation', 'Your rules for agreeing an asset and its usage.', `<div class="settings-grid">${fields([

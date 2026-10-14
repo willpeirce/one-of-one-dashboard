@@ -28,7 +28,7 @@ const failure = {
   },
 };
 
-test('campaign failure follows committed spend, preserves the list and leaves Meta live with a fresh fetch', async (t) => {
+test('campaign and creative catalogue failures follow committed spend, preserve the list and leave Meta live with a fresh fetch', async (t) => {
   const db = await createTestDatabase();
   t.after(() => db.close());
   const s = settings(), e = env(), requests: string[] = [], logs: string[] = [];
@@ -52,6 +52,8 @@ test('campaign failure follows committed spend, preserves the list and leaves Me
         assert.equal((await db.query('SELECT * FROM pulse.ad_spend')).rowCount, 1);
         return response(failure, 400);
       }
+      // The catalogue is another independent secondary read; refuse it explicitly.
+      if (path.endsWith('/ads')) return response(failure, 400);
       if (path.endsWith('/insights')) return response({ data: [{
         campaign_id: campaign.id, campaign_name: 'Invented Birch UK',
         adset_id: '900000000802', adset_name: 'Invented Birch audience',
@@ -62,7 +64,7 @@ test('campaign failure follows committed spend, preserves the list and leaves Me
   });
   t.after(() => worker.stop());
   await worker.tick('meta');
-  assert.deepEqual(requests, ['act_9000000000', 'insights', 'campaigns']);
+  assert.deepEqual(requests, ['act_9000000000', 'insights', 'campaigns', 'act_9000000000', 'ads']);
   const health = (await db.query<{ mode: string; status: string; last_success_at: Date | string; consecutive_failures: number }>(
     "SELECT mode,status,last_success_at,consecutive_failures FROM pulse.source_health WHERE source='meta'",
   )).rows[0]!;
@@ -74,7 +76,11 @@ test('campaign failure follows committed spend, preserves the list and leaves Me
   assert.equal(facts.sources.find((source) => source.source === 'meta')!.status, 'live');
   assert.equal(facts.rows[0]!.amount, '12.500000');
   assert.deepEqual(await readMetaCampaigns(db, s, e), before);
-  assert.deepEqual(logs, ['Meta campaigns read failed (http 400, meta 100/1487694).']);
+  assert.deepEqual(logs, [
+    'Meta campaigns read failed (http 400, meta 100/1487694).',
+    'Meta creatives read failed (http 400, meta 100/1487694).',
+  ]);
+  assert.equal((await db.query<{ error_code: string }>('SELECT error_code FROM pulse.creative_jobs WHERE account_id=$1', [s.metaAdAccountId])).rows[0]!.error_code, 'http 400, meta 100/1487694');
   assert.ok(!logs.join('').includes('private') && !logs.join('').includes('https://') && !logs.join('').includes(s.metaAdAccountId));
 });
 
@@ -95,7 +101,7 @@ test('spend failure stays unavailable even when the independent campaign read su
   });
   t.after(() => worker.stop());
   await worker.tick('meta');
-  assert.deepEqual(requests, ['act_9000000000', 'campaigns']);
+  assert.deepEqual(requests, ['act_9000000000', 'campaigns', 'act_9000000000']);
   const health = (await db.query<{ status: string; last_success_at: null; consecutive_failures: number }>(
     "SELECT status,last_success_at,consecutive_failures FROM pulse.source_health WHERE source='meta'",
   )).rows[0]!;
@@ -104,7 +110,12 @@ test('spend failure stays unavailable even when the independent campaign read su
   assert.equal(health.consecutive_failures, 1);
   assert.equal((await spendFacts(db, s, e, 'live', '2026-10-10', '2026-10-10', now)).sources[0]!.status, 'source unavailable');
   assert.equal((await readMetaCampaigns(db, s, e))[0]!.name, campaign.name);
-  assert.deepEqual(logs, ['Ad spend meta failed (http 400, meta 100/1487694).']);
+  assert.deepEqual(logs, [
+    'Meta creatives read failed (http 400, meta 100/1487694).',
+    'Ad spend meta failed (http 400, meta 100/1487694).',
+  ]);
+  assert.equal((await db.query<{ error_code: string }>('SELECT error_code FROM pulse.creative_jobs WHERE account_id=$1', [s.metaAdAccountId])).rows[0]!.error_code, 'http 400, meta 100/1487694');
+  assert.ok(!logs.join('').includes('private') && !logs.join('').includes(e.META_ACCESS_TOKEN));
 });
 
 test('campaign state persistence errors never mark a successful spend sync unavailable or log database values', async (t) => {

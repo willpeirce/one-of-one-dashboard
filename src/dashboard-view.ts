@@ -1,4 +1,5 @@
 import { glance } from './fulfilment/view.js';
+import { creativePanelHtml, creativeCardsHtml, creativeDialogHtml } from './creatives/view.js';
 import type { DashboardSnapshot } from './dashboard-types.js';
 import { liveHtml, needsHtml, storePanelsHtml } from './shopify/presentation.js';
 import { dashboardTemplate } from './dashboard-template.js';
@@ -24,6 +25,11 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
     return escapeHtml(value);
   });
   const pace = snapshot.widgets.w017;
+  if (snapshot.creatives) {
+    content = content.replace('<div class="deck" id="deck">', `<div class="deck" id="deck"><div id="creative-cards">${creativeCardsHtml(snapshot.creatives.cards)}</div><div id="creative-feedback" role="status" aria-live="polite"></div>`);
+    content = content.replace(/(<header class="chapter-heading"><span class="chapter-number" aria-hidden="true">4<\/span>[\s\S]*?<\/header>)/, `$1<div id="creative-panel">${creativePanelHtml(snapshot.creatives)}</div>`);
+    content += creativeDialogHtml();
+  }
   if (snapshot.reviews) {
     content = content.replace(/(<section class="chapter revs" id="reviews"[^>]*>)[\s\S]*?<\/section>/, (_section, tag: string) => `${tag}${reviewsPanelHtml(snapshot.reviews!)}</section>`);
     content = content.replace(/(<span id="subrv">)[\s\S]*?<\/span>/, (_span, tag: string) => `${tag}${escapeHtml(reviewsGreeting(snapshot.reviews!))}</span>`);
@@ -70,7 +76,7 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
   content = content.replace(/<span class="avatar"[\s\S]*?<\/span><\/span>/, `<details class="account-menu" id="account-menu">
     <summary class="avatar" aria-label="Account menu">W</summary>
     <nav class="account-links" aria-label="Account">
-      <a href="/fulfilment">Fulfilment costs</a><a href="/sources">Source health${badge('source-health-count', failing, 'failing checks')}</a><a href="/settings">Settings${badge('settings-count', unconfirmed, 'campaigns to confirm')}</a><a href="/audit">Audit log</a>
+      <a href="/creatives">Creatives</a><a href="/fulfilment">Fulfilment costs</a><a href="/sources">Source health${badge('source-health-count', failing, 'failing checks')}</a><a href="/settings">Settings${badge('settings-count', unconfirmed, 'campaigns to confirm')}</a><a href="/audit">Audit log</a>
       <button type="button" id="sign-out" disabled>Sign out</button>
     </nav>
   </details>`);
@@ -92,6 +98,7 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
   <link rel="stylesheet" href="/assets/fonts.css">
   <link rel="stylesheet" href="/assets/dashboard.css">
   <link rel="stylesheet" href="/assets/fulfilment.css">
+  <link rel="stylesheet" href="/assets/creatives.css">
   <script type="module" src="/assets/browser.js"></script>
   <script type="module" src="/assets/dashboard.js"></script>
 </head>

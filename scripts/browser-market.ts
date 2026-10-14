@@ -42,15 +42,30 @@ export async function checkMarketHero(page: Page, snapshot: DashboardSnapshot, w
   page.on('request', listener);
   try {
     for (const market of ['all', 'uk', 'us'] as const) {
+      await page.locator('#market').evaluate(element => element.scrollIntoView({ block: 'center', behavior: 'instant' }));
+      const scrollBefore = await page.evaluate(() => scrollY);
       await page.locator(`#market [data-market="${market}"]`).click();
+      const expectedNet = market === 'all' ? snapshot.hero.today.net : snapshot.hero.today.markets![market].net;
+      await page.waitForFunction(value => document.querySelector('#hero [data-k="net"] .sv')?.textContent === value,
+        expectedNet.unavailable ? expectedNet.unavailableLabel ?? 'No data' : formatMetricNumber(expectedNet.n, expectedNet));
+      assert.ok(Math.abs(await page.evaluate(() => scrollY) - scrollBefore) < 1, 'A market tap updates the hero without scrolling');
+      const netInView = await page.locator('#hero [data-k="net"]').evaluate(element => {
+        const rect = element.getBoundingClientRect();
+        return rect.top >= 0 && rect.bottom <= innerHeight;
+      });
+      assert.ok(netInView, 'The first hero tile is visible beside the market choice');
       await checkView(snapshot.hero.today, market);
       assert.equal(await page.locator('#hero .hero-grid > .tile').count(), 8);
       const columns = await page.locator('.hero-grid').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length);
       assert.equal(columns, width < 761 ? 2 : 4);
       const periodBox = await page.locator('#period').boundingBox(), marketBox = await page.locator('#market').boundingBox();
-      assert.ok(periodBox && marketBox);
-      if (width >= 761) assert.ok(Math.abs(periodBox.y - marketBox.y) < 1, 'Desktop period and market controls sit beside each other');
-      else assert.ok(marketBox.y >= periodBox.y + periodBox.height, 'Phone market control gets its own row');
+      const radarBox = await page.locator('#radar').boundingBox(), heroBox = await page.locator('.hero-grid').boundingBox();
+      assert.ok(periodBox && marketBox && radarBox && heroBox);
+      assert.ok(periodBox.y < radarBox.y, 'Period tabs stay above the radar');
+      assert.ok(marketBox.y >= radarBox.y + radarBox.height, 'The market switch sits below the radar');
+      assert.ok(heroBox.y >= marketBox.y + marketBox.height && heroBox.y - marketBox.y - marketBox.height < 32,
+        'The market switch sits directly above the hero tiles');
+      assert.equal(await page.locator('#market').evaluate(element => element.nextElementSibling?.classList.contains('hero-grid')), true);
       assert.equal(await page.locator('#hero .per').count(), 0);
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     }

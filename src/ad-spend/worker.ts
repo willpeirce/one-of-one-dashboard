@@ -3,7 +3,10 @@ import { addDays, ukToday } from '../hero-range.js';
 import { readSettings } from '../settings.js';
 import { getSourceStates } from '../sources.js';
 import { AdError, adErrorCode, accountFor, adSources, type AdSource } from './model.js';
-import { liveReader, type SpendReader } from './clients.js';
+import { liveReader, MetaSpend, type SpendReader } from './clients.js';
+import { MetaCreativeClient } from '../creatives/client.js';
+import { CreativeWorker } from '../creatives/worker.js';
+import type { CreativeReader } from '../creatives/model.js';
 import type { AdTransportOptions } from './http.js';
 import { readJobs, recordCampaignSync, saveMetaCampaigns, saveSpend } from './store.js';
 export const SPEND_POLL_INTERVAL_MS = 30 * 60_000;
@@ -11,12 +14,14 @@ export const SPEND_STALE_AFTER_MS = 3 * SPEND_POLL_INTERVAL_MS;
 export interface SpendWorkerOptions extends AdTransportOptions {
   clock?: () => Date;
   readers?: Partial<Record<AdSource, SpendReader>>;
+  creativeReader?: CreativeReader;
 }
 export class SpendWorker {
   private timer?: ReturnType<typeof setInterval>;
   private closing = false;
   private readonly runs = new Map<AdSource, Promise<void>>();
   private readonly readers = new Map<string, SpendReader>();
+  private readonly creativeReaders = new Map<string, CreativeReader>();
   constructor(
     private readonly db: Database,
     private readonly env: NodeJS.ProcessEnv,
@@ -166,6 +171,16 @@ export class SpendWorker {
         const code = adErrorCode(error, 'meta');
         await recordCampaignSync(this.db, account, { state: 'error', at: now.toISOString(), code }).catch(() => {});
         console.error(`Meta campaigns read failed (${code}).`);
+      }
+    }
+    if (source === 'meta' && (reader instanceof MetaSpend || this.options.creativeReader)) {
+      // Creative reads are secondary and never rewrite the hero's ad-set spend or health.
+      const creativeReader = this.options.creativeReader ?? this.creativeReaders.get(readerScope) ?? new MetaCreativeClient(reader as MetaSpend, this.options);
+      this.creativeReaders.set(readerScope, creativeReader);
+      try {
+        await new CreativeWorker(this.db, creativeReader).run(account, settings, now);
+      } catch(error) {
+        console.error(`Meta creatives read failed (${adErrorCode(error, 'meta')}).`);
       }
     }
     if (spendFailure) throw spendFailure.error;

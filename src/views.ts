@@ -5,6 +5,7 @@ import type { CampaignSyncState } from './ad-spend/campaign-cache.js';
 import { campaignSyncText } from './ad-spend/campaign-status.js';
 import type { ShopifyDashboard } from './shopify/dashboard.js';
 import { dayCount } from './hero-range.js';
+import type { CreativeHealth } from './creatives/store.js';
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({
@@ -78,7 +79,21 @@ const healthLabels: Record<SourceHealth['status'], string> = {
   error: 'Source unavailable',
 };
 
-export function sourceHealthPage(rows: readonly SourceHealth[], shopify?: Awaited<ReturnType<ShopifyStore['summary']>>, costs?: Awaited<ReturnType<ShopifyStore['costSummary']>>, ads?:Awaited<ReturnType<typeof import('./ad-spend/store.js').spendHealth>>, status?: { summary: string; shopify: ShopifyDashboard; checkedAt: string; campaigns?: CampaignSyncState }): string {
+export function creativeHealthDetails(health: CreativeHealth): string {
+  const mb = (bytes: number) => formatNumber(bytes / (1024 * 1024), 1);
+  const progress = health.mode === 'sample' ? 'Invented catalogue · waiting for keys' : health.backfillDone
+    ? `Backfill complete · ${formatNumber(health.completedDays)} days read`
+    : `Backfill: ${formatNumber(health.completedDays)} of ${formatNumber(health.totalDays)} days read${health.backfillNext ? ` · next ${escapeHtml(health.backfillNext)}` : ' · first read pending'}`;
+  return `<section aria-label="Meta creative imports" data-creative-health><h2>Meta creatives · ${health.mode === 'sample' ? 'sample data' : 'live'}</h2>
+    <p>Catalogue: ${formatNumber(health.catalogueCount)} ads · ${progress}</p>
+    <p>Media store: ${mb(health.bytes)} MB of ${mb(health.capBytes)} MB · last successful read ${timestamp(health.lastSuccessAt)}</p>
+    ${health.error ? `<p role="status">${health.error === 'unsupported_account' ? 'Creative insights need a GBP account.' : `Creative read needs attention (${escapeHtml(health.error)}).`} Stored data is retained.</p>` : ''}
+    ${health.reconciliation ? `<p class="notice" data-creative-reconciliation>${escapeHtml(health.reconciliation)}</p>` : ''}
+    <p>Creative spend and counts use UK days; hourly reports are aligned to Europe/London when the Meta account timezone differs. Reach, frequency and average play time keep Meta account days.</p>
+    <p>Ad-level comparisons use days read by both imports. The hero keeps the ad-set spend figure.</p></section>`;
+}
+
+export function sourceHealthPage(rows: readonly SourceHealth[], shopify?: Awaited<ReturnType<ShopifyStore['summary']>>, costs?: Awaited<ReturnType<ShopifyStore['costSummary']>>, ads?:Awaited<ReturnType<typeof import('./ad-spend/store.js').spendHealth>>, status?: { summary: string; shopify: ShopifyDashboard; checkedAt: string; campaigns?: CampaignSyncState; creatives?: CreativeHealth }): string {
   const gross = shopify?.mode === 'live' ? shopify.jobs.find(job => job.name === 'gross_history')?.state : undefined;
   const days = typeof gross?.first === 'string' && typeof gross?.last === 'string' ? dayCount(gross.first, gross.last) : 0;
   const weeks = Number.isFinite(days) ? Math.max(0, Math.ceil(days / 7)) : 0;
@@ -89,6 +104,7 @@ export function sourceHealthPage(rows: readonly SourceHealth[], shopify?: Awaite
     ${shopify ? `<section aria-label="Shopify imports"><h2>Shopify imports · ${shopify.sample ? 'sample data' : 'live'}</h2><p>${formatNumber(shopify.counts.order ?? 0)} orders · ${formatNumber(shopify.counts.inventory ?? 0)} inventory rows · ${formatNumber(shopify.counts.sessions ?? 0)} session days · ${formatNumber(shopify.counts.sales ?? 0)} older sales days · ${formatNumber(shopify.pendingWebhooks)} webhooks pending.</p><p>Shopify cards are on Home. Import counts include older records retained for replay; window-based cards exclude them.</p>${shopify.notices.length ? `<p>Needs attention: ${shopify.notices.map(n => escapeHtml(n === 'geo_unreliable' ? shopify.geoNotice! : n.replaceAll('_', ' '))).join(' · ')}</p>` : ''}</section>` : ''}
     ${costs ? `<p>Shopify unit costs: ${formatNumber(costs.known)} stock variants with a cost · ${formatNumber(costs.missing)} without · last cost change ${costs.changed ? timestamp(costs.changed) : 'none observed'}. ${shopify?.sample ? 'Sample data.' : 'Live.'}</p>` : ''}
     ${ads?`<section aria-label="Ad spend imports"><h2>Ad spend</h2>${ads.map(a=>`<p>${escapeHtml(a.source==='meta'?'Meta':a.source==='google-ads'?'Google':'TikTok')} · ${escapeHtml(a.status)}${a.fetchedAt?` · last fetched ${timestamp(a.fetchedAt)} UK`:''}${a.failures?` · ${formatNumber(a.failures)} consecutive failure${a.failures === 1 ? '' : 's'}`:''}${a.source==='google-ads'?' · Google can lag about 3 hours · hours re-aligned to UK time':a.source==='tiktok'?' · hours re-aligned to UK time':''}</p>`).join('')}<p>Account IDs belong in Settings &gt; Ad spend. Each source connects independently. No ad platform changes are made.</p></section>`:''}
+    ${status?.creatives ? creativeHealthDetails(status.creatives) : ''}
     <p>Shopify imports when its keys are present. Ad spend also needs its account ID in Settings. Other source clients arrive in their stages.</p>
     <div class="table-scroll" role="region" aria-label="Source health table, scroll horizontally if needed" tabindex="0">
       <table id="source-health">

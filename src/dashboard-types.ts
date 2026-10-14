@@ -154,4 +154,5 @@ export interface DashboardSnapshot {
   fulfilment?: import('./fulfilment/view.js').Summary;
   metaCampaigns?: { unconfirmedCount: number };
   reviews?: import('./judgeme/model.js').ReviewsPanel;
+  creatives?: import('./creatives/presentation-types.js').CreativeView;
 }

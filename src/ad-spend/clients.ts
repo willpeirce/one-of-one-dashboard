@@ -146,9 +146,9 @@ export class MetaSpend implements SpendReader {
     private readonly token: string,
     options: AdTransportOptions = {},
   ) {
-    this.http = new AdTransport('meta', options);
+    this.http = new AdTransport('meta', { ...options, log: options.log ? (entry) => options.log!({ ...entry, requestId: entry.requestId?.includes(token) ? null : entry.requestId }) : undefined });
   }
-  private get(path: string, params: Record<string, string> = {}) {
+  readGraph(path: string, params: Record<string, string> = {}) {
     const url = new URL(`https://graph.facebook.com/${apiVersions.meta}/${path}`);
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
     return this.http.request(url.toString(), {
@@ -156,12 +156,34 @@ export class MetaSpend implements SpendReader {
       headers: { Authorization: `Bearer ${this.token}` },
     });
   }
+  /** A source URL may expire, but must never send the bearer credential to a browser. */
+  safeMediaUrl(value: unknown): string {
+    try {
+      if (typeof value !== 'string' || [value, decodeURIComponent(value)].some(candidate => candidate.includes(this.token))) throw new AdError('invalid');
+      const url = new URL(value);
+      if (url.protocol !== 'https:' || url.username || url.password || [...url.searchParams.keys()].some(key => /access_token|authorization/i.test(key))) throw new AdError('invalid');
+      return url.toString();
+    } catch { throw new AdError('invalid'); }
+  }
+  /** Shared cursor paging; never follows a provider-supplied URL carrying credentials. */
+  async readPages(path: string, params: Record<string, string> = {}): Promise<any[]> {
+    const rows: any[] = [], cursors = new Set<string>();
+    let after: string | undefined;
+    do {
+      const body = await this.readGraph(path, { ...params, ...(after ? { after } : {}) });
+      rows.push(...list(body.data));
+      after = body.paging?.next ? label(body.paging?.cursors?.after) : undefined;
+      if (after && cursors.has(after)) throw new AdError('invalid');
+      if (after) cursors.add(after);
+    } while (after);
+    return rows;
+  }
   async readCampaigns(account: string): Promise<MetaCampaign[]> {
     const rows: MetaCampaign[] = [], cursors = new Set<string>();
     let skipped = 0;
     let after: string | undefined;
     do {
-      const body = await this.get(`act_${account}/campaigns`, {
+      const body = await this.readGraph(`act_${account}/campaigns`, {
         fields: 'id,name,effective_status,created_time',
         // The v25 AdAccount campaigns edge accepts Campaign.EffectiveStatus values.
         effective_status: JSON.stringify(['ACTIVE', 'PAUSED']),
@@ -190,13 +212,13 @@ export class MetaSpend implements SpendReader {
     return rows;
   }
   async read(account: string, from: string, to: string, settings: Settings): Promise<SpendRow[]> {
-    const metadata = await this.get(`act_${account}`, { fields: 'currency,timezone_name' }),
+    const metadata = await this.readGraph(`act_${account}`, { fields: 'currency,timezone_name' }),
       zone = label(metadata.timezone_name),
       curr = currency(metadata.currency);
     const rows: SpendRow[] = [];
     let after: string | undefined;
     do {
-      const body = await this.get(`act_${account}/insights`, {
+      const body = await this.readGraph(`act_${account}/insights`, {
         fields: 'spend,campaign_id,campaign_name,adset_id,adset_name,date_start',
         level: 'adset',
         time_increment: '1',

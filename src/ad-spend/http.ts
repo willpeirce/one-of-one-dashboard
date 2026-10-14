@@ -74,7 +74,7 @@ export class AdTransport {
         if (
           response.status === 429 ||
           body?.code === 40100 ||
-          [4, 17, 32, 613].includes(body?.error?.code)
+          [4, 17, 32, 613, 80000, 80004].includes(body?.error?.code)
         ) {
           const retry = Number(response.headers.get('retry-after') ?? 1);
           this.next = now() + Math.max(1000, Number.isFinite(retry) ? retry * 1000 : 1000);

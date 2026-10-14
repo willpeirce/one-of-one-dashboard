@@ -86,6 +86,7 @@ export function creativeHealthDetails(health: CreativeHealth): string {
     : `Backfill: ${formatNumber(health.completedDays)} of ${formatNumber(health.totalDays)} days read${health.backfillNext ? ` · next ${escapeHtml(health.backfillNext)}` : ' · first read pending'}`;
   return `<section aria-label="Meta creative imports" data-creative-health><h2>Meta creatives · ${health.mode === 'sample' ? 'sample data' : 'live'}</h2>
     <p>Catalogue: ${formatNumber(health.catalogueCount)} ads · ${progress}</p>
+    <p data-creative-reduced>${formatNumber(health.reducedCount)} creatives at reduced detail</p>
     <p>Media store: ${mb(health.bytes)} MB of ${mb(health.capBytes)} MB · last successful read ${timestamp(health.lastSuccessAt)}</p>
     ${health.error ? `<p role="status">Creative read needs attention (${escapeHtml(health.error)}).${/^unsupported_account(?: at (?:catalogue(?: after \d+ ads)?|insights|backfill))?$/.test(health.error) ? ' Creative insights need a GBP account.' : ''} Stored data is retained.</p>` : ''}
     ${health.reconciliation ? `<p class="notice" data-creative-reconciliation>${escapeHtml(health.reconciliation)}</p>` : ''}

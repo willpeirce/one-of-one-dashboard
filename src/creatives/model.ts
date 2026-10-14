@@ -32,20 +32,24 @@ export interface CreativeData {
 }
 export interface CatalogueMedia extends Omit<MediaGroup, 'id' | 'mergedIntoId' | 'thumbnailUrl'> {
   id?: string;
+  /** Undefined preserves stored detail status; null records a successful expansion. */
+  detailReducedAt?: string | null;
   thumbnail: Uint8Array | null; poster: Uint8Array | null; frames: Uint8Array[];
 }
-export interface CatalogueEntry { ad: Omit<CreativeAd, 'mediaGroupId' | 'firstSpendDay'>; media: CatalogueMedia }
+export interface CatalogueEntry { ad: Omit<CreativeAd, 'mediaGroupId' | 'firstSpendDay'>; media: CatalogueMedia; retryGroupId?: string }
 export type StoredCatalogueAd = Pick<CreativeAd, 'id' | 'creativeId' | 'mediaGroupId'>;
 /** A list-only refresh preserves the stored creative fields and media group. */
 export interface CatalogueRefresh {
   ad: Pick<CreativeAd, 'id' | 'name' | 'status' | 'effectiveStatus' | 'lastSeen'
     | 'adSetId' | 'adSetName' | 'campaignId' | 'campaignName' | 'owner' | 'market'>;
   media: null;
+  retryGroupId?: string;
 }
 export type CatalogueRead = CatalogueEntry | CatalogueRefresh;
 export interface CreativeReader {
   rememberStoredMedia?(keys: string[]): void;
   rememberStoredAds?(ads: StoredCatalogueAd[]): void;
+  rememberDetailRetries?(ads: StoredCatalogueAd[]): void;
   readCatalogue(account: string, settings: import('../settings.js').Settings, now: Date): AsyncIterable<CatalogueRead[]>;
   readInsights(account: string, from: string, to: string): Promise<AdInsight[]>;
   readFrequency?(account: string, adIds: string[], from: string, to: string): Promise<number | null>;

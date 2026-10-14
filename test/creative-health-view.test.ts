@@ -4,7 +4,7 @@ import { creativeHealthDetails } from '../src/views.js';
 import { reconciliationLine, type CreativeHealth } from '../src/creatives/store.js';
 
 const health: CreativeHealth = {
-  mode: 'live', catalogueCount: 12, backfillNext: '2026-09-04', backfillDone: false,
+  mode: 'live', catalogueCount: 12, reducedCount: 2, backfillNext: '2026-09-04', backfillDone: false,
   completedDays: 28, totalDays: 68, bytes: 2 * 1024 * 1024, capBytes: 300 * 1024 * 1024,
   lastSuccessAt: '2026-10-13T09:00:00Z', reconciliation: null, error: null,
 };
@@ -12,6 +12,7 @@ const health: CreativeHealth = {
 test('creative health shows catalogue, durable progress, storage and last read', () => {
   const html = creativeHealthDetails(health);
   assert.match(html, /Catalogue: 12 ads/);
+  assert.match(html, /2 creatives at reduced detail/);
   assert.match(html, /28 of 68 days read · next 2026-09-04/);
   assert.match(html, /2\.0 MB of 300\.0 MB/);
   assert.match(html, /datetime="2026-10-13T09:00:00.000Z"/);

@@ -24,17 +24,37 @@ export async function saveCatalogue(db: Database, account: string, entries: Cata
           WHERE mode=$1 AND account_id=$2 AND ad_id=$3`,
         [mode, account, ad.id, ad.name, ad.status, ad.effectiveStatus, ad.lastSeen, now,
           ad.adSetId, ad.adSetName, ad.campaignId, ad.campaignName, ad.owner, ad.market]);
+        if (entry.retryGroupId) await tx.query(`UPDATE pulse.media_groups SET detail_retry_after=$4
+          WHERE mode=$1 AND account_id=$2 AND id=$3 AND detail_reduced_at IS NOT NULL`,
+        [mode, account, entry.retryGroupId, new Date(now.getTime() + 86_400_000)]);
         continue;
       }
       const { ad, media } = entry;
       expandedIds.push(ad.id);
       const existing = (await tx.query<any>('SELECT id FROM pulse.media_groups WHERE mode=$1 AND account_id=$2 AND kind=$3 AND media_key=$4', [mode, account, media.kind, media.key])).rows[0];
-      const id = existing?.id ?? media.id ?? randomUUID();
-      await tx.query(`INSERT INTO pulse.media_groups(id,mode,account_id,source_id,kind,media_key,title,length_seconds,width,height,first_seen,fetched_at,thumbnail,poster,frames,alternates)
-        VALUES($1,$2,$3,$4,$5,$4,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
-        ON CONFLICT(mode,account_id,kind,media_key) DO UPDATE SET title=EXCLUDED.title,length_seconds=COALESCE(EXCLUDED.length_seconds,pulse.media_groups.length_seconds),width=COALESCE(EXCLUDED.width,pulse.media_groups.width),height=COALESCE(EXCLUDED.height,pulse.media_groups.height),fetched_at=EXCLUDED.fetched_at,thumbnail=COALESCE(EXCLUDED.thumbnail,pulse.media_groups.thumbnail),poster=COALESCE(EXCLUDED.poster,pulse.media_groups.poster),frames=CASE WHEN cardinality(EXCLUDED.frames)>0 THEN EXCLUDED.frames ELSE pulse.media_groups.frames END,alternates=EXCLUDED.alternates`,
-      [id, mode, account, media.key, media.kind, media.title, media.lengthSeconds, media.width, media.height, media.firstSeen, now, media.thumbnail, media.poster, media.frames, JSON.stringify(media.alternates)]);
-      if (!existing && media.kind === 'video') {
+      const id = entry.retryGroupId ?? existing?.id ?? media.id ?? randomUUID();
+      if (entry.retryGroupId) {
+        // Recovery updates the original row, including when a previously hidden media key is revealed.
+        // An already catalogued key cannot replace its other group's identity or manual merge history.
+        const changed = await tx.query(`UPDATE pulse.media_groups SET title=$4,
+          length_seconds=COALESCE($5,length_seconds),width=COALESCE($6,width),height=COALESCE($7,height),
+          thumbnail=COALESCE($8,thumbnail),poster=COALESCE($9,poster),
+          frames=CASE WHEN cardinality($10::bytea[])>0 THEN $10::bytea[] ELSE frames END,
+          alternates=$11,fetched_at=$12,detail_reduced_at=NULL,detail_retry_after=NULL,
+          kind=CASE WHEN $15 THEN $13 ELSE kind END,media_key=CASE WHEN $15 THEN $14 ELSE media_key END,
+          source_id=CASE WHEN $15 THEN $14 ELSE source_id END
+          WHERE mode=$1 AND account_id=$2 AND id=$3`,
+        [mode, account, id, media.title, media.lengthSeconds, media.width, media.height, media.thumbnail, media.poster,
+          media.frames, JSON.stringify(media.alternates), now, media.kind, media.key, !existing || existing.id === id]);
+        if (!changed.rowCount) throw new AdError('invalid');
+      } else await tx.query(`INSERT INTO pulse.media_groups(id,mode,account_id,source_id,kind,media_key,title,length_seconds,width,height,first_seen,fetched_at,thumbnail,poster,frames,alternates,detail_reduced_at,detail_retry_after)
+        VALUES($1,$2,$3,$4,$5,$4,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+        ON CONFLICT(mode,account_id,kind,media_key) DO UPDATE SET title=EXCLUDED.title,length_seconds=COALESCE(EXCLUDED.length_seconds,pulse.media_groups.length_seconds),width=COALESCE(EXCLUDED.width,pulse.media_groups.width),height=COALESCE(EXCLUDED.height,pulse.media_groups.height),fetched_at=EXCLUDED.fetched_at,thumbnail=COALESCE(EXCLUDED.thumbnail,pulse.media_groups.thumbnail),poster=COALESCE(EXCLUDED.poster,pulse.media_groups.poster),frames=CASE WHEN cardinality(EXCLUDED.frames)>0 THEN EXCLUDED.frames ELSE pulse.media_groups.frames END,alternates=EXCLUDED.alternates,
+          detail_reduced_at=CASE WHEN $18 THEN CASE WHEN EXCLUDED.detail_reduced_at IS NULL THEN NULL ELSE COALESCE(pulse.media_groups.detail_reduced_at,EXCLUDED.detail_reduced_at) END ELSE pulse.media_groups.detail_reduced_at END,
+          detail_retry_after=CASE WHEN $18 THEN EXCLUDED.detail_retry_after ELSE pulse.media_groups.detail_retry_after END`,
+      [id, mode, account, media.key, media.kind, media.title, media.lengthSeconds, media.width, media.height, media.firstSeen, now, media.thumbnail, media.poster, media.frames, JSON.stringify(media.alternates), media.detailReducedAt ?? null,
+        media.detailReducedAt ? new Date(now.getTime() + 86_400_000) : null, media.detailReducedAt !== undefined]);
+      if (!existing && !entry.retryGroupId && media.kind === 'video') {
         const others = (await tx.query<any>("SELECT id,title,length_seconds FROM pulse.media_groups WHERE mode=$1 AND account_id=$2 AND kind='video' AND id<>$3 AND merged_into_id IS NULL ORDER BY first_seen,id", [mode, account, id])).rows;
         const title = canonicalVideoTitle(media.title);
         const parent = others.find((r: any) => (title && title === canonicalVideoTitle(r.title)) || (media.lengthSeconds != null && r.length_seconds != null && Math.abs(media.lengthSeconds - Number(r.length_seconds)) <= 0.100001));
@@ -200,11 +220,14 @@ export function reconciliationLine(gaps: { percent: number; day: string }[]): st
   const days = new Set(significant.map(r => r.day)).size;
   return `Meta ad-level spend differs from ad set spend by ${Math.max(...significant.map(r => r.percent)).toFixed(1)}% on ${days} ${days === 1 ? 'day' : 'days'}`;
 }
-export interface CreativeHealth { catalogueCount: number; backfillNext: string | null; backfillDone: boolean; completedDays: number; totalDays: number; bytes: number; capBytes: number; lastSuccessAt: string | null; reconciliation: string | null; error: string | null; mode: SourceMode }
+export async function reducedDetailCount(db: Database, account: string, mode: SourceMode = 'live'): Promise<number> {
+  return Number((await db.query<any>('SELECT count(*) FROM pulse.media_groups WHERE mode=$1 AND account_id=$2 AND detail_reduced_at IS NOT NULL', [mode, account])).rows[0]?.count ?? 0);
+}
+export interface CreativeHealth { catalogueCount: number; reducedCount: number; backfillNext: string | null; backfillDone: boolean; completedDays: number; totalDays: number; bytes: number; capBytes: number; lastSuccessAt: string | null; reconciliation: string | null; error: string | null; mode: SourceMode }
 export async function creativeHealth(db: Database, settings: Settings, env: NodeJS.ProcessEnv, now = new Date()): Promise<CreativeHealth> {
   const account = settings.metaAdAccountId, mode = env.META_ACCESS_TOKEN && account ? 'live' : 'sample';
-  if (mode === 'sample') return {mode,catalogueCount:sampleCreativeData(settings,now).ads.length,backfillNext:null,backfillDone:true,completedDays:0,totalDays:0,bytes:await mediaBytesUsed(db,'sample-meta-account'),capBytes:settings.creativeMediaCapMb*1024*1024,lastSuccessAt:null,reconciliation:null,error:null};
-  const [job, count, coverage, gaps, bytes] = await Promise.all([
+  if (mode === 'sample') return {mode,catalogueCount:sampleCreativeData(settings,now).ads.length,reducedCount:await reducedDetailCount(db,'sample-meta-account','sample'),backfillNext:null,backfillDone:true,completedDays:0,totalDays:0,bytes:await mediaBytesUsed(db,'sample-meta-account'),capBytes:settings.creativeMediaCapMb*1024*1024,lastSuccessAt:null,reconciliation:null,error:null};
+  const [job, count, coverage, gaps, bytes, reducedCount] = await Promise.all([
     db.query<any>('SELECT *,backfill_next::text FROM pulse.creative_jobs WHERE account_id=$1',[account]),
     db.query<any>("SELECT count(*) FROM pulse.ads WHERE mode='live' AND account_id=$1",[account]),
     db.query<any>('SELECT count(*) FROM pulse.creative_insight_days WHERE account_id=$1',[account]),
@@ -214,7 +237,8 @@ export async function creativeHealth(db: Database, settings: Settings, env: Node
       JOIN pulse.creative_insight_days c ON c.account_id=$1 AND c.day=COALESCE(a.day,s.day)
       JOIN pulse.ad_spend_days d ON d.source='meta' AND d.account_id=$1 AND d.uk_day=COALESCE(a.day,s.day)`,[account]),
     mediaBytesUsed(db,account),
+    reducedDetailCount(db,account),
   ]);
   const j = job.rows[0];
-  return {mode,catalogueCount:Number(count.rows[0]?.count ?? 0),backfillNext:j?.backfill_next ?? null,backfillDone:j?.backfill_done ?? false,completedDays:Number(coverage.rows[0]?.count ?? 0),totalDays:Math.max(0,Math.round((Date.parse(ukToday(now))-Date.parse('2026-08-07'))/86400000)+1),bytes,capBytes:settings.creativeMediaCapMb*1024*1024,lastSuccessAt:j?.last_success_at ? iso(j.last_success_at) : null,reconciliation:reconciliationLine(gaps.rows.map(r => ({day:r.day,percent:Number(r.percent)}))),error:j?.error_code ?? null};
+  return {mode,catalogueCount:Number(count.rows[0]?.count ?? 0),reducedCount,backfillNext:j?.backfill_next ?? null,backfillDone:j?.backfill_done ?? false,completedDays:Number(coverage.rows[0]?.count ?? 0),totalDays:Math.max(0,Math.round((Date.parse(ukToday(now))-Date.parse('2026-08-07'))/86400000)+1),bytes,capBytes:settings.creativeMediaCapMb*1024*1024,lastSuccessAt:j?.last_success_at ? iso(j.last_success_at) : null,reconciliation:reconciliationLine(gaps.rows.map(r => ({day:r.day,percent:Number(r.percent)}))),error:j?.error_code ?? null};
 }

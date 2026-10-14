@@ -248,3 +248,23 @@ test('a UK-only fading Watch accepts Done and Snooze even while whole-account fr
   h.setNow(new Date('2026-10-20T11:00:00Z'));
   assert.ok((await read('uk')).cards.some(card => card.id === cardId));
 });
+
+
+test('every creative sheet explains UK-day counts and Meta account-day reach and frequency', async () => {
+  const settings = defaultSettings();
+  const data = sampleCreativeData(settings, new Date('2026-10-13T12:00:00Z'));
+  for (const mode of ['sample', 'live'] as const) {
+    data.mode = mode;
+    for (const id of ['sample-video-1', 'sample-image-1']) {
+      const sheet = await buildCreativeSheet(data, settings, '2026-10-13', id, {}, async () => ({ count: 9, mode }));
+      assert.ok(sheet);
+      const html = creativeSheetHtml(sheet);
+      assert.match(html, /data-creative-day-boundaries/);
+      assert.match(html, /Spend, impressions, clicks, purchases, purchase value and video-play counts use UK days/);
+      assert.match(html, /hourly reports are aligned to Europe\/London/);
+      assert.match(html, /Reach, frequency and average play time keep Meta account days, including the separate seven-day frequency report/);
+      assert.match(html, /For a GMT account during British Summer Time, those day boundaries differ by one hour/);
+      assert.match(html, /24h means the last complete UK day plus today so far/);
+    }
+  }
+});

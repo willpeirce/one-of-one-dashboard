@@ -145,5 +145,5 @@ export function topCreatives(data: CreativeData, settings: CreativeRankingSettin
   const unplacedMessage = options.market && options.market !== 'all' && unplacedAds
     ? `${unplacedAds} ${unplacedAds === 1 ? 'ad' : 'ads'} without a market ${unplacedAds === 1 ? 'is' : 'are'} under All` : '';
   return { groups, eligibleCount: eligible.length, underFloor, message, unplacedAds, unplacedMessage, ...range,
-    windowNote: window === '24h' ? 'Last complete Meta day plus today so far.' : `Last ${window === '3d' ? 3 : 7} Meta days, including today so far.` };
+    windowNote: window === '24h' ? 'Last complete UK day plus today so far.' : `Last ${window === '3d' ? 3 : 7} UK days, including today so far.` };
 }

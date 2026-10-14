@@ -1,5 +1,6 @@
 import { MetaSpend } from '../ad-spend/clients.js';
-import { AdError } from '../ad-spend/model.js';
+import { AdError, hourDay } from '../ad-spend/model.js';
+import { addDays } from '../hero-range.js';
 import type { AdTransportOptions } from '../ad-spend/http.js';
 import { spendMarket } from '../ad-spend/placement.js';
 import type { Settings } from '../settings.js';
@@ -7,6 +8,10 @@ import type { AdInsight, CatalogueEntry, CatalogueMedia, CreativeReader } from '
 
 const CREATIVE_FIELDS = 'id,object_type,thumbnail_url,image_hash,image_url,video_id,object_story_spec,asset_feed_spec,effective_object_story_id,effective_instagram_media_id,body,title,call_to_action_type,link_url,url_tags,status';
 const INSIGHT_FIELDS = 'ad_id,adset_id,date_start,spend,impressions,reach,frequency,inline_link_clicks,actions,action_values,video_continuous_2_sec_watched_actions,video_play_actions,video_thruplay_watched_actions,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions,video_avg_time_watched_actions';
+const ACCOUNT_DAY_FIELDS = 'ad_id,adset_id,date_start,reach,frequency,video_avg_time_watched_actions';
+const HOURLY_FIELDS = INSIGHT_FIELDS.split(',').filter(field => !['reach', 'frequency', 'video_avg_time_watched_actions'].includes(field)).join(',');
+const ADDITIVE_FIELDS = ['spend', 'impressions', 'linkClicks', 'plays', 'thruPlays',
+  'plays25', 'plays50', 'plays75', 'plays100', 'addsToCart', 'purchases', 'purchaseValue'] as const;
 const MAX_MEDIA_BYTES = 8 * 1024 * 1024;
 const id = (value: unknown): string => {
   const valueString = String(value ?? '');
@@ -37,13 +42,29 @@ const instant = (value: unknown, fallback: Date): string => {
 };
 const mediaKind = (value: unknown): 'video' | 'image' => /video/i.test(text(value)) ? 'video' : 'image';
 
+function insightDay(value: unknown): string {
+  const day = text(value);
+  if (!/^20\d{2}-\d{2}-\d{2}$/.test(day) || !Number.isFinite(Date.parse(day))
+    || new Date(day).toISOString().slice(0, 10) !== day) throw new AdError('invalid');
+  return day;
+}
+function parseInsight(row: any, day: string): AdInsight {
+  const direct = Array.isArray(row.actions) && row.actions.some((item: any) => item.action_type === 'video_view');
+  const fallback = Array.isArray(row.video_continuous_2_sec_watched_actions) && row.video_continuous_2_sec_watched_actions.length > 0;
+  return { adId: id(row.ad_id), adSetId: id(row.adset_id), day, spend: numeric(row.spend), impressions: numeric(row.impressions), reach: numeric(row.reach), frequency: numeric(row.frequency),
+    linkClicks: row.inline_link_clicks == null ? action(row.actions, 'link_click') : numeric(row.inline_link_clicks),
+    threeSecondPlays: direct ? action(row.actions, 'video_view') : action(row.video_continuous_2_sec_watched_actions), threeSecondSource: direct ? 'video_view' : fallback ? 'video_continuous_2_sec_watched_actions' : 'none',
+    plays: action(row.video_play_actions), thruPlays: action(row.video_thruplay_watched_actions), plays25: action(row.video_p25_watched_actions), plays50: action(row.video_p50_watched_actions), plays75: action(row.video_p75_watched_actions), plays100: action(row.video_p100_watched_actions), averagePlayTime: action(row.video_avg_time_watched_actions),
+    addsToCart: action(row.actions, 'omni_add_to_cart'), purchases: action(row.actions, 'omni_purchase'), purchaseValue: action(row.action_values, 'omni_purchase') || action(row.action_values, 'omni_purchase_values') };
+}
+
 /** Fixed Graph GET reads share the spend adapter's version, transport and safe diagnostics. */
 export class MetaCreativeClient implements CreativeReader {
   private readonly fetcher: typeof fetch;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly refused = new Set<string>();
   private readonly permalinks = new Map<string, Promise<any | null>>();
-  private readonly accounts = new Set<string>();
+  private readonly accounts = new Map<string, string>();
   private readonly knownMedia = new Set<string>();
   constructor(private readonly meta: MetaSpend, private readonly options: AdTransportOptions = {}) {
     this.fetcher = options.fetch ?? fetch;
@@ -60,12 +81,17 @@ export class MetaCreativeClient implements CreativeReader {
       return null;
     }
   }
-  private async account(account: string): Promise<void> {
-    if (this.accounts.has(account)) return;
+  private async account(account: string): Promise<string> {
+    const cached = this.accounts.get(account);
+    if (cached) return cached;
     const facts = await this.meta.readGraph(`act_${id(account)}`, { fields: 'currency,timezone_name' });
-    // Summing hourly reach would silently manufacture frequency and ROAS currency.
-    if (facts.currency !== 'GBP' || facts.timezone_name !== 'Europe/London') throw new AdError('unsupported_account');
-    this.accounts.add(account);
+    if (facts.currency !== 'GBP') throw new AdError('unsupported_account');
+    const zone = text(facts.timezone_name, 100);
+    if (!zone) throw new AdError('invalid');
+    try { new Intl.DateTimeFormat('en-GB', { timeZone: zone }); }
+    catch { throw new AdError('invalid'); }
+    this.accounts.set(account, zone);
+    return zone;
   }
   private mediaUrl(value: unknown): string {
     const result = this.meta.safeMediaUrl(value), url = new URL(result);
@@ -196,18 +222,50 @@ export class MetaCreativeClient implements CreativeReader {
     return entries;
   }
   async readInsights(account: string, from: string, to: string): Promise<AdInsight[]> {
-    await this.account(account);
-    return (await this.meta.readPages(`act_${id(account)}/insights`, { fields: INSIGHT_FIELDS, level: 'ad', time_increment: '1', time_range: JSON.stringify({ since: from, until: to }), limit: '500' })).map(row => {
-      const direct = Array.isArray(row.actions) && row.actions.some((item: any) => item.action_type === 'video_view');
-      const fallback = Array.isArray(row.video_continuous_2_sec_watched_actions) && row.video_continuous_2_sec_watched_actions.length > 0;
-      const day = text(row.date_start);
-      if (!/^20\d{2}-\d{2}-\d{2}$/.test(day) || !Number.isFinite(Date.parse(day)) || day < from || day > to) throw new AdError('invalid');
-      return { adId: id(row.ad_id), adSetId: id(row.adset_id), day, spend: numeric(row.spend), impressions: numeric(row.impressions), reach: numeric(row.reach), frequency: numeric(row.frequency),
-        linkClicks: row.inline_link_clicks == null ? action(row.actions, 'link_click') : numeric(row.inline_link_clicks),
-        threeSecondPlays: direct ? action(row.actions, 'video_view') : action(row.video_continuous_2_sec_watched_actions), threeSecondSource: direct ? 'video_view' : fallback ? 'video_continuous_2_sec_watched_actions' : 'none',
-        plays: action(row.video_play_actions), thruPlays: action(row.video_thruplay_watched_actions), plays25: action(row.video_p25_watched_actions), plays50: action(row.video_p50_watched_actions), plays75: action(row.video_p75_watched_actions), plays100: action(row.video_p100_watched_actions), averagePlayTime: action(row.video_avg_time_watched_actions),
-        addsToCart: action(row.actions, 'omni_add_to_cart'), purchases: action(row.actions, 'omni_purchase'), purchaseValue: action(row.action_values, 'omni_purchase') || action(row.action_values, 'omni_purchase_values') };
+    insightDay(from); insightDay(to);
+    if (from > to) throw new AdError('invalid');
+    const zone = await this.account(account), hourly = zone !== 'Europe/London';
+    const path = `act_${id(account)}/insights`;
+    const query = { level: 'ad', time_increment: '1', limit: '500' };
+    const daily = (await this.meta.readPages(path, { ...query, fields: hourly ? ACCOUNT_DAY_FIELDS : INSIGHT_FIELDS,
+      time_range: JSON.stringify({ since: from, until: to }) })).map(row => {
+      const day = insightDay(row.date_start);
+      if (day < from || day > to) throw new AdError('invalid');
+      // Non-additive measurements retain their account-day date, even when UK days differ.
+      return parseInsight(hourly ? { ad_id: row.ad_id, adset_id: row.adset_id,
+        reach: row.reach, frequency: row.frequency, video_avg_time_watched_actions: row.video_avg_time_watched_actions } : row, day);
     });
+    if (!hourly) return daily;
+    const keyFor = (row: AdInsight) => JSON.stringify([row.adId, row.day]);
+    const grouped = new Map(daily.map(row => [keyFor(row), row]));
+    const hooks = new Map<string, { direct: number; fallback: number; hasDirect: boolean; hasFallback: boolean }>();
+    const since = addDays(from, -1), until = addDays(to, 1);
+    const hours = await this.meta.readPages(path, { ...query, fields: HOURLY_FIELDS,
+      time_range: JSON.stringify({ since, until }), breakdowns: 'hourly_stats_aggregated_by_advertiser_time_zone' });
+    for (const row of hours) {
+      const accountDay = insightDay(row.date_start);
+      if (accountDay < since || accountDay > until) throw new AdError('invalid');
+      const hour = Number(/^([0-2]\d):/.exec(row.hourly_stats_aggregated_by_advertiser_time_zone ?? '')?.[1]);
+      const day = hourDay(accountDay, hour, zone);
+      if (day < from || day > to) continue;
+      const parsed = parseInsight({ ...row, reach: undefined, frequency: undefined, video_avg_time_watched_actions: undefined }, day);
+      const key = keyFor(parsed), current = grouped.get(key);
+      const hook = hooks.get(key) ?? { direct: 0, fallback: 0, hasDirect: false, hasFallback: false };
+      if (parsed.threeSecondSource === 'video_view') { hook.direct += parsed.threeSecondPlays; hook.hasDirect = true; }
+      else if (parsed.threeSecondSource === 'video_continuous_2_sec_watched_actions') { hook.fallback += parsed.threeSecondPlays; hook.hasFallback = true; }
+      hooks.set(key, hook);
+      if (!current) { grouped.set(key, parsed); continue; }
+      if (current.adSetId !== parsed.adSetId) throw new AdError('invalid');
+      for (const field of ADDITIVE_FIELDS) current[field] += parsed[field];
+    }
+    for (const [key, hook] of hooks) {
+      const row = grouped.get(key)!;
+      // Meta can omit a zero video_view action from an hour. Select the measure
+      // for the whole ad/day, so such an hour cannot mix two-second and three-second counts.
+      row.threeSecondPlays = hook.hasDirect ? hook.direct : hook.fallback;
+      row.threeSecondSource = hook.hasDirect ? 'video_view' : hook.hasFallback ? 'video_continuous_2_sec_watched_actions' : 'none';
+    }
+    return [...grouped.values()];
   }
   async readFrequency(account: string, adIds: string[], from: string, to: string): Promise<number | null> {
     const validDay = (value: string) => /^20\d{2}-\d{2}-\d{2}$/.test(value)

@@ -94,7 +94,7 @@ test('window boundaries include UK today through the clock change and 24h includ
   assert.equal(topCreatives(data, settings, { today, window: '24h' }).groups[0]!.totals.spend, 120);
   assert.equal(topCreatives(data, settings, { today }).groups[0]!.totals.spend, 180);
   assert.equal(aggregateCreativeGroups(data, creativeWindowRange('lifetime', today))[0]!.totals.spend, 240);
-  assert.match(topCreatives(data, settings, { today, window: '24h' }).windowNote, /Last complete Meta day plus today so far/);
+  assert.match(topCreatives(data, settings, { today, window: '24h' }).windowNote, /Last complete UK day plus today so far/);
 });
 
 test('sheet rates use weighted totals and expose a two-second hook fallback and reach caveat', () => {

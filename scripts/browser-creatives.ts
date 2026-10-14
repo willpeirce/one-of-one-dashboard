@@ -122,10 +122,10 @@ export async function checkCreatives(context: BrowserContext): Promise<void> {
         if (scenario === 'videos') {
           await page.locator('[data-creative-window="24h"]').click();
           await page.waitForFunction(() => document.querySelector('[data-creative-window="24h"]')?.getAttribute('aria-pressed') === 'true');
-          assert.match(await page.locator('#creative-panel').innerText(), /Last complete Meta day plus today so far/);
+          assert.match(await page.locator('#creative-panel').innerText(), /Last complete UK day plus today so far/);
           await page.locator('[data-creative-window="7d"]').click();
           await page.waitForFunction(() => document.querySelector('[data-creative-window="7d"]')?.getAttribute('aria-pressed') === 'true');
-          assert.match(await page.locator('#creative-panel').innerText(), /Last 7 Meta days/);
+          assert.match(await page.locator('#creative-panel').innerText(), /Last 7 UK days/);
           await page.locator('#creative-ours').check();
           await page.waitForFunction(() => Array.from(document.querySelectorAll('#creative-panel .creative-owner')).every(element => element.textContent?.startsWith('Ours')));
           await page.locator('#creative-ours').uncheck();

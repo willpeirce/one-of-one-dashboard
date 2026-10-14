@@ -148,8 +148,8 @@ test('source reads fall back separately to HD and neither errors nor URLs disclo
   await assert.rejects(encoded.client.videoSource('invented-video'), error => error instanceof AdError && !error.message.includes(escapedToken));
 });
 
-test('unsupported currency/timezone fails explicitly and the media downloader rejects unsafe or oversized responses', async () => {
-  const unsupported = reader(() => ({ ...account, timezone_name: 'America/New_York' }));
+test('non-GBP currency fails explicitly and the media downloader rejects unsafe or oversized responses', async () => {
+  const unsupported = reader(() => ({ ...account, currency: 'USD' }));
   await assert.rejects(unsupported.client.readInsights('invented-account', '2026-10-12', '2026-10-13'), error => error instanceof AdError && error.code === 'unsupported_account');
   for (const location of ['http://scontent.xx.fbcdn.net/invented.jpg', 'https://127.0.0.1/invented.jpg', 'https://fbcdn.net.evil.invalid/invented.jpg']) {
     const unsafe = reader(() => ({ data: [{ hash: 'invented-hash', url: location }] }));

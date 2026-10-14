@@ -143,7 +143,7 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     { key: 'series1OrderDate', label: 'Drop 1 order date', type: 'date' },
   ], values)}</div>${paceMarket('UK')}${paceMarket('US')}`);
   const creativeControls = `<section class="setting-collection" aria-labelledby="creative-settings-heading"><h3 id="creative-settings-heading">Meta creatives</h3><p class="setting-help">Rankings use Meta’s purchase claims. Targets are local rules; saving never changes an ad.</p><div class="settings-grid">${fields([
-    { key: 'creativeDefaultWindow', label: 'Top creatives default window', options: [{ value: '24h', label: '24h' }, { value: '3d', label: '3 days' }, { value: '7d', label: '7 days' }], hint: '24h means the last complete Meta day plus today so far.' },
+    { key: 'creativeDefaultWindow', label: 'Top creatives default window', options: [{ value: '24h', label: '24h' }, { value: '3d', label: '3 days' }, { value: '7d', label: '7 days' }], hint: '24h means the last complete UK day plus today so far.' },
     number('creativeSpendFloorGbp', 'Panel spend floor (£)', { max: 100_000 }),
     number('creativePurchaseMinimum', 'Panel purchase minimum', { integer: true, min: 1, max: 100_000 }),
     number('creativeFadeFrequency', 'Fade above frequency', { min: 0.01, max: 100 }),

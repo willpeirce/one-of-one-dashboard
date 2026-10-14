@@ -87,8 +87,9 @@ export function creativeHealthDetails(health: CreativeHealth): string {
   return `<section aria-label="Meta creative imports" data-creative-health><h2>Meta creatives · ${health.mode === 'sample' ? 'sample data' : 'live'}</h2>
     <p>Catalogue: ${formatNumber(health.catalogueCount)} ads · ${progress}</p>
     <p>Media store: ${mb(health.bytes)} MB of ${mb(health.capBytes)} MB · last successful read ${timestamp(health.lastSuccessAt)}</p>
-    ${health.error ? `<p role="status">${health.error === 'unsupported_account' ? 'Creative insights need a GBP account using Europe/London days.' : `Creative read needs attention (${escapeHtml(health.error)}).`} Stored data is retained.</p>` : ''}
+    ${health.error ? `<p role="status">${health.error === 'unsupported_account' ? 'Creative insights need a GBP account.' : `Creative read needs attention (${escapeHtml(health.error)}).`} Stored data is retained.</p>` : ''}
     ${health.reconciliation ? `<p class="notice" data-creative-reconciliation>${escapeHtml(health.reconciliation)}</p>` : ''}
+    <p>Creative spend and counts use UK days; hourly reports are aligned to Europe/London when the Meta account timezone differs. Reach, frequency and average play time keep Meta account days.</p>
     <p>Ad-level comparisons use days read by both imports. The hero keeps the ad-set spend figure.</p></section>`;
 }
 

@@ -147,6 +147,42 @@ export async function checkCreatives(context: BrowserContext): Promise<void> {
       assert.match(await page.locator('#creative-gallery').innerText(), /Image lift examples/);
       assert.match(await page.locator('#creative-gallery').innerText(), /Strong/);
       assert.match(await page.locator('#creative-gallery').innerText(), /correlation, not a cause/);
+      await page.locator('[data-creative-tag="sample-video-3"]').click();
+      await page.locator('#creative-tagging').waitFor();
+      assert.ok(await page.locator('.creative-attribute').count() > 20);
+      assert.match(await page.locator('[data-attribute="hookType"]').innerText(), /unsure|not scanned yet/);
+      const documentStarted = await page.evaluate(() => performance.timeOrigin);
+      const tag = async (key: string, value: string) => {
+        const saved = page.waitForResponse(response => response.request().method() === 'POST' && response.url().endsWith('/attributes'));
+        await page.locator(`[data-tag-row="${key}"] [data-creative-tag-value="${value}"]`).click();
+        assert.equal((await saved).status(), 200);
+        await page.locator(`[data-tag-row="${key}"] .creative-tag-saved`).filter({ hasText: 'Saved' }).waitFor();
+      };
+      for (const [key, value] of [['hookType', 'claim'], ['slabEarly', 'yes'], ['productEarly', 'no']]) {
+        await tag(key!, value!);
+        assert.equal(await page.locator(`[data-tag-row="${key}"] [data-creative-tag-value="${value}"]`).getAttribute('aria-pressed'), 'true');
+      }
+      assert.equal(await page.evaluate(() => performance.timeOrigin), documentStarted, 'Pills save without reloading the page');
+      const noteSaved = page.waitForResponse(response => response.request().method() === 'POST' && response.url().endsWith('/attributes'));
+      await page.locator('#creative-tag-note').fill('Invented browser note');
+      assert.equal((await noteSaved).status(), 200);
+      await page.locator('#creative-note-saved').filter({ hasText: 'Saved' }).waitFor();
+      await noOverflow(page);
+      if (process.env.PULSE_SCREENSHOT_DIR) await page.locator('#creative-sheet').screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/creative-tagging-${width}.png` });
+      await page.reload();
+      await page.locator('[data-group-id="sample-video-3"] [data-creative-open]').click();
+      await page.locator('#creative-tagging').waitFor();
+      assert.equal(await page.locator('#creative-tag-note').inputValue(), 'Invented browser note');
+      for (const [key, value] of [['hookType', 'claim'], ['slabEarly', 'yes'], ['productEarly', 'no']]) {
+        assert.equal(await page.locator(`[data-tag-row="${key}"] [data-creative-tag-value="${value}"]`).getAttribute('aria-pressed'), 'true');
+        await tag(key!, value!);
+      }
+      assert.match(await page.locator('[data-attribute="hookType"]').innerText(), /unsure|not scanned yet/);
+      const noteCleared = page.waitForResponse(response => response.request().method() === 'POST' && response.url().endsWith('/attributes'));
+      await page.locator('#creative-tag-note').fill('');
+      assert.equal((await noteCleared).status(), 200);
+      await page.locator('[data-creative-close]').click();
+      await page.locator('[data-creative-tag="sample-video-3"]').waitFor();
       const filter = async (key: string, value: string) => {
         const response = page.waitForResponse(response => /\/api\/creatives\?/.test(response.url()));
         await page.locator(`#creative-filters [name="${key}"]`).selectOption(value);
@@ -170,6 +206,10 @@ export async function checkCreatives(context: BrowserContext): Promise<void> {
       assert.ok(inactive.groups.every(group => group.ads.every(ad => ad.effectiveStatus !== 'ACTIVE')));
       assert.match(await page.locator('#creative-gallery').innerText(), /No creatives match these filters/);
       await filter('kind', 'all'); await filter('owner', 'all'); await filter('market', 'all'); await filter('live', 'all');
+      await filter('attribute', 'format');
+      const attribute = await filter('value', 'unboxing-flat-lay');
+      assert.deepEqual(attribute.groups.map(group => group.group.id), ['sample-image-1']);
+      await filter('attribute', '');
       if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/creative-gallery-${width}.png`, fullPage: true });
     }
   } finally { await page.close(); }

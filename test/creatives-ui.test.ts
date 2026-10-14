@@ -15,6 +15,8 @@ import { createTestDatabase } from './helpers/database.js';
 import { creativeAd, creativeGroup, creativeInsight } from './helpers/creatives.js';
 import { saveCatalogue, saveInsights } from '../src/creatives/store.js';
 import { frequencyMembershipKey } from '../src/creatives/frequency.js';
+import { replaceSourceAttributes, toggleWillAttribute } from '../src/creatives/attribute-store.js';
+import { attributesForKind } from '../src/creatives/attributes.js';
 
 const account = '424242';
 const storedImage = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x49, 0x4e, 0x56, 0xff, 0xd9]);
@@ -62,6 +64,60 @@ test('creative links are rendered only when buildable and never carry credential
     assert.equal(safeCreativeLink(unsafe), null);
   }
   assert.equal(safeCreativeLink('https://www.instagram.com/p/invented/'), 'https://www.instagram.com/p/invented/');
+});
+
+test('signed-in tag taps save on the sample parent, toggle to model fallback and leave live rows untouched', async t => {
+  const h = await harness(t);
+  const sheetPath = '/api/creatives/sample-video-1-crop';
+  const initial = (await h.app.inject({ url: sheetPath, headers: h.headers })).json<CreativeSheet>();
+  assert.equal(initial.group.group.id, 'sample-video-1');
+  assert.equal(initial.attributes.length, attributesForKind('video').length);
+  const liveGroup = creativeGroup('invented-live-parent');
+  await saveCatalogue(h.db, account, [{ ad: creativeAd('invented-live-ad', liveGroup.id), media: {
+    ...liveGroup, thumbnail: storedImage, poster: storedImage, frames: [],
+  } }], new Date('2026-10-13T11:00:00Z'));
+  await toggleWillAttribute(h.db, 'live', account, liveGroup.id, 'hookType', 'question');
+  const liveBefore = (await h.db.query("SELECT * FROM pulse.media_attributes WHERE mode='live' ORDER BY id")).rows;
+  const path = `${sheetPath}/attributes`;
+  const tap = (key: string, value: string) => h.app.inject({ method: 'POST', url: path, headers: h.headers, payload: { key, value } });
+  assert.equal((await h.app.inject({ method: 'POST', url: path, headers: { origin: h.headers.origin }, payload: { key: 'hookType', value: 'reveal' } })).statusCode, 401);
+  assert.equal((await h.app.inject({ method: 'POST', url: path, headers: { ...h.headers, origin: 'https://elsewhere.example.test' }, payload: { key: 'hookType', value: 'reveal' } })).statusCode, 403);
+  assert.equal((await h.app.inject({ method: 'POST', url: '/api/creatives/invented-live-parent/attributes', headers: h.headers, payload: { key: 'hookType', value: 'reveal' } })).statusCode, 404);
+  const hook = initial.attributes.find(attribute => attribute.key === 'hookType')!;
+  const choice = hook.values.find(option => option.value !== hook.willValue)!.value;
+  const saved = await tap('hookType', choice);
+  assert.equal(saved.statusCode, 200);
+  assert.equal(saved.json().groupId, 'sample-video-1');
+  assert.equal(saved.json().attribute.source, 'will');
+  assert.equal(saved.json().attribute.value, choice);
+  assert.equal((await h.db.query("SELECT * FROM pulse.media_attributes WHERE mode='sample' AND media_group_id='sample-video-1-crop' AND source='will'")).rowCount, 0);
+  await replaceSourceAttributes(h.db, 'sample', 'sample-meta-account', 'sample-video-1', 'model', { hookType: { value: 'unboxing', confidence: 0.9 } });
+  const retained = (await h.app.inject({ url: sheetPath, headers: h.headers })).json<CreativeSheet>();
+  assert.equal(retained.attributes.find(attribute => attribute.key === 'hookType')!.source, 'will');
+  const cleared = await tap('hookType', choice);
+  assert.equal(cleared.json().attribute.source, 'model');
+  assert.equal(cleared.json().attribute.value, 'unboxing');
+  const note = await tap('note', 'Invented note '.repeat(30));
+  assert.equal(note.json().note.length, 200);
+  const reread = (await h.app.inject({ url: sheetPath, headers: h.headers })).json<CreativeSheet>();
+  assert.equal(reread.note, note.json().note);
+  assert.equal(reread.attributes.find(attribute => attribute.key === 'hookType')!.source, 'model', 'Reading again never restores the cleared sample Will tag');
+  assert.equal((await tap('hookType', 'invented-invalid-value')).statusCode, 400);
+  assert.equal((await tap('invented-invalid-key', 'yes')).statusCode, 400);
+  assert.deepEqual((await h.db.query("SELECT * FROM pulse.media_attributes WHERE mode='live' ORDER BY id")).rows, liveBefore);
+});
+
+test('the attribute filter applies the stored resolved answer to the gallery', async t => {
+  const h = await harness(t);
+  await h.app.inject({ url: '/api/creatives/sample-video-3', headers: h.headers });
+  const saved = await h.app.inject({ method: 'POST', url: '/api/creatives/sample-video-3/attributes', headers: h.headers, payload: { key: 'hookType', value: 'claim' } });
+  assert.equal(saved.statusCode, 200);
+  const filtered = await h.app.inject({ url: '/api/creatives?kind=video&attribute=hookType&value=claim', headers: h.headers });
+  assert.equal(filtered.statusCode, 200);
+  assert.deepEqual(filtered.json<CreativeView>().groups.map(group => group.group.id), ['sample-video-3']);
+  assert.ok(!filtered.json<CreativeView>().taggingQueue.some(group => group.groupId === 'sample-video-3'));
+  assert.equal((await h.app.inject({ url: '/api/creatives?attribute=hookType&value=invalid', headers: h.headers })).statusCode, 400);
+  assert.equal((await h.app.inject({ url: '/api/creatives?kind=image&attribute=hookType&value=claim', headers: h.headers })).statusCode, 400);
 });
 
 test('missing exact frequency is visible on the panel and sheet without a healthy fading claim', async () => {

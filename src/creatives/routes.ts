@@ -16,17 +16,26 @@ import { readCreativeData, readMedia, ensureGroupMedia, mergeMediaGroups, splitM
 import { seedCreativeSample } from './seed.js';
 import { SAMPLE_CREATIVE_ACCOUNT, sampleCreativeAttributes, sampleCreativeLifts } from './sample.js';
 import { adsManagerLink, creativesPage, safeCreativeLink, escapeCreative } from './view.js';
-import { resolveAttributes } from './attributes.js';
-import { readGroupAttributes } from './attribute-store.js';
+import { resolveAttributes, type AttributeRow, type AttributeSource } from './attributes.js';
+import { readAttributeRows, readGroupAttributes, readWillNote, saveWillNote, toggleWillAttribute } from './attribute-store.js';
+import { creativeAttributeOptions, creativeTaggingQueue, filterCreativeAttributes } from './tagging.js';
 
 class CreativeInputError extends Error { readonly statusCode = 400; constructor() { super('Invalid creative request.'); } }
 const accountFor = (data: CreativeData, settings: Settings) => data.mode === 'sample' ? SAMPLE_CREATIVE_ACCOUNT : settings.metaAdAccountId;
 type ShopifyOrders = (from: string, to: string) => Promise<{ count: number | null; mode: SourceMode }>;
-export function buildCreativeView(data: CreativeData, settings: Settings, today: string, selection: CreativeSelection = {}): CreativeView {
+function sampleAttributeRows(data: CreativeData): AttributeRow[] {
+  return data.mode === 'sample' ? sampleCreativeAttributes.flatMap(group => group.attributes.map(attribute => {
+    const detail = attribute as typeof attribute & { source?: AttributeSource; confidence?: number; reason?: string };
+    return { groupId: group.groupId, key: detail.key, source: detail.source ?? 'will',
+      value: { value: detail.value, confidence: detail.confidence, reason: detail.reason } };
+  })) : [];
+}
+export function buildCreativeView(data: CreativeData, settings: Settings, today: string, selection: CreativeSelection = {}, attributes = sampleAttributeRows(data)): CreativeView {
   const selected = { ...selection, window: selection.window ?? settings.creativeDefaultWindow };
   const top = topCreatives(data, settings, { ...selected, today });
   const performance = creativePerformance(data, settings, { ...selected, today });
-  const groups = aggregateCreativeGroups(data, { ...selected, to: today }).sort((a, b) => b.group.firstSeen.localeCompare(a.group.firstSeen) || a.group.id.localeCompare(b.group.id));
+  const groups = filterCreativeAttributes(aggregateCreativeGroups(data, { ...selected, to: today }), attributes, selected.attribute, selected.value)
+    .sort((a, b) => b.group.firstSeen.localeCompare(a.group.firstSeen) || a.group.id.localeCompare(b.group.id));
   const cards: CreativeView['cards'] = performance.fading.map(row => ({
     id: `fading:${row.groupId}`, kind: 'watch', groupId: row.groupId,
     picture: data.groups.find(group => group.id === row.groupId)?.thumbnailUrl ?? '',
@@ -38,13 +47,16 @@ export function buildCreativeView(data: CreativeData, settings: Settings, today:
       title: 'Make more like this', reason: `Invented ${lift.kind} example: ${lift.label} (${lift.confidence})`, mode: 'sample', brief: lift.brief });
   }
   return { mode: data.mode, accountId: accountFor(data, settings), selection: selected, top, performance, groups, cards,
+    taggingQueue: creativeTaggingQueue(data, attributes, settings.creativeSpendFloorGbp, today), attributeFilters: creativeAttributeOptions(selected.kind),
     lifts: data.mode === 'sample' ? sampleCreativeLifts.map(lift => ({ ...lift })) : [],
     targets: { uk: settings.cppUkTargetGbp, us: settings.cppUsTargetGbp }, freelancerInitial: settings.creativeFreelancerInitial,
     merged: data.groups.filter(group => group.mergedIntoId).map(group => ({ id: group.id, title: group.title, parentId: group.mergedIntoId! })) };
 }
 export async function readCreativeView(db: Database, settings: Settings, env: NodeJS.ProcessEnv, now: Date, selection: CreativeSelection = {}): Promise<CreativeView> {
   const data = await readCreativeData(db, settings, env, now);
-  const view = buildCreativeView(data, settings, ukToday(now), selection);
+  if (data.mode === 'sample') await seedCreativeSample(db, settings, now);
+  const attributes = await readAttributeRows(db, data.mode, accountFor(data, settings));
+  const view = buildCreativeView(data, settings, ukToday(now), selection, attributes);
   const states = await db.query<{ card_id: string; done_at: Date | null; snoozed_until: Date | null }>(
     'SELECT card_id,done_at,snoozed_until FROM pulse.creative_card_states WHERE account_id=$1 AND mode=$2', [view.accountId, view.mode]);
   const hidden = new Set(states.rows.filter(row => row.done_at || row.snoozed_until && new Date(row.snoozed_until).getTime() > now.getTime()).map(row => row.card_id));
@@ -55,7 +67,15 @@ function parseSelection(query: unknown, detail = false): CreativeSelection {
   if (!query || typeof query !== 'object') return {};
   const values = query as Record<string, unknown>;
   const choices: Record<string, readonly string[]> = { window: ['24h', '3d', '7d'], market: ['all', 'uk', 'us'], owner: ['all', 'ours', 'freelancer', 'unassigned'], kind: ['all', 'video', 'image'], live: ['all', 'true', 'false'] };
-  for (const [key, value] of Object.entries(values)) if (!Object.hasOwn(choices, key) || detail && key !== 'window' || typeof value !== 'string' || !choices[key]!.includes(value)) throw new CreativeInputError();
+  for (const [key, value] of Object.entries(values)) {
+    if (detail && key !== 'window' || typeof value !== 'string') throw new CreativeInputError();
+    if (key === 'attribute' || key === 'value') continue;
+    if (!Object.hasOwn(choices, key) || !choices[key]!.includes(value)) throw new CreativeInputError();
+  }
+  if (values.attribute || values.value) {
+    const definition = creativeAttributeOptions((values.kind ?? 'all') as 'all' | 'video' | 'image').find(attribute => attribute.key === values.attribute);
+    if (!definition || values.value && !definition.values.some(option => option.value === values.value)) throw new CreativeInputError();
+  }
   return { ...values, ...(values.live && values.live !== 'all' ? { live: values.live === 'true' } : {}) } as CreativeSelection;
 }
 export async function buildCreativeSheet(data: CreativeData, settings: Settings, today: string, id: string, selection: CreativeSelection, shopifyOrders: ShopifyOrders): Promise<CreativeSheet | null> {
@@ -76,8 +96,7 @@ export async function buildCreativeSheet(data: CreativeData, settings: Settings,
     windows: (['24h', '3d', '7d', 'lifetime'] as const).map(window => ({ window, totals: aggregateCreativeGroups(data, creativeWindowRange(window, today)).find(row => row.group.id === parent?.id)!.totals })),
     comparison: { ...range, purchases: data.insights.filter(row => row.day >= range.from && row.day <= range.to).reduce((sum, row) => sum + row.purchases, 0), shopifyOrders: orders.count, shopifyMode: orders.mode },
     frequency: { value: exactCreativeFrequency(data, group.ads.map(ad => ad.id), addDays(today, -6), today), eligible: hasFadingHistory(group, today) },
-    links, ads: group.ads, attributes: resolveAttributes(group.group.kind, data.mode === 'sample'
-      ? (sampleCreativeAttributes.find(row => row.groupId === group.group.id)?.attributes ?? []).map(attribute => ({ groupId: group.group.id, key: attribute.key, source: 'will' as const, value: { value: attribute.value } })) : []),
+    links, ads: group.ads, attributes: resolveAttributes(group.group.kind, sampleAttributeRows(data).filter(row => row.groupId === group.group.id)), note: '',
     ...(data.mode === 'sample' ? { brief: sampleCreativeLifts.find(lift => lift.kind === group.group.kind)?.brief } : {}) };
 }
 export function safeVideoSource(value: string, token?: string): string | null {
@@ -113,9 +132,28 @@ export function registerCreatives(app: FastifyInstance, db: Database, auth: Auth
     if (!sheet) return reply.code(404).send({ error: 'Creative not found.' });
     if (data.mode === 'sample') await seedCreativeSample(db, settings, clock());
     sheet.attributes = await readGroupAttributes(db, data.mode, accountFor(data, settings), sheet.group.group.id, sheet.group.group.kind);
+    sheet.note = await readWillNote(db, data.mode, accountFor(data, settings), sheet.group.group.id);
     // Opening an evicted video re-fetches its frames, without storing the video itself.
     if (client && data.mode === 'live' && sheet.group.group.kind === 'video') await ensureGroupMedia(client, db, settings.metaAdAccountId, sheet.group.group.id, settings.creativeMediaCapMb).catch(() => null);
     return sheet;
+  });
+  app.post('/api/creatives/:groupId/attributes', { preHandler: localWrite }, async (request, reply) => {
+    if (!await auth.session(request)) return reply.code(401).send({ error: 'Sign in to continue.' });
+    const body = request.body as { key?: unknown; value?: unknown } | null;
+    if (!body || Object.keys(body).some(key => key !== 'key' && key !== 'value')
+      || typeof body.key !== 'string' || typeof body.value !== 'string') throw new CreativeInputError();
+    const { settings, data } = await current(), now = clock(), account = accountFor(data, settings);
+    const group = parentGroup((request.params as { groupId: string }).groupId, data.groups);
+    if (!group) return reply.code(404).send({ error: 'Creative not found.' });
+    if (data.mode === 'sample') await seedCreativeSample(db, settings, now);
+    let result;
+    try {
+      result = body.key === 'note'
+        ? { groupId: group.id, note: await saveWillNote(db, data.mode, account, group.id, body.value, now) }
+        : { groupId: group.id, attribute: await toggleWillAttribute(db, data.mode, account, group.id, body.key, body.value, now) };
+    } catch { throw new CreativeInputError(); }
+    await publish();
+    return result;
   });
   app.get('/media/:groupId', async (request, reply) => {
     if (!await auth.session(request)) return reply.code(401).send({ error: 'Sign in to continue.' });

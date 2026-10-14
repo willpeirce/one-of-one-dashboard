@@ -311,7 +311,7 @@ test('different SHARE stories pointing at one video expand once; a stored post p
   assert.ok(stored.requests.every(request => !request.url.pathname.endsWith('/invented-post-creative') && request.url.hostname === 'graph.facebook.com'));
 });
 
-test('any refused expansion among three ads falls back to nested fields and emits one reduced-detail count per pass', async t => {
+test('any refused expansion among three ads falls back to nested fields and marks only its media reduced', async t => {
   for (const error of ['permission', 'server', 'transport'] as const) {
     const logs: string[] = [];
     const info = t.mock.method(console, 'info', (line: string) => logs.push(line));
@@ -335,9 +335,10 @@ test('any refused expansion among three ads falls back to nested fields and emit
       assert.equal(entries[1]!.ad.title, 'Invented refused nested title'); assert.equal(entries[1]!.media.key, 'invented-refused-hash');
       assert.deepEqual(entries[1]!.media.thumbnail, jpeg);
       assert.ok(mock.requests.some(request => request.url.pathname.endsWith('/invented-refused-64.jpg')));
-      assert.deepEqual(logs, ['1 creatives read at reduced detail']);
+      assert.deepEqual(entries.map(entry => entry.media.detailReducedAt), [null, now.toISOString(), null]);
+      assert.deepEqual(logs, [], 'Only the worker can count groups still reduced after saving');
       await collect(mock.client.readCatalogue('invented-account', settings, now));
-      assert.deepEqual(logs, ['1 creatives read at reduced detail', '1 creatives read at reduced detail']);
+      assert.deepEqual(logs, []);
       assert.ok(!JSON.stringify([entries, logs, mock.logs]).includes(mock.token));
     } finally { info.mock.restore(); }
   }
@@ -392,7 +393,7 @@ test('catalogue pages arrive before the next list read and share creative, post 
     [['25', 60_000], ['25', 60_000], ['25', 60_000]]);
 });
 
-test('reduced-detail counts accumulate across yielded pages and log once even if a later list page fails', async t => {
+test('reduced-detail markers travel with each yielded page even if a later list page fails', async t => {
   for (const fail of [false, true]) {
     const logs: string[] = [];
     const info = t.mock.method(console, 'info', (line: string) => logs.push(line));
@@ -414,17 +415,18 @@ test('reduced-detail counts accumulate across yielded pages and log once even if
         return new Response(JSON.stringify({ error: { code: 200 } }), { status: 403 });
       });
       const iterator = mock.client.readCatalogue('invented-account', settings, now)[Symbol.asyncIterator]();
-      assert.equal((await iterator.next()).value!.length, 1);
-      assert.equal((await iterator.next()).value!.length, 1);
-      assert.deepEqual(logs, [], 'The count is for the whole pass, not each page');
+      const first = detailed((await iterator.next()).value!), second = detailed((await iterator.next()).value!);
+      assert.equal(first[0]!.media.detailReducedAt, now.toISOString());
+      assert.equal(second[0]!.media.detailReducedAt, now.toISOString());
+      assert.deepEqual(logs, [], 'The saved database state supplies the group count');
       if (fail) await assert.rejects(iterator.next(), error => error instanceof AdError && error.code === 'timeout');
       else {
         assert.deepEqual((await iterator.next()).value, []);
         assert.equal((await iterator.next()).done, true);
       }
-      assert.deepEqual(logs, ['2 creatives read at reduced detail']);
+      assert.deepEqual(logs, []);
       assert.equal((await iterator.next()).done, true);
-      assert.equal(logs.length, 1);
+      assert.equal(logs.length, 0);
     } finally { info.mock.restore(); }
   }
 });

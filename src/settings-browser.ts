@@ -215,6 +215,8 @@ function initializeSettings(form: HTMLFormElement): void {
   }
 
   function showValues(values: JsonObject): void {
+    const scanPrices = form.querySelector<HTMLElement>('[data-creative-scan-prices]');
+    if (scanPrices) scanPrices.hidden = Number(values.creativeScanInputPrice) > 0 && Number(values.creativeScanOutputPrice) > 0;
     lists.forEach((list) => {
       const rows = values[list.dataset.settingsList!];
       if (!Array.isArray(rows)) return;

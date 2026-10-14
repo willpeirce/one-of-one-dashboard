@@ -5,8 +5,11 @@ import { creativeSettingsDefaults, defaultSettings, readSettings, saveSettings, 
 import { settingsPage } from '../src/settings-view.js';
 import { creativeFeatureFlags } from '../src/creatives/config.js';
 import { seedCreativeSample } from '../src/creatives/seed.js';
-import { sampleCreativeData, sampleCreativeLifts } from '../src/creatives/sample.js';
+import { sampleCreativeAttributeRows, sampleCreativeData, sampleCreativeStoredLifts } from '../src/creatives/sample.js';
 import { createTestDatabase } from './helpers/database.js';
+import { readGroupAttributes, toggleWillAttribute } from '../src/creatives/attribute-store.js';
+import { readCreativeLifts } from '../src/creatives/lifts.js';
+import { SAMPLE_CREATIVE_ACCOUNT } from '../src/creatives/sample.js';
 
 const edits = {
   creativeDefaultWindow: '7d', creativeSpendFloorGbp: 63.25, creativePurchaseMinimum: 3,
@@ -67,16 +70,28 @@ test('creative settings reject invalid ranges, unrecognised windows and unsafe m
   assert.equal(validateSettings({ ...defaultSettings(), creativeFreelancerInitial: 'q' }).creativeFreelancerInitial, 'Q');
 });
 
-test('both creative flags are read-only, and an enabled scan flag explains the deferred workflow', () => {
+test('creative flags are read-only and Settings shows the current scan and lift controls', () => {
   assert.deepEqual(creativeFeatureFlags({}), { creativeScanEnabled: false, metaActionsEnabled: false });
   assert.equal(creativeFeatureFlags({ CREATIVE_SCAN_ENABLED: 'TRUE' }).creativeScanEnabled, false);
   const flags = creativeFeatureFlags({ CREATIVE_SCAN_ENABLED: 'true' });
   const html = settingsPage({ version: 0, values: defaultSettings() }, [], 'sample', new Date(), [], undefined, flags);
-  assert.match(html, /data-creative-scan-flag>On · workflow not built yet/);
+  assert.match(html, /data-creative-scan-flag>On<\/dd>/);
+  assert.match(settingsPage({ version: 0, values: defaultSettings() }, [], 'sample', new Date(), [], undefined, creativeFeatureFlags({})), /data-creative-scan-flag>Off<\/dd>/);
+  assert.doesNotMatch(html, /(?:Attribute lifts|Creative scan) · planned|workflow not built yet|Live attribute lifts and tagging are not built yet/);
   assert.match(html, /data-meta-actions-flag>Off · read-only, no Meta actions are built/);
   assert.doesNotMatch(html, /name="(?:creativeScanEnabled|metaActionsEnabled)"/);
   assert.doesNotMatch(html, /Scan now/);
   assert.match(html, /zero means not configured/);
+});
+
+test('Settings asks for scan prices until both prices are configured', () => {
+  for (const [input, output, missing] of [[0, 0, true], [1.25, 0, true], [0, 6.25, true], [1.25, 6.25, false]] as const) {
+    const values = { ...defaultSettings(), creativeScanInputPrice: input, creativeScanOutputPrice: output };
+    const html = settingsPage({ version: 0, values });
+    const notice = html.match(/<p[^>]*data-creative-scan-prices[^>]*>/)![0];
+    assert.equal(notice.includes(' hidden'), !missing);
+    assert.match(html, /Set the scan prices in Settings/);
+  }
 });
 
 test('sample seed persists invented ads, media, insights, attributes and lifts once, separate from live data', async t => {
@@ -88,15 +103,22 @@ test('sample seed persists invented ads, media, insights, attributes and lifts o
   const expected = sampleCreativeData(settings, now);
   for (const [table, count] of [
     ['ads', expected.ads.length], ['media_groups', expected.groups.length], ['ad_insights_daily', expected.insights.length],
-    ['media_attributes', 4], ['attribute_lifts', sampleCreativeLifts.length],
+    ['media_attributes', sampleCreativeAttributeRows(expected).length], ['attribute_lifts', sampleCreativeStoredLifts(now).length],
   ] as const) {
     assert.equal((await db.query(`SELECT * FROM pulse.${table} WHERE mode='sample'`)).rowCount, count);
     assert.equal((await db.query(`SELECT * FROM pulse.${table} WHERE mode='live'`)).rowCount, 0);
   }
+  assert.equal((await readCreativeLifts(db, SAMPLE_CREATIVE_ACCOUNT, 'sample')).length, sampleCreativeStoredLifts(now).length);
+  const cleared = await toggleWillAttribute(db, 'sample', SAMPLE_CREATIVE_ACCOUNT, 'sample-video-1', 'slabEarly', 'yes', now);
+  assert.equal(cleared.source, 'model');
+  assert.equal(cleared.value, 'no');
   await db.query("UPDATE pulse.media_groups SET merged_into_id=NULL WHERE id='sample-video-1-crop'");
   await seedCreativeSample(db, settings, now);
   assert.equal((await db.query("SELECT merged_into_id FROM pulse.media_groups WHERE id='sample-video-1-crop'")).rows[0]!.merged_into_id, null);
   assert.equal((await db.query("SELECT * FROM pulse.ads WHERE mode='sample'")).rowCount, expected.ads.length);
+  const attributes = await readGroupAttributes(db, 'sample', SAMPLE_CREATIVE_ACCOUNT, 'sample-video-1');
+  assert.equal(attributes.find(row => row.key === 'slabEarly')!.source, 'model');
+  assert.equal(attributes.find(row => row.key === 'slabEarly')!.value, 'no');
   for (const group of expected.groups) assert.match(decodeURIComponent(group.thumbnailUrl), /Invented picture · sample data/);
 });
 
@@ -114,4 +136,31 @@ test('invented creative owners follow the same campaign controls as Settings wit
     else assert.equal(ad.owner, initial.ads.find(row => row.id === ad.id)!.owner);
   }
   assert.deepEqual(edited.insights.map(row => row.spend), initial.insights.map(row => row.spend));
+});
+
+test('batch 4 upgrades reserved sample examples without resetting existing media or touching a live attribute', async t => {
+  const db = await createTestDatabase();
+  t.after(() => db.close());
+  const settings = defaultSettings();
+  const now = new Date('2026-10-14T12:00:00Z');
+  await seedCreativeSample(db, settings, now);
+  await db.query("DELETE FROM pulse.attribute_lifts WHERE mode='sample' AND account_id=$1", [SAMPLE_CREATIVE_ACCOUNT]);
+  await db.query("DELETE FROM pulse.media_attributes WHERE mode='sample' AND account_id=$1", [SAMPLE_CREATIVE_ACCOUNT]);
+  await db.query(`INSERT INTO pulse.media_attributes(id,mode,account_id,media_group_id,attribute_key,value,source,recorded_at)
+    VALUES('invented-sample-video-1-hookType','sample',$1,'sample-video-1','hookType',$2,'will',$3)`,
+  [SAMPLE_CREATIVE_ACCOUNT, JSON.stringify({ label: 'Unboxing', value: 'unboxing', sample: true }), now]);
+  await db.query(`INSERT INTO pulse.media_groups(id,mode,account_id,source_id,kind,media_key,title,first_seen,fetched_at)
+    VALUES('invented-live-group','live','invented-live-account','invented-live-media','video','invented-live-media','Invented live fixture',$1,$1)`, [now]);
+  await db.query(`INSERT INTO pulse.media_attributes(id,mode,account_id,media_group_id,attribute_key,value,source,recorded_at)
+    VALUES('invented-live-attribute','live','invented-live-account','invented-live-group','hookType',$1,'will',$2)`,
+  [JSON.stringify({ value: 'question' }), now]);
+  await db.query("UPDATE pulse.media_groups SET merged_into_id=NULL WHERE id='sample-video-1-crop'");
+  await seedCreativeSample(db, settings, now);
+  assert.equal((await db.query("SELECT merged_into_id FROM pulse.media_groups WHERE id='sample-video-1-crop'")).rows[0]!.merged_into_id, null);
+  const upgraded = await readGroupAttributes(db, 'sample', SAMPLE_CREATIVE_ACCOUNT, 'sample-video-1');
+  assert.equal(upgraded.find(row => row.key === 'hookType')!.value, 'unboxing');
+  assert.equal(upgraded.find(row => row.key === 'lengthBand')!.source, 'meta');
+  assert.equal(upgraded.find(row => row.key === 'productEarly')!.source, 'model');
+  assert.equal((await readCreativeLifts(db, SAMPLE_CREATIVE_ACCOUNT, 'sample')).length, 2);
+  assert.deepEqual((await db.query("SELECT value FROM pulse.media_attributes WHERE id='invented-live-attribute'")).rows[0]!.value, { value: 'question' });
 });

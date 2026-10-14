@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import type { BrowserContext, Page } from 'playwright';
 import type { SettingsSnapshot } from '../src/settings.js';
 
-/** Round-trip every new field through the real browser form and local API. */
+/** Round-trip every creative preference through the real browser form and local API. */
 export async function checkCreativeSettings(page: Page, context: BrowserContext): Promise<void> {
   const before = await (await context.request.get('/api/settings')).json() as SettingsSnapshot;
   const edits = {
@@ -31,23 +31,27 @@ export async function checkCreativeSettings(page: Page, context: BrowserContext)
     else await input.fill(String(value));
   };
   await open();
+  assert.equal(await page.locator('[data-creative-scan-prices]').isVisible(), before.values.creativeScanInputPrice === 0 || before.values.creativeScanOutputPrice === 0);
   for (const [key, value] of Object.entries(edits)) await fill(key, value);
   for (const width of [390, 1280]) {
     await page.setViewportSize({ width, height: 900 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     assert.equal(await page.locator('[name="creativeScanEnabled"], [name="metaActionsEnabled"]').count(), 0);
-    assert.match(await page.locator('[data-creative-scan-flag]').innerText(), /workflow not built yet/);
+    assert.match(await page.locator('[data-creative-scan-flag]').innerText(), /^(?:On|Off)$/);
     assert.match(await page.locator('[data-meta-actions-flag]').innerText(), /Off/);
   }
   await save();
+  assert.equal(await page.locator('[data-creative-scan-prices]').isVisible(), false);
   const after = await (await context.request.get('/api/settings')).json() as SettingsSnapshot;
   assert.deepEqual(after.values, { ...before.values, ...edits });
   await page.reload();
   await open();
+  assert.equal(await page.locator('[data-creative-scan-prices]').isVisible(), false);
   for (const [key, value] of Object.entries(edits)) assert.equal(await page.locator(`[data-setting-path="${key}"]`).inputValue(), String(value));
   for (const key of Object.keys(edits) as (keyof typeof edits)[]) await fill(key, before.values[key]);
   await save();
   assert.deepEqual((await (await context.request.get('/api/settings')).json() as SettingsSnapshot).values, before.values);
+  assert.equal(await page.locator('[data-creative-scan-prices]').isVisible(), before.values.creativeScanInputPrice === 0 || before.values.creativeScanOutputPrice === 0);
   // Leave this group collapsed for the existing campaign browser checks.
   await page.locator('summary').filter({ hasText: 'Ad spend' }).click();
 }

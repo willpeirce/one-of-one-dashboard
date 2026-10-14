@@ -154,16 +154,16 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     number('creativeHitKilledTargetMultiplier', 'Hit rate killed target multiplier', { min: 1, max: 100 }),
     number('creativeMediaCapMb', 'Media storage cap (MB)', { integer: true, min: 1, max: 10_000 }),
     { key: 'creativeFreelancerInitial', label: 'Freelancer initial', maxlength: 1, hint: 'One letter for the owner mark on each picture.' },
-  ], values)}</div><h3>Attribute lifts · planned</h3><p class="setting-help">These preferences are saved for the next release. Live attribute lifts and tagging are not built yet; any example is labelled sample data.</p><div class="settings-grid">${fields([
+  ], values)}</div><h3>Attribute lifts</h3><p class="setting-help">Compare tagged creatives of the same type. Each side must meet both minimums. A lift is a correlation, not a cause.</p><div class="settings-grid">${fields([
     number('creativeLiftWindowDays', 'Lift window (days)', { integer: true, min: 1, max: 365 }),
     number('creativeLiftMinimumGroups', 'Lift minimum groups per side', { integer: true, min: 1, max: 1_000 }),
     number('creativeLiftMinimumSpendGbp', 'Lift minimum spend per side (£)', { min: 0.01, max: 100_000 }),
-  ], values)}</div><h3>Creative scan · planned</h3><p class="setting-help">The model scan is not built yet. Prices are pounds per million tokens; zero means not configured. Confirm the model and its current prices before enabling a future scan.</p><div class="settings-grid">${fields([
+  ], values)}</div><h3>Creative scan</h3><p class="setting-help">Prices are pounds per million tokens; zero means not configured. Check the model’s current prices and convert them to pounds before enabling the scan.</p><p class="setting-help" data-creative-scan-prices${values.creativeScanInputPrice > 0 && values.creativeScanOutputPrice > 0 ? ' hidden' : ''}>Set the scan prices in Settings</p><div class="settings-grid">${fields([
     { key: 'creativeScanModel', label: 'Scan model ID', maxlength: 80 },
     number('creativeScanInputPrice', 'Scan input price (£ per million tokens)', { max: 10_000 }),
     number('creativeScanOutputPrice', 'Scan output price (£ per million tokens)', { max: 10_000 }),
     number('creativeScanCapGbp', 'Scan daily spend cap (£)', { max: 1_000 }),
-  ], values)}</div><dl class="setting-help" aria-label="Read-only creative flags"><dt>Creative scan flag</dt><dd data-creative-scan-flag>${creativeFlags.creativeScanEnabled ? 'On' : 'Off'} · workflow not built yet</dd><dt>Meta actions</dt><dd data-meta-actions-flag>Off · read-only, no Meta actions are built</dd></dl></section>`;
+  ], values)}</div><dl class="setting-help" aria-label="Read-only creative flags"><dt>Creative scan flag</dt><dd data-creative-scan-flag>${creativeFlags.creativeScanEnabled ? 'On' : 'Off'}</dd><dt>Meta actions</dt><dd data-meta-actions-flag>Off · read-only, no Meta actions are built</dd></dl></section>`;
   const campaigns = section('Ad spend', 'Read-only spend connections and campaign ownership.', `<div class="settings-grid">${fields([
     {key:'metaAdAccountId',label:'Meta ad account ID',optional:true,hint:'Digits only, without act_. Blank waits for keys and account setup.'},
     {key:'googleCustomerId',label:'Google customer ID',optional:true,hint:'Dashes are removed when saved.'},

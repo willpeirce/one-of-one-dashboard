@@ -1,4 +1,4 @@
-/** Environment flags are display-only until the separate scan workflow is built. */
+/** Scanning is opt-in; source ad actions remain unavailable. */
 export function creativeFeatureFlags(env: NodeJS.ProcessEnv = process.env): {
   creativeScanEnabled: boolean; metaActionsEnabled: false;
 } {

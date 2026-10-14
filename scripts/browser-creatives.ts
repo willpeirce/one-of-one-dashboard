@@ -4,7 +4,7 @@ import { dashboardPage } from '../src/dashboard-view.js';
 import type { DashboardSnapshot } from '../src/dashboard-types.js';
 import { defaultSettings, type Settings } from '../src/settings.js';
 import type { CreativeData } from '../src/creatives/model.js';
-import type { CreativeSelection, CreativeView } from '../src/creatives/presentation-types.js';
+import type { CreativeSelection, CreativeView, CreativeSheet } from '../src/creatives/presentation-types.js';
 import { aggregateCreativeGroups, topCreatives } from '../src/creatives/ranking.js';
 import { creativePerformance } from '../src/creatives/performance.js';
 import { sampleCreativeData, sampleCreativePicture } from '../src/creatives/sample.js';
@@ -20,6 +20,11 @@ function fixtureView(base: CreativeView, data: CreativeData, settings: Settings,
 
 async function noOverflow(page: Page): Promise<void> {
   const width = await page.evaluate(() => ({ document: document.documentElement.scrollWidth, viewport: innerWidth }));
+  const scrollers = await page.locator('#creative-sheet *, #creative-gallery *').evaluateAll(elements => elements.filter(element => {
+    const style = getComputedStyle(element);
+    return element.clientWidth > 0 && element.scrollWidth > element.clientWidth + 1 && ['auto', 'scroll'].includes(style.overflowX) && !element.classList.contains('creative-tag-values');
+  }).map(element => `${element.tagName}.${element.className}`));
+  assert.deepEqual(scrollers, [], 'Only pill rows may scroll sideways');
   if (width.document > width.viewport) {
     if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/creatives-overflow.png`, fullPage: true });
     const escaped = await page.locator('body *').evaluateAll(elements => elements.filter(element => element.getBoundingClientRect().right > innerWidth + 1)
@@ -101,7 +106,8 @@ export async function checkCreatives(context: BrowserContext): Promise<void> {
         if (scenario !== 'under-floor') {
           await page.locator('#creative-panel [data-creative-open]').first().click();
           await page.locator('#creative-sheet .creative-media').waitFor();
-          assert.equal(await page.locator('#creative-sheet .creative-table tbody tr').count(), 4);
+          assert.equal(await page.locator('#creative-sheet .creative-performance-table thead th[scope="col"]').count(), 5);
+          assert.equal(await page.locator('#creative-sheet .creative-performance-table tbody tr').count(), scenario === 'videos' ? 9 : 6);
           assert.match(await page.locator('.creative-comparison').innerText(), /Meta says .* purchases in this window; Shopify saw .* orders in the same window/);
           if (scenario === 'videos') {
             const video = page.locator('#creative-sheet video');
@@ -143,10 +149,74 @@ export async function checkCreatives(context: BrowserContext): Promise<void> {
       await page.goto('/creatives');
       await page.locator('#creative-filters').waitFor();
       assert.ok(await page.locator('#creative-gallery .creative-picture').count() >= 6);
-      assert.match(await page.locator('#creative-gallery').innerText(), /Video lift examples/);
-      assert.match(await page.locator('#creative-gallery').innerText(), /Image lift examples/);
+      assert.match(await page.locator('#creative-gallery').innerText(), /Video lifts/);
+      assert.match(await page.locator('#creative-gallery').innerText(), /Image lifts/);
       assert.match(await page.locator('#creative-gallery').innerText(), /Strong/);
       assert.match(await page.locator('#creative-gallery').innerText(), /correlation, not a cause/);
+      assert.match(await page.locator('[data-make-next="video"]').innerText(), /Next video:/);
+      assert.match(await page.locator('[data-make-next="image"]').innerText(), /Next image:/);
+      assert.match(await page.locator('[data-make-next="video"] [data-creative-copy]').getAttribute('data-creative-copy') ?? '', /Meta says.*cost per purchase/);
+      await page.locator('[data-creative-tag="sample-video-3"]').click();
+      await page.locator('#creative-tagging').waitFor();
+      assert.ok(await page.locator('.creative-attribute').count() > 20);
+      assert.equal(await page.locator('[data-creative-scan]').count(), 0, 'Scan now is absent in sample/off mode');
+      assert.match(await page.locator('#creative-gallery [data-creative-scan-status]').innerText(), /Scan: off/);
+      assert.match(await page.locator('[data-attribute="hookType"]').innerText(), /unsure|not scanned yet/);
+      const documentStarted = await page.evaluate(() => performance.timeOrigin);
+      const tag = async (key: string, value: string) => {
+        const saved = page.waitForResponse(response => response.request().method() === 'POST' && response.url().endsWith('/attributes'));
+        await page.locator(`[data-tag-row="${key}"] [data-creative-tag-value="${value}"]`).click();
+        assert.equal((await saved).status(), 200);
+        await page.locator(`[data-tag-row="${key}"] .creative-tag-saved`).filter({ hasText: 'Saved' }).waitFor();
+      };
+      for (const [key, value] of [['hookType', 'claim'], ['slabEarly', 'yes'], ['productEarly', 'no']]) {
+        await tag(key!, value!);
+        assert.equal(await page.locator(`[data-tag-row="${key}"] [data-creative-tag-value="${value}"]`).getAttribute('aria-pressed'), 'true');
+      }
+      assert.equal(await page.evaluate(() => performance.timeOrigin), documentStarted, 'Pills save without reloading the page');
+      const noteSaved = page.waitForResponse(response => response.request().method() === 'POST' && response.url().endsWith('/attributes'));
+      await page.locator('#creative-tag-note').fill('Invented browser note');
+      assert.equal((await noteSaved).status(), 200);
+      await page.locator('#creative-note-saved').filter({ hasText: 'Saved' }).waitFor();
+      await noOverflow(page);
+      if (process.env.PULSE_SCREENSHOT_DIR) await page.locator('#creative-sheet').screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/creative-tagging-${width}.png` });
+      await page.reload();
+      await page.locator('#creative-gallery [data-group-id="sample-video-3"] [data-creative-open]').click();
+      await page.locator('#creative-tagging').waitFor();
+      assert.equal(await page.locator('#creative-tag-note').inputValue(), 'Invented browser note');
+      for (const [key, value] of [['hookType', 'claim'], ['slabEarly', 'yes'], ['productEarly', 'no']]) {
+        assert.equal(await page.locator(`[data-tag-row="${key}"] [data-creative-tag-value="${value}"]`).getAttribute('aria-pressed'), 'true');
+        await tag(key!, value!);
+      }
+      assert.match(await page.locator('[data-attribute="hookType"]').innerText(), /unsure|not scanned yet/);
+      const noteCleared = page.waitForResponse(response => response.request().method() === 'POST' && response.url().endsWith('/attributes'));
+      await page.locator('#creative-tag-note').fill('');
+      assert.equal((await noteCleared).status(), 200);
+      await page.locator('[data-creative-close]').click();
+      await page.locator('[data-creative-tag="sample-video-3"]').waitFor();
+      await page.locator('[data-creative-tag="sample-video-3"]').click();
+      await page.locator('#creative-tagging').waitFor();
+      let releaseNote!: () => void;
+      const noteGate = new Promise<void>(resolve => { releaseNote = resolve; });
+      const notePattern = '**/api/creatives/sample-video-3/attributes';
+      await page.route(notePattern, async route => { await noteGate; await route.continue(); });
+      const delayedNote = page.waitForRequest(request => request.method() === 'POST' && request.url().endsWith('/attributes'));
+      await page.locator('#creative-tag-note').fill('🟣'.repeat(201));
+      assert.equal(await page.locator('#creative-tag-note').inputValue(), '🟣'.repeat(200));
+      assert.equal(await page.locator('#creative-note-count').innerText(), '200');
+      await delayedNote;
+      await page.locator('[data-creative-close]').click();
+      await page.locator('#creative-gallery [data-group-id="sample-video-3"] [data-creative-open]').click();
+      assert.match(await page.locator('#creative-sheet-title').innerText(), /Opening creative/);
+      releaseNote();
+      await page.locator('#creative-tagging').waitFor();
+      assert.equal(await page.locator('#creative-tag-note').inputValue(), '🟣'.repeat(200), 'Reopening waits for the queued note save');
+      await page.unroute(notePattern);
+      const unicodeCleared = page.waitForResponse(response => response.request().method() === 'POST' && response.url().endsWith('/attributes'));
+      await page.locator('#creative-tag-note').fill('');
+      assert.equal((await unicodeCleared).status(), 200);
+      await page.locator('[data-creative-close]').click();
+      await page.locator('[data-creative-tag="sample-video-3"]').waitFor();
       const filter = async (key: string, value: string) => {
         const response = page.waitForResponse(response => /\/api\/creatives\?/.test(response.url()));
         await page.locator(`#creative-filters [name="${key}"]`).selectOption(value);
@@ -170,7 +240,30 @@ export async function checkCreatives(context: BrowserContext): Promise<void> {
       assert.ok(inactive.groups.every(group => group.ads.every(ad => ad.effectiveStatus !== 'ACTIVE')));
       assert.match(await page.locator('#creative-gallery').innerText(), /No creatives match these filters/);
       await filter('kind', 'all'); await filter('owner', 'all'); await filter('market', 'all'); await filter('live', 'all');
+      await filter('attribute', 'format');
+      const attribute = await filter('value', 'unboxing-flat-lay');
+      assert.deepEqual(attribute.groups.map(group => group.group.id), ['sample-image-1']);
+      await filter('attribute', '');
       if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/creative-gallery-${width}.png`, fullPage: true });
+      // A browser-only invented live response exercises the enabled control; no model request leaves the app.
+      const scanSheet = await (await context.request.get('/api/creatives/sample-image-1')).json() as CreativeSheet;
+      scanSheet.mode = 'live'; scanSheet.scan = { enabled: true, line: 'Scan: on · 0 scanned · 0 failed · £0.00 of £1.00 today · invented-browser-model', message: null };
+      const sheetPattern = /\/api\/creatives\/sample-image-1(?:\?|$)/;
+      const scanPattern = '**/api/creatives/sample-image-1/scan';
+      await page.route(sheetPattern, route => route.fulfill({ json: scanSheet }));
+      await page.route(scanPattern, route => route.fulfill({ json: { groupId: 'sample-image-1', attributes: scanSheet.attributes,
+        scan: { ...scanSheet.scan, line: 'Scan: on · 1 scanned · 0 failed · £0.01 of £1.00 today · invented-browser-model' },
+        result: { state: 'done', attempts: 1, done: 1, failed: 0 } } }));
+      await page.locator('#creative-gallery [data-group-id="sample-image-1"] [data-creative-open]').click();
+      await page.locator('[data-creative-scan]').waitFor();
+      await page.locator('[data-creative-scan]').click();
+      await page.locator('#creative-scan-result').filter({ hasText: 'Scan complete. Attributes updated.' }).waitFor();
+      assert.match(await page.locator('#creative-scan-control').innerText(), /1 scanned/);
+      await noOverflow(page);
+      if (process.env.PULSE_SCREENSHOT_DIR) await page.locator('#creative-sheet').screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/creative-scan-${width}.png` });
+      await page.locator('[data-creative-close]').click();
+      await page.unroute(sheetPattern); await page.unroute(scanPattern);
+
     }
   } finally { await page.close(); }
 }

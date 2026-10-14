@@ -85,6 +85,7 @@ export class MetaCreativeClient implements CreativeReader {
   private readonly accounts = new Map<string, string>();
   private readonly knownMedia = new Set<string>();
   private readonly storedAds = new Map<string, StoredCatalogueAd>();
+  private readonly detailRetries = new Map<string, StoredCatalogueAd>();
   constructor(private readonly meta: MetaSpend, private readonly options: AdTransportOptions = {}) {
     this.fetcher = options.fetch ?? fetch;
     this.sleep = options.sleep ?? (ms => new Promise(resolve => setTimeout(resolve, ms)));
@@ -96,6 +97,10 @@ export class MetaCreativeClient implements CreativeReader {
   rememberStoredAds(ads: StoredCatalogueAd[]): void {
     this.storedAds.clear();
     for (const ad of ads) this.storedAds.set(ad.id, ad);
+  }
+  rememberDetailRetries(ads: StoredCatalogueAd[]): void {
+    this.detailRetries.clear();
+    for (const ad of ads) this.detailRetries.set(ad.id, ad);
   }
   private async optional<T>(scope: string, read: () => Promise<T>): Promise<T | null> {
     try { return await read(); }
@@ -184,90 +189,111 @@ export class MetaCreativeClient implements CreativeReader {
   async *readCatalogue(account: string, settings: Settings, now: Date): AsyncIterable<CatalogueRead[]> {
     await this.account(account);
     const creativeCache = new Map<string, any>(), mediaCache = new Map<string, CatalogueMedia>(), postCache = new Map<string, any>();
-    const reduced = new Set<string>();
-    try {
-      for await (const ads of this.meta.readPages(`act_${id(account)}/ads`, { fields: `id,name,status,effective_status,created_time,adset{id,name},campaign{id,name},creative{${CREATIVE_FIELDS}}`, limit: '25',
-        effective_status: JSON.stringify(['ACTIVE', 'PAUSED', 'ARCHIVED', 'CAMPAIGN_PAUSED', 'ADSET_PAUSED', 'PENDING_REVIEW', 'DISAPPROVED', 'PREAPPROVED', 'PENDING_BILLING_INFO', 'IN_PROCESS', 'WITH_ISSUES']) }, 60_000, { fallbackLimit: 10 })) {
-        const entries: CatalogueRead[] = [];
-        for (const row of ads) {
-          if (!row.creative?.id) continue;
-          const adId = id(row.id), creativeId = id(row.creative.id), storedAd = this.storedAds.get(adId);
-          const campaignId = id(row.campaign?.id ?? row.campaign_id), campaignName = text(row.campaign?.name, 300), adSetName = text(row.adset?.name, 300);
-          const owner = settings.metaOwners.find(rule => rule.campaignId === campaignId)?.owner ?? 'unassigned';
-          const listedAd: CatalogueRefresh['ad'] = { id: adId, name: text(row.name, 300), status: text(row.status, 50),
-            effectiveStatus: text(row.effective_status, 50), lastSeen: now.toISOString(),
-            adSetId: id(row.adset?.id ?? row.adset_id), adSetName, campaignId, campaignName, owner,
-            market: spendMarket({ source: 'meta', campaignName, adSetName, owner }) };
-          if (storedAd?.creativeId === creativeId && storedAd.mediaGroupId) {
-            entries.push({ ad: listedAd, media: null });
+    const reduced = new Set<string>(), expanded = new Set<string>();
+    const retryResults = new Map<string, CatalogueMedia | null>();
+    for await (const ads of this.meta.readPages(`act_${id(account)}/ads`, { fields: `id,name,status,effective_status,created_time,adset{id,name},campaign{id,name},creative{${CREATIVE_FIELDS}}`, limit: '25',
+      effective_status: JSON.stringify(['ACTIVE', 'PAUSED', 'ARCHIVED', 'CAMPAIGN_PAUSED', 'ADSET_PAUSED', 'PENDING_REVIEW', 'DISAPPROVED', 'PREAPPROVED', 'PENDING_BILLING_INFO', 'IN_PROCESS', 'WITH_ISSUES']) }, 60_000, { fallbackLimit: 10 })) {
+      const entries: CatalogueRead[] = [];
+      for (const row of ads) {
+        if (!row.creative?.id) continue;
+        const adId = id(row.id), creativeId = id(row.creative.id), storedAd = this.storedAds.get(adId);
+        const campaignId = id(row.campaign?.id ?? row.campaign_id), campaignName = text(row.campaign?.name, 300), adSetName = text(row.adset?.name, 300);
+        const owner = settings.metaOwners.find(rule => rule.campaignId === campaignId)?.owner ?? 'unassigned';
+        const listedAd: CatalogueRefresh['ad'] = { id: adId, name: text(row.name, 300), status: text(row.status, 50),
+          effectiveStatus: text(row.effective_status, 50), lastSeen: now.toISOString(),
+          adSetId: id(row.adset?.id ?? row.adset_id), adSetName, campaignId, campaignName, owner,
+          market: spendMarket({ source: 'meta', campaignName, adSetName, owner }) };
+        if (storedAd?.creativeId === creativeId && storedAd.mediaGroupId) {
+          entries.push({ ad: listedAd, media: null });
+          continue;
+        }
+        const retry = this.detailRetries.get(adId);
+        const retryGroupId = retry?.creativeId === creativeId ? retry.mediaGroupId : undefined;
+        if (retryGroupId && retryResults.get(retryGroupId) === null) {
+          entries.push({ ad: listedAd, media: null, retryGroupId });
+          continue;
+        }
+        if (retryGroupId && !retryResults.has(retryGroupId)) {
+          try {
+            const detail = await this.creative(creativeId);
+            creativeCache.set(creativeId, { ...row.creative, ...detail, thumbnail_url: detail.thumbnail_url ?? row.creative.thumbnail_url });
+            expanded.add(creativeId);
+          } catch {
+            retryResults.set(retryGroupId, null);
+            entries.push({ ad: listedAd, media: null, retryGroupId });
             continue;
           }
-          if (!creativeCache.has(creativeId)) {
-            const storyId = optionalId(row.creative.effective_object_story_id);
-            if (storyId && !postCache.has(storyId)) postCache.set(storyId, await this.optional(`post-media:${storyId}`, () => this.post(storyId)));
-            const listed = creativeMedia(row.creative, this.attachment(storyId ? postCache.get(storyId) : null)).primary;
-            const existingKey = listed ? `${listed.kind}:${listed.key}` : null;
-            const known = existingKey && (this.knownMedia.has(existingKey) || mediaCache.has(existingKey))
-              || ['image', 'video'].some(kind => this.knownMedia.has(`${kind}:creative:${creativeId}`)
-                || storyId && (this.knownMedia.has(`${kind}:post:${storyId}`) || mediaCache.has(`${kind}:post:${storyId}`)));
-            let creative = row.creative;
-            if (!known) {
-              try {
-                // Expanding a new media key adds the 600px thumbnail. Other ads retain their own copy.
-                const expanded = await this.creative(creativeId);
-                creative = { ...row.creative, ...expanded, thumbnail_url: expanded.thumbnail_url ?? row.creative.thumbnail_url };
-              } catch {
-                reduced.add(creativeId);
-              }
-            }
-            creativeCache.set(creativeId, creative);
-          }
-          const creative = creativeCache.get(creativeId);
-          const storyId = optionalId(creative.effective_object_story_id), instagramId = optionalId(creative.effective_instagram_media_id);
+        } else if (retryGroupId && !creativeCache.has(creativeId)) creativeCache.set(creativeId, row.creative);
+        if (!creativeCache.has(creativeId)) {
+          const storyId = optionalId(row.creative.effective_object_story_id);
           if (storyId && !postCache.has(storyId)) postCache.set(storyId, await this.optional(`post-media:${storyId}`, () => this.post(storyId)));
-          const post = storyId ? postCache.get(storyId) : null, attachment = this.attachment(post);
-          const instagram = instagramId ? await this.permalink('instagram', instagramId) : null;
-          const { spec, feed, alternatives, children, primary: resolved } = creativeMedia(creative, attachment);
-          const storedPostKind = storyId ? (['image', 'video'] as const).find(kind =>
-            this.knownMedia.has(`${kind}:post:${storyId}`) || mediaCache.has(`${kind}:post:${storyId}`)) : null;
-          const primary = resolved ?? (storedPostKind ? { kind: storedPostKind, key: `post:${storyId}` }
-            : { kind: mediaKind(attachment?.type ?? instagram?.media_type ?? (/video/i.test(creative.object_type ?? '') ? 'video' : creative.thumbnail_url)), key: `creative:${creativeId}` });
-          // A SHARE fallback can be a video picture without an accessible video id.
-          const key = `${primary.kind}:${primary.key}`;
-          let media = mediaCache.get(key);
-          if (!media) {
-            const actualVideoId = primary.kind === 'video' && !primary.key.includes(':') ? primary.key : null;
-            const metadata = actualVideoId ? await this.optional(`video-info:${actualVideoId}`, () => this.meta.readGraph(id(actualVideoId), { fields: 'title,length,format,picture' })) : null;
-            const format = metadata?.format?.[0];
-            const thumbnailUrl = creative.thumbnail_url ?? creative.image_url ?? attachment?.media?.image?.src ?? metadata?.picture;
-            const stored = this.knownMedia.has(key);
-            let thumbnail = !stored && thumbnailUrl ? await this.optional(`thumbnail:${key}`, () => this.bytes(thumbnailUrl)) : null;
-            if (!stored && !thumbnail && primary.kind === 'image') thumbnail = await this.optional(`image:${key}`, () => this.imageBytes(account, primary.key));
-            const frames = !stored && actualVideoId ? await this.optional(`frames:${key}`, () => this.videoFrames(actualVideoId)) ?? [] : [];
-            media = { kind: primary.kind, key: primary.key, title: text(metadata?.title) || text(creative.title) || text(row.name, 300),
-              lengthSeconds: metadata?.length == null ? null : numeric(metadata.length),
-              width: format?.width == null ? attachment?.media?.image?.width ?? null : numeric(format.width),
-              height: format?.height == null ? attachment?.media?.image?.height ?? null : numeric(format.height),
-              firstSeen: now.toISOString(), thumbnail, poster: primary.kind === 'video' ? thumbnail : null, frames,
-              alternates: alternatives.filter(item => item.kind !== primary.kind || item.key !== primary.key) };
-            mediaCache.set(key, media);
+          const listed = creativeMedia(row.creative, this.attachment(storyId ? postCache.get(storyId) : null)).primary;
+          const existingKey = listed ? `${listed.kind}:${listed.key}` : null;
+          const known = existingKey && (this.knownMedia.has(existingKey) || mediaCache.has(existingKey))
+            || ['image', 'video'].some(kind => this.knownMedia.has(`${kind}:creative:${creativeId}`)
+              || storyId && (this.knownMedia.has(`${kind}:post:${storyId}`) || mediaCache.has(`${kind}:post:${storyId}`)));
+          let creative = row.creative;
+          if (!known) {
+            try {
+              // Expanding a new media key adds the 600px thumbnail. Other ads retain their own copy.
+              const detail = await this.creative(creativeId);
+              creative = { ...row.creative, ...detail, thumbnail_url: detail.thumbnail_url ?? row.creative.thumbnail_url };
+              expanded.add(creativeId);
+            } catch {
+              reduced.add(creativeId);
+            }
           }
-          const linkUrl = this.link(creative.link_url ?? spec.link_data?.link ?? spec.video_data?.call_to_action?.value?.link);
-          const tags = new URLSearchParams(text(creative.url_tags));
-          const facebook = post?.permalink_url ? post : storyId ? await this.permalink('post', storyId) : null;
-          const ad: CatalogueEntry['ad'] = { ...listedAd, accountId: account, createdAt: instant(row.created_time, now), creativeId,
-            creativeType: Array.isArray(children) && children.length > 1 ? 'carousel' : spec.template_data || /catalog|product/i.test(creative.object_type ?? '') ? 'catalogue' : primary.kind,
-            body: text(creative.body ?? spec.link_data?.message ?? spec.video_data?.message ?? feed.bodies?.[0]?.text),
-            title: text(creative.title ?? spec.link_data?.name ?? spec.video_data?.title ?? feed.titles?.[0]?.text),
-            callToAction: text(creative.call_to_action_type ?? spec.link_data?.call_to_action?.type ?? spec.video_data?.call_to_action?.type ?? feed.call_to_action_types?.[0], 100),
-            linkUrl, utmContent: tags.get('utm_content') ?? (linkUrl ? new URL(linkUrl).searchParams.get('utm_content') : null),
-            facebookUrl: this.link(facebook?.permalink_url), instagramUrl: this.link(instagram?.permalink), objectStoryId: storyId, instagramMediaId: instagramId };
-          entries.push({ ad, media });
+          creativeCache.set(creativeId, creative);
         }
-        yield entries;
+        const creative = creativeCache.get(creativeId);
+        const storyId = optionalId(creative.effective_object_story_id), instagramId = optionalId(creative.effective_instagram_media_id);
+        if (storyId && !postCache.has(storyId)) postCache.set(storyId, await this.optional(`post-media:${storyId}`, () => this.post(storyId)));
+        const post = storyId ? postCache.get(storyId) : null, attachment = this.attachment(post);
+        const instagram = instagramId ? await this.permalink('instagram', instagramId) : null;
+        const { spec, feed, alternatives, children, primary: resolved } = creativeMedia(creative, attachment);
+        const storedPostKind = storyId ? (['image', 'video'] as const).find(kind =>
+          this.knownMedia.has(`${kind}:post:${storyId}`) || mediaCache.has(`${kind}:post:${storyId}`)) : null;
+        const primary = resolved ?? (storedPostKind ? { kind: storedPostKind, key: `post:${storyId}` }
+          : { kind: mediaKind(attachment?.type ?? instagram?.media_type ?? (/video/i.test(creative.object_type ?? '') ? 'video' : creative.thumbnail_url)), key: `creative:${creativeId}` });
+        // A SHARE fallback can be a video picture without an accessible video id.
+        const key = `${primary.kind}:${primary.key}`;
+        let media = retryGroupId ? retryResults.get(retryGroupId) : mediaCache.get(key);
+        if (!media) {
+          const actualVideoId = primary.kind === 'video' && !primary.key.includes(':') ? primary.key : null;
+          const metadata = actualVideoId ? await this.optional(`video-info:${actualVideoId}`, () => this.meta.readGraph(id(actualVideoId), { fields: 'title,length,format,picture' })) : null;
+          const format = metadata?.format?.[0];
+          const thumbnailUrl = creative.thumbnail_url ?? creative.image_url ?? attachment?.media?.image?.src ?? metadata?.picture;
+          const stored = !retryGroupId && this.knownMedia.has(key);
+          let thumbnail = !stored && thumbnailUrl ? await this.optional(`thumbnail:${key}`, () => this.bytes(thumbnailUrl)) : null;
+          if (!stored && !thumbnail && primary.kind === 'image') thumbnail = await this.optional(`image:${key}`, () => this.imageBytes(account, primary.key));
+          const frames = !stored && actualVideoId ? await this.optional(`frames:${key}`, () => this.videoFrames(actualVideoId)) ?? [] : [];
+          media = { kind: primary.kind, key: primary.key, title: text(metadata?.title) || text(creative.title) || text(row.name, 300),
+            lengthSeconds: metadata?.length == null ? null : numeric(metadata.length),
+            width: format?.width == null ? attachment?.media?.image?.width ?? null : numeric(format.width),
+            height: format?.height == null ? attachment?.media?.image?.height ?? null : numeric(format.height),
+            firstSeen: now.toISOString(), detailReducedAt: reduced.has(creativeId) ? now.toISOString() : expanded.has(creativeId) ? null : undefined, thumbnail, poster: primary.kind === 'video' ? thumbnail : null, frames,
+            alternates: alternatives.filter(item => item.kind !== primary.kind || item.key !== primary.key) };
+          mediaCache.set(key, media);
+        }
+        if (retryGroupId && !media.thumbnail) {
+          retryResults.set(retryGroupId, null);
+          entries.push({ ad: listedAd, media: null, retryGroupId });
+          continue;
+        }
+        const linkUrl = this.link(creative.link_url ?? spec.link_data?.link ?? spec.video_data?.call_to_action?.value?.link);
+        const tags = new URLSearchParams(text(creative.url_tags));
+        const facebook = post?.permalink_url ? post : storyId ? await this.permalink('post', storyId) : null;
+        const ad: CatalogueEntry['ad'] = { ...listedAd, accountId: account, createdAt: instant(row.created_time, now), creativeId,
+          creativeType: Array.isArray(children) && children.length > 1 ? 'carousel' : spec.template_data || /catalog|product/i.test(creative.object_type ?? '') ? 'catalogue' : primary.kind,
+          body: text(creative.body ?? spec.link_data?.message ?? spec.video_data?.message ?? feed.bodies?.[0]?.text),
+          title: text(creative.title ?? spec.link_data?.name ?? spec.video_data?.title ?? feed.titles?.[0]?.text),
+          callToAction: text(creative.call_to_action_type ?? spec.link_data?.call_to_action?.type ?? spec.video_data?.call_to_action?.type ?? feed.call_to_action_types?.[0], 100),
+          linkUrl, utmContent: tags.get('utm_content') ?? (linkUrl ? new URL(linkUrl).searchParams.get('utm_content') : null),
+          facebookUrl: this.link(facebook?.permalink_url), instagramUrl: this.link(instagram?.permalink), objectStoryId: storyId, instagramMediaId: instagramId };
+        if (retryGroupId) retryResults.set(retryGroupId, media);
+        entries.push({ ad, media, ...(retryGroupId ? { retryGroupId } : {}) });
       }
-    } finally {
-      if (reduced.size) console.info(`${reduced.size} creatives read at reduced detail`);
+      yield entries;
     }
   }
   async readInsights(account: string, from: string, to: string): Promise<AdInsight[]> {

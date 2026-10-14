@@ -15,11 +15,15 @@ import { createTestDatabase } from './helpers/database.js';
 import { creativeAd, creativeGroup, creativeInsight } from './helpers/creatives.js';
 import { saveCatalogue, saveInsights } from '../src/creatives/store.js';
 import { frequencyMembershipKey } from '../src/creatives/frequency.js';
+import { replaceSourceAttributes, toggleWillAttribute } from '../src/creatives/attribute-store.js';
+import { attributesForKind } from '../src/creatives/attributes.js';
+import type { ScanOptions } from '../src/creatives/scan.js';
+import { saveCreativeLifts } from '../src/creatives/lifts.js';
 
 const account = '424242';
 const storedImage = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x49, 0x4e, 0x56, 0xff, 0xd9]);
 
-async function harness(t: TestContext, live = false) {
+async function harness(t: TestContext, live = false, scanOptions: Pick<ScanOptions, 'fetch' | 'clock' | 'sleep'> = {}) {
   const db = await createTestDatabase();
   const config = readRuntime({ DATABASE_URL: 'postgresql://localhost/pulse_creatives_test', APP_ORIGIN: 'https://pulse.example.test' });
   const app = Fastify({ logger: false });
@@ -45,7 +49,7 @@ async function harness(t: TestContext, live = false) {
     async imageBytes() { imageReads++; return storedImage; }, async videoFrames() { return []; },
   };
   registerCreatives(app, db, auth, live ? { META_ACCESS_TOKEN: inventedToken } : {}, () => now,
-    async () => ({ count: 9, mode: 'sample' as const }), async () => {}, reader);
+    async () => ({ count: 9, mode: 'sample' as const }), async () => {}, reader, scanOptions);
   t.after(async () => { await app.close(); await db.close(); });
   const headers = { cookie: `__Host-pulse_session=${token}`, origin: config.origin, 'content-type': 'application/json' };
   return { app, db, headers, inventedToken, credential,
@@ -62,6 +66,60 @@ test('creative links are rendered only when buildable and never carry credential
     assert.equal(safeCreativeLink(unsafe), null);
   }
   assert.equal(safeCreativeLink('https://www.instagram.com/p/invented/'), 'https://www.instagram.com/p/invented/');
+});
+
+test('signed-in tag taps save on the sample parent, toggle to model fallback and leave live rows untouched', async t => {
+  const h = await harness(t);
+  const sheetPath = '/api/creatives/sample-video-1-crop';
+  const initial = (await h.app.inject({ url: sheetPath, headers: h.headers })).json<CreativeSheet>();
+  assert.equal(initial.group.group.id, 'sample-video-1');
+  assert.equal(initial.attributes.length, attributesForKind('video').length);
+  const liveGroup = creativeGroup('invented-live-parent');
+  await saveCatalogue(h.db, account, [{ ad: creativeAd('invented-live-ad', liveGroup.id), media: {
+    ...liveGroup, thumbnail: storedImage, poster: storedImage, frames: [],
+  } }], new Date('2026-10-13T11:00:00Z'));
+  await toggleWillAttribute(h.db, 'live', account, liveGroup.id, 'hookType', 'question');
+  const liveBefore = (await h.db.query("SELECT * FROM pulse.media_attributes WHERE mode='live' ORDER BY id")).rows;
+  const path = `${sheetPath}/attributes`;
+  const tap = (key: string, value: string) => h.app.inject({ method: 'POST', url: path, headers: h.headers, payload: { key, value } });
+  assert.equal((await h.app.inject({ method: 'POST', url: path, headers: { origin: h.headers.origin }, payload: { key: 'hookType', value: 'reveal' } })).statusCode, 401);
+  assert.equal((await h.app.inject({ method: 'POST', url: path, headers: { ...h.headers, origin: 'https://elsewhere.example.test' }, payload: { key: 'hookType', value: 'reveal' } })).statusCode, 403);
+  assert.equal((await h.app.inject({ method: 'POST', url: '/api/creatives/invented-live-parent/attributes', headers: h.headers, payload: { key: 'hookType', value: 'reveal' } })).statusCode, 404);
+  const hook = initial.attributes.find(attribute => attribute.key === 'hookType')!;
+  const choice = hook.values.find(option => option.value !== hook.willValue)!.value;
+  const saved = await tap('hookType', choice);
+  assert.equal(saved.statusCode, 200);
+  assert.equal(saved.json().groupId, 'sample-video-1');
+  assert.equal(saved.json().attribute.source, 'will');
+  assert.equal(saved.json().attribute.value, choice);
+  assert.equal((await h.db.query("SELECT * FROM pulse.media_attributes WHERE mode='sample' AND media_group_id='sample-video-1-crop' AND source='will'")).rowCount, 0);
+  await replaceSourceAttributes(h.db, 'sample', 'sample-meta-account', 'sample-video-1', 'model', { hookType: { value: 'unboxing', confidence: 0.9 } });
+  const retained = (await h.app.inject({ url: sheetPath, headers: h.headers })).json<CreativeSheet>();
+  assert.equal(retained.attributes.find(attribute => attribute.key === 'hookType')!.source, 'will');
+  const cleared = await tap('hookType', choice);
+  assert.equal(cleared.json().attribute.source, 'model');
+  assert.equal(cleared.json().attribute.value, 'unboxing');
+  const note = await tap('note', 'Invented note '.repeat(30));
+  assert.equal(note.json().note.length, 200);
+  const reread = (await h.app.inject({ url: sheetPath, headers: h.headers })).json<CreativeSheet>();
+  assert.equal(reread.note, note.json().note);
+  assert.equal(reread.attributes.find(attribute => attribute.key === 'hookType')!.source, 'model', 'Reading again never restores the cleared sample Will tag');
+  assert.equal((await tap('hookType', 'invented-invalid-value')).statusCode, 400);
+  assert.equal((await tap('invented-invalid-key', 'yes')).statusCode, 400);
+  assert.deepEqual((await h.db.query("SELECT * FROM pulse.media_attributes WHERE mode='live' ORDER BY id")).rows, liveBefore);
+});
+
+test('the attribute filter applies the stored resolved answer to the gallery', async t => {
+  const h = await harness(t);
+  await h.app.inject({ url: '/api/creatives/sample-video-3', headers: h.headers });
+  const saved = await h.app.inject({ method: 'POST', url: '/api/creatives/sample-video-3/attributes', headers: h.headers, payload: { key: 'hookType', value: 'claim' } });
+  assert.equal(saved.statusCode, 200);
+  const filtered = await h.app.inject({ url: '/api/creatives?kind=video&attribute=hookType&value=claim', headers: h.headers });
+  assert.equal(filtered.statusCode, 200);
+  assert.deepEqual(filtered.json<CreativeView>().groups.map(group => group.group.id), ['sample-video-3']);
+  assert.ok(!filtered.json<CreativeView>().taggingQueue.some(group => group.groupId === 'sample-video-3'));
+  assert.equal((await h.app.inject({ url: '/api/creatives?attribute=hookType&value=invalid', headers: h.headers })).statusCode, 400);
+  assert.equal((await h.app.inject({ url: '/api/creatives?kind=image&attribute=hookType&value=claim', headers: h.headers })).statusCode, 400);
 });
 
 test('missing exact frequency is visible on the panel and sheet without a healthy fading claim', async () => {
@@ -267,4 +325,60 @@ test('every creative sheet explains UK-day counts and Meta account-day reach and
       assert.match(html, /24h means the last complete UK day plus today so far/);
     }
   }
+});
+
+
+test('manual scan is signed in, scoped and flag guarded, then returns safe resolved attributes', async t => {
+  const inventedCredential = 'invented-scan-key-1';
+  const oldFlag = process.env.CREATIVE_SCAN_ENABLED, oldKey = process.env.ANTHROPIC_API_KEY;
+  t.after(() => { if (oldFlag === undefined) delete process.env.CREATIVE_SCAN_ENABLED; else process.env.CREATIVE_SCAN_ENABLED = oldFlag;
+    if (oldKey === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = oldKey; });
+  process.env.CREATIVE_SCAN_ENABLED = 'false'; process.env.ANTHROPIC_API_KEY = inventedCredential;
+  let calls = 0;
+  const h = await harness(t, true, { fetch: async () => { calls++; return new Response(JSON.stringify({
+    content: [{ type: 'text', text: JSON.stringify({ attributes: { hookType: { value: 'reveal', confidence: 0.9, reason: 'Invented reveal.' } } }) }],
+    usage: { input_tokens: 100, output_tokens: 50 },
+  }), { status: 200 }); } });
+  const group = creativeGroup('invented-scan-parent');
+  await saveCatalogue(h.db, account, [{ ad: creativeAd('invented-scan-ad', group.id), media: {
+    ...group, thumbnail: storedImage, poster: storedImage, frames: [],
+  } }], new Date('2026-10-13T11:00:00Z'));
+  const path = `/api/creatives/${group.id}/scan`;
+  const post = (headers = h.headers, url = path) => h.app.inject({ method: 'POST', url, headers, payload: {} });
+  const sheet = async () => (await h.app.inject({ url: `/api/creatives/${group.id}`, headers: h.headers })).json<CreativeSheet>();
+  assert.doesNotMatch(creativeSheetHtml(await sheet()), /data-creative-scan /);
+  assert.equal((await post()).statusCode, 403); assert.equal(calls, 0);
+  process.env.CREATIVE_SCAN_ENABLED = 'true'; delete process.env.ANTHROPIC_API_KEY;
+  assert.doesNotMatch(creativeSheetHtml(await sheet()), /data-creative-scan /);
+  assert.equal((await post()).statusCode, 403); assert.equal(calls, 0);
+  process.env.ANTHROPIC_API_KEY = inventedCredential;
+  assert.equal((await post({ ...h.headers, cookie: '' })).statusCode, 401);
+  assert.equal((await post({ ...h.headers, origin: 'https://elsewhere.example.test' })).statusCode, 403);
+  assert.equal((await post(h.headers, '/api/creatives/foreign-group/scan')).statusCode, 404);
+  const prices = await post(); assert.equal(prices.json().result.state, 'prices'); assert.equal(calls, 0);
+  assert.match(creativeSheetHtml(await sheet()), /Set the scan prices in Settings/);
+  const settings = await readSettings(h.db);
+  await saveSettings(h.db, { ...settings, values: { ...settings.values, creativeScanInputPrice: 1, creativeScanOutputPrice: 1 } }, h.credential);
+  assert.match(creativeSheetHtml(await sheet()), /data-creative-scan /);
+  const response = await post(); assert.equal(response.statusCode, 200); assert.equal(response.json().result.state, 'done'); assert.equal(calls, 1);
+  assert.equal(response.json().attributes.find((row: { key: string }) => row.key === 'hookType').source, 'model');
+  assert.match(response.json().scan.line, /Scan: on · 1 scanned/);
+  assert.doesNotMatch(response.body, /invented-scan-key-1|raw_response/);
+});
+
+
+test('a Strong lift Decide card uses its evidence identity and Done persists until a new Strong value', async t => {
+  const h = await harness(t);
+  const read = async () => (await h.app.inject({ url: '/api/creatives', headers: h.headers })).json<CreativeView>();
+  const before = await read(), card = before.cards.find(row => row.kind === 'decide')!;
+  assert.equal(card.id, 'creative-lift-video-slabEarly-yes');
+  const done = await h.app.inject({ method: 'POST', url: '/api/creatives/cards', headers: h.headers, payload: { cardId: card.id, action: 'done' } });
+  assert.equal(done.statusCode, 200);
+  assert.ok(!(await read()).cards.some(row => row.id === card.id));
+  const lifts = before.lifts;
+  const strong = lifts.find(lift => lift.kind === 'video')!;
+  await saveCreativeLifts(h.db, 'sample-meta-account', 'sample', [{ ...strong, attributeKey: 'productEarly', value: 'yes' }]);
+  const next = (await read()).cards.find(row => row.kind === 'decide')!;
+  assert.equal(next.id, 'creative-lift-video-productEarly-yes');
+  assert.ok(next.brief?.includes('Meta says'));
 });

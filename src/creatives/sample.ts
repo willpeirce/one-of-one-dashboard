@@ -4,6 +4,8 @@ import { ukToday } from '../hero-range.js';
 import { metaSpendMarket } from '../ad-spend/placement.js';
 import type { AdInsight, CatalogueEntry, CreativeAd, CreativeData, CreativeMarket, CreativeOwner, MediaGroup } from './model.js';
 import { buildFrequencyRequests } from './frequency.js';
+import { parentGroup } from './ranking.js';
+import { deterministicAttributeValues, type AttributeRow, type AttributeSource } from './attributes.js';
 
 /** Every name, picture, identifier and figure in this module is invented. */
 export const SAMPLE_CREATIVE_ACCOUNT = 'sample-meta-account';
@@ -90,19 +92,78 @@ export async function* readSampleCreativeCatalogue(settings: Pick<Settings, 'met
   });
 }
 
-export const sampleCreativeAttributes = [
-  { groupId: 'sample-video-1', attributes: [{ key: 'hookType', label: 'Unboxing', value: 'unboxing' }, { key: 'slabEarly', label: 'Slab in the first 3 seconds', value: 'yes' }] },
-  { groupId: 'sample-video-2', attributes: [{ key: 'setting', label: 'Kitchen table', value: 'kitchen-table' }] },
-  { groupId: 'sample-image-1', attributes: [{ key: 'format', label: 'Unboxing flat lay', value: 'unboxing-flat-lay' }] },
+/** Fixed invented answers: only Colour card challenge is both over the floor and untagged. */
+const sampleAttributeAnswers: readonly {
+  groupId: string;
+  attributes: readonly { key: string; value: string; source: AttributeSource; confidence?: number; reason?: string }[];
+}[] = [
+  { groupId: 'sample-video-1', attributes: [
+    { key: 'hookType', value: 'unboxing', source: 'will' },
+    { key: 'slabEarly', value: 'yes', source: 'will' },
+    { key: 'slabsShown', value: '3-plus', source: 'will' },
+    { key: 'whoSpeaks', value: 'nobody', source: 'will' },
+    { key: 'slabEarly', value: 'no', source: 'model', confidence: 0.91, reason: 'Invented answer overridden by the sample tag.' },
+    { key: 'productEarly', value: 'yes', source: 'model', confidence: 0.94, reason: 'Invented product-first example.' },
+  ] },
+  { groupId: 'sample-video-2', attributes: [
+    { key: 'setting', value: 'kitchen-table', source: 'will' },
+    { key: 'slabEarly', value: 'yes', source: 'model', confidence: 0.92, reason: 'Invented early-slab example.' },
+  ] },
+  { groupId: 'sample-video-3', attributes: [
+    { key: 'hookType', value: 'reveal', source: 'model', confidence: 0.4, reason: 'Invented low-confidence example for the tagging queue.' },
+    { key: 'productEarly', value: 'yes', source: 'model', confidence: 0.92, reason: 'Invented product-first example.' },
+  ] },
+  { groupId: 'sample-image-1', attributes: [
+    { key: 'format', value: 'unboxing-flat-lay', source: 'will' },
+    { key: 'productInShot', value: 'yes', source: 'model', confidence: 0.96, reason: 'Invented product picture.' },
+  ] },
+  { groupId: 'sample-image-2', attributes: [
+    { key: 'format', value: 'gift-guide', source: 'will' },
+  ] },
+];
+
+/** Uses the same canonical rows for pure sample rendering and the isolated sample seed. */
+export function sampleCreativeAttributeRows(data: CreativeData): AttributeRow[] {
+  const rows: AttributeRow[] = [];
+  for (const group of data.groups.filter(group => !group.mergedIntoId)) {
+    const values = deterministicAttributeValues(group, data.ads.filter(ad => parentGroup(ad.mediaGroupId, data.groups)?.id === group.id));
+    for (const [key, value] of Object.entries(values)) rows.push({ groupId: group.id, key, source: 'meta', value: { value } });
+    for (const attribute of sampleAttributeAnswers.find(example => example.groupId === group.id)?.attributes ?? []) {
+      rows.push({ groupId: group.id, key: attribute.key, source: attribute.source,
+        value: attribute.source === 'model'
+          ? { value: attribute.value, confidence: attribute.confidence, reason: attribute.reason }
+          : { value: attribute.value } });
+    }
+  }
+  return rows;
+}
+
+const sampleLiftExamples = [
+  { kind: 'video', attributeKey: 'slabEarly', label: 'slab in the first 3 seconds', value: 'yes', confidence: 'Strong',
+    withCppGbp: 11, withoutCppGbp: 18, withGroupCount: 3, withoutGroupCount: 3, withSpendGbp: 264, withoutSpendGbp: 324 },
+  { kind: 'image', attributeKey: 'format', label: 'unboxing flat lay', value: 'unboxing-flat-lay', confidence: 'Likely',
+    withCppGbp: 13, withoutCppGbp: 20, withGroupCount: 3, withoutGroupCount: 3, withSpendGbp: 234, withoutSpendGbp: 300 },
 ] as const;
 
-export const sampleCreativeLifts = [
-  { kind: 'video', attributeKey: 'slabEarly', label: 'Slab in the first 3 seconds', value: 'yes', confidence: 'Strong',
-    withCppGbp: 11, withoutCppGbp: 18, withGroupCount: 3, withoutGroupCount: 3, withSpendGbp: 264, withoutSpendGbp: 324,
-    examples: ['Unboxing clip 4', 'Kitchen table reveal'],
-    brief: 'Invented sample brief. Next video: show a slab in the first 3 seconds. Sample Meta says cost per purchase £11 with this attribute (3 groups, £264 spend), £18 without (3 groups, £324 spend); Strong correlation, not a cause. Invented examples: Unboxing clip 4 and Kitchen table reveal.' },
-  { kind: 'image', attributeKey: 'format', label: 'Unboxing flat lay', value: 'unboxing-flat-lay', confidence: 'Likely',
-    withCppGbp: 13, withoutCppGbp: 20, withGroupCount: 3, withoutGroupCount: 3, withSpendGbp: 234, withoutSpendGbp: 300,
-    examples: ['Three slabs flat lay', 'Invented gift guide'],
-    brief: 'Invented sample brief. Next image: an unboxing flat lay. Sample Meta says cost per purchase £13 with this attribute (3 groups, £234 spend), £20 without (3 groups, £300 spend); Likely correlation, not a cause. Invented examples: Three slabs flat lay and Invented gift guide.' },
-] as const;
+/** Fixed invented lift illustrations; their groups/figures are not calculated from this small gallery. */
+export function sampleCreativeStoredLifts(now = new Date(appConfig.shopify.sampleNow)): import('./lifts.js').CreativeLift[] {
+  const today = ukToday(now);
+  return sampleLiftExamples.map(lift => {
+    const video = lift.kind === 'video';
+    const side = (withValue: boolean) => {
+      const spend = withValue ? lift.withSpendGbp : lift.withoutSpendGbp;
+      const costPerPurchase = withValue ? lift.withCppGbp : lift.withoutCppGbp;
+      const purchases = spend / costPerPurchase;
+      const roas = video ? (withValue ? 4 : 2) : (withValue ? 3 : 1.5);
+      return { groupCount: withValue ? lift.withGroupCount : lift.withoutGroupCount, spend, purchases,
+        purchaseValue: spend * roas, costPerPurchase, roas, addToCartRate: withValue ? 0.15 : 0.08,
+        hookRate: video ? (withValue ? 0.4 : 0.3) : null, holdRate: video ? (withValue ? 0.5 : 0.4) : null };
+    };
+    return { id: `invented-batch4-lift-${lift.kind}`, kind: lift.kind, attributeKey: lift.attributeKey, value: lift.value,
+      attributeLabel: video ? 'Slab in the first 3 seconds' : 'Format', valueLabel: video ? 'yes' : 'unboxing flat lay',
+      label: lift.label, confidence: lift.confidence, metrics: { with: side(true), without: side(false),
+        share: video ? 0.975 : 0.9, from: dayBefore(today, 29), to: today,
+        exampleGroupIds: video ? ['sample-video-1', 'sample-video-2'] : ['sample-image-1', 'sample-image-2'] },
+      computedAt: now.toISOString() };
+  });
+}

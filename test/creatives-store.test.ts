@@ -143,9 +143,9 @@ test('the spend worker refreshes creative status on its existing 30-minute sched
     source.rememberStoredMedia=keys=>known.push(keys);
     source.readCatalogue=async function*(){reads++;const row=entry();row.ad.effectiveStatus=reads===1?'ACTIVE':'PAUSED';yield [row];};
     const worker=new SpendWorker(db,env,{clock:()=>clock,readers:{meta:{read:async()=>[]}},creativeReader:source});
-    await worker.tick('meta');assert.equal(reads,1);assert.deepEqual(known,[[]]);
+    await worker.tick('meta');await worker.waitForCreatives();assert.equal(reads,1);assert.deepEqual(known,[[]]);
     clock=new Date(now.getTime()+60_000);await worker.tick('meta');assert.equal(reads,1);
-    clock=new Date(now.getTime()+30*60_000);await worker.tick('meta');assert.equal(reads,2);
+    clock=new Date(now.getTime()+30*60_000);await worker.tick('meta');await worker.waitForCreatives();assert.equal(reads,2);
     assert.deepEqual(known[1],['video:invented-video']);
     assert.equal((await db.query<any>('SELECT effective_status FROM pulse.ads')).rows[0]!.effective_status,'PAUSED');
     assert.equal((await db.query<any>("SELECT status FROM pulse.source_health WHERE source='meta'")).rows[0]!.status,'healthy');

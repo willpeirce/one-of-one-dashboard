@@ -16,12 +16,14 @@ import { readCreativeData, readMedia, ensureGroupMedia, mergeMediaGroups, splitM
 import { seedCreativeSample } from './seed.js';
 import { SAMPLE_CREATIVE_ACCOUNT, sampleCreativeAttributes, sampleCreativeLifts } from './sample.js';
 import { adsManagerLink, creativesPage, safeCreativeLink, escapeCreative } from './view.js';
-import { resolveAttributes, type AttributeRow, type AttributeSource } from './attributes.js';
+import { attributesForKind, resolveAttributes, type AttributeRow, type AttributeSource } from './attributes.js';
 import { readAttributeRows, readGroupAttributes, readWillNote, saveWillNote, toggleWillAttribute } from './attribute-store.js';
 import { creativeAttributeOptions, creativeTaggingQueue, filterCreativeAttributes } from './tagging.js';
 import { runCreativeScans, type ScanOptions } from './scan.js';
 import { readScanHealth, scanEnabled, scanPricesReady } from './scan-health.js';
 import type { CreativeScanView } from './scan-view.js';
+import { readCreativeLifts, recomputeCreativeLifts, type CreativeLift } from './lifts.js';
+import { deriveCreativeLiftPresentation } from './lift-presentation.js';
 
 class CreativeInputError extends Error { readonly statusCode = 400; constructor() { super('Invalid creative request.'); } }
 const accountFor = (data: CreativeData, settings: Settings) => data.mode === 'sample' ? SAMPLE_CREATIVE_ACCOUNT : settings.metaAdAccountId;
@@ -35,7 +37,36 @@ function sampleAttributeRows(data: CreativeData): AttributeRow[] {
       value: { value: detail.value, confidence: detail.confidence, reason: detail.reason } };
   })) : [];
 }
-export function buildCreativeView(data: CreativeData, settings: Settings, today: string, selection: CreativeSelection = {}, attributes = sampleAttributeRows(data)): CreativeView {
+// The sample seed upgrades to the canonical shape with the fixture item of this batch.
+function sampleLifts(data: CreativeData, today: string): CreativeLift[] {
+  return data.mode === 'sample' ? sampleCreativeLifts.map(lift => {
+    const attribute = attributesForKind(lift.kind).find(row => row.key === lift.attributeKey)!;
+    const option = attribute.values.find(row => row.value === lift.value)!;
+    const side = (withValue: boolean) => {
+      const spend = withValue ? lift.withSpendGbp : lift.withoutSpendGbp;
+      const costPerPurchase = withValue ? lift.withCppGbp : lift.withoutCppGbp;
+      return { spend, costPerPurchase, purchases: spend / costPerPurchase, purchaseValue: 0,
+        groupCount: withValue ? lift.withGroupCount : lift.withoutGroupCount,
+        roas: null, addToCartRate: null, hookRate: null, holdRate: null };
+    };
+    return { id: `sample-lift-${lift.kind}`, kind: lift.kind, attributeKey: lift.attributeKey, value: lift.value,
+      attributeLabel: attribute.label, valueLabel: option.label, label: lift.label, confidence: lift.confidence,
+      metrics: { with: side(true), without: side(false), share: lift.confidence === 'Strong' ? 0.975 : 0.9,
+        from: addDays(today, -29), to: today, exampleGroupIds: data.groups.filter(group => group.kind === lift.kind && !group.mergedIntoId).slice(0, 2).map(group => group.id) },
+      computedAt: `${today}T12:00:00Z` };
+  }) : [];
+}
+async function storedLifts(db: Database, account: string, data: CreativeData, today: string): Promise<CreativeLift[]> {
+  const stored = await readCreativeLifts(db, account, data.mode);
+  return stored.length || data.mode !== 'sample' ? stored : sampleLifts(data, today);
+}
+async function refreshSavedLifts(db: Database, account: string, data: CreativeData, settings: Settings, now: Date): Promise<void> {
+  // The user's tag or completed scan is already durable. A derived-data failure must
+  // not turn that successful toggle into a retry which would clear the saved answer.
+  try { await recomputeCreativeLifts(db, account, data, settings, now); }
+  catch { console.error('Creative lifts could not be refreshed.'); }
+}
+export function buildCreativeView(data: CreativeData, settings: Settings, today: string, selection: CreativeSelection = {}, attributes = sampleAttributeRows(data), lifts = sampleLifts(data, today)): CreativeView {
   const selected = { ...selection, window: selection.window ?? settings.creativeDefaultWindow };
   const top = topCreatives(data, settings, { ...selected, today });
   const performance = creativePerformance(data, settings, { ...selected, today });
@@ -46,14 +77,11 @@ export function buildCreativeView(data: CreativeData, settings: Settings, today:
     picture: data.groups.find(group => group.id === row.groupId)?.thumbnailUrl ?? '',
     title: `Fading: ${row.title}`, reason: row.reasons.join('; '), mode: data.mode,
   }));
-  if (data.mode === 'sample') for (const lift of sampleCreativeLifts.filter(lift => lift.confidence === 'Strong')) {
-    const group = data.groups.find(group => group.kind === lift.kind && !group.mergedIntoId);
-    if (group) cards.push({ id: `sample-strong:${lift.kind}`, kind: 'decide', groupId: group.id, picture: group.thumbnailUrl,
-      title: 'Make more like this', reason: `Invented ${lift.kind} example: ${lift.label} (${lift.confidence})`, mode: 'sample', brief: lift.brief });
-  }
+  const presentation = deriveCreativeLiftPresentation(lifts, data);
+  cards.push(...presentation.cards);
   return { scan: unscannedView(settings), mode: data.mode, accountId: accountFor(data, settings), selection: selected, top, performance, groups, cards,
     taggingQueue: creativeTaggingQueue(data, attributes, settings.creativeSpendFloorGbp, today), attributeFilters: creativeAttributeOptions(selected.kind),
-    lifts: data.mode === 'sample' ? sampleCreativeLifts.map(lift => ({ ...lift })) : [],
+    lifts, winning: presentation.winning, makeNext: presentation.makeNext,
     targets: { uk: settings.cppUkTargetGbp, us: settings.cppUsTargetGbp }, freelancerInitial: settings.creativeFreelancerInitial,
     merged: data.groups.filter(group => group.mergedIntoId).map(group => ({ id: group.id, title: group.title, parentId: group.mergedIntoId! })) };
 }
@@ -61,7 +89,8 @@ export async function readCreativeView(db: Database, settings: Settings, env: No
   const data = await readCreativeData(db, settings, env, now);
   if (data.mode === 'sample') await seedCreativeSample(db, settings, now);
   const attributes = await readAttributeRows(db, data.mode, accountFor(data, settings));
-  const view = buildCreativeView(data, settings, ukToday(now), selection, attributes);
+  const lifts = await storedLifts(db, accountFor(data, settings), data, ukToday(now));
+  const view = buildCreativeView(data, settings, ukToday(now), selection, attributes, lifts);
   view.scan = scanView(await readScanHealth(db, settings, { mode: data.mode, accountId: view.accountId, now }));
   const states = await db.query<{ card_id: string; done_at: Date | null; snoozed_until: Date | null }>(
     'SELECT card_id,done_at,snoozed_until FROM pulse.creative_card_states WHERE account_id=$1 AND mode=$2', [view.accountId, view.mode]);
@@ -84,7 +113,7 @@ function parseSelection(query: unknown, detail = false): CreativeSelection {
   }
   return { ...values, ...(values.live && values.live !== 'all' ? { live: values.live === 'true' } : {}) } as CreativeSelection;
 }
-export async function buildCreativeSheet(data: CreativeData, settings: Settings, today: string, id: string, selection: CreativeSelection, shopifyOrders: ShopifyOrders): Promise<CreativeSheet | null> {
+export async function buildCreativeSheet(data: CreativeData, settings: Settings, today: string, id: string, selection: CreativeSelection, shopifyOrders: ShopifyOrders, lifts = sampleLifts(data, today)): Promise<CreativeSheet | null> {
   const parent = parentGroup(id, data.groups);
   const group = aggregateCreativeGroups(data, { to: today }).find(row => row.group.id === parent?.id);
   if (!group) return null;
@@ -103,7 +132,7 @@ export async function buildCreativeSheet(data: CreativeData, settings: Settings,
     comparison: { ...range, purchases: data.insights.filter(row => row.day >= range.from && row.day <= range.to).reduce((sum, row) => sum + row.purchases, 0), shopifyOrders: orders.count, shopifyMode: orders.mode },
     frequency: { value: exactCreativeFrequency(data, group.ads.map(ad => ad.id), addDays(today, -6), today), eligible: hasFadingHistory(group, today) },
     links, ads: group.ads, attributes: resolveAttributes(group.group.kind, sampleAttributeRows(data).filter(row => row.groupId === group.group.id)), note: '',
-    ...(data.mode === 'sample' ? { brief: sampleCreativeLifts.find(lift => lift.kind === group.group.kind)?.brief } : {}) };
+    brief: deriveCreativeLiftPresentation(lifts, data).makeNext[group.group.kind]?.brief };
 }
 export function safeVideoSource(value: string, token?: string): string | null {
   const url = safeCreativeLink(value);
@@ -134,7 +163,7 @@ export function registerCreatives(app: FastifyInstance, db: Database, auth: Auth
     if (!await auth.session(request)) return reply.code(401).send({ error: 'Sign in to continue.' });
     const { settings, data } = await current();
     const id = (request.params as { groupId: string }).groupId;
-    const sheet = await buildCreativeSheet(data, settings, ukToday(clock()), id, parseSelection(request.query, true), shopifyOrders);
+    const sheet = await buildCreativeSheet(data, settings, ukToday(clock()), id, parseSelection(request.query, true), shopifyOrders, await storedLifts(db, accountFor(data, settings), data, ukToday(clock())));
     if (!sheet) return reply.code(404).send({ error: 'Creative not found.' });
     if (data.mode === 'sample') await seedCreativeSample(db, settings, clock());
     sheet.attributes = await readGroupAttributes(db, data.mode, accountFor(data, settings), sheet.group.group.id, sheet.group.group.kind);
@@ -159,6 +188,7 @@ export function registerCreatives(app: FastifyInstance, db: Database, auth: Auth
         ? { groupId: group.id, note: await saveWillNote(db, data.mode, account, group.id, body.value, now) }
         : { groupId: group.id, attribute: await toggleWillAttribute(db, data.mode, account, group.id, body.key, body.value, now) };
     } catch { throw new CreativeInputError(); }
+    await refreshSavedLifts(db, account, data, settings, now);
     await publish();
     return result;
   });
@@ -171,6 +201,7 @@ export function registerCreatives(app: FastifyInstance, db: Database, auth: Auth
     if (!scanEnabled(data.mode)) return reply.code(403).send({ error: 'Creative scanning is off.' });
     const result = await runCreativeScans(db, settings, { ...scanOptions, clock: scanOptions.clock ?? clock,
       accountId, mode: data.mode, groupId: group.id, reader: client });
+    if (result.done) await refreshSavedLifts(db, accountId, data, settings, clock());
     const scan = scanView(await readScanHealth(db, settings, { accountId, mode: data.mode, now: clock() }));
     const attributes = await readGroupAttributes(db, data.mode, accountId, group.id, group.kind);
     await publish();
@@ -217,7 +248,7 @@ export function registerCreatives(app: FastifyInstance, db: Database, auth: Auth
     const body = request.body as { cardId?: unknown; action?: unknown } | null;
     if (!body || typeof body.cardId !== 'string' || !['done', 'snooze', 'undo'].includes(String(body.action))) throw new CreativeInputError();
     const { settings, data } = await current(), now = clock();
-    const view = buildCreativeView(data, settings, ukToday(now));
+    const view = buildCreativeView(data, settings, ukToday(now), {}, [], await storedLifts(db, accountFor(data, settings), data, ukToday(now)));
     // A filtered Watch can disappear in the whole-account totals or recover before
     // the tap. Acknowledge its current account parent, rather than rerunning that verdict.
     const fadingGroupId = body.cardId.startsWith('fading:') ? body.cardId.slice('fading:'.length) : null;

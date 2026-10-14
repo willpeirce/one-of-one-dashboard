@@ -7,6 +7,7 @@ import { enforceMediaCap, readLiveCreativeData, reducedDetailCount, saveCatalogu
 import { refreshCreativeFrequencies } from './frequency.js';
 import { recomputeMetaAttributes } from './attribute-store.js';
 import { runCreativeScans, type ScanOptions } from './scan.js';
+import { recomputeCreativeLifts } from './lifts.js';
 
 /** Called by the existing 30-minute spend worker, with the same read-only Meta transport. */
 export class CreativeWorker {
@@ -18,6 +19,9 @@ export class CreativeWorker {
     try {
       await runCreativeScans(this.db,settings,{ ...this.scanOptions, accountId: account, mode: 'live', reader: this.reader });
     } catch { console.error('Creative scan could not finish.'); }
+    try {
+      await recomputeCreativeLifts(this.db,account,{ mode: 'live' },settings,now);
+    } catch { console.error('Creative lifts could not be refreshed.'); }
   }
   private async readMeta(account: string, settings: Settings, now: Date): Promise<void> {
     const today = ukToday(now), yesterday = addDays(today,-1);

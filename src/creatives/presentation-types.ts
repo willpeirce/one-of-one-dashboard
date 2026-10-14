@@ -5,6 +5,8 @@ import type { creativePerformance } from './performance.js';
 import type { AttributeDefinition, ResolvedAttribute } from './attributes.js';
 import type { TaggingQueueEntry } from './tagging.js';
 import type { CreativeScanView } from './scan-view.js';
+import type { CreativeLift } from './lifts.js';
+import type { CreativeLiftPresentation } from './lift-presentation.js';
 
 export type GroupPerformance = ReturnType<typeof aggregateCreativeGroups>[number];
 export type CreativeSelection = CreativeFilter & { window?: Exclude<CreativeWindow, 'lifetime'>; attribute?: string; value?: string };
@@ -12,15 +14,10 @@ export interface CreativeCard {
   id: string; kind: 'watch' | 'decide'; groupId: string; picture: string;
   title: string; reason: string; mode: SourceMode; brief?: string;
 }
-export interface LiftExample {
-  kind: 'video' | 'image'; label: string; confidence: string;
-  withCppGbp: number; withoutCppGbp: number; withGroupCount: number; withoutGroupCount: number;
-  withSpendGbp: number; withoutSpendGbp: number; brief: string;
-}
 export interface CreativeView {
   mode: SourceMode; accountId: string; selection: CreativeSelection;
   top: ReturnType<typeof topCreatives>; performance: ReturnType<typeof creativePerformance>;
-  groups: GroupPerformance[]; cards: CreativeCard[]; lifts: LiftExample[];
+  groups: GroupPerformance[]; cards: CreativeCard[]; lifts: CreativeLift[]; winning: CreativeLiftPresentation['winning']; makeNext: CreativeLiftPresentation['makeNext'];
   scan: CreativeScanView; taggingQueue: TaggingQueueEntry[]; attributeFilters: AttributeDefinition[];
   targets: { uk: number; us: number }; freelancerInitial: string;
   merged: { id: string; title: string; parentId: string }[];

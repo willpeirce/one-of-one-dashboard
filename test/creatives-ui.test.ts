@@ -18,6 +18,7 @@ import { frequencyMembershipKey } from '../src/creatives/frequency.js';
 import { replaceSourceAttributes, toggleWillAttribute } from '../src/creatives/attribute-store.js';
 import { attributesForKind } from '../src/creatives/attributes.js';
 import type { ScanOptions } from '../src/creatives/scan.js';
+import { saveCreativeLifts } from '../src/creatives/lifts.js';
 
 const account = '424242';
 const storedImage = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x49, 0x4e, 0x56, 0xff, 0xd9]);
@@ -363,4 +364,21 @@ test('manual scan is signed in, scoped and flag guarded, then returns safe resol
   assert.equal(response.json().attributes.find((row: { key: string }) => row.key === 'hookType').source, 'model');
   assert.match(response.json().scan.line, /Scan: on · 1 scanned/);
   assert.doesNotMatch(response.body, /invented-scan-key-1|raw_response/);
+});
+
+
+test('a Strong lift Decide card uses its evidence identity and Done persists until a new Strong value', async t => {
+  const h = await harness(t);
+  const read = async () => (await h.app.inject({ url: '/api/creatives', headers: h.headers })).json<CreativeView>();
+  const before = await read(), card = before.cards.find(row => row.kind === 'decide')!;
+  assert.equal(card.id, 'creative-lift-video-slabEarly-yes');
+  const done = await h.app.inject({ method: 'POST', url: '/api/creatives/cards', headers: h.headers, payload: { cardId: card.id, action: 'done' } });
+  assert.equal(done.statusCode, 200);
+  assert.ok(!(await read()).cards.some(row => row.id === card.id));
+  const lifts = before.lifts;
+  const strong = lifts.find(lift => lift.kind === 'video')!;
+  await saveCreativeLifts(h.db, 'sample-meta-account', 'sample', [{ ...strong, attributeKey: 'productEarly', value: 'yes' }]);
+  const next = (await read()).cards.find(row => row.kind === 'decide')!;
+  assert.equal(next.id, 'creative-lift-video-productEarly-yes');
+  assert.ok(next.brief?.includes('Meta says'));
 });

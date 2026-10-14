@@ -463,6 +463,7 @@ Log each attempt that ends without a response using only its timeout and attempt
 
 No migration, new keys, permissions or source writes. All Meta calls remain GETs. The sample reader yields its invented catalogue as one page; sample `/creatives` and Source health remain unchanged. Will publishes the change; no migration is expected and `npm run migrate` in the Shell is harmless. During the first pass, Catalogue count should rise before completion. The first full pass can outlast 30 minutes while media downloads; once it completes, the creative attention line clears, last successful read has a time and backfill advances. Any remaining attention line states how far the pass got, with safe Meta attempt diagnostics in the Replit log. These are post-Publish acceptance checks, not a claim of live verification.
 
+2026-10-14, stage 2 fix after catalogue timeout PR #26: run the creative pass detached from the spend read so a long pass never starves the hero's spend; keep spend then campaigns on the existing 30-minute poll, allow one creative pass at a time, isolate its failures and wait for it on shutdown. Awaiting the whole catalogue inside the spend run blocked subsequent polls. No migration or transport change.
 
 ## 2026-10-14, batch 4: creative scans, tags and attribute lifts (Will)
 

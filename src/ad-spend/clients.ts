@@ -146,15 +146,18 @@ export class MetaSpend implements SpendReader {
     private readonly token: string,
     options: AdTransportOptions = {},
   ) {
-    this.http = new AdTransport('meta', { ...options, log: options.log ? (entry) => options.log!({ ...entry, requestId: entry.requestId?.includes(token) ? null : entry.requestId }) : undefined });
+    this.http = new AdTransport('meta', { ...options, log: options.log ? (entry) => {
+      if (entry.timeoutMs !== undefined) options.log!(entry);
+      else options.log!({ ...entry, requestId: entry.requestId?.includes(token) ? null : entry.requestId });
+    } : undefined });
   }
-  readGraph(path: string, params: Record<string, string> = {}) {
+  readGraph(path: string, params: Record<string, string> = {}, timeoutMs = 10_000) {
     const url = new URL(`https://graph.facebook.com/${apiVersions.meta}/${path}`);
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
     return this.http.request(url.toString(), {
       method: 'GET',
       headers: { Authorization: `Bearer ${this.token}` },
-    });
+    }, timeoutMs);
   }
   /** A source URL may expire, but must never send the bearer credential to a browser. */
   safeMediaUrl(value: unknown): string {
@@ -166,16 +169,35 @@ export class MetaSpend implements SpendReader {
     } catch { throw new AdError('invalid'); }
   }
   /** Shared cursor paging; never follows a provider-supplied URL carrying credentials. */
-  async readPages(path: string, params: Record<string, string> = {}): Promise<any[]> {
-    const rows: any[] = [], cursors = new Set<string>();
+  async *readPages(path: string, params: Record<string, string> = {}, timeoutMs = 10_000,
+    options: { fallbackLimit?: number } = {}): AsyncGenerator<any[]> {
+    const cursors = new Set<string>();
+    let limit = params.limit;
     let after: string | undefined;
     do {
-      const body = await this.readGraph(path, { ...params, ...(after ? { after } : {}) });
-      rows.push(...list(body.data));
-      after = body.paging?.next ? label(body.paging?.cursors?.after) : undefined;
-      if (after && cursors.has(after)) throw new AdError('invalid');
-      if (after) cursors.add(after);
+      const query = { ...params, ...(limit ? { limit } : {}), ...(after ? { after } : {}) };
+      let body: any;
+      try {
+        body = await this.readGraph(path, query, timeoutMs);
+      } catch (error) {
+        const fallback = options.fallbackLimit;
+        if (!(error instanceof AdError) || !(error.code === 'timeout' || error.status >= 500 && error.status <= 599)
+          || !fallback || !Number.isSafeInteger(fallback) || fallback < 1 || (limit !== undefined && Number(limit) <= fallback)) throw error;
+        // Retry this cursor once at a smaller page size, then retain it for the rest of the list.
+        limit = String(fallback);
+        body = await this.readGraph(path, { ...query, limit }, timeoutMs);
+      }
+      const rows = list(body.data);
+      const next = body.paging?.next ? label(body.paging?.cursors?.after) : undefined;
+      if (next && cursors.has(next)) throw new AdError('invalid');
+      if (next) cursors.add(next);
+      yield rows;
+      after = next;
     } while (after);
+  }
+  async readAllPages(path: string, params: Record<string, string> = {}, timeoutMs = 10_000): Promise<any[]> {
+    const rows: any[] = [];
+    for await (const page of this.readPages(path, params, timeoutMs)) rows.push(...page);
     return rows;
   }
   async readCampaigns(account: string): Promise<MetaCampaign[]> {

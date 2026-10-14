@@ -15,7 +15,7 @@ function history(ids: string[]): CreativeData {
   return data;
 }
 function reader(readFrequency: NonNullable<CreativeReader['readFrequency']>): CreativeReader {
-  return { readFrequency, readCatalogue: async () => [], readInsights: async () => [], videoSource: async () => '',
+  return { readFrequency, readCatalogue: async function* () { yield []; }, readInsights: async () => [], videoSource: async () => '',
     imageBytes: async () => new Uint8Array(), videoFrames: async () => [] };
 }
 

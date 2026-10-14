@@ -27,8 +27,8 @@ test('only material reconciled gaps appear, and health diagnostics are escaped',
 });
 
 test('creative health preserves the safe diagnostic and failing step unchanged', () => {
-  for (const step of ['catalogue', 'insights', 'backfill']) {
-    const error = `http 400, meta 100/1815001 at ${step}`;
+  for (const error of ['http 400, meta 100/1815001 at catalogue after 0 ads', 'timeout at catalogue after 150 ads',
+    'http 400, meta 100/1815001 at insights', 'http 400, meta 100/1815001 at backfill']) {
     const html = creativeHealthDetails({ ...health, error });
     assert.ok(html.includes(`Creative read needs attention (${error}).`));
     assert.match(html, /Stored data is retained/);
@@ -38,7 +38,7 @@ test('creative health preserves the safe diagnostic and failing step unchanged',
 
 test('creative health supports other account timezones and reserves unsupported-account notice for currency', () => {
   for (const mode of ['live', 'sample'] as const) {
-    for (const error of ['unsupported_account', 'unsupported_account at catalogue', 'unsupported_account at insights']) {
+    for (const error of ['unsupported_account', 'unsupported_account at catalogue', 'unsupported_account at catalogue after 0 ads', 'unsupported_account at insights']) {
       const html = creativeHealthDetails({ ...health, mode, error });
       assert.ok(html.includes(`Creative read needs attention (${error}).`));
       assert.match(html, /Creative insights need a GBP account\./);

@@ -2,7 +2,7 @@ import { appConfig } from '../config.js';
 import type { Settings } from '../settings.js';
 import { ukToday } from '../hero-range.js';
 import { metaSpendMarket } from '../ad-spend/placement.js';
-import type { AdInsight, CreativeAd, CreativeData, CreativeMarket, CreativeOwner, MediaGroup } from './model.js';
+import type { AdInsight, CatalogueEntry, CreativeAd, CreativeData, CreativeMarket, CreativeOwner, MediaGroup } from './model.js';
 import { buildFrequencyRequests } from './frequency.js';
 
 /** Every name, picture, identifier and figure in this module is invented. */
@@ -78,6 +78,16 @@ export function sampleCreativeData(settings: Pick<Settings, 'metaOwners'>, now =
   data.frequencyReads = buildFrequencyRequests(data, today).map(request => ({ ...request,
     frequency: request.adIds.includes('sample-ad-2') ? 3.4 : 1.7 }));
   return data;
+}
+
+/** The sample catalogue has one complete page, with the same invented pictures as the UI. */
+export async function* readSampleCreativeCatalogue(settings: Pick<Settings, 'metaOwners'>, now = new Date(appConfig.shopify.sampleNow)): AsyncIterable<CatalogueEntry[]> {
+  const sample = sampleCreativeData(settings, now);
+  yield sample.ads.map(ad => {
+    const group = sample.groups.find(group => group.id === ad.mediaGroupId)!;
+    const bytes = Buffer.from(decodeURIComponent(group.thumbnailUrl.slice(group.thumbnailUrl.indexOf(',') + 1)), 'utf8');
+    return { ad, media: { ...group, id: group.id, thumbnail: bytes, poster: group.kind === 'video' ? bytes : null, frames: [] } };
+  });
 }
 
 export const sampleCreativeAttributes = [

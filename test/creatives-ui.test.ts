@@ -40,7 +40,7 @@ async function harness(t: TestContext, live = false) {
   let imageReads = 0;
   const inventedToken = randomBytes(24).toString('hex');
   const reader: CreativeReader = {
-    async readCatalogue() { return []; }, async readInsights() { return []; },
+    async *readCatalogue() { yield []; }, async readInsights() { return []; },
     async videoSource() { sourceReads++; if (refused) throw new Error(`Refused ${inventedToken}`); return signedUrl; },
     async imageBytes() { imageReads++; return storedImage; }, async videoFrames() { return []; },
   };

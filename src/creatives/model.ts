@@ -46,7 +46,7 @@ export type CatalogueRead = CatalogueEntry | CatalogueRefresh;
 export interface CreativeReader {
   rememberStoredMedia?(keys: string[]): void;
   rememberStoredAds?(ads: StoredCatalogueAd[]): void;
-  readCatalogue(account: string, settings: import('../settings.js').Settings, now: Date): Promise<CatalogueRead[]>;
+  readCatalogue(account: string, settings: import('../settings.js').Settings, now: Date): AsyncIterable<CatalogueRead[]>;
   readInsights(account: string, from: string, to: string): Promise<AdInsight[]>;
   readFrequency?(account: string, adIds: string[], from: string, to: string): Promise<number | null>;
   videoSource(videoId: string): Promise<string>;

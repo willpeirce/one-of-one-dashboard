@@ -52,7 +52,10 @@ test('negative net sales in range descriptions keep the sign before pounds', () 
     sess: 10, ukS: 10, ukM: 0, usM: 0, g: 0, ours: 0 }], '2026-09-30', '2026-09-30', { today: '2026-10-09' });
   assert.match(hero.net.d.why, /-£10/);
   assert.match(hero.profit.d.why, /-£7\.50/);
-  assert.deepEqual(hero.profit.d.extra, [['Net profit', '-£7.50']]);
+  assert.deepEqual(hero.profit.d.extra, [
+    ['Net sales', '-£10.00'], ['Contribution', '-£7.50'], ['Ad spend', '£0.00'],
+    ['After ad spend', '-£7.50'], ['Net profit', '-£7.50'],
+  ]);
 });
 
 test('en-GB display grouping covers decimal money, counts and both currencies', () => {

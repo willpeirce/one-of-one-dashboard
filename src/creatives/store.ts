@@ -5,7 +5,7 @@ import type { Settings } from '../settings.js';
 import type { SourceMode } from '../sources.js';
 import { metaSpendMarket } from '../ad-spend/placement.js';
 import { AdError } from '../ad-spend/model.js';
-import { canonicalVideoTitle, type AdInsight, type CatalogueEntry, type CreativeData, type CreativeReader, type MediaGroup } from './model.js';
+import { canonicalVideoTitle, type AdInsight, type CatalogueRead, type CreativeData, type CreativeReader, type MediaGroup } from './model.js';
 import { sampleCreativeData } from './sample.js';
 
 const iso = (value: any) => new Date(value).toISOString();
@@ -13,9 +13,21 @@ const day = (value: any): string | null => value == null ? null : typeof value =
 const adFields = { id: 'ad_id', accountId: 'account_id', name: 'name', status: 'status', effectiveStatus: 'effective_status', createdAt: 'created_at', adSetId: 'ad_set_id', adSetName: 'ad_set_name', campaignId: 'campaign_id', campaignName: 'campaign_name', owner: 'owner', market: 'market', creativeId: 'creative_id', creativeType: 'creative_type', mediaGroupId: 'media_group_id', body: 'body', title: 'title', callToAction: 'call_to_action', linkUrl: 'link_url', utmContent: 'utm_content', firstSpendDay: 'first_spend_day', lastSeen: 'last_seen', facebookUrl: 'facebook_url', instagramUrl: 'instagram_url', objectStoryId: 'object_story_id', instagramMediaId: 'instagram_media_id' } as const;
 const insightFields = { adId: 'ad_id', adSetId: 'ad_set_id', day: 'day', spend: 'spend', impressions: 'impressions', reach: 'reach', frequency: 'frequency', linkClicks: 'link_clicks', threeSecondPlays: 'three_second_plays', threeSecondSource: 'three_second_source', plays: 'plays', thruPlays: 'thru_plays', plays25: 'plays_25', plays50: 'plays_50', plays75: 'plays_75', plays100: 'plays_100', averagePlayTime: 'average_play_time', addsToCart: 'adds_to_cart', purchases: 'purchases', purchaseValue: 'purchase_value' } as const;
 
-export async function saveCatalogue(db: Database, account: string, entries: CatalogueEntry[], now: Date, mode: SourceMode = 'live'): Promise<void> {
+export async function saveCatalogue(db: Database, account: string, entries: CatalogueRead[], now: Date, mode: SourceMode = 'live'): Promise<void> {
   await db.transaction(async tx => {
-    for (const { ad, media } of entries) {
+    const expandedIds: string[] = [];
+    for (const entry of entries) {
+      if (entry.media === null) {
+        const { ad } = entry;
+        await tx.query(`UPDATE pulse.ads SET name=$4,status=$5,effective_status=$6,last_seen=$7,fetched_at=$8,
+          ad_set_id=$9,ad_set_name=$10,campaign_id=$11,campaign_name=$12,owner=$13,market=$14
+          WHERE mode=$1 AND account_id=$2 AND ad_id=$3`,
+        [mode, account, ad.id, ad.name, ad.status, ad.effectiveStatus, ad.lastSeen, now,
+          ad.adSetId, ad.adSetName, ad.campaignId, ad.campaignName, ad.owner, ad.market]);
+        continue;
+      }
+      const { ad, media } = entry;
+      expandedIds.push(ad.id);
       const existing = (await tx.query<any>('SELECT id FROM pulse.media_groups WHERE mode=$1 AND account_id=$2 AND kind=$3 AND media_key=$4', [mode, account, media.kind, media.key])).rows[0];
       const id = existing?.id ?? media.id ?? randomUUID();
       await tx.query(`INSERT INTO pulse.media_groups(id,mode,account_id,source_id,kind,media_key,title,length_seconds,width,height,first_seen,fetched_at,thumbnail,poster,frames,alternates)
@@ -36,7 +48,7 @@ export async function saveCatalogue(db: Database, account: string, entries: Cata
       const columns = fields.map(([, col]) => col), values = fields.map(([key]) => (record as any)[key]);
       await tx.query(`INSERT INTO pulse.ads(mode,source_id,fetched_at,${columns.join(',')}) VALUES($1,$2,$3,${values.map((_, i) => `$${i + 4}`).join(',')}) ON CONFLICT(mode,account_id,ad_id) DO UPDATE SET ${columns.filter(col => col !== 'ad_id' && col !== 'account_id').map(col => `${col}=EXCLUDED.${col}`).join(',')},fetched_at=EXCLUDED.fetched_at`, [mode, ad.id, now, ...values]);
     }
-    await tx.query(`UPDATE pulse.ads a SET first_spend_day=(SELECT min(day) FROM pulse.ad_insights_daily i WHERE i.mode=a.mode AND i.account_id=a.account_id AND i.ad_id=a.ad_id AND i.spend>0) WHERE a.mode=$1 AND a.account_id=$2`, [mode, account]);
+    if (expandedIds.length) await tx.query(`UPDATE pulse.ads a SET first_spend_day=(SELECT min(day) FROM pulse.ad_insights_daily i WHERE i.mode=a.mode AND i.account_id=a.account_id AND i.ad_id=a.ad_id AND i.spend>0) WHERE a.mode=$1 AND a.account_id=$2 AND a.ad_id=ANY($3::text[])`, [mode, account, expandedIds]);
   });
 }
 

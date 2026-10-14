@@ -22,6 +22,7 @@ export class SpendWorker {
   private readonly runs = new Map<AdSource, Promise<void>>();
   private readonly readers = new Map<string, SpendReader>();
   private readonly creativeReaders = new Map<string, CreativeReader>();
+  private creativeRunning = false;
   constructor(
     private readonly db: Database,
     private readonly env: NodeJS.ProcessEnv,
@@ -42,7 +43,10 @@ export class SpendWorker {
   }
   tick(source: AdSource): Promise<void> {
     const current = this.runs.get(source);
-    if (current) return current;
+    if (current) {
+      if (source === 'meta' && this.creativeRunning) console.info('Meta creatives tick skipped: pass still running.');
+      return current;
+    }
     if (this.closing) return Promise.resolve();
     const run = this.run(source)
       .catch((error) => {
@@ -177,10 +181,13 @@ export class SpendWorker {
       // Creative reads are secondary and never rewrite the hero's ad-set spend or health.
       const creativeReader = this.options.creativeReader ?? this.creativeReaders.get(readerScope) ?? new MetaCreativeClient(reader as MetaSpend, this.options);
       this.creativeReaders.set(readerScope, creativeReader);
+      this.creativeRunning = true;
       try {
         await new CreativeWorker(this.db, creativeReader).run(account, settings, now);
       } catch(error) {
-        console.error(`Meta creatives read failed (${adErrorCode(error, 'meta')}).`);
+        console.error(`Meta creatives read failed (${adErrorCode(error, 'meta')} at catalogue).`);
+      } finally {
+        this.creativeRunning = false;
       }
     }
     if (spendFailure) throw spendFailure.error;

@@ -22,6 +22,7 @@ Updated in every pull request.
 | Change | Batch 2: market hero, Gross, free-order counts, chapters, radar and review tidy; Node diagnostic regression | PR #22 merged 12 Oct, from merged `batch-oct-12` and migrations 014–015; no new migration; item h omitted | no new keys, env variables or scopes; no `META_ACTIONS_ENABLED` | market/Gross/free-order checks and deployed Node runtime check below |
 | Fix | Total sales history: empty weeks, first-sale start, bounded retries/rotation and progress; Gross display renamed Total | built on `fix-gross-history` from latest merged main; no migration | no new keys, Settings values or scopes | after Publish, Total sales history progress rises and older All Total becomes available |
 | Change | Batch 3, built on batch-oct-14; migration 016 (ads, media_groups, media_merges, ad_insights_daily, media_attributes, attribute_lifts) | a, b, c, f and g; d/e deferred together; attribute/lift tables reserved for invented samples | new optional env CREATIVE_SCAN_ENABLED (default off) and ANTHROPIC_API_KEY; scan deferred, no model calls | no new Meta permissions, every Meta call a GET; catalogue, playback and purchase comparison checks after Publish |
+| Fix | Creative catalogue: supported statuses, reuse unchanged creatives, refresh ownership/market, tolerate individual refusals and identify failing steps | built on `fix-creative-catalogue`; no migration | no new keys or scopes | after Publish, catalogue count, backfill and last successful read advance; error line clears; owner changes reach stored ads on the next pass |
 | 2 | Meta | spend and market CPO built; hero CAC is cost per counted order; purchases, ad-set dials, first-order CAC and kill/step rules remain | needs Meta key + account Settings | spend comparison pending |
 | 3 | Google Ads | spend built; conversions, ad-set dials and kill/step rules remain | needs three existing Google keys + account Settings | spend comparison pending |
 | 4 | Mailchimp | not started | no | no |
@@ -31,7 +32,9 @@ Updated in every pull request.
 
 ## Next step
 
-Review `batch-oct-14`, then merge, Pull and Publish. After Publish, run `npm run migrate` in the Shell for migration 016. The builder does not deploy.
+Review `fix-creative-catalogue`, then merge, Pull and Publish. This fix adds no migration; `npm run migrate` is harmless if run again. The builder does not deploy.
+
+**Catalogue fix acceptance (14 Oct):** after Publish, allow one polling pass, normally within 30 minutes plus the first catalogue’s media downloads. In Source health, check that “Catalogue: N ads” appears, backfill progresses, last successful read updates and the “Creative read needs attention” line clears. Ads absent from the readable list retain their history and stop advancing last seen. Validation results for this fix are recorded in the pull request; no live-source agreement is claimed.
 
 **Batch 3 scope:** a (catalogue/media/insights), b (viewing and local merge/card controls), c (group hit rate/new/fading), f (market switch) and g (Settings/sample fixtures). Use the task's allowed fallback to defer d/e as complete workflows: no production tags, scans, calculated lifts, attribute filter, tagging queue or generated briefs. Sample lift/brief examples are explicitly invented. Adding the optional model key/flag does not enable a scan in this release; those acceptance steps belong to the next PR. The existing ad-set figures remain the hero's spend source.
 

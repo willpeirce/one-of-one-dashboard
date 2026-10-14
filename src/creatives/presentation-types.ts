@@ -2,6 +2,7 @@ import type { SourceMode } from '../sources.js';
 import type { CreativeAd } from './model.js';
 import type { aggregateCreativeGroups, topCreatives, CreativeWindow, CreativeFilter } from './ranking.js';
 import type { creativePerformance } from './performance.js';
+import type { ResolvedAttribute } from './attributes.js';
 
 export type GroupPerformance = ReturnType<typeof aggregateCreativeGroups>[number];
 export type CreativeSelection = CreativeFilter & { window?: Exclude<CreativeWindow, 'lifetime'> };
@@ -27,5 +28,5 @@ export interface CreativeSheet {
   comparison: { from: string; to: string; purchases: number; shopifyOrders: number | null; shopifyMode: SourceMode };
   frequency: { value: number | null; eligible: boolean };
   links: { label: string; url: string }[];
-  ads: CreativeAd[]; attributes: string[]; brief?: string;
+  ads: CreativeAd[]; attributes: ResolvedAttribute[]; brief?: string;
 }

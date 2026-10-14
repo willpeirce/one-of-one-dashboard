@@ -16,6 +16,8 @@ import { readCreativeData, readMedia, ensureGroupMedia, mergeMediaGroups, splitM
 import { seedCreativeSample } from './seed.js';
 import { SAMPLE_CREATIVE_ACCOUNT, sampleCreativeAttributes, sampleCreativeLifts } from './sample.js';
 import { adsManagerLink, creativesPage, safeCreativeLink, escapeCreative } from './view.js';
+import { resolveAttributes } from './attributes.js';
+import { readGroupAttributes } from './attribute-store.js';
 
 class CreativeInputError extends Error { readonly statusCode = 400; constructor() { super('Invalid creative request.'); } }
 const accountFor = (data: CreativeData, settings: Settings) => data.mode === 'sample' ? SAMPLE_CREATIVE_ACCOUNT : settings.metaAdAccountId;
@@ -74,7 +76,8 @@ export async function buildCreativeSheet(data: CreativeData, settings: Settings,
     windows: (['24h', '3d', '7d', 'lifetime'] as const).map(window => ({ window, totals: aggregateCreativeGroups(data, creativeWindowRange(window, today)).find(row => row.group.id === parent?.id)!.totals })),
     comparison: { ...range, purchases: data.insights.filter(row => row.day >= range.from && row.day <= range.to).reduce((sum, row) => sum + row.purchases, 0), shopifyOrders: orders.count, shopifyMode: orders.mode },
     frequency: { value: exactCreativeFrequency(data, group.ads.map(ad => ad.id), addDays(today, -6), today), eligible: hasFadingHistory(group, today) },
-    links, ads: group.ads, attributes: data.mode === 'sample' ? sampleCreativeAttributes.find(row => row.groupId === group.group.id)?.attributes.map(attribute => attribute.label) ?? [] : [],
+    links, ads: group.ads, attributes: resolveAttributes(group.group.kind, data.mode === 'sample'
+      ? (sampleCreativeAttributes.find(row => row.groupId === group.group.id)?.attributes ?? []).map(attribute => ({ groupId: group.group.id, key: attribute.key, source: 'will' as const, value: { value: attribute.value } })) : []),
     ...(data.mode === 'sample' ? { brief: sampleCreativeLifts.find(lift => lift.kind === group.group.kind)?.brief } : {}) };
 }
 export function safeVideoSource(value: string, token?: string): string | null {
@@ -108,6 +111,8 @@ export function registerCreatives(app: FastifyInstance, db: Database, auth: Auth
     const id = (request.params as { groupId: string }).groupId;
     const sheet = await buildCreativeSheet(data, settings, ukToday(clock()), id, parseSelection(request.query, true), shopifyOrders);
     if (!sheet) return reply.code(404).send({ error: 'Creative not found.' });
+    if (data.mode === 'sample') await seedCreativeSample(db, settings, clock());
+    sheet.attributes = await readGroupAttributes(db, data.mode, accountFor(data, settings), sheet.group.group.id, sheet.group.group.kind);
     // Opening an evicted video re-fetches its frames, without storing the video itself.
     if (client && data.mode === 'live' && sheet.group.group.kind === 'video') await ensureGroupMedia(client, db, settings.metaAdAccountId, sheet.group.group.id, settings.creativeMediaCapMb).catch(() => null);
     return sheet;

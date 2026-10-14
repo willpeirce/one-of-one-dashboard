@@ -5,6 +5,7 @@ import { adErrorCode } from '../ad-spend/model.js';
 import type { CreativeReader, StoredCatalogueAd } from './model.js';
 import { enforceMediaCap, readLiveCreativeData, reducedDetailCount, saveCatalogue, saveInsights } from './store.js';
 import { refreshCreativeFrequencies } from './frequency.js';
+import { recomputeMetaAttributes } from './attribute-store.js';
 
 /** Called by the existing 30-minute spend worker, with the same read-only Meta transport. */
 export class CreativeWorker {
@@ -13,6 +14,7 @@ export class CreativeWorker {
     const today = ukToday(now), yesterday = addDays(today,-1);
     let step: 'catalogue' | 'insights' | 'backfill' = 'catalogue';
     let savedAds = 0;
+    let catalogueCompleted = false;
     try {
       await this.db.query('INSERT INTO pulse.creative_jobs(account_id) VALUES($1) ON CONFLICT DO NOTHING',[account]);
       const job = (await this.db.query<any>('SELECT *,backfill_next::text,nightly_day::text FROM pulse.creative_jobs WHERE account_id=$1',[account])).rows[0];
@@ -34,6 +36,7 @@ export class CreativeWorker {
         savedAds += page.length;
         await enforceMediaCap(this.db,account,settings.creativeMediaCapMb);
       }
+      catalogueCompleted = true;
       await this.db.query('UPDATE pulse.creative_jobs SET last_catalogue_at=$2 WHERE account_id=$1',[account,now]);
       step = 'insights';
       await saveInsights(this.db,account,yesterday,today,await this.reader.readInsights(account,yesterday,today),now);
@@ -61,6 +64,10 @@ export class CreativeWorker {
       console.error(`Meta creatives read failed (${code}).`);
       if (step === 'catalogue') return;
     } finally {
+      if (catalogueCompleted || savedAds > 0) {
+        try { await recomputeMetaAttributes(this.db,'live',account,now); }
+        catch { console.error('Meta creative attributes could not be refreshed.'); }
+      }
       const count = await reducedDetailCount(this.db,account).catch(() => 0);
       if (count) console.info(`${count} creatives read at reduced detail`);
     }

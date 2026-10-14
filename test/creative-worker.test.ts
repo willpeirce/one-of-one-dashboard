@@ -415,14 +415,20 @@ test('daily, nightly and backfill failures retain the failed window and identify
 
 test('the spend guard coalesces pending spend while the creative guard allows later spend polls', async (t) => {
   const db = await createTestDatabase();
-  t.after(() => db.close());
+  const spendStarted = deferred(), finishSpend = deferred();
+  const creativeStarted = deferred(), finishCreative = deferred();
+  let worker: SpendWorker | undefined;
+  t.after(async () => {
+    finishSpend.resolve();
+    finishCreative.resolve();
+    await worker?.stop();
+    await db.close();
+  });
   const env = { META_ACCESS_TOKEN: randomBytes(16).toString('hex') };
   await syncSourceHealth(db, env);
   await db.query('INSERT INTO pulse.settings(values) VALUES($1)', [JSON.stringify(settings())]);
   await db.query("INSERT INTO pulse.ad_spend_jobs(source,account_id,backfill_done) VALUES('meta',$1,true)", [account]);
   await completedJob(db);
-  const spendStarted = deferred(), finishSpend = deferred();
-  const creativeStarted = deferred(), finishCreative = deferred();
   let spendReads = 0, catalogueReads = 0, clock = now;
   const logs: string[] = [];
   t.mock.method(console, 'info', (line: string) => logs.push(line));
@@ -433,7 +439,7 @@ test('the spend guard coalesces pending spend while the creative guard allows la
     await finishCreative.promise;
     yield [entry()];
   };
-  const worker = new SpendWorker(db, env, {
+  worker = new SpendWorker(db, env, {
     clock: () => clock, creativeReader: source,
     readers: { meta: { read: async () => {
       spendReads++;
@@ -441,11 +447,6 @@ test('the spend guard coalesces pending spend while the creative guard allows la
       await finishSpend.promise;
       return [];
     } } },
-  });
-  t.after(async () => {
-    finishSpend.resolve();
-    finishCreative.resolve();
-    await worker.stop();
   });
   const first = worker.tick('meta');
   let spendFinished = false;

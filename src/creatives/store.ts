@@ -19,7 +19,11 @@ export async function saveCatalogue(db: Database, account: string, entries: Cata
     for (const entry of entries) {
       if (entry.media === null) {
         const { ad } = entry;
-        await tx.query('UPDATE pulse.ads SET name=$4,status=$5,effective_status=$6,last_seen=$7,fetched_at=$8 WHERE mode=$1 AND account_id=$2 AND ad_id=$3', [mode, account, ad.id, ad.name, ad.status, ad.effectiveStatus, ad.lastSeen, now]);
+        await tx.query(`UPDATE pulse.ads SET name=$4,status=$5,effective_status=$6,last_seen=$7,fetched_at=$8,
+          ad_set_id=$9,ad_set_name=$10,campaign_id=$11,campaign_name=$12,owner=$13,market=$14
+          WHERE mode=$1 AND account_id=$2 AND ad_id=$3`,
+        [mode, account, ad.id, ad.name, ad.status, ad.effectiveStatus, ad.lastSeen, now,
+          ad.adSetId, ad.adSetName, ad.campaignId, ad.campaignName, ad.owner, ad.market]);
         continue;
       }
       const { ad, media } = entry;

@@ -58,7 +58,8 @@ async function snapshot(db: Database) {
   return result;
 }
 const withoutRefreshFields = (row: Record<string, unknown>) => Object.fromEntries(
-  Object.entries(row).filter(([key]) => !['name', 'status', 'effective_status', 'last_seen', 'fetched_at'].includes(key)),
+  Object.entries(row).filter(([key]) => !['name', 'status', 'effective_status', 'last_seen', 'fetched_at',
+    'ad_set_id', 'ad_set_name', 'campaign_id', 'campaign_name', 'owner', 'market'].includes(key)),
 );
 async function completedJob(db: Database) {
   await db.query('INSERT INTO pulse.creative_jobs(account_id,backfill_done,nightly_day) VALUES($1,true,$2)', [account, '2026-10-13']);
@@ -108,9 +109,11 @@ test('metadata-only catalogue refresh changes only list fields in the matching m
   await saveInsights(db, account, '2026-10-12', '2026-10-12', [insight('2026-10-12')], earlier);
   const before = await snapshot(db);
   const adsBefore = (await db.query('SELECT * FROM pulse.ads ORDER BY mode,account_id,ad_id')).rows;
+  const placement = { adSetId: 'invented-current-set', adSetName: 'Invented current — US — audience',
+    campaignId: 'invented-current-campaign', campaignName: 'Invented current UK campaign', owner: 'ours' as const, market: 'us' as const };
   await saveCatalogue(db, account, [
-    { ad: { id: entry().ad.id, name: 'Invented renamed ad', status: 'PAUSED', effectiveStatus: 'CAMPAIGN_PAUSED', lastSeen: now.toISOString() }, media: null },
-    { ad: { id: 'invented-absent-ad', name: 'Invented absent ad', status: 'ACTIVE', effectiveStatus: 'ACTIVE', lastSeen: now.toISOString() }, media: null },
+    { ad: { id: entry().ad.id, name: 'Invented renamed ad', status: 'PAUSED', effectiveStatus: 'CAMPAIGN_PAUSED', lastSeen: now.toISOString(), ...placement }, media: null },
+    { ad: { id: 'invented-absent-ad', name: 'Invented absent ad', status: 'ACTIVE', effectiveStatus: 'ACTIVE', lastSeen: now.toISOString(), ...placement }, media: null },
   ], now);
   const after = await snapshot(db);
   for (const table of ['media_groups', 'ad_insights_daily', 'creative_insight_days', 'creative_frequencies']) assert.deepEqual(after[table], before[table]);
@@ -125,6 +128,12 @@ test('metadata-only catalogue refresh changes only list fields in the matching m
     assert.equal(row.name, 'Invented renamed ad');
     assert.equal(row.status, 'PAUSED');
     assert.equal(row.effective_status, 'CAMPAIGN_PAUSED');
+    assert.equal(row.ad_set_id, placement.adSetId);
+    assert.equal(row.ad_set_name, placement.adSetName);
+    assert.equal(row.campaign_id, placement.campaignId);
+    assert.equal(row.campaign_name, placement.campaignName);
+    assert.equal(row.owner, placement.owner);
+    assert.equal(row.market, placement.market);
     assert.equal(new Date(row.last_seen as string).toISOString(), now.toISOString());
     assert.equal(new Date(row.fetched_at as string).toISOString(), now.toISOString());
   }
@@ -170,6 +179,12 @@ test('worker supplies stored mappings for list-only refresh and reads a changed 
   assert.deepEqual(withoutRefreshFields(refreshed[0]!), withoutRefreshFields(before[0]!));
   assert.equal(refreshed[0]!.name, 'Invented renamed ad');
   assert.equal(refreshed[0]!.effective_status, 'ADSET_PAUSED');
+  assert.equal(refreshed[0]!.ad_set_id, 'invented-set');
+  assert.equal(refreshed[0]!.ad_set_name, 'Invented UK audience');
+  assert.equal(refreshed[0]!.campaign_id, 'invented-campaign');
+  assert.equal(refreshed[0]!.campaign_name, 'Invented campaign');
+  assert.equal(refreshed[0]!.owner, 'unassigned');
+  assert.equal(refreshed[0]!.market, 'unknown');
   assert.equal(new Date(refreshed[0]!.last_seen as string).toISOString(), now.toISOString());
   assert.deepEqual(refreshed[1], before[1], 'vanished ads retain their saved details and last seen time');
   assert.deepEqual((await snapshot(db)).media_groups, mediaBefore);
@@ -183,6 +198,68 @@ test('worker supplies stored mappings for list-only refresh and reads a changed 
   assert.equal(updated.title, 'Invented revised headline');
   assert.notEqual(updated.media_group_id, before[0]!.media_group_id);
   assert.equal((await db.query('SELECT * FROM pulse.ad_insights_daily')).rowCount, 1, 'creative replacement retains historical insights');
+  assert.deepEqual(logs, []);
+});
+
+test('stored ads refresh campaign placement from the list and current ownership without creative reads', async (t) => {
+  const db = await createTestDatabase();
+  t.after(() => db.close());
+  const stored = entry();
+  stored.ad.owner = 'unassigned';
+  stored.ad.campaignName = 'Invented original UK campaign';
+  stored.ad.adSetName = 'Invented original — US — audience';
+  await saveCatalogue(db, account, [stored], earlier);
+  await saveInsights(db, account, '2026-08-07', '2026-08-07', [insight('2026-08-07')], earlier);
+  await completedJob(db);
+  const before = (await db.query('SELECT * FROM pulse.ads')).rows[0]!;
+  const dataBefore = await snapshot(db);
+  assert.equal(before.owner, 'unassigned');
+  assert.equal(before.market, 'uk');
+  const campaign = { id: stored.ad.campaignId, name: 'Invented renamed UK campaign' };
+  const adset = { id: 'invented-current-set', name: 'Invented renamed — US — audience' };
+  const paths: string[] = [], logs: string[] = [];
+  t.mock.method(console, 'error', (line: string) => logs.push(line));
+  t.mock.method(console, 'info', (line: string) => logs.push(line));
+  const fetcher: typeof fetch = async (input) => {
+    const url = new URL(String(input));
+    paths.push(url.pathname.split('/').at(-1)!);
+    if (url.pathname.endsWith(`/act_${account}`)) return response({ currency: 'GBP', timezone_name: 'Europe/London' });
+    if (url.pathname.endsWith('/ads')) return response({ data: [{
+      id: stored.ad.id, name: 'Invented current ad', status: 'PAUSED', effective_status: 'PAUSED', campaign, adset,
+      creative: { id: stored.ad.creativeId, effective_object_story_id: 'invented-story', effective_instagram_media_id: 'invented-instagram',
+        thumbnail_url: 'https://media.fbcdn.net/invented-unused.jpg', body: 'Invented ignored list copy' },
+    }] });
+    if (url.pathname.endsWith('/insights')) return response({ data: [] });
+    assert.fail('Stored creatives must not request detail, post, Instagram or media endpoints');
+  };
+  const options = { fetch: fetcher, sleep: async () => {} };
+  const client = new MetaCreativeClient(new MetaSpend(randomBytes(16).toString('hex'), options), options);
+  const worker = new CreativeWorker(db, client);
+  await worker.run(account, settings(), now);
+  assert.deepEqual(paths, [`act_${account}`, 'ads', 'insights']);
+  const unassigned = (await db.query('SELECT * FROM pulse.ads')).rows[0]!;
+  assert.equal(unassigned.owner, 'unassigned');
+  assert.equal(unassigned.market, 'uk', 'unassigned placement continues to use the UK campaign');
+  const currentSettings = { ...settings(), metaOwners: [{ campaignId: campaign.id, owner: 'ours' as const }] };
+  const later = new Date(now.getTime() + 30 * 60_000);
+  paths.length = 0;
+  await worker.run(account, currentSettings, later);
+  assert.deepEqual(paths, ['ads', 'insights']);
+  const refreshed = (await db.query('SELECT * FROM pulse.ads')).rows[0]!;
+  assert.equal(refreshed.owner, 'ours');
+  assert.equal(refreshed.market, 'us', 'the changed local owner rule uses the US ad set with the same creative');
+  assert.equal(refreshed.ad_set_id, adset.id);
+  assert.equal(refreshed.ad_set_name, adset.name);
+  assert.equal(refreshed.campaign_id, campaign.id);
+  assert.equal(refreshed.campaign_name, campaign.name);
+  assert.equal(refreshed.name, 'Invented current ad');
+  assert.equal(refreshed.status, 'PAUSED');
+  assert.equal(refreshed.effective_status, 'PAUSED');
+  assert.equal(new Date(refreshed.last_seen as string).toISOString(), later.toISOString());
+  assert.deepEqual(withoutRefreshFields(refreshed), withoutRefreshFields(before), 'creative, media reference and first-spend history stay unchanged');
+  const dataAfter = await snapshot(db);
+  assert.deepEqual(dataAfter.media_groups, dataBefore.media_groups);
+  assert.deepEqual(dataAfter.ad_insights_daily, dataBefore.ad_insights_daily);
   assert.deepEqual(logs, []);
 });
 

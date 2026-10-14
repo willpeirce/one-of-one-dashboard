@@ -37,7 +37,11 @@ export interface CatalogueMedia extends Omit<MediaGroup, 'id' | 'mergedIntoId' |
 export interface CatalogueEntry { ad: Omit<CreativeAd, 'mediaGroupId' | 'firstSpendDay'>; media: CatalogueMedia }
 export type StoredCatalogueAd = Pick<CreativeAd, 'id' | 'creativeId' | 'mediaGroupId'>;
 /** A list-only refresh preserves the stored creative fields and media group. */
-export interface CatalogueRefresh { ad: Pick<CreativeAd, 'id' | 'name' | 'status' | 'effectiveStatus' | 'lastSeen'>; media: null }
+export interface CatalogueRefresh {
+  ad: Pick<CreativeAd, 'id' | 'name' | 'status' | 'effectiveStatus' | 'lastSeen'
+    | 'adSetId' | 'adSetName' | 'campaignId' | 'campaignName' | 'owner' | 'market'>;
+  media: null;
+}
 export type CatalogueRead = CatalogueEntry | CatalogueRefresh;
 export interface CreativeReader {
   rememberStoredMedia?(keys: string[]): void;

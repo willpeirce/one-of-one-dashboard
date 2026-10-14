@@ -213,10 +213,12 @@ test('group frequency keeps empty/malformed results unknown and rejects ambiguou
 
 test('stored ads refresh from list rows only, while changed creatives and a cleared stored snapshot read full details', async () => {
   let creativeId = 'invented-original', name = 'Invented original name', status = 'PAUSED';
+  let campaign = { id: 'invented-campaign', name: 'Invented discovery UK' };
+  let adset = { id: 'invented-set', name: 'Invented US alternative' };
   const mock = reader(url => {
     if (url.hostname !== 'graph.facebook.com') return picture();
     if (url.pathname.endsWith('/act_invented-account')) return account;
-    if (url.pathname.endsWith('/ads')) return { data: [ad(creativeId, { id: 'invented-stable-ad', name, status, effective_status: status,
+    if (url.pathname.endsWith('/ads')) return { data: [ad(creativeId, { id: 'invented-stable-ad', name, status, effective_status: status, campaign, adset,
       creative: { id: creativeId, image_hash: `hash-${creativeId}`, body: 'Invented nested copy', effective_object_story_id: 'invented-stable-story', effective_instagram_media_id: 'invented-instagram' } })] };
     if (url.pathname.endsWith('/invented-stable-story')) return { attachments: { data: [] }, permalink_url: 'https://www.facebook.com/invented-stable-story' };
     if (url.pathname.endsWith('/invented-instagram')) return { permalink: 'https://www.instagram.com/p/invented/' };
@@ -227,19 +229,23 @@ test('stored ads refresh from list rows only, while changed creatives and a clea
   assert.equal(first.length, 1);
   mock.client.rememberStoredAds([{ id: 'invented-stable-ad', creativeId, mediaGroupId: 'invented-group' }]);
   name = 'Invented renamed ad'; status = 'ACTIVE';
+  campaign = { id: 'invented-current-campaign', name: 'Invented current UK campaign' };
+  adset = { id: 'invented-current-set', name: 'Invented current — US — audience' };
+  const currentSettings = { ...settings, metaOwners: [{ campaignId: campaign.id, owner: 'ours' as const }] };
   let previous = mock.requests.length;
   const later = new Date(now.getTime() + 30 * 60_000);
-  const refreshed = await mock.client.readCatalogue('invented-account', settings, later);
-  assert.deepEqual(refreshed, [{ ad: { id: 'invented-stable-ad', name, status, effectiveStatus: status, lastSeen: later.toISOString() }, media: null }]);
+  const refreshed = await mock.client.readCatalogue('invented-account', currentSettings, later);
+  assert.deepEqual(refreshed, [{ ad: { id: 'invented-stable-ad', name, status, effectiveStatus: status, lastSeen: later.toISOString(),
+    adSetId: adset.id, adSetName: adset.name, campaignId: campaign.id, campaignName: campaign.name, owner: 'ours', market: 'us' }, media: null }]);
   assert.deepEqual(mock.requests.slice(previous).map(request => request.url.pathname.split('/').at(-1)), ['ads']);
   creativeId = 'invented-replacement'; previous = mock.requests.length;
-  const changed = detailed(await mock.client.readCatalogue('invented-account', settings, later));
+  const changed = detailed(await mock.client.readCatalogue('invented-account', currentSettings, later));
   assert.equal(changed[0]!.ad.creativeId, creativeId);
   assert.ok(mock.requests.slice(previous).some(request => request.url.pathname.endsWith('/invented-replacement')));
   mock.client.rememberStoredAds([{ id: 'invented-stable-ad', creativeId, mediaGroupId: 'invented-group' }]);
-  assert.equal((await mock.client.readCatalogue('invented-account', settings, later))[0]!.media, null);
+  assert.equal((await mock.client.readCatalogue('invented-account', currentSettings, later))[0]!.media, null);
   mock.client.rememberStoredAds([]); previous = mock.requests.length;
-  assert.ok(detailed(await mock.client.readCatalogue('invented-account', settings, later))[0]!.media);
+  assert.ok(detailed(await mock.client.readCatalogue('invented-account', currentSettings, later))[0]!.media);
   assert.ok(mock.requests.slice(previous).some(request => request.url.pathname.endsWith('/invented-replacement')));
 });
 

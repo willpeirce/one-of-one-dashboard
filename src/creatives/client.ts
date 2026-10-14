@@ -4,7 +4,7 @@ import { addDays } from '../hero-range.js';
 import type { AdTransportOptions } from '../ad-spend/http.js';
 import { spendMarket } from '../ad-spend/placement.js';
 import type { Settings } from '../settings.js';
-import type { AdInsight, CatalogueEntry, CatalogueMedia, CatalogueRead, CreativeReader, StoredCatalogueAd } from './model.js';
+import type { AdInsight, CatalogueEntry, CatalogueMedia, CatalogueRead, CatalogueRefresh, CreativeReader, StoredCatalogueAd } from './model.js';
 
 const CREATIVE_FIELDS = 'id,object_type,thumbnail_url,image_hash,image_url,video_id,object_story_spec,asset_feed_spec,effective_object_story_id,effective_instagram_media_id,body,title,call_to_action_type,link_url,url_tags,status';
 const INSIGHT_FIELDS = 'ad_id,adset_id,date_start,spend,impressions,reach,frequency,inline_link_clicks,actions,action_values,video_continuous_2_sec_watched_actions,video_play_actions,video_thruplay_watched_actions,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions,video_avg_time_watched_actions';
@@ -191,9 +191,14 @@ export class MetaCreativeClient implements CreativeReader {
     for (const row of ads) {
       if (!row.creative?.id) continue;
       const adId = id(row.id), creativeId = id(row.creative.id), storedAd = this.storedAds.get(adId);
+      const campaignId = id(row.campaign?.id ?? row.campaign_id), campaignName = text(row.campaign?.name, 300), adSetName = text(row.adset?.name, 300);
+      const owner = settings.metaOwners.find(rule => rule.campaignId === campaignId)?.owner ?? 'unassigned';
+      const listedAd: CatalogueRefresh['ad'] = { id: adId, name: text(row.name, 300), status: text(row.status, 50),
+        effectiveStatus: text(row.effective_status, 50), lastSeen: now.toISOString(),
+        adSetId: id(row.adset?.id ?? row.adset_id), adSetName, campaignId, campaignName, owner,
+        market: spendMarket({ source: 'meta', campaignName, adSetName, owner }) };
       if (storedAd?.creativeId === creativeId && storedAd.mediaGroupId) {
-        entries.push({ ad: { id: adId, name: text(row.name, 300), status: text(row.status, 50),
-          effectiveStatus: text(row.effective_status, 50), lastSeen: now.toISOString() }, media: null });
+        entries.push({ ad: listedAd, media: null });
         continue;
       }
       if (!creativeCache.has(creativeId)) {
@@ -246,19 +251,15 @@ export class MetaCreativeClient implements CreativeReader {
           alternates: alternatives.filter(item => item.kind !== primary.kind || item.key !== primary.key) };
         mediaCache.set(key, media);
       }
-      const campaignId = id(row.campaign?.id ?? row.campaign_id), campaignName = text(row.campaign?.name, 300), adSetName = text(row.adset?.name, 300);
-      const owner = settings.metaOwners.find(rule => rule.campaignId === campaignId)?.owner ?? 'unassigned';
       const linkUrl = this.link(creative.link_url ?? spec.link_data?.link ?? spec.video_data?.call_to_action?.value?.link);
       const tags = new URLSearchParams(text(creative.url_tags));
       const facebook = post?.permalink_url ? post : storyId ? await this.permalink('post', storyId) : null;
-      const ad: CatalogueEntry['ad'] = { id: id(row.id), accountId: account, name: text(row.name, 300), status: text(row.status, 50), effectiveStatus: text(row.effective_status, 50),
-        createdAt: instant(row.created_time, now), adSetId: id(row.adset?.id ?? row.adset_id), adSetName, campaignId, campaignName, owner,
-        market: spendMarket({ source: 'meta', campaignName, adSetName, owner }), creativeId,
+      const ad: CatalogueEntry['ad'] = { ...listedAd, accountId: account, createdAt: instant(row.created_time, now), creativeId,
         creativeType: Array.isArray(children) && children.length > 1 ? 'carousel' : spec.template_data || /catalog|product/i.test(creative.object_type ?? '') ? 'catalogue' : primary.kind,
         body: text(creative.body ?? spec.link_data?.message ?? spec.video_data?.message ?? feed.bodies?.[0]?.text),
         title: text(creative.title ?? spec.link_data?.name ?? spec.video_data?.title ?? feed.titles?.[0]?.text),
         callToAction: text(creative.call_to_action_type ?? spec.link_data?.call_to_action?.type ?? spec.video_data?.call_to_action?.type ?? feed.call_to_action_types?.[0], 100),
-        linkUrl, utmContent: tags.get('utm_content') ?? (linkUrl ? new URL(linkUrl).searchParams.get('utm_content') : null), lastSeen: now.toISOString(),
+        linkUrl, utmContent: tags.get('utm_content') ?? (linkUrl ? new URL(linkUrl).searchParams.get('utm_content') : null),
         facebookUrl: this.link(facebook?.permalink_url), instagramUrl: this.link(instagram?.permalink), objectStoryId: storyId, instagramMediaId: instagramId };
       entries.push({ ad, media });
     }

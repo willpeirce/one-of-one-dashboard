@@ -80,7 +80,7 @@ function withAllMarketFixture<T>(fixture: T): T {
 
 async function assertHeroModel(page: Page, metrics: HeroPeriod): Promise<void> {
   const expected: Record<string, string> = {};
-  for (const key of ['net', 'orders', 'aov', 'cac', 'cr', 'spend', 'roas', 'margin', 'profit', 'ukcpo', 'uscpo']) {
+  for (const key of ['net', 'orders', 'aov', 'cac', 'cr', 'spend', 'roas', 'margin', 'contribution', 'profit', 'ukcpo', 'uscpo']) {
     const metric = metrics[key];
     assert.ok(metric && typeof metric !== 'string' && !Array.isArray(metric));
     if (typeof metric.n === 'number') {
@@ -118,11 +118,13 @@ async function assertHeroModel(page: Page, metrics: HeroPeriod): Promise<void> {
 }
 
 async function assertHeroLayout(page: Page): Promise<void> {
-  const tiles = await page.locator('#hero .hero-grid > .tile[data-k]').evaluateAll(elements => elements.map(element => {
+  const tiles = await page.locator('#hero .hero-grid > .tile[data-k], #hero .profit-pair > button').evaluateAll(elements => elements.map(element => {
     const box = element.getBoundingClientRect();
     return { key: element.getAttribute('data-k'), x: box.left, y: box.top, right: box.right, bottom: box.bottom };
   }));
-  assert.equal(tiles.length, 8, 'Eight hero cards remain in the number grid');
+  assert.equal(tiles.length, 10, 'Eight hero cards and the Contribution/Net profit pair');
+  assert.equal(tiles[8]!.key, 'contribution');
+  assert.equal(tiles[9]!.key, 'profit');
   const columns = await page.locator('#hero .hero-grid').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length);
   assert.equal(columns, page.viewportSize()!.width <= 760 ? 2 : 4);
   assert.equal(await page.locator('#hero [data-k="profit"]').isVisible(), true, 'Net profit remains visible with its own sheet');
@@ -210,6 +212,11 @@ async function checkNegativeProfit(context: BrowserContext): Promise<void> {
       profit.pre = '£';
       profit.dp = 2;
       profit.d = { ...profit.d!, extra: [...(profit.d?.extra?.filter(([label]) => label !== 'Net profit') ?? []), ['Net profit', formatPounds(-10)]] };
+      const contribution = fixture.hero[period].contribution as HeroMetric;
+      contribution.n = -5;
+      contribution.unavailable = false;
+      contribution.ss = 'Unknown percentage of net sales\nEstimate';
+      contribution.d!.extra = contribution.d!.extra!.map(([label, value]) => [label, label === 'Contribution' ? '-£5.00' : label === 'Contribution an order' ? 'Unknown' : value]);
     }
     await page.route('**/api/dashboard', route => route.fulfill({ status: 200, json: withAllMarketFixture(fixture) }));
     await page.route('**/api/events', route => route.fulfill({ status: 200, contentType: 'text/event-stream',
@@ -224,6 +231,15 @@ async function checkNegativeProfit(context: BrowserContext): Promise<void> {
       await profit.click();
       assert.equal(await page.locator('#sh-extra dd').last().innerText(), '-£10.00');
       assert.doesNotMatch(await page.locator('#sh-extra').innerText(), /£-/);
+      await page.locator('#sh-x').click();
+      const contribution = page.locator('#hero [data-k="contribution"]');
+      assert.equal(await contribution.locator('.sv').innerText(), '-£5.00');
+      assert.match(await contribution.locator('.ss').innerText(), /^Unknown percentage of net sales/);
+      assert.equal(await contribution.getAttribute('data-state'), 'est');
+      await contribution.click();
+      assert.equal(await page.locator('#sh-title').innerText(), 'Contribution');
+      assert.equal(await page.locator('#sh-extra dt:text-is("Contribution") + dd').innerText(), '-£5.00');
+      assert.equal(await page.locator('#sh-extra dd').last().innerText(), 'Unknown');
       await page.locator('#sh-x').click();
     }
   } finally { await page.close(); }
@@ -750,6 +766,11 @@ async function checkPartialAdSpend(context: BrowserContext): Promise<void> {
       assert.equal(bounds.sideways, false);
       assert.equal(bounds.subtitleOverflow, false);
       step = `${scope}: dependent tiles at ${viewport.width}px`;
+      const contribution = page.locator('#hero [data-k="contribution"]');
+      assert.equal(await contribution.getAttribute('data-state'), 'est');
+      assert.equal(await contribution.locator('.chip.warn').count(), 0);
+      assert.doesNotMatch(await contribution.locator('.ss').innerText(), /Excludes|total may be low|stale|missing/i);
+      assert.notEqual(await contribution.evaluate(element => getComputedStyle(element).borderTopColor), bounds.amber);
       for (const key of ['margin', 'profit', 'cac', 'roas', 'ukcpo', 'uscpo']) {
         const tile = page.locator(`[data-k="${key}"]`);
         assert.equal(await tile.getAttribute('data-state'), 'warn');
@@ -1606,7 +1627,7 @@ async function run(): Promise<void> {
         step = `check Net profit uses the margin breakdown at ${viewport.width}px`;
         await page.locator('#hero [data-k="profit"]').click();
         assert.equal(await page.locator('#sh-title').innerText(), 'Net profit');
-        assert.deepEqual((await page.locator('#sh-extra dt, #sh-extra dd').allTextContents()).slice(0, -2), marginBreakdown);
+        assert.deepEqual(await page.locator('#sh-extra dt, #sh-extra dd').allTextContents(), marginBreakdown);
         assert.equal(await page.locator('#sh-extra dt').last().textContent(), 'Net profit');
         assert.equal(await page.locator('#sh-extra dd').last().innerText(),
           (snapshot.hero.today.profit as HeroMetric).d?.extra?.at(-1)?.[1]);
@@ -1614,6 +1635,14 @@ async function run(): Promise<void> {
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
         await page.locator('#sh-x').click();
         step = `check date picker at ${viewport.width}px with ${preference} browser preference`;
+        await page.locator('#hero [data-k="contribution"]').click();
+        assert.equal(await page.locator('#sh-title').innerText(), 'Contribution');
+        assert.deepEqual(await page.locator('#sh-extra dt').allTextContents(), ['Net sales', 'Shipping income net of tax', 'Shipping refunds', 'Landed cost', 'Fulfilment', 'Payment fees', 'Contribution', 'After ad spend', 'Contribution an order']);
+        assert.deepEqual(await page.locator('#sh-extra dd').allTextContents(), (snapshot.hero.today.contribution as HeroMetric).d!.extra!.map(([, value]) => value));
+        assert.match(await page.locator('#sh-src').innerText(), /sample data/i);
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+        if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/contribution-sheet-${viewport.width}-${preference}.png` });
+        await page.locator('#sh-x').click();
         await checkDatePicker(page, context, snapshot, viewport.width);
         step = `check browser errors after dates at ${viewport.width}px (${scriptErrors.length} script, ${consoleErrors.length} console, ${externalRequests} external)${scriptErrors[0] ? `: ${scriptErrors[0]}` : ''}`;
         assert.equal(scriptErrors.length, 0);
@@ -2008,7 +2037,7 @@ async function run(): Promise<void> {
     assert.equal(consoleErrors.length, 0);
     assert.equal(externalRequests, 0);
     await context.close();
-    console.log('Browser checks passed: passkeys and replay/origin/signature rejection; all hero presets and custom dates, eight market-aware cards and the Net profit strip, Total, AOV and CAC, chapter headers and measured-only radar actions, correctly signed pound losses and shared breakdown, bounded keyboard calendars, decks, search and details; Series 1 two-market pace card, signed daily sources and snapshot times, sample-disabled target controls, real Settings target save/clear and date previews; named overhead Settings and margin shares; automatic campaign list, sync state, local confirmation and owner changes; Settings persistence and SSE without replacing picked dates; safe-area nav clearance on every signed-in page with normal and simulated top insets; standalone touch refresh, menu counts, excluded controls, failure retention and unsaved edits; UK greeting rollover and moved source status; live sheet labels, audit, local fonts and PWA; dark-only phone/desktop with both browser preferences and no external requests.');
+    console.log('Browser checks passed: passkeys and replay/origin/signature rejection; all hero presets and custom dates, eight market-aware cards and the Contribution/Net profit pair, Total, AOV and CAC, chapter headers and measured-only radar actions, correctly signed pound losses and shared breakdown, bounded keyboard calendars, decks, search and details; Series 1 two-market pace card, signed daily sources and snapshot times, sample-disabled target controls, real Settings target save/clear and date previews; named overhead Settings and margin shares; automatic campaign list, sync state, local confirmation and owner changes; Settings persistence and SSE without replacing picked dates; safe-area nav clearance on every signed-in page with normal and simulated top insets; standalone touch refresh, menu counts, excluded controls, failure retention and unsaved edits; UK greeting rollover and moved source status; live sheet labels, audit, local fonts and PWA; dark-only phone/desktop with both browser preferences and no external requests.');
   } finally {
     await browser.close();
   }

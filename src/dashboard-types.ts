@@ -113,6 +113,7 @@ export interface HeroPeriod {
   spend: HeroMetric;
   roas: HeroMetric;
   margin: HeroMetric;
+  contribution: HeroMetric;
   profit: HeroMetric;
   ukcpo: DialModel & SampleProvenance;
   uscpo: DialModel & SampleProvenance;

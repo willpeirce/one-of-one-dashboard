@@ -227,7 +227,7 @@ function renderHero(hero: HeroPeriod, animate = false): void {
   get('#hero').dataset.from = hero.from; get('#hero').dataset.to = hero.to;
   get('#eyebrow').textContent = hero.eyebrow;
   get('#sub1').textContent = hero.sub1;
-  for (const key of ['net', 'orders', 'aov', 'cac', 'cr', 'spend', 'roas', 'margin', 'profit'] as const) {
+  for (const key of ['net', 'orders', 'aov', 'cac', 'cr', 'spend', 'roas', 'margin', 'contribution', 'profit'] as const) {
     const element = get(`#hero [data-k="${key}"]`), metric = hero[key];
     element.dataset.mode = metric.mode;
     element.dataset.source = metric.source.join(' ');
@@ -242,7 +242,7 @@ function renderHero(hero: HeroPeriod, animate = false): void {
     element.dataset.state = metric.state;
     element.dataset.detail = JSON.stringify(metric.d);
     statChip(element, metric.state, metric.statusLabel);
-    details.set(element, { state: metric.state, title: key === 'profit' ? 'Net profit' : key === 'margin' ? 'Net margin' : get('.sl', element).textContent ?? '', detail: metric.d, mode: metric.mode });
+    details.set(element, { state: metric.state, title: key === 'profit' ? 'Net profit' : key === 'contribution' ? 'Contribution' : key === 'margin' ? 'Net margin' : get('.sl', element).textContent ?? '', detail: metric.d, mode: metric.mode });
     const spark = element.querySelector<HTMLElement>('.spark');
     if (spark) renderSpark(spark, hero.spark, metric.d);
   }
@@ -606,7 +606,7 @@ function boot(): void {
     const review = target.closest<HTMLElement>('[data-review-open]');
     if (review) { showDetail(review); return; }
     if (target.closest('[data-series-use-landing]')) { void saveSeriesTarget(''); return; }
-    const element = target.closest<HTMLElement>('[data-series-market],.tile,[data-k="profit"],.rt[data-sheet]');
+    const element = target.closest<HTMLElement>('[data-series-market],.tile,.profit-line,.rt[data-sheet]');
     if (element && details.has(element)) { showDetail(element); return; }
     const market = target.closest<HTMLElement>('#market [data-market]')?.dataset.market;
     if (market === 'all' || market === 'uk' || market === 'us') { selectedMarket = market; renderHero(activeHero()); filterDials(); return; }

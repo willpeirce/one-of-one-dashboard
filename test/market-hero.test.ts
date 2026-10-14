@@ -45,6 +45,13 @@ test('all three views carry distinct order/session, spend, ratio and margin fact
   assert.match(uk.margin.ss, /store-wide/); assert.equal(uk.margin.statusLabel, 'store-wide');
   assert.match(uk.margin.d.why, /Store-wide: overheads are not split by market until the costs sheet is\./);
   assert.equal(uk.profit.n, -3); assert.equal(us.profit.n, 1); assert.match(uk.spend.ss, /store-wide/);
+  assert.equal(all.contribution.n, 88); assert.equal(uk.contribution.n, 7); assert.equal(us.contribution.n, 17);
+  for (const view of [all, uk, us]) {
+    assert.equal(view.contribution.statusLabel, undefined);
+    assert.equal(view.contribution.state, 'est');
+    assert.doesNotMatch(view.contribution.ss, /before overheads|store-wide/);
+    assert.equal(view.contribution.d.extra!.find(([label]) => label === 'Overheads'), undefined);
+  }
   assert.ok(uk.orders.d.extra!.some(([label, text]) => label === 'Markets' && /EU and other.*All only/.test(text)));
   assert.equal(uk.business!.orderDays[0]!.TikTok, 0); assert.equal(all.business!.orderDays[0]!.TikTok, 1);
   assert.equal(all.markets, undefined); assert.equal(uk.markets, undefined); assert.doesNotThrow(() => JSON.stringify(hero));
@@ -90,6 +97,14 @@ test('guarded comparison/chart days never supply market conversion and aggregate
   const older = shopifyHero(historic, today, '2026-10-01', '2026-10-01', settings, undefined, undefined, { spend: spend(), costs: [], estimates: [], now });
   assert.equal(older.orders.unavailable, true); assert.deepEqual(older.orders.d.hist, []); assert.equal(older.business!.orderDays[0]!.total, 0);
   assert.match(older.margin.ss, /older order cost detail/); assert.match(older.profit.ss, /older order cost detail/);
+  assert.equal(older.aov.unavailableLabel, 'Unknown');
+  assert.equal(older.contribution.unavailable, false);
+  assert.match(older.contribution.ss, /^100% of net sales\nEstimate; left out: older order cost detail$/);
+  assert.deepEqual(older.contribution.d.extra!.at(-1), ['Contribution an order', 'Unknown']);
+  for (const market of ['uk', 'us'] as const) {
+    assert.equal(older.markets![market].contribution.unavailable, true);
+    assert.deepEqual(older.markets![market].contribution.d.extra!.find(([label]) => label === 'Contribution'), ['Contribution', 'Unknown']);
+  }
 });
 test('the first UK order-detail day never compares or charts an invented earlier market sales split', async () => {
   const list = await orders(), stored = facts(list); stored.jobs[0]!.state = { from: date, olderFrom: '2026-09-01', allOrders: false, ordersDone: true, historyDone: true };

@@ -126,6 +126,8 @@ function marketHero(facts: Facts, today: string, from: string, to: string, setti
   hero.cr.unavailableLabel = market !== 'all' && !marketReliable ? 'Unknown' : 'No data';
   hero.cr.ss = market !== 'all' && marketReliable && sessionComplete ? `${formatNumber(orders.length)} of ${formatNumber(totalSessions)} sessions` : !sessionComplete ? 'Sessions unavailable for part of this range' : !marketReliable ? 'Market conversion unknown · geo guard' : `UK ${ukSessions ? formatNumber(100 * count('UK') / ukSessions, 1) + '%' : 'unknown'} · US ${usSessions ? formatNumber(100 * count('US') / usSessions, 1) + '%' : 'unknown'}`;
   hero.cr.d.why = `Orders divided by clean Shopify sessions. ${hero.cr.ss}. Only the specified /pages/inside desktop/Google/no-cart phantom traffic is removed. ${sessions.some(s => s.provenance === 'routine_daily') ? 'Routine daily fallback: conversion is daily, not live.' : ''}`;
+  // Aggregate history has no market split; the contribution sheet must not present it as zero.
+  if (market !== 'all' && from < data.from) hero.net.unavailable = true;
   applySpend(hero,marketOrders,settings,today,{ ...inputs, market, orderDetailsFrom: data.from, now: inputs.now ?? now });
   const empty = market !== 'all' && data.ready && from >= data.from && orders.length === 0;
   if (empty) {
@@ -140,7 +142,7 @@ function marketHero(facts: Facts, today: string, from: string, to: string, setti
     hero.orders.d.why = `Order counts are unknown before ${data.from}; earlier aggregate orders cannot separate free orders.`;
     hero.orders.d.hist = [];
     for (const key of ['orders', 'aov', 'cac', 'cr'] as const) { hero[key].unavailable = true; hero[key].unavailableLabel = 'Unknown'; hero[key].ss = 'Older order detail unavailable; free orders cannot be separated'; }
-    if (market !== 'all') for (const key of ['net', 'roas', 'margin', 'profit'] as const) { hero[key].unavailable = true; hero[key].ss = 'Older market sales unavailable'; }
+    if (market !== 'all') for (const key of ['net', 'roas', 'margin', 'contribution', 'profit'] as const) { hero[key].unavailable = true; hero[key].ss = 'Older market sales unavailable'; }
   }
   const periodEmail = orders.filter(o => emailFlow(o) !== null);
   const refill = orders.filter(isRefill);

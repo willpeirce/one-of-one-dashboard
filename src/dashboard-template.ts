@@ -70,7 +70,10 @@ export const dashboardTemplate = `
       <button type="button" class="tile stat" data-k="roas" data-g="hero" data-state="info" data-source="shopify" data-mode="sample"><span class="sl">Overall ROAS</span><span class="sv"></span><span class="ss"></span></button>
       <button type="button" class="tile stat" data-k="margin" data-g="hero" data-state="info" data-source="shopify" data-mode="sample"><span class="sl">Net margin</span><span class="sv"></span><span class="ss"></span></button>
     </div>
-    <button type="button" class="profit-line" data-k="profit" data-g="hero" data-state="est" data-source="shopify meta google-ads tiktok" data-mode="sample"><span class="sl">Net profit</span><span class="sv"></span><span class="ss"></span></button>
+    <div class="profit-pair">
+      <button type="button" class="profit-line" data-k="contribution" data-g="hero" data-state="est" data-source="shopify" data-mode="sample"><span class="sl">Contribution</span><span class="sv"></span><span class="ss"></span></button>
+      <button type="button" class="profit-line" data-k="profit" data-g="hero" data-state="est" data-source="shopify meta google-ads tiktok" data-mode="sample"><span class="sl">Net profit</span><span class="sv"></span><span class="ss"></span></button>
+    </div>
   </div>
 
   <aside class="glass score" id="score" aria-label="Live, wins and coming up">

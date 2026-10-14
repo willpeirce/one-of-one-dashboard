@@ -17,7 +17,7 @@ test('every dashboard binding resolves from source-tagged server sample data', (
     assert.ok(item.source.every((source) => sources.has(source)));
   }
   for (const period of Object.values(snapshot.hero)) {
-    for (const metric of [period.net, period.orders, period.cr, period.spend, period.roas, period.margin, period.profit, period.ukcpo, period.uscpo]) {
+    for (const metric of [period.net, period.orders, period.cr, period.spend, period.roas, period.margin, period.contribution, period.profit, period.ukcpo, period.uscpo]) {
       assert.equal(metric.mode, 'sample');
       assert.ok(metric.source.length > 0 && metric.source.every((source) => sources.has(source)));
     }
@@ -67,7 +67,7 @@ test('Home opens on the greeting with eight hero cards and a paired compact prof
   assert.match(visible, /id="greeting"/);
   assert.match(visible, /id="source-health-count" class="menu-count" aria-label="1 failing checks">1<\/span>/);
   assert.match(visible, /id="settings-count" class="menu-count" aria-label="1 campaigns to confirm">1<\/span>/);
-  assert.match(visible, /data-k="margin"[\s\S]*?<\/button>\s*<\/div>\s*<button[^>]*class="profit-line"[^>]*data-k="profit"/);
+  assert.match(visible, /data-k="margin"[\s\S]*?<\/button>\s*<\/div>\s*<div class="profit-pair">\s*<button[^>]*class="profit-line"[^>]*data-k="contribution"[\s\S]*?<\/button>\s*<button[^>]*class="profit-line"[^>]*data-k="profit"/);
   const profitTile = /<button[^>]*data-k="profit"[^>]*>([\s\S]*?)<\/button>/.exec(visible)?.[1];
   assert.ok(profitTile);
   assert.ok(profitTile.includes('Net profit'));

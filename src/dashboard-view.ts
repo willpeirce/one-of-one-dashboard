@@ -37,9 +37,9 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
   }
   if (pace?.kind === 'series-pace') content = content.replace(/<article\b[^>]*data-model-id="w017"[^>]*><\/article>/,
     `<article class="tile series-pace" data-source="shopify" data-mode="${pace.mode}" data-model-id="w017" aria-label="Series 1 sell-out pace">${seriesPaceCardHtml(pace.value, pace.mode)}</article>`);
-  const heroKeys = ['net', 'orders', 'aov', 'cac', 'cr', 'spend', 'roas', 'margin', 'profit'] as const;
-  const heroLabels = { net: 'Net sales', orders: 'Orders', aov: 'AOV', cac: 'CAC', cr: 'Conversion rate', spend: 'Ad spend', roas: 'Overall ROAS', margin: 'Net margin', profit: 'Net profit' };
-  content = content.replace(/(<button\b[^>]*data-k="(net|orders|aov|cac|cr|spend|roas|margin|profit)"[^>]*>)[\s\S]*?<\/button>/g,
+  const heroKeys = ['net', 'orders', 'aov', 'cac', 'cr', 'spend', 'roas', 'margin', 'contribution', 'profit'] as const;
+  const heroLabels = { net: 'Net sales', orders: 'Orders', aov: 'AOV', cac: 'CAC', cr: 'Conversion rate', spend: 'Ad spend', roas: 'Overall ROAS', margin: 'Net margin', contribution: 'Contribution', profit: 'Net profit' };
+  content = content.replace(/(<button\b[^>]*data-k="(net|orders|aov|cac|cr|spend|roas|margin|contribution|profit)"[^>]*>)[\s\S]*?<\/button>/g,
     (_button, tag: string, key: typeof heroKeys[number]) => {
       const metric = snapshot.hero.today[key], display = metric.unavailable ? metric.unavailableLabel ?? 'No data' : formatMetricNumber(metric.n, metric);
       const status = metric.statusLabel ?? ({ good: 'Good', warn: 'Watch', decide: 'Decide', alarm: 'Alarm', info: 'Info', sofar: 'So far', est: 'Estimate' }[metric.state]);
@@ -55,7 +55,7 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
       const widget = snapshot.widgets[key];
       return widget ? tag.replace(/data-mode="[^"]+"/, `data-mode="${widget.mode}"`).replace(/data-source="[^"]+"/, `data-source="${widget.source.join(' ')}"`) : tag;
     });
-    content = content.replace(/<button\b[^>]*data-k="(net|orders|aov|cac|cr|spend|roas|margin|profit)"[^>]*>/g, (tag, key: 'net'|'orders'|'aov'|'cac'|'cr'|'spend'|'roas'|'margin'|'profit') => tag.replace(/data-mode="[^"]+"/, `data-mode="${snapshot.hero.today[key].mode}"`).replace(/data-source="[^"]+"/, `data-source="${snapshot.hero.today[key].source.join(' ')}"`).replace(/data-state="[^"]+"/, `data-state="${snapshot.hero.today[key].state}"`));
+    content = content.replace(/<button\b[^>]*data-k="(net|orders|aov|cac|cr|spend|roas|margin|contribution|profit)"[^>]*>/g, (tag, key: 'net'|'orders'|'aov'|'cac'|'cr'|'spend'|'roas'|'margin'|'contribution'|'profit') => tag.replace(/data-mode="[^"]+"/, `data-mode="${snapshot.hero.today[key].mode}"`).replace(/data-source="[^"]+"/, `data-source="${snapshot.hero.today[key].source.join(' ')}"`).replace(/data-state="[^"]+"/, `data-state="${snapshot.hero.today[key].state}"`));
     // Label surviving mockup examples individually when a live source sits beside them.
     content = content.replace(/(<(?:article|button|div)\b[^>]*data-mode="sample"[^>]*>)/g, '$1<span class="sample-label">Sample data</span>');
   }

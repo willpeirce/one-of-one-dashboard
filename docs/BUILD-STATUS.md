@@ -15,6 +15,7 @@ Updated in every pull request.
 | Change | Named monthly overheads and margin after overheads | PR #17 merged and published; migration 011 | no new keys; named items in Goals & overheads | migrated item and margin detail check remains |
 | Change | Home-screen pull to refresh and sheet source labels | PR #17 merged and published | no new keys | installed iPhone refresh check remains |
 | Change | Automatic Meta campaign list, net profit and a clear dashboard opening | PR #17 merged and published; migration 012 | no new keys; confirm campaign owners in Settings | campaign read and status-bar overlap reported; fix below |
+| Change | Contribution beside Net profit, with margin/order ratios and the shared cost waterfall | built on `contribution-margin` from main after PR #27; no migration | no new keys or Settings | sample and live calculations follow period/market; check the tile, sheet and market switch after Publish |
 | Fix | Isolated Meta campaigns, safe diagnostics, signed money and safe-area navigation | PR #18 merged; no migration | no new keys | check fresh Meta spend/campaigns and installed iPhone layout after Publish |
 | Fix | Visible partial ad spend, dependent-tile warnings and recovery cards | PR #19 merged; no migration | no new keys or Settings values | healthy Home stays unchanged; warnings appear only during a source gap |
 | Change | Series 1 sell-out pace, warehouse snapshots and editable target dates | PR #20 merged; migration 013 | no new keys or scopes; dates in Series 1 sell-out pace Settings | compare kit stock and first daily bundle units; check target save and reset after Publish |
@@ -35,7 +36,9 @@ Updated in every pull request.
 
 ## Next step
 
-Review `creative-scan-lifts`, then merge, Pull and Publish. Run `npm run migrate` in the Shell for migration 017. The builder does not deploy.
+Review `contribution-margin`, then merge, Pull and Publish in Replit. Run `npm run migrate` in the Shell (nothing new to apply; run it anyway). The builder does not deploy.
+
+**Contribution acceptance (14 Oct):** on Home, Contribution sits with Net profit, its sub-line shows the percentage of net sales and the per-order figure, tapping it opens its breakdown sheet, and switching UK/US changes it. It stays plain when ad spend is stale; the after-ads sheet row carries the spend caveat. No migration, new Settings or live-source agreement is claimed.
 
 **Batch 4 acceptance (14 Oct):** after Publish, run `npm run migrate` in the Shell (migration 017), then:
 

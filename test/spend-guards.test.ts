@@ -120,6 +120,16 @@ test('stale sources name UK fetch time; a failure takes precedence and today sta
   assert.equal(hero.spend.ss, 'Meta stale since 14:05 · total may be low');
   assert.equal(hero.spend.n, 10);
   assert.equal(hero.margin.ss.split('\n')[0], 'Excludes Meta spend');
+  assert.equal(hero.profit.state, 'warn');
+  assert.equal(hero.margin.state, 'warn');
+  assert.equal(hero.contribution.n, 100);
+  assert.equal(hero.contribution.state, 'est');
+  assert.equal(hero.contribution.unavailable, false);
+  assert.equal(hero.contribution.ss.split('\n')[0], '100% of net sales · £50.00 an order');
+  assert.doesNotMatch(hero.contribution.ss, /Meta|Excludes|stale|total may be low/);
+  assert.deepEqual(hero.contribution.source, ['shopify']);
+  assert.deepEqual(hero.contribution.d.extra!.find(([label]) => label === 'After ad spend'), ['After ad spend', '£90.00 · Meta stale since 14:05 · total may be low']);
+  assert.equal(hero.contribution.n, calculate(facts()).contribution.n);
   hero = calculate(failed(spend), {}, day, day, day);
   assert.equal(hero.spend.ss, 'Meta missing · total excludes Meta · so far');
   for (const metric of [hero.spend, hero.margin, hero.profit, hero.roas]) assert.equal(metric.state, 'warn');

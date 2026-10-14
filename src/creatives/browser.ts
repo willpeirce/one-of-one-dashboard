@@ -65,6 +65,8 @@ async function openSheet(groupId: string, tagging = false): Promise<void> {
   body.innerHTML = '<h2 id="creative-sheet-title">Opening creative…</h2>';
   if (!dialog.open) dialog.showModal();
   try {
+    await noteWrites;
+    if (current !== sheetGeneration || !dialog.open) return;
     const sheet = await read<CreativeSheet>(`/api/creatives/${encodeURIComponent(groupId)}?window=${selection.window ?? '3d'}`);
     if (current !== sheetGeneration || !dialog.open) return;
     activeSheet = sheet;
@@ -229,7 +231,9 @@ document.addEventListener('change', event => {
 });
 document.addEventListener('input', event => {
   if (!(event.target instanceof HTMLTextAreaElement) || event.target.id !== 'creative-tag-note' || !activeSheet) return;
-  const sheet = activeSheet, value = event.target.value, generation = ++noteGeneration;
+  const value = [...event.target.value].slice(0, 200).join('');
+  if (event.target.value !== value) event.target.value = value;
+  const sheet = activeSheet, generation = ++noteGeneration;
   const count = element('#creative-note-count'); if (count) count.textContent = String([...value].length);
   const status = element('#creative-note-saved'); if (status) status.textContent = 'Saving…';
   if (noteTimer) clearTimeout(noteTimer);

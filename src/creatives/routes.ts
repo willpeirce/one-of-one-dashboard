@@ -14,9 +14,9 @@ import { creativePerformance } from './performance.js';
 import { exactCreativeFrequency, hasFadingHistory } from './frequency.js';
 import { readCreativeData, readMedia, ensureGroupMedia, mergeMediaGroups, splitMediaGroup, undoMediaMerge } from './store.js';
 import { seedCreativeSample } from './seed.js';
-import { SAMPLE_CREATIVE_ACCOUNT, sampleCreativeAttributes, sampleCreativeLifts } from './sample.js';
+import { SAMPLE_CREATIVE_ACCOUNT, sampleCreativeAttributeRows, sampleCreativeStoredLifts } from './sample.js';
 import { adsManagerLink, creativesPage, safeCreativeLink, escapeCreative } from './view.js';
-import { attributesForKind, resolveAttributes, type AttributeRow, type AttributeSource } from './attributes.js';
+import { resolveAttributes, type AttributeRow } from './attributes.js';
 import { readAttributeRows, readGroupAttributes, readWillNote, saveWillNote, toggleWillAttribute } from './attribute-store.js';
 import { creativeAttributeOptions, creativeTaggingQueue, filterCreativeAttributes } from './tagging.js';
 import { runCreativeScans, type ScanOptions } from './scan.js';
@@ -31,30 +31,10 @@ const scanView = (scan: CreativeScanView): CreativeScanView => ({ enabled: scan.
 const unscannedView = (settings: Settings): CreativeScanView => ({ enabled: false, line: 'Scan: off', message: scanPricesReady(settings) ? null : 'Set the scan prices in Settings' });
 type ShopifyOrders = (from: string, to: string) => Promise<{ count: number | null; mode: SourceMode }>;
 function sampleAttributeRows(data: CreativeData): AttributeRow[] {
-  return data.mode === 'sample' ? sampleCreativeAttributes.flatMap(group => group.attributes.map(attribute => {
-    const detail = attribute as typeof attribute & { source?: AttributeSource; confidence?: number; reason?: string };
-    return { groupId: group.groupId, key: detail.key, source: detail.source ?? 'will',
-      value: { value: detail.value, confidence: detail.confidence, reason: detail.reason } };
-  })) : [];
+  return data.mode === 'sample' ? sampleCreativeAttributeRows(data) : [];
 }
-// The sample seed upgrades to the canonical shape with the fixture item of this batch.
 function sampleLifts(data: CreativeData, today: string): CreativeLift[] {
-  return data.mode === 'sample' ? sampleCreativeLifts.map(lift => {
-    const attribute = attributesForKind(lift.kind).find(row => row.key === lift.attributeKey)!;
-    const option = attribute.values.find(row => row.value === lift.value)!;
-    const side = (withValue: boolean) => {
-      const spend = withValue ? lift.withSpendGbp : lift.withoutSpendGbp;
-      const costPerPurchase = withValue ? lift.withCppGbp : lift.withoutCppGbp;
-      return { spend, costPerPurchase, purchases: spend / costPerPurchase, purchaseValue: 0,
-        groupCount: withValue ? lift.withGroupCount : lift.withoutGroupCount,
-        roas: null, addToCartRate: null, hookRate: null, holdRate: null };
-    };
-    return { id: `sample-lift-${lift.kind}`, kind: lift.kind, attributeKey: lift.attributeKey, value: lift.value,
-      attributeLabel: attribute.label, valueLabel: option.label, label: lift.label, confidence: lift.confidence,
-      metrics: { with: side(true), without: side(false), share: lift.confidence === 'Strong' ? 0.975 : 0.9,
-        from: addDays(today, -29), to: today, exampleGroupIds: data.groups.filter(group => group.kind === lift.kind && !group.mergedIntoId).slice(0, 2).map(group => group.id) },
-      computedAt: `${today}T12:00:00Z` };
-  }) : [];
+  return data.mode === 'sample' ? sampleCreativeStoredLifts(new Date(`${today}T12:00:00Z`)) : [];
 }
 async function storedLifts(db: Database, account: string, data: CreativeData, today: string): Promise<CreativeLift[]> {
   const stored = await readCreativeLifts(db, account, data.mode);

@@ -1,32 +1,41 @@
 import type { Database } from '../db.js';
 import type { Settings } from '../settings.js';
-import { SAMPLE_CREATIVE_ACCOUNT, readSampleCreativeCatalogue, sampleCreativeAttributes, sampleCreativeData, sampleCreativeLifts } from './sample.js';
+import { SAMPLE_CREATIVE_ACCOUNT, readSampleCreativeCatalogue, sampleCreativeAttributeRows, sampleCreativeData, sampleCreativeStoredLifts } from './sample.js';
 import { saveCatalogue, saveInsights } from './store.js';
+import { creativeLiftStorageId, saveCreativeLifts } from './lifts.js';
 
-/** Seeds invented examples in their own account/mode, without changing live rows. */
+/** Seeds invented examples in their own account/mode, preserving later sample edits. */
 export async function seedCreativeSample(db: Database, settings: Settings, now: Date): Promise<void> {
-  const present = await db.query("SELECT id FROM pulse.media_groups WHERE mode='sample' AND account_id=$1 LIMIT 1", [SAMPLE_CREATIVE_ACCOUNT]);
-  if (present.rowCount) return;
+  // A lift illustration is a stable version marker, independent of editable tags or merges.
+  const marker = creativeLiftStorageId(SAMPLE_CREATIVE_ACCOUNT, 'sample', 'invented-batch4-lift-video');
+  if ((await db.query("SELECT id FROM pulse.attribute_lifts WHERE mode='sample' AND account_id=$1 AND id=$2", [SAMPLE_CREATIVE_ACCOUNT, marker])).rowCount) return;
+  const present = await db.query<{ id: string; merged_into_id: string | null }>(
+    "SELECT id,merged_into_id FROM pulse.media_groups WHERE mode='sample' AND account_id=$1", [SAMPLE_CREATIVE_ACCOUNT]);
   const sample = sampleCreativeData(settings, now);
+  for (const group of sample.groups) {
+    const saved = present.rows.find(saved => saved.id === group.id);
+    if (saved) group.mergedIntoId = saved.merged_into_id;
+  }
   await db.transaction(async tx => {
-    for await (const page of readSampleCreativeCatalogue(settings, now)) {
-      await saveCatalogue(tx, SAMPLE_CREATIVE_ACCOUNT, page, now, 'sample');
+    if (!present.rowCount) {
+      for await (const page of readSampleCreativeCatalogue(settings, now)) {
+        await saveCatalogue(tx, SAMPLE_CREATIVE_ACCOUNT, page, now, 'sample');
+      }
+      const days = sample.insights.map(row => row.day).sort();
+      await saveInsights(tx, SAMPLE_CREATIVE_ACCOUNT, days[0]!, days.at(-1)!, sample.insights, now, undefined, 'sample');
     }
-    const days = sample.insights.map(row => row.day).sort();
-    await saveInsights(tx, SAMPLE_CREATIVE_ACCOUNT, days[0]!, days.at(-1)!, sample.insights, now, undefined, 'sample');
-    for (const group of sampleCreativeAttributes) for (const attribute of group.attributes) {
+    // Upgrade the old reserved-table examples once; no tags were editable before batch 4.
+    await tx.query("DELETE FROM pulse.media_attributes WHERE mode='sample' AND account_id=$1 AND id=ANY($2::text[])", [SAMPLE_CREATIVE_ACCOUNT, [
+      'invented-sample-video-1-hookType', 'invented-sample-video-1-slabEarly',
+      'invented-sample-video-2-setting', 'invented-sample-image-1-format',
+    ]]);
+    for (const row of sampleCreativeAttributeRows(sample)) {
       await tx.query(`INSERT INTO pulse.media_attributes(id,mode,account_id,media_group_id,attribute_key,value,source,recorded_at)
-        VALUES($1,'sample',$2,$3,$4,$5,'will',$6) ON CONFLICT DO NOTHING`, [
-        `invented-${group.groupId}-${attribute.key}`, SAMPLE_CREATIVE_ACCOUNT, group.groupId, attribute.key,
-        JSON.stringify({ label: attribute.label, value: attribute.value, sample: true }), now,
+        VALUES($1,'sample',$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING`, [
+        `invented-batch4-${row.groupId}-${row.key}-${row.source}`, SAMPLE_CREATIVE_ACCOUNT, row.groupId, row.key,
+        JSON.stringify(row.value), row.source, now,
       ]);
     }
-    for (const lift of sampleCreativeLifts) {
-      await tx.query(`INSERT INTO pulse.attribute_lifts(id,mode,account_id,kind,attribute_key,value,metrics,confidence,computed_at)
-        VALUES($1,'sample',$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING`, [
-        `invented-lift-${lift.kind}`, SAMPLE_CREATIVE_ACCOUNT, lift.kind, lift.attributeKey, JSON.stringify(lift.value),
-        JSON.stringify({ ...lift, sample: true }), lift.confidence, now,
-      ]);
-    }
+    await saveCreativeLifts(tx, SAMPLE_CREATIVE_ACCOUNT, 'sample', sampleCreativeStoredLifts(now));
   });
 }

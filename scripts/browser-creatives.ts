@@ -20,6 +20,11 @@ function fixtureView(base: CreativeView, data: CreativeData, settings: Settings,
 
 async function noOverflow(page: Page): Promise<void> {
   const width = await page.evaluate(() => ({ document: document.documentElement.scrollWidth, viewport: innerWidth }));
+  const scrollers = await page.locator('#creative-sheet *, #creative-gallery *').evaluateAll(elements => elements.filter(element => {
+    const style = getComputedStyle(element);
+    return element.clientWidth > 0 && element.scrollWidth > element.clientWidth + 1 && ['auto', 'scroll'].includes(style.overflowX) && !element.classList.contains('creative-tag-values');
+  }).map(element => `${element.tagName}.${element.className}`));
+  assert.deepEqual(scrollers, [], 'Only pill rows may scroll sideways');
   if (width.document > width.viewport) {
     if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/creatives-overflow.png`, fullPage: true });
     const escaped = await page.locator('body *').evaluateAll(elements => elements.filter(element => element.getBoundingClientRect().right > innerWidth + 1)
@@ -101,7 +106,8 @@ export async function checkCreatives(context: BrowserContext): Promise<void> {
         if (scenario !== 'under-floor') {
           await page.locator('#creative-panel [data-creative-open]').first().click();
           await page.locator('#creative-sheet .creative-media').waitFor();
-          assert.equal(await page.locator('#creative-sheet .creative-table tbody tr').count(), 4);
+          assert.equal(await page.locator('#creative-sheet .creative-performance-table thead th[scope="col"]').count(), 5);
+          assert.equal(await page.locator('#creative-sheet .creative-performance-table tbody tr').count(), scenario === 'videos' ? 9 : 6);
           assert.match(await page.locator('.creative-comparison').innerText(), /Meta says .* purchases in this window; Shopify saw .* orders in the same window/);
           if (scenario === 'videos') {
             const video = page.locator('#creative-sheet video');
@@ -186,6 +192,29 @@ export async function checkCreatives(context: BrowserContext): Promise<void> {
       const noteCleared = page.waitForResponse(response => response.request().method() === 'POST' && response.url().endsWith('/attributes'));
       await page.locator('#creative-tag-note').fill('');
       assert.equal((await noteCleared).status(), 200);
+      await page.locator('[data-creative-close]').click();
+      await page.locator('[data-creative-tag="sample-video-3"]').waitFor();
+      await page.locator('[data-creative-tag="sample-video-3"]').click();
+      await page.locator('#creative-tagging').waitFor();
+      let releaseNote!: () => void;
+      const noteGate = new Promise<void>(resolve => { releaseNote = resolve; });
+      const notePattern = '**/api/creatives/sample-video-3/attributes';
+      await page.route(notePattern, async route => { await noteGate; await route.continue(); });
+      const delayedNote = page.waitForRequest(request => request.method() === 'POST' && request.url().endsWith('/attributes'));
+      await page.locator('#creative-tag-note').fill('🟣'.repeat(201));
+      assert.equal(await page.locator('#creative-tag-note').inputValue(), '🟣'.repeat(200));
+      assert.equal(await page.locator('#creative-note-count').innerText(), '200');
+      await delayedNote;
+      await page.locator('[data-creative-close]').click();
+      await page.locator('[data-group-id="sample-video-3"] [data-creative-open]').click();
+      assert.match(await page.locator('#creative-sheet-title').innerText(), /Opening creative/);
+      releaseNote();
+      await page.locator('#creative-tagging').waitFor();
+      assert.equal(await page.locator('#creative-tag-note').inputValue(), '🟣'.repeat(200), 'Reopening waits for the queued note save');
+      await page.unroute(notePattern);
+      const unicodeCleared = page.waitForResponse(response => response.request().method() === 'POST' && response.url().endsWith('/attributes'));
+      await page.locator('#creative-tag-note').fill('');
+      assert.equal((await unicodeCleared).status(), 200);
       await page.locator('[data-creative-close]').click();
       await page.locator('[data-creative-tag="sample-video-3"]').waitFor();
       const filter = async (key: string, value: string) => {

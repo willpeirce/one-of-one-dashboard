@@ -34,3 +34,13 @@ test('missing and Hint-only lifts produce no recommendation or copy brief', asyn
     assert.doesNotMatch(creativeSheetHtml(sheet!), /Make more like this/);
   }
 });
+
+
+test('sheet performance keeps four windows as columns and every video metric as a row', async () => {
+  const sheet = await buildCreativeSheet(data, settings, today, 'sample-video-1', {}, async () => ({ count: 9, mode: 'sample' }));
+  const html = creativeSheetHtml(sheet!);
+  assert.equal((html.match(/scope="col"/g) ?? []).length, 5);
+  assert.equal((html.match(/scope="row"/g) ?? []).length, 9);
+  for (const metric of ['Purchases', 'Purchase value', 'ROAS', 'Per purchase', 'Hook', 'Hold', 'Watch-through', 'Add to cart']) assert.ok(html.includes(metric));
+  assert.doesNotMatch(html, /maxlength="200"|creative-table-scroll/);
+});

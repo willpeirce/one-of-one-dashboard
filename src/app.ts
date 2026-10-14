@@ -34,6 +34,7 @@ import { readCreativeView, registerCreatives } from './creatives/routes.js';
 import { creativeHealth } from './creatives/store.js';
 import { seedCreativeSample } from './creatives/seed.js';
 import { creativeFeatureFlags } from './creatives/config.js';
+import { readScanHealth } from './creatives/scan-health.js';
 import { dailyRows } from './shopify/metrics.js';
 
 declare module 'fastify' {
@@ -53,7 +54,8 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   const sourceNow = () => shopifyOptions.clock?.() ?? (shopify.mode === 'sample' ? new Date(appConfig.shopify.sampleNow) : new Date());
   async function runWatchdogs() {
     const facts = await shopify.store.facts(sourceNow());
-    const [settings, health, context] = await Promise.all([readSettings(db), readSourceHealth(db), readWatchdogContext(db, facts)]);
+    const [settings, context] = await Promise.all([readSettings(db), readWatchdogContext(db, facts)]);
+    const health = await creativeSourceHealth(settings.values);
     const now = sourceNow();
     const observation = await updateObservation(db, shopify.mode, facts, now);
     const checks = evaluateWatchdogs(facts, now, settings.values, observation, context.holidays, health);
@@ -62,6 +64,12 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   await seedFulfilment(db, shopify.mode, sourceNow());
   const ads=new SpendWorker(db,sourceEnv,adOptions);
   const creativeNow = () => adOptions.clock?.() ?? (sourceEnv.META_ACCESS_TOKEN ? new Date() : sourceNow());
+  async function creativeSourceHealth(settings: Awaited<ReturnType<typeof readSettings>>['values']) {
+    const live = !!sourceEnv.META_ACCESS_TOKEN && !!settings.metaAdAccountId;
+    return readSourceHealth(db,await readScanHealth(db,settings,{
+      accountId: live ? settings.metaAdAccountId : 'sample-meta-account', mode: live ? 'live' : 'sample', now: creativeNow(),
+    }));
+  }
   const creativeSettings = (await readSettings(db)).values;
   if (!sourceEnv.META_ACCESS_TOKEN || !creativeSettings.metaAdAccountId) await seedCreativeSample(db, creativeSettings, creativeNow());
   const reviews = new ReviewsWorker(db, sourceEnv, reviewOptions);
@@ -150,7 +158,8 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   }
   let unconfirmedCampaigns: { scope: string; count: number } | undefined;
   async function snapshot() {
-    const [settings, sourceHealth] = await Promise.all([readSettings(db), readSourceHealth(db)]);
+    const settings = await readSettings(db);
+    const sourceHealth = await creativeSourceHealth(settings.values);
     const facts=await shopify.store.facts(sourceNow());
     const adInputs=await heroInputs(facts,settings.values);
     const result = await applyShopifyDashboard({ ...getSampleDashboard(settings.values), generatedAt: new Date().toISOString(), sourceHealth }, db, facts, settings.values, sourceHealth, sourceNow(), adInputs, shopifyOptions.clock?.() ?? new Date());
@@ -177,7 +186,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     const today = ukToday(creativeNow());
     const data = dataset(facts, today);
     return { mode: shopify.mode, count: !data.ready || from < data.from || to > ukToday(sourceNow()) ? null : dailyRows(facts, today).filter(row => row.date >= from && row.date <= to).reduce((sum, row) => sum + row.o, 0) };
-  }, () => events.publish());
+  }, () => events.publish(), adOptions.creativeReader, adOptions.creativeScan);
   app.get('/', async (request, reply) => {
     if (!await auth.session(request)) return reply.redirect('/login');
     return reply.type('text/html; charset=utf-8').send(dashboardPage(await snapshot()));

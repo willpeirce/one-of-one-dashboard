@@ -19,9 +19,14 @@ import { adsManagerLink, creativesPage, safeCreativeLink, escapeCreative } from 
 import { resolveAttributes, type AttributeRow, type AttributeSource } from './attributes.js';
 import { readAttributeRows, readGroupAttributes, readWillNote, saveWillNote, toggleWillAttribute } from './attribute-store.js';
 import { creativeAttributeOptions, creativeTaggingQueue, filterCreativeAttributes } from './tagging.js';
+import { runCreativeScans, type ScanOptions } from './scan.js';
+import { readScanHealth, scanEnabled, scanPricesReady } from './scan-health.js';
+import type { CreativeScanView } from './scan-view.js';
 
 class CreativeInputError extends Error { readonly statusCode = 400; constructor() { super('Invalid creative request.'); } }
 const accountFor = (data: CreativeData, settings: Settings) => data.mode === 'sample' ? SAMPLE_CREATIVE_ACCOUNT : settings.metaAdAccountId;
+const scanView = (scan: CreativeScanView): CreativeScanView => ({ enabled: scan.enabled, line: scan.line, message: scan.message });
+const unscannedView = (settings: Settings): CreativeScanView => ({ enabled: false, line: 'Scan: off', message: scanPricesReady(settings) ? null : 'Set the scan prices in Settings' });
 type ShopifyOrders = (from: string, to: string) => Promise<{ count: number | null; mode: SourceMode }>;
 function sampleAttributeRows(data: CreativeData): AttributeRow[] {
   return data.mode === 'sample' ? sampleCreativeAttributes.flatMap(group => group.attributes.map(attribute => {
@@ -46,7 +51,7 @@ export function buildCreativeView(data: CreativeData, settings: Settings, today:
     if (group) cards.push({ id: `sample-strong:${lift.kind}`, kind: 'decide', groupId: group.id, picture: group.thumbnailUrl,
       title: 'Make more like this', reason: `Invented ${lift.kind} example: ${lift.label} (${lift.confidence})`, mode: 'sample', brief: lift.brief });
   }
-  return { mode: data.mode, accountId: accountFor(data, settings), selection: selected, top, performance, groups, cards,
+  return { scan: unscannedView(settings), mode: data.mode, accountId: accountFor(data, settings), selection: selected, top, performance, groups, cards,
     taggingQueue: creativeTaggingQueue(data, attributes, settings.creativeSpendFloorGbp, today), attributeFilters: creativeAttributeOptions(selected.kind),
     lifts: data.mode === 'sample' ? sampleCreativeLifts.map(lift => ({ ...lift })) : [],
     targets: { uk: settings.cppUkTargetGbp, us: settings.cppUsTargetGbp }, freelancerInitial: settings.creativeFreelancerInitial,
@@ -57,6 +62,7 @@ export async function readCreativeView(db: Database, settings: Settings, env: No
   if (data.mode === 'sample') await seedCreativeSample(db, settings, now);
   const attributes = await readAttributeRows(db, data.mode, accountFor(data, settings));
   const view = buildCreativeView(data, settings, ukToday(now), selection, attributes);
+  view.scan = scanView(await readScanHealth(db, settings, { mode: data.mode, accountId: view.accountId, now }));
   const states = await db.query<{ card_id: string; done_at: Date | null; snoozed_until: Date | null }>(
     'SELECT card_id,done_at,snoozed_until FROM pulse.creative_card_states WHERE account_id=$1 AND mode=$2', [view.accountId, view.mode]);
   const hidden = new Set(states.rows.filter(row => row.done_at || row.snoozed_until && new Date(row.snoozed_until).getTime() > now.getTime()).map(row => row.card_id));
@@ -92,7 +98,7 @@ export async function buildCreativeSheet(data: CreativeData, settings: Settings,
   for (const ad of group.ads) addLink('Instagram', ad.instagramUrl);
   for (const ad of group.ads) addLink('Facebook', ad.facebookUrl);
   for (const ad of group.ads) addLink('Ads Manager', adsManagerLink(accountFor(data, settings), ad.id));
-  return { mode: data.mode, group,
+  return { scan: unscannedView(settings), mode: data.mode, group,
     windows: (['24h', '3d', '7d', 'lifetime'] as const).map(window => ({ window, totals: aggregateCreativeGroups(data, creativeWindowRange(window, today)).find(row => row.group.id === parent?.id)!.totals })),
     comparison: { ...range, purchases: data.insights.filter(row => row.day >= range.from && row.day <= range.to).reduce((sum, row) => sum + row.purchases, 0), shopifyOrders: orders.count, shopifyMode: orders.mode },
     frequency: { value: exactCreativeFrequency(data, group.ads.map(ad => ad.id), addDays(today, -6), today), eligible: hasFadingHistory(group, today) },
@@ -108,7 +114,7 @@ export function safeVideoSource(value: string, token?: string): string | null {
   return url;
 }
 export function registerCreatives(app: FastifyInstance, db: Database, auth: Auth, env: NodeJS.ProcessEnv,
-  clock: () => Date, shopifyOrders: ShopifyOrders, publish: () => Promise<unknown>, reader?: CreativeReader): void {
+  clock: () => Date, shopifyOrders: ShopifyOrders, publish: () => Promise<unknown>, reader?: CreativeReader, scanOptions: Pick<ScanOptions, 'fetch' | 'clock' | 'sleep'> = {}): void {
   const client = reader ?? (env.META_ACCESS_TOKEN ? new MetaCreativeClient(new MetaSpend(env.META_ACCESS_TOKEN)) : undefined);
   const localWrite = async (request: FastifyRequest, reply: FastifyReply) => {
     if (request.headers.origin !== auth.config.origin) return reply.code(403).send({ error: 'Request origin is not allowed.' });
@@ -133,6 +139,7 @@ export function registerCreatives(app: FastifyInstance, db: Database, auth: Auth
     if (data.mode === 'sample') await seedCreativeSample(db, settings, clock());
     sheet.attributes = await readGroupAttributes(db, data.mode, accountFor(data, settings), sheet.group.group.id, sheet.group.group.kind);
     sheet.note = await readWillNote(db, data.mode, accountFor(data, settings), sheet.group.group.id);
+    sheet.scan = scanView(await readScanHealth(db, settings, { mode: data.mode, accountId: accountFor(data, settings), now: clock() }));
     // Opening an evicted video re-fetches its frames, without storing the video itself.
     if (client && data.mode === 'live' && sheet.group.group.kind === 'video') await ensureGroupMedia(client, db, settings.metaAdAccountId, sheet.group.group.id, settings.creativeMediaCapMb).catch(() => null);
     return sheet;
@@ -154,6 +161,20 @@ export function registerCreatives(app: FastifyInstance, db: Database, auth: Auth
     } catch { throw new CreativeInputError(); }
     await publish();
     return result;
+  });
+  app.post('/api/creatives/:groupId/scan', { preHandler: localWrite }, async (request, reply) => {
+    if (!await auth.session(request)) return reply.code(401).send({ error: 'Sign in to continue.' });
+    if (!request.body || typeof request.body !== 'object' || Array.isArray(request.body) || Object.keys(request.body).length) throw new CreativeInputError();
+    const { settings, data } = await current(), accountId = accountFor(data, settings);
+    const group = parentGroup((request.params as { groupId: string }).groupId, data.groups);
+    if (!group) return reply.code(404).send({ error: 'Creative not found.' });
+    if (!scanEnabled(data.mode)) return reply.code(403).send({ error: 'Creative scanning is off.' });
+    const result = await runCreativeScans(db, settings, { ...scanOptions, clock: scanOptions.clock ?? clock,
+      accountId, mode: data.mode, groupId: group.id, reader: client });
+    const scan = scanView(await readScanHealth(db, settings, { accountId, mode: data.mode, now: clock() }));
+    const attributes = await readGroupAttributes(db, data.mode, accountId, group.id, group.kind);
+    await publish();
+    return { groupId: group.id, result, scan, attributes };
   });
   app.get('/media/:groupId', async (request, reply) => {
     if (!await auth.session(request)) return reply.code(401).send({ error: 'Sign in to continue.' });

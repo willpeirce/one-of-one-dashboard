@@ -6,11 +6,20 @@ import type { CreativeReader, StoredCatalogueAd } from './model.js';
 import { enforceMediaCap, readLiveCreativeData, reducedDetailCount, saveCatalogue, saveInsights } from './store.js';
 import { refreshCreativeFrequencies } from './frequency.js';
 import { recomputeMetaAttributes } from './attribute-store.js';
+import { runCreativeScans, type ScanOptions } from './scan.js';
 
 /** Called by the existing 30-minute spend worker, with the same read-only Meta transport. */
 export class CreativeWorker {
-  constructor(private readonly db: Database, private readonly reader: CreativeReader) {}
+  constructor(private readonly db: Database, private readonly reader: CreativeReader,
+    private readonly scanOptions: Pick<ScanOptions, 'fetch' | 'clock' | 'sleep'> = {}) {}
   async run(account: string, settings: Settings, now = new Date()): Promise<void> {
+    await this.readMeta(account,settings,now);
+    // Model failures are independent of the Meta catalogue, insights and frequency reads.
+    try {
+      await runCreativeScans(this.db,settings,{ ...this.scanOptions, accountId: account, mode: 'live', reader: this.reader });
+    } catch { console.error('Creative scan could not finish.'); }
+  }
+  private async readMeta(account: string, settings: Settings, now: Date): Promise<void> {
     const today = ukToday(now), yesterday = addDays(today,-1);
     let step: 'catalogue' | 'insights' | 'backfill' = 'catalogue';
     let savedAds = 0;

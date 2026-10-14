@@ -4,7 +4,7 @@ import { dashboardPage } from '../src/dashboard-view.js';
 import type { DashboardSnapshot } from '../src/dashboard-types.js';
 import { defaultSettings, type Settings } from '../src/settings.js';
 import type { CreativeData } from '../src/creatives/model.js';
-import type { CreativeSelection, CreativeView } from '../src/creatives/presentation-types.js';
+import type { CreativeSelection, CreativeView, CreativeSheet } from '../src/creatives/presentation-types.js';
 import { aggregateCreativeGroups, topCreatives } from '../src/creatives/ranking.js';
 import { creativePerformance } from '../src/creatives/performance.js';
 import { sampleCreativeData, sampleCreativePicture } from '../src/creatives/sample.js';
@@ -150,6 +150,8 @@ export async function checkCreatives(context: BrowserContext): Promise<void> {
       await page.locator('[data-creative-tag="sample-video-3"]').click();
       await page.locator('#creative-tagging').waitFor();
       assert.ok(await page.locator('.creative-attribute').count() > 20);
+      assert.equal(await page.locator('[data-creative-scan]').count(), 0, 'Scan now is absent in sample/off mode');
+      assert.match(await page.locator('#creative-gallery [data-creative-scan-status]').innerText(), /Scan: off/);
       assert.match(await page.locator('[data-attribute="hookType"]').innerText(), /unsure|not scanned yet/);
       const documentStarted = await page.evaluate(() => performance.timeOrigin);
       const tag = async (key: string, value: string) => {
@@ -211,6 +213,25 @@ export async function checkCreatives(context: BrowserContext): Promise<void> {
       assert.deepEqual(attribute.groups.map(group => group.group.id), ['sample-image-1']);
       await filter('attribute', '');
       if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/creative-gallery-${width}.png`, fullPage: true });
+      // A browser-only invented live response exercises the enabled control; no model request leaves the app.
+      const scanSheet = await (await context.request.get('/api/creatives/sample-image-1')).json() as CreativeSheet;
+      scanSheet.mode = 'live'; scanSheet.scan = { enabled: true, line: 'Scan: on · 0 scanned · 0 failed · £0.00 of £1.00 today · invented-browser-model', message: null };
+      const sheetPattern = /\/api\/creatives\/sample-image-1(?:\?|$)/;
+      const scanPattern = '**/api/creatives/sample-image-1/scan';
+      await page.route(sheetPattern, route => route.fulfill({ json: scanSheet }));
+      await page.route(scanPattern, route => route.fulfill({ json: { groupId: 'sample-image-1', attributes: scanSheet.attributes,
+        scan: { ...scanSheet.scan, line: 'Scan: on · 1 scanned · 0 failed · £0.01 of £1.00 today · invented-browser-model' },
+        result: { state: 'done', attempts: 1, done: 1, failed: 0 } } }));
+      await page.locator('[data-group-id="sample-image-1"] [data-creative-open]').click();
+      await page.locator('[data-creative-scan]').waitFor();
+      await page.locator('[data-creative-scan]').click();
+      await page.locator('#creative-scan-result').filter({ hasText: 'Scan complete. Attributes updated.' }).waitFor();
+      assert.match(await page.locator('#creative-scan-control').innerText(), /1 scanned/);
+      await noOverflow(page);
+      if (process.env.PULSE_SCREENSHOT_DIR) await page.locator('#creative-sheet').screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/creative-scan-${width}.png` });
+      await page.locator('[data-creative-close]').click();
+      await page.unroute(sheetPattern); await page.unroute(scanPattern);
+
     }
   } finally { await page.close(); }
 }

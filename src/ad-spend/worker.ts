@@ -7,6 +7,7 @@ import { liveReader, MetaSpend, type SpendReader } from './clients.js';
 import { MetaCreativeClient } from '../creatives/client.js';
 import { CreativeWorker } from '../creatives/worker.js';
 import type { CreativeReader } from '../creatives/model.js';
+import type { ScanOptions } from '../creatives/scan.js';
 import { adRequestLogLine, type AdTransportOptions } from './http.js';
 import { readJobs, recordCampaignSync, saveMetaCampaigns, saveSpend } from './store.js';
 export const SPEND_POLL_INTERVAL_MS = 30 * 60_000;
@@ -15,6 +16,7 @@ export interface SpendWorkerOptions extends AdTransportOptions {
   clock?: () => Date;
   readers?: Partial<Record<AdSource, SpendReader>>;
   creativeReader?: CreativeReader;
+  creativeScan?: Pick<ScanOptions, 'fetch' | 'clock' | 'sleep'>;
 }
 export class SpendWorker {
   private timer?: ReturnType<typeof setInterval>;
@@ -180,7 +182,7 @@ export class SpendWorker {
       this.creativeReaders.set(readerScope, creativeReader);
       this.creativeRunning = true;
       try {
-        await new CreativeWorker(this.db, creativeReader).run(account, settings, now);
+        await new CreativeWorker(this.db, creativeReader, this.options.creativeScan).run(account, settings, now);
       } catch(error) {
         console.error(`Meta creatives read failed (${adErrorCode(error, 'meta')} at catalogue after 0 ads).`);
       } finally {

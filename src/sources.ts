@@ -1,4 +1,5 @@
 import type { Database } from './db.js';
+import type { ScanHealth } from './creatives/scan-health.js';
 
 export const sourceDefinitions = [
   { id: 'shopify', name: 'Shopify', stage: 1, requiredKeys: ['SHOPIFY_CLIENT_ID', 'SHOPIFY_CLIENT_SECRET'] },
@@ -39,6 +40,7 @@ export interface SourceHealth {
   lastAttemptAt: Date | null;
   consecutiveFailures: number;
   updatedAt: Date;
+  statusText?: string;
 }
 
 // Read presence only. Neither the returned metadata nor the health table contains values.
@@ -83,7 +85,7 @@ interface HealthRow extends Record<string, unknown> {
   updated_at: Date;
 }
 
-export async function readSourceHealth(db: Database): Promise<SourceHealth[]> {
+export async function readSourceHealth(db: Database, scanHealth?: ScanHealth): Promise<SourceHealth[]> {
   const { rows } = await db.query<HealthRow>(
     `SELECT source, mode, status, last_success_at, last_attempt_at,
             consecutive_failures, updated_at FROM pulse.source_health`,
@@ -92,17 +94,22 @@ export async function readSourceHealth(db: Database): Promise<SourceHealth[]> {
   return sourceDefinitions.flatMap(({ id, name, stage, requiredKeys }) => {
     const row = bySource.get(id);
     if (!row) return [];
+    const scan = id === 'anthropic' ? scanHealth : undefined;
     return [{
       source: id,
       name,
       stage,
       requiredKeys,
-      mode: row.mode,
-      status: row.status,
-      lastSuccessAt: row.last_success_at,
-      lastAttemptAt: row.last_attempt_at,
-      consecutiveFailures: row.consecutive_failures,
+      mode: scan ? scan.status === 'waiting_for_keys' ? 'sample' : 'live' : row.mode,
+      status: scan?.status ?? row.status,
+      lastSuccessAt: scan ? scan.lastSuccessAt ? new Date(scan.lastSuccessAt) : null : row.last_success_at,
+      lastAttemptAt: scan ? scan.lastAttemptAt ? new Date(scan.lastAttemptAt) : null : row.last_attempt_at,
+      consecutiveFailures: scan?.consecutiveFailures ?? row.consecutive_failures,
       updatedAt: row.updated_at,
+      ...(scan ? { statusText: scan.status === 'waiting_for_keys' ? 'Waiting for keys'
+        : scan.status === 'healthy' ? 'Healthy'
+        : scan.status === 'error' ? `Scan failed: ${scan.reason ?? 'network'}${scan.httpStatus ? ` (http ${scan.httpStatus})` : ''}`
+        : scan.enabled ? scan.message ?? 'First scan pending' : 'Scan: off' } : {}),
     }];
   });
 }

@@ -87,6 +87,7 @@ export function creativeHealthDetails(health: CreativeHealth): string {
   return `<section aria-label="Meta creative imports" data-creative-health><h2>Meta creatives · ${health.mode === 'sample' ? 'sample data' : 'live'}</h2>
     <p>Catalogue: ${formatNumber(health.catalogueCount)} ads · ${progress}</p>
     <p data-creative-reduced>${formatNumber(health.reducedCount)} creatives at reduced detail</p>
+    ${health.scan ? `<p data-creative-scan>${escapeHtml(health.scan.line)}</p>${health.scan.message && !health.scan.line.includes(health.scan.message) ? `<p>${escapeHtml(health.scan.message)}</p>` : ''}` : ''}
     <p>Media store: ${mb(health.bytes)} MB of ${mb(health.capBytes)} MB · last successful read ${timestamp(health.lastSuccessAt)}</p>
     ${health.error ? `<p role="status">Creative read needs attention (${escapeHtml(health.error)}).${/^unsupported_account(?: at (?:catalogue(?: after \d+ ads)?|insights|backfill))?$/.test(health.error) ? ' Creative insights need a GBP account.' : ''} Stored data is retained.</p>` : ''}
     ${health.reconciliation ? `<p class="notice" data-creative-reconciliation>${escapeHtml(health.reconciliation)}</p>` : ''}
@@ -114,7 +115,7 @@ export function sourceHealthPage(rows: readonly SourceHealth[], shopify?: Awaite
         <tbody>${rows.map((row) => { const ad = ads?.find(a => a.source === row.source); return `<tr>
           <th scope="row">${escapeHtml(row.name)}</th>
           <td>${(ad?.live??row.mode==='live') ? 'Live' : 'Sample'}</td>
-          <td>${escapeHtml(ad?.status??((row.source === 'shopify' || row.source === 'judgeme') && row.status === 'not_implemented' ? 'First sync pending' : row.source === 'judgeme' && row.status === 'healthy' ? 'Live' : healthLabels[row.status]))}${ad?.failures ? ` · ${formatNumber(ad.failures)} consecutive failure${ad.failures === 1 ? '' : 's'}` : ''}${row.source === 'meta' && status?.campaigns ? `<br><small data-campaign-sync data-state="${status.campaigns.state}">${escapeHtml(campaignSyncText(status.campaigns))}</small>` : ''}${row.source === 'shopify' && grossHistory ? `<br><small data-gross-history>${grossHistory}</small>` : ''}</td>
+          <td>${escapeHtml(ad?.status??row.statusText??((row.source === 'shopify' || row.source === 'judgeme') && row.status === 'not_implemented' ? 'First sync pending' : row.source === 'judgeme' && row.status === 'healthy' ? 'Live' : healthLabels[row.status]))}${ad?.failures ? ` · ${formatNumber(ad.failures)} consecutive failure${ad.failures === 1 ? '' : 's'}` : ''}${row.source === 'meta' && status?.campaigns ? `<br><small data-campaign-sync data-state="${status.campaigns.state}">${escapeHtml(campaignSyncText(status.campaigns))}</small>` : ''}${row.source === 'shopify' && grossHistory ? `<br><small data-gross-history>${grossHistory}</small>` : ''}</td>
           <td>${timestamp(ad ? ad.fetchedAt : row.lastSuccessAt)}</td>
           <td class="key-names">${row.requiredKeys.map((key) => `<code>${escapeHtml(key)}</code>`).join('<br>')}</td>
         </tr>`; }).join('')}</tbody>

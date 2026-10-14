@@ -17,11 +17,12 @@ import { saveCatalogue, saveInsights } from '../src/creatives/store.js';
 import { frequencyMembershipKey } from '../src/creatives/frequency.js';
 import { replaceSourceAttributes, toggleWillAttribute } from '../src/creatives/attribute-store.js';
 import { attributesForKind } from '../src/creatives/attributes.js';
+import type { ScanOptions } from '../src/creatives/scan.js';
 
 const account = '424242';
 const storedImage = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x49, 0x4e, 0x56, 0xff, 0xd9]);
 
-async function harness(t: TestContext, live = false) {
+async function harness(t: TestContext, live = false, scanOptions: Pick<ScanOptions, 'fetch' | 'clock' | 'sleep'> = {}) {
   const db = await createTestDatabase();
   const config = readRuntime({ DATABASE_URL: 'postgresql://localhost/pulse_creatives_test', APP_ORIGIN: 'https://pulse.example.test' });
   const app = Fastify({ logger: false });
@@ -47,7 +48,7 @@ async function harness(t: TestContext, live = false) {
     async imageBytes() { imageReads++; return storedImage; }, async videoFrames() { return []; },
   };
   registerCreatives(app, db, auth, live ? { META_ACCESS_TOKEN: inventedToken } : {}, () => now,
-    async () => ({ count: 9, mode: 'sample' as const }), async () => {}, reader);
+    async () => ({ count: 9, mode: 'sample' as const }), async () => {}, reader, scanOptions);
   t.after(async () => { await app.close(); await db.close(); });
   const headers = { cookie: `__Host-pulse_session=${token}`, origin: config.origin, 'content-type': 'application/json' };
   return { app, db, headers, inventedToken, credential,
@@ -323,4 +324,43 @@ test('every creative sheet explains UK-day counts and Meta account-day reach and
       assert.match(html, /24h means the last complete UK day plus today so far/);
     }
   }
+});
+
+
+test('manual scan is signed in, scoped and flag guarded, then returns safe resolved attributes', async t => {
+  const inventedCredential = 'invented-scan-key-1';
+  const oldFlag = process.env.CREATIVE_SCAN_ENABLED, oldKey = process.env.ANTHROPIC_API_KEY;
+  t.after(() => { if (oldFlag === undefined) delete process.env.CREATIVE_SCAN_ENABLED; else process.env.CREATIVE_SCAN_ENABLED = oldFlag;
+    if (oldKey === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = oldKey; });
+  process.env.CREATIVE_SCAN_ENABLED = 'false'; process.env.ANTHROPIC_API_KEY = inventedCredential;
+  let calls = 0;
+  const h = await harness(t, true, { fetch: async () => { calls++; return new Response(JSON.stringify({
+    content: [{ type: 'text', text: JSON.stringify({ attributes: { hookType: { value: 'reveal', confidence: 0.9, reason: 'Invented reveal.' } } }) }],
+    usage: { input_tokens: 100, output_tokens: 50 },
+  }), { status: 200 }); } });
+  const group = creativeGroup('invented-scan-parent');
+  await saveCatalogue(h.db, account, [{ ad: creativeAd('invented-scan-ad', group.id), media: {
+    ...group, thumbnail: storedImage, poster: storedImage, frames: [],
+  } }], new Date('2026-10-13T11:00:00Z'));
+  const path = `/api/creatives/${group.id}/scan`;
+  const post = (headers = h.headers, url = path) => h.app.inject({ method: 'POST', url, headers, payload: {} });
+  const sheet = async () => (await h.app.inject({ url: `/api/creatives/${group.id}`, headers: h.headers })).json<CreativeSheet>();
+  assert.doesNotMatch(creativeSheetHtml(await sheet()), /data-creative-scan /);
+  assert.equal((await post()).statusCode, 403); assert.equal(calls, 0);
+  process.env.CREATIVE_SCAN_ENABLED = 'true'; delete process.env.ANTHROPIC_API_KEY;
+  assert.doesNotMatch(creativeSheetHtml(await sheet()), /data-creative-scan /);
+  assert.equal((await post()).statusCode, 403); assert.equal(calls, 0);
+  process.env.ANTHROPIC_API_KEY = inventedCredential;
+  assert.equal((await post({ ...h.headers, cookie: '' })).statusCode, 401);
+  assert.equal((await post({ ...h.headers, origin: 'https://elsewhere.example.test' })).statusCode, 403);
+  assert.equal((await post(h.headers, '/api/creatives/foreign-group/scan')).statusCode, 404);
+  const prices = await post(); assert.equal(prices.json().result.state, 'prices'); assert.equal(calls, 0);
+  assert.match(creativeSheetHtml(await sheet()), /Set the scan prices in Settings/);
+  const settings = await readSettings(h.db);
+  await saveSettings(h.db, { ...settings, values: { ...settings.values, creativeScanInputPrice: 1, creativeScanOutputPrice: 1 } }, h.credential);
+  assert.match(creativeSheetHtml(await sheet()), /data-creative-scan /);
+  const response = await post(); assert.equal(response.statusCode, 200); assert.equal(response.json().result.state, 'done'); assert.equal(calls, 1);
+  assert.equal(response.json().attributes.find((row: { key: string }) => row.key === 'hookType').source, 'model');
+  assert.match(response.json().scan.line, /Scan: on · 1 scanned/);
+  assert.doesNotMatch(response.body, /invented-scan-key-1|raw_response/);
 });

@@ -1,6 +1,8 @@
 import type { CreativeView, CreativeSheet, CreativeSelection } from './presentation-types.js';
 import { creativePanelHtml, creativeGalleryHtml, creativeCardsHtml, creativeSheetHtml, creativeAttributesHtml, creativeTagRowHtml, creativeAttributeFiltersHtml } from './view.js';
 import type { ResolvedAttribute } from './attributes.js';
+import { creativeScanControlHtml, type CreativeScanView } from './scan-view.js';
+import type { ScanResult } from './scan.js';
 
 let view: CreativeView | undefined;
 let selection: CreativeSelection = { window: '3d', market: 'all', owner: 'all' };
@@ -131,6 +133,31 @@ function flushNote(): void {
   pendingNote = undefined;
   noteWrites = noteWrites.then(() => saveNote(pending.sheet, pending.value, pending.generation));
 }
+async function scanNow(button: HTMLButtonElement): Promise<void> {
+  const sheet = activeSheet, generation = sheetGeneration;
+  if (!sheet || button.disabled) return;
+  button.disabled = true; button.textContent = 'Scanning…';
+  try {
+    const result = await read<{ attributes: ResolvedAttribute[]; scan: CreativeScanView; result: ScanResult }>(`/api/creatives/${encodeURIComponent(sheet.group.group.id)}/scan`, {});
+    if (generation !== sheetGeneration || activeSheet !== sheet) return;
+    sheet.scan = result.scan; sheet.attributes = result.attributes;
+    const summary = element('.creative-attribute-section'); if (summary) summary.outerHTML = creativeAttributesHtml(sheet.attributes);
+    for (const attribute of sheet.attributes) {
+      const row = element(`[data-tag-row="${CSS.escape(attribute.key)}"]`); if (row) row.outerHTML = creativeTagRowHtml(attribute);
+    }
+    const control = element('#creative-scan-control'); if (control) control.outerHTML = creativeScanControlHtml(sheet.scan);
+    const status = element('#creative-scan-result');
+    if (status) status.textContent = result.result.message ?? ({ done: 'Scan complete. Attributes updated.', failed: 'Scan failed. See Source health for the reason.',
+      off: 'Creative scanning is off.', busy: 'A scan is already running. Try again shortly.', cooldown: 'This creative is waiting until its next retry.',
+      idle: 'No creative is ready to scan.', cap: 'Daily scan cap reached; try again next UK day', prices: 'Set the scan prices in Settings' }[result.result.state]);
+    void refresh();
+  } catch {
+    if (generation === sheetGeneration) {
+      const status = element('#creative-scan-result'); if (status) status.textContent = 'Could not scan. Try again or check Source health.';
+      button.disabled = false; button.textContent = 'Scan now';
+    }
+  }
+}
 async function copyBrief(text: string, button: HTMLButtonElement): Promise<void> {
   try { await navigator.clipboard.writeText(text); button.textContent = 'Copied'; }
   catch { status('Copy was unavailable. Open the creative and try again.'); }
@@ -157,6 +184,8 @@ async function mergeAction(action: 'merge' | 'split' | 'undo', groupIds: string[
 document.addEventListener('click', event => {
   const target = event.target instanceof Element ? event.target : undefined;
   if (!target) return;
+  const scan = target.closest<HTMLButtonElement>('[data-creative-scan]');
+  if (scan) { void scanNow(scan); return; }
   const tag = target.closest<HTMLElement>('[data-creative-tag]');
   if (tag?.dataset.creativeTag) { void openSheet(tag.dataset.creativeTag, true); return; }
   const pill = target.closest<HTMLButtonElement>('[data-creative-tag-key]');

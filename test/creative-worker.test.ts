@@ -413,7 +413,7 @@ test('daily, nightly and backfill failures retain the failed window and identify
   }
 });
 
-test('the existing spend guard skips one tick during a long creative pass and releases after completion', async (t) => {
+test('the spend guard coalesces pending spend while the creative guard allows later spend polls', async (t) => {
   const db = await createTestDatabase();
   t.after(() => db.close());
   const env = { META_ACCESS_TOKEN: randomBytes(16).toString('hex') };
@@ -448,23 +448,31 @@ test('the existing spend guard skips one tick during a long creative pass and re
     await worker.stop();
   });
   const first = worker.tick('meta');
+  let spendFinished = false;
+  void first.then(() => { spendFinished = true; });
   await spendStarted.promise;
   assert.equal(worker.tick('meta'), first);
   assert.deepEqual(logs, [], 'spend work is not reported as an active creative pass');
   finishSpend.resolve();
   await creativeStarted.promise;
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.equal(spendFinished, true, 'spend completes while the creative catalogue is held open');
+  await first;
   clock = new Date(now.getTime() + 31 * 60_000);
   const overlapping = worker.tick('meta');
-  assert.equal(overlapping, first);
-  assert.equal(spendReads, 1);
+  assert.notEqual(overlapping, first);
+  await overlapping;
+  assert.equal(spendReads, 2);
   assert.equal(catalogueReads, 1);
   assert.deepEqual(logs, ['Meta creatives tick skipped: pass still running.']);
   finishCreative.resolve();
-  await overlapping;
+  await worker.waitForCreatives();
   assert.equal((await db.query('SELECT * FROM pulse.ads')).rowCount, 1);
   assert.equal((await db.query('SELECT error_code FROM pulse.creative_jobs')).rows[0]!.error_code, null);
+  clock = new Date(now.getTime() + 62 * 60_000);
   await worker.tick('meta');
-  assert.equal(spendReads, 2);
+  await worker.waitForCreatives();
+  assert.equal(spendReads, 3);
   assert.equal(catalogueReads, 2);
   assert.equal(logs.length, 1, 'a completed pass releases the overlap guard');
 });

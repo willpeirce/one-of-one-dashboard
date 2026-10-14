@@ -25,6 +25,7 @@ Updated in every pull request.
 | Fix | Creative catalogue: supported statuses, reuse unchanged creatives, refresh ownership/market, tolerate individual refusals and identify failing steps | built on `fix-creative-catalogue`; no migration | no new keys or scopes | after Publish, catalogue count, backfill and last successful read advance; error line clears; owner changes reach stored ads on the next pass |
 | Fix | Creative catalogue: 25-ad pages, longer reads, 10-ad fallback, saved-page progress and safe attempt logs | built on `fix-creative-timeout`; no migration | no new keys or scopes | after Publish, Catalogue count rises during the pass; completion clears the error and advances last success/backfill; failures report saved ads |
 | 2 | Meta | spend and market CPO built; hero CAC is cost per counted order; purchases, ad-set dials, first-order CAC and kill/step rules remain | needs Meta key + account Settings | spend comparison pending |
+| 2 fix | Creative passes run detached so long catalogues never starve hero spend | built on `fix-creative-blocking-spend` after catalogue timeout PR #26; one pass at a time, shutdown waits; no migration | no new keys or Settings | after Publish, Meta spend becomes fresh while the creative catalogue keeps growing |
 | 3 | Google Ads | spend built; conversions, ad-set dials and kill/step rules remain | needs three existing Google keys + account Settings | spend comparison pending |
 | 4 | Mailchimp | not started | no | no |
 | 5 | Workflow side (Handover) | not started | no | no |
@@ -33,7 +34,7 @@ Updated in every pull request.
 
 ## Next step
 
-Review `fix-creative-timeout`, then merge, Pull and Publish. No migration is expected; `npm run migrate` in the Shell is harmless. The builder does not deploy.
+Review `fix-creative-blocking-spend`, then merge, Pull and Publish in Replit, and run `npm run migrate` in the Shell (nothing to apply). Publish cuts off the current creative pass; saved pages are kept and the next pass skips stored ads, so the restart costs minutes. Within a minute, Home should lose “Meta stale since” and Source health should show a Meta spend success after Publish while the creative catalogue count keeps rising. The builder does not deploy.
 
 **Catalogue timeout fix acceptance (14 Oct):** after Publish, Source health's Catalogue count should rise tick by tick during the first pass, even before it completes. The first full pass can outlast 30 minutes while media downloads. Once it completes, the “Creative read needs attention” line is gone, “last successful read” has a time and the backfill counter moves. If a “needs attention” line remains, it now says how many ads the pass saved, and the Replit log shows what Meta answered. Sample `/creatives` and Source health remain unchanged; all added fixtures and examples are invented. Validation results belong in the pull request; no live-source agreement is claimed.
 

@@ -160,6 +160,7 @@ test('Meta worker refreshes the catalogue once per actual poll, outside backfill
   const first = worker.tick('meta');
   assert.equal(worker.tick('meta'), first);
   await first;
+  await worker.waitForCreatives();
   assert.equal(catalogueReads, 1);
   assert.equal(spendReads, 5, 'current range plus four bounded backfill chunks');
   assert.equal((await readMetaCampaigns(db, s, e)).length, 3);
@@ -168,6 +169,7 @@ test('Meta worker refreshes the catalogue once per actual poll, outside backfill
   assert.equal(catalogueReads, 1, 'timer ticks inside the poll window make no source calls');
   clock = new Date(now.getTime() + 30 * 60_000);
   await worker.tick('meta');
+  await worker.waitForCreatives();
   assert.equal(catalogueReads, 2);
 });
 

@@ -64,6 +64,7 @@ test('campaign and creative catalogue failures follow committed spend, preserve 
   });
   t.after(() => worker.stop());
   await worker.tick('meta');
+  await worker.waitForCreatives();
   assert.deepEqual(requests, ['act_9000000000', 'insights', 'campaigns', 'act_9000000000', 'ads']);
   const health = (await db.query<{ mode: string; status: string; last_success_at: Date | string; consecutive_failures: number }>(
     "SELECT mode,status,last_success_at,consecutive_failures FROM pulse.source_health WHERE source='meta'",
@@ -101,6 +102,7 @@ test('spend failure stays unavailable even when the independent campaign read su
   });
   t.after(() => worker.stop());
   await worker.tick('meta');
+  await worker.waitForCreatives();
   assert.deepEqual(requests, ['act_9000000000', 'campaigns', 'act_9000000000']);
   const health = (await db.query<{ status: string; last_success_at: null; consecutive_failures: number }>(
     "SELECT status,last_success_at,consecutive_failures FROM pulse.source_health WHERE source='meta'",
@@ -111,8 +113,8 @@ test('spend failure stays unavailable even when the independent campaign read su
   assert.equal((await spendFacts(db, s, e, 'live', '2026-10-10', '2026-10-10', now)).sources[0]!.status, 'source unavailable');
   assert.equal((await readMetaCampaigns(db, s, e))[0]!.name, campaign.name);
   assert.deepEqual(logs, [
-    'Meta creatives read failed (http 400, meta 100/1487694 at catalogue after 0 ads).',
     'Ad spend meta failed (http 400, meta 100/1487694).',
+    'Meta creatives read failed (http 400, meta 100/1487694 at catalogue after 0 ads).',
   ]);
   assert.equal((await db.query<{ error_code: string }>('SELECT error_code FROM pulse.creative_jobs WHERE account_id=$1', [s.metaAdAccountId])).rows[0]!.error_code, 'http 400, meta 100/1487694 at catalogue after 0 ads');
   assert.ok(!logs.join('').includes('private') && !logs.join('').includes(e.META_ACCESS_TOKEN));

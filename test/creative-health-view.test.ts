@@ -26,13 +26,25 @@ test('only material reconciled gaps appear, and health diagnostics are escaped',
   assert.doesNotMatch(html, /<invalid>/);
 });
 
+test('creative health preserves the safe diagnostic and failing step unchanged', () => {
+  for (const step of ['catalogue', 'insights', 'backfill']) {
+    const error = `http 400, meta 100/1815001 at ${step}`;
+    const html = creativeHealthDetails({ ...health, error });
+    assert.ok(html.includes(`Creative read needs attention (${error}).`));
+    assert.match(html, /Stored data is retained/);
+  }
+});
+
 
 test('creative health supports other account timezones and reserves unsupported-account notice for currency', () => {
   for (const mode of ['live', 'sample'] as const) {
-    const html = creativeHealthDetails({ ...health, mode, error: 'unsupported_account' });
-    assert.match(html, /Creative insights need a GBP account\./);
-    assert.doesNotMatch(html, /GBP account using Europe\/London days/);
-    assert.match(html, /hourly reports are aligned to Europe\/London when the Meta account timezone differs/);
-    assert.match(html, /Reach, frequency and average play time keep Meta account days/);
+    for (const error of ['unsupported_account', 'unsupported_account at catalogue', 'unsupported_account at insights']) {
+      const html = creativeHealthDetails({ ...health, mode, error });
+      assert.ok(html.includes(`Creative read needs attention (${error}).`));
+      assert.match(html, /Creative insights need a GBP account\./);
+      assert.doesNotMatch(html, /GBP account using Europe\/London days/);
+      assert.match(html, /hourly reports are aligned to Europe\/London when the Meta account timezone differs/);
+      assert.match(html, /Reach, frequency and average play time keep Meta account days/);
+    }
   }
 });

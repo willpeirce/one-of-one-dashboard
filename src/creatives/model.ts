@@ -35,9 +35,14 @@ export interface CatalogueMedia extends Omit<MediaGroup, 'id' | 'mergedIntoId' |
   thumbnail: Uint8Array | null; poster: Uint8Array | null; frames: Uint8Array[];
 }
 export interface CatalogueEntry { ad: Omit<CreativeAd, 'mediaGroupId' | 'firstSpendDay'>; media: CatalogueMedia }
+export type StoredCatalogueAd = Pick<CreativeAd, 'id' | 'creativeId' | 'mediaGroupId'>;
+/** A list-only refresh preserves the stored creative fields and media group. */
+export interface CatalogueRefresh { ad: Pick<CreativeAd, 'id' | 'name' | 'status' | 'effectiveStatus' | 'lastSeen'>; media: null }
+export type CatalogueRead = CatalogueEntry | CatalogueRefresh;
 export interface CreativeReader {
   rememberStoredMedia?(keys: string[]): void;
-  readCatalogue(account: string, settings: import('../settings.js').Settings, now: Date): Promise<CatalogueEntry[]>;
+  rememberStoredAds?(ads: StoredCatalogueAd[]): void;
+  readCatalogue(account: string, settings: import('../settings.js').Settings, now: Date): Promise<CatalogueRead[]>;
   readInsights(account: string, from: string, to: string): Promise<AdInsight[]>;
   readFrequency?(account: string, adIds: string[], from: string, to: string): Promise<number | null>;
   videoSource(videoId: string): Promise<string>;

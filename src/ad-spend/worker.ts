@@ -7,7 +7,7 @@ import { liveReader, MetaSpend, type SpendReader } from './clients.js';
 import { MetaCreativeClient } from '../creatives/client.js';
 import { CreativeWorker } from '../creatives/worker.js';
 import type { CreativeReader } from '../creatives/model.js';
-import type { AdTransportOptions } from './http.js';
+import { adRequestLogLine, type AdTransportOptions } from './http.js';
 import { readJobs, recordCampaignSync, saveMetaCampaigns, saveSpend } from './store.js';
 export const SPEND_POLL_INTERVAL_MS = 30 * 60_000;
 export const SPEND_STALE_AFTER_MS = 3 * SPEND_POLL_INTERVAL_MS;
@@ -101,10 +101,7 @@ export class SpendWorker {
         ...this.options,
         log:
           this.options.log ??
-          ((entry) =>
-            console.info(
-              `Ad spend ${entry.source} request ${entry.status} (${entry.requestId ?? 'no request id'}).`,
-            )),
+          ((entry) => console.info(adRequestLogLine(entry))),
         beforeGoogleRead: async () => {
           const quota = await this.db.query<{ operations: number }>(
             `UPDATE pulse.ad_spend_jobs SET operations=CASE WHEN operations_day=$3::date THEN operations+1 ELSE 1 END,operations_day=$3 WHERE source=$1 AND account_id=$2 AND (operations_day IS DISTINCT FROM $3::date OR operations<200) RETURNING operations`,
@@ -185,7 +182,7 @@ export class SpendWorker {
       try {
         await new CreativeWorker(this.db, creativeReader).run(account, settings, now);
       } catch(error) {
-        console.error(`Meta creatives read failed (${adErrorCode(error, 'meta')} at catalogue).`);
+        console.error(`Meta creatives read failed (${adErrorCode(error, 'meta')} at catalogue after 0 ads).`);
       } finally {
         this.creativeRunning = false;
       }

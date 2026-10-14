@@ -6,7 +6,7 @@ import { AdError } from '../src/ad-spend/model.js';
 import { SpendWorker } from '../src/ad-spend/worker.js';
 import { MetaCreativeClient } from '../src/creatives/client.js';
 import type { AdInsight, CatalogueEntry, CreativeReader } from '../src/creatives/model.js';
-import { saveCatalogue, saveInsights } from '../src/creatives/store.js';
+import { creativeHealth, saveCatalogue, saveInsights } from '../src/creatives/store.js';
 import { CreativeWorker } from '../src/creatives/worker.js';
 import type { Database } from '../src/db.js';
 import { defaultSettings } from '../src/settings.js';
@@ -47,7 +47,7 @@ function insight(day: string): AdInsight {
   };
 }
 const reader = (readInsights: CreativeReader['readInsights'] = async () => []): CreativeReader => ({
-  readCatalogue: async () => [], readInsights, imageBytes: async () => new Uint8Array(), videoFrames: async () => [],
+  readCatalogue: async function* () { yield []; }, readInsights, imageBytes: async () => new Uint8Array(), videoFrames: async () => [],
   videoSource: async () => { throw new Error('unused'); },
 });
 async function snapshot(db: Database) {
@@ -94,10 +94,135 @@ test('the exact deleted-object list refusal names catalogue and leaves all saved
   assert.equal(frequencyReads, 0, 'a refused catalogue cannot write independent frequency results');
   assert.deepEqual(await snapshot(db), before);
   const job = (await db.query('SELECT error_code,last_catalogue_at,last_success_at FROM pulse.creative_jobs')).rows[0]!;
-  assert.deepEqual(job, { error_code: 'http 400, meta 100/1815001 at catalogue', last_catalogue_at: null, last_success_at: null });
-  assert.deepEqual(logs, ['Meta creatives read failed (http 400, meta 100/1815001 at catalogue).']);
+  assert.deepEqual(job, { error_code: 'http 400, meta 100/1815001 at catalogue after 0 ads', last_catalogue_at: null, last_success_at: null });
+  assert.deepEqual(logs, ['Meta creatives read failed (http 400, meta 100/1815001 at catalogue after 0 ads).']);
   assert.ok(!JSON.stringify([job, logs]).includes(refusal.error.message));
   assert.ok(!JSON.stringify([job, logs]).includes(credential));
+});
+
+test('completed catalogue pages remain visible after a later timeout and a fresh client resumes with list-only saved ads', { timeout: 120_000 }, async (t) => {
+  const db = await createTestDatabase();
+  t.after(() => db.close());
+  const credential = randomBytes(16).toString('hex');
+  const env = { META_ACCESS_TOKEN: credential };
+  const pageThreeStarted = deferred(), failPageThree = deferred();
+  const requests: { path: string; after: string | null; limit: string | null }[] = [], logs: string[] = [];
+  const expansions: { kind: string; index: number }[] = [];
+  let failing = true;
+  t.mock.method(console, 'error', (line: string) => logs.push(line));
+  const listed = Array.from({ length: 75 }, (_, offset) => {
+    const index = offset + 1;
+    return {
+      id: `invented-paged-ad-${index}`, name: `Invented paged ad ${index}`, status: 'ACTIVE', effective_status: 'ACTIVE',
+      created_time: earlier.toISOString(), adset: { id: 'invented-set', name: 'Invented UK audience' },
+      campaign: { id: 'invented-campaign', name: 'Invented UK campaign' }, creative: {
+        id: `invented-paged-creative-${index}`, image_hash: `invented-paged-image-${index}`, body: `Invented saved copy ${index}`,
+        effective_object_story_id: `invented-paged-story-${index}`, effective_instagram_media_id: `invented-paged-instagram-${index}`,
+        thumbnail_url: `https://media.fbcdn.net/invented-paged-media-${index}.jpg`,
+      },
+    };
+  });
+  const options = {
+    sleep: async () => {},
+    timeoutSignal: (_ms: number) => new AbortController().signal,
+    fetch: (async (input) => {
+      const url = new URL(String(input));
+      const path = url.pathname.split('/').at(-1)!;
+      requests.push({ path, after: url.searchParams.get('after'), limit: url.searchParams.get('limit') });
+      if (path === `act_${account}`) return response({ currency: 'GBP', timezone_name: 'Europe/London' });
+      if (path === 'ads') {
+        const cursor = url.searchParams.get('after');
+        if (cursor === 'invented-page-3' && failing) {
+          pageThreeStarted.resolve();
+          await failPageThree.promise;
+          throw new DOMException(credential, 'AbortError');
+        }
+        const start = cursor === 'invented-page-3' ? 50 : cursor === 'invented-page-2' ? 25 : 0;
+        const next = start === 0 ? 'invented-page-2' : start === 25 ? 'invented-page-3' : null;
+        return response({ data: listed.slice(start, start + 25).map(row => failing ? row : { ...row, name: `${row.name} refreshed`, status: 'PAUSED', effective_status: 'PAUSED' }),
+          ...(next ? { paging: { next: `https://graph.facebook.com/v25.0/act_${account}/ads?after=${next}`, cursors: { after: next } } } : {}) });
+      }
+      if (path === 'insights') return response({ data: [] });
+      const detail = /^invented-paged-(creative|story|instagram|media)-(\d+)(?:\.jpg)?$/.exec(path);
+      assert.ok(detail, 'Only invented catalogue enrichment is expected');
+      const kind = detail[1]!, index = Number(detail[2]);
+      expansions.push({ kind, index });
+      if (kind === 'creative') return response({ thumbnail_url: `https://media.fbcdn.net/invented-paged-media-${index}.jpg` });
+      if (kind === 'story') return response({ attachments: { data: [] }, permalink_url: `https://www.facebook.com/invented-paged-story-${index}` });
+      if (kind === 'instagram') return response({ permalink: `https://www.instagram.com/p/invented-paged-${index}/` });
+      return new Response(new Uint8Array([0xff, 0xd8, index]), { headers: { 'content-type': 'image/jpeg' } });
+    }) as typeof fetch,
+  };
+  const client = () => new MetaCreativeClient(new MetaSpend(credential, options), options);
+  const firstPass = new CreativeWorker(db, client()).run(account, settings(), now);
+  try {
+    await Promise.race([pageThreeStarted.promise, firstPass.then(() => { throw new Error('Catalogue stopped before requesting its third page'); })]);
+    assert.equal((await creativeHealth(db, settings(), env, now)).catalogueCount, 50, 'Source health sees committed pages while page three is still running');
+    assert.equal((await db.query('SELECT last_catalogue_at FROM pulse.creative_jobs')).rows[0]!.last_catalogue_at, null);
+    assert.equal(requests.filter(request => request.path === 'insights').length, 0);
+  } finally {
+    failPageThree.resolve();
+    await firstPass;
+  }
+  assert.deepEqual(requests.filter(request => request.path === 'ads' && request.after === 'invented-page-3').map(request => request.limit), ['25', '25', '25', '25', '10', '10', '10', '10']);
+  assert.equal((await db.query('SELECT * FROM pulse.ads')).rowCount, 50);
+  const job = (await db.query('SELECT error_code,last_catalogue_at,last_success_at,backfill_next::text FROM pulse.creative_jobs')).rows[0]!;
+  assert.deepEqual(job, { error_code: 'timeout at catalogue after 50 ads', last_catalogue_at: null, last_success_at: null, backfill_next: '2026-08-07' });
+  assert.deepEqual(logs, ['Meta creatives read failed (timeout at catalogue after 50 ads).']);
+  assert.ok(!JSON.stringify([job, logs]).includes(credential));
+  assert.equal(requests.filter(request => request.path === 'insights').length, 0, 'neither ordinary insights nor the independent frequency report run after catalogue failure');
+  const savedAd = (await db.query('SELECT * FROM pulse.ads WHERE ad_id=$1', [listed[0]!.id])).rows[0]!;
+  const savedMedia = (await db.query('SELECT * FROM pulse.media_groups ORDER BY id')).rows;
+  failing = false;
+  requests.length = 0;
+  expansions.length = 0;
+  const later = new Date(now.getTime() + 30 * 60_000);
+  await new CreativeWorker(db, client()).run(account, settings(), later);
+  assert.deepEqual(requests.filter(request => request.path === 'ads').map(({ after, limit }) => ({ after, limit })), [
+    { after: null, limit: '25' }, { after: 'invented-page-2', limit: '25' }, { after: 'invented-page-3', limit: '25' },
+  ]);
+  for (const kind of ['creative', 'story', 'instagram', 'media']) {
+    assert.deepEqual(expansions.filter(read => read.kind === kind).map(read => read.index), Array.from({ length: 25 }, (_, index) => index + 51), `${kind} reads only enrich the unsaved third page`);
+  }
+  assert.equal((await db.query('SELECT * FROM pulse.ads')).rowCount, 75);
+  const refreshed = (await db.query('SELECT * FROM pulse.ads WHERE ad_id=$1', [listed[0]!.id])).rows[0]!;
+  assert.deepEqual(withoutRefreshFields(refreshed), withoutRefreshFields(savedAd));
+  assert.equal(refreshed.name, `${listed[0]!.name} refreshed`);
+  assert.equal(refreshed.status, 'PAUSED');
+  assert.equal(new Date(refreshed.last_seen as string).toISOString(), later.toISOString());
+  assert.deepEqual((await db.query('SELECT * FROM pulse.media_groups WHERE id=ANY($1::text[]) ORDER BY id', [savedMedia.map(row => row.id)])).rows, savedMedia);
+  const completed = (await db.query('SELECT error_code,last_catalogue_at,backfill_next::text FROM pulse.creative_jobs')).rows[0]!;
+  assert.equal(completed.error_code, null);
+  assert.equal(new Date(completed.last_catalogue_at as string).toISOString(), later.toISOString());
+  assert.equal(completed.backfill_next, '2026-09-04');
+  const health = await creativeHealth(db, settings(), env, later);
+  assert.equal(health.catalogueCount, 75);
+  assert.equal(health.lastSuccessAt, later.toISOString());
+  assert.ok(health.completedDays > 0);
+  assert.equal(health.error, null);
+});
+
+test('a failed page transaction is not counted and partial catalogue progress still obeys the media cap', async (t) => {
+  const db = await createTestDatabase();
+  t.after(() => db.close());
+  await db.query('INSERT INTO pulse.creative_jobs(account_id,last_catalogue_at) VALUES($1,$2)', [account, earlier]);
+  const logs: string[] = [];
+  t.mock.method(console, 'error', (line: string) => logs.push(line));
+  let insightReads = 0;
+  const source = reader(async () => { insightReads++; return []; });
+  source.readCatalogue = async function* () {
+    yield [entry()];
+    // A repeated primary key with a new media identity fails after the first row in this page.
+    yield [entry('rolled-back'), { ...entry('collision'), media: { ...entry('collision').media, id: entry().media.id } }];
+  };
+  await new CreativeWorker(db, source).run(account, { ...settings(), creativeMediaCapMb: 1 / (1024 * 1024) }, now);
+  assert.deepEqual((await db.query('SELECT ad_id FROM pulse.ads')).rows, [{ ad_id: entry().ad.id }]);
+  assert.deepEqual((await db.query('SELECT id,thumbnail FROM pulse.media_groups')).rows, [{ id: entry().media.id, thumbnail: null }]);
+  const job = (await db.query('SELECT error_code,last_catalogue_at FROM pulse.creative_jobs')).rows[0]!;
+  assert.equal(job.error_code, 'unknown at catalogue after 1 ads');
+  assert.equal(new Date(job.last_catalogue_at as string).toISOString(), earlier.toISOString(), 'a partial pass does not advance the previous complete catalogue time');
+  assert.deepEqual(logs, ['Meta creatives read failed (unknown at catalogue after 1 ads).']);
+  assert.equal(insightReads, 0);
 });
 
 test('metadata-only catalogue refresh changes only list fields in the matching mode and account', async (t) => {
@@ -302,11 +427,11 @@ test('the existing spend guard skips one tick during a long creative pass and re
   const logs: string[] = [];
   t.mock.method(console, 'info', (line: string) => logs.push(line));
   const source = reader();
-  source.readCatalogue = async () => {
+  source.readCatalogue = async function* () {
     catalogueReads++;
     creativeStarted.resolve();
     await finishCreative.promise;
-    return [entry()];
+    yield [entry()];
   };
   const worker = new SpendWorker(db, env, {
     clock: () => clock, creativeReader: source,

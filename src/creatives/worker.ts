@@ -12,6 +12,7 @@ export class CreativeWorker {
   async run(account: string, settings: Settings, now = new Date()): Promise<void> {
     const today = ukToday(now), yesterday = addDays(today,-1);
     let step: 'catalogue' | 'insights' | 'backfill' = 'catalogue';
+    let savedAds = 0;
     try {
       await this.db.query('INSERT INTO pulse.creative_jobs(account_id) VALUES($1) ON CONFLICT DO NOTHING',[account]);
       const job = (await this.db.query<any>('SELECT *,backfill_next::text,nightly_day::text FROM pulse.creative_jobs WHERE account_id=$1',[account])).rows[0];
@@ -23,9 +24,12 @@ export class CreativeWorker {
         const known = await this.db.query<{ kind: string; media_key: string }>("SELECT kind,media_key FROM pulse.media_groups WHERE mode='live' AND account_id=$1",[account]);
         this.reader.rememberStoredMedia(known.rows.map(row => `${row.kind}:${row.media_key}`));
       }
-      await saveCatalogue(this.db,account,await this.reader.readCatalogue(account,settings,now),now);
+      for await (const page of this.reader.readCatalogue(account,settings,now)) {
+        await saveCatalogue(this.db,account,page,now);
+        savedAds += page.length;
+        await enforceMediaCap(this.db,account,settings.creativeMediaCapMb);
+      }
       await this.db.query('UPDATE pulse.creative_jobs SET last_catalogue_at=$2 WHERE account_id=$1',[account,now]);
-      await enforceMediaCap(this.db,account,settings.creativeMediaCapMb);
       step = 'insights';
       await saveInsights(this.db,account,yesterday,today,await this.reader.readInsights(account,yesterday,today),now);
       await this.db.query('UPDATE pulse.creative_jobs SET last_success_at=$2 WHERE account_id=$1',[account,now]);
@@ -46,7 +50,7 @@ export class CreativeWorker {
       }
       await this.db.query('UPDATE pulse.creative_jobs SET backfill_done=backfill_done OR backfill_next>$3::date,last_success_at=$2,error_code=NULL WHERE account_id=$1',[account,now,yesterday]);
     } catch(error) {
-      const code = `${adErrorCode(error,'meta')} at ${step}`;
+      const code = `${adErrorCode(error,'meta')} at ${step}${step === 'catalogue' ? ` after ${savedAds} ads` : ''}`;
       await this.db.query('UPDATE pulse.creative_jobs SET error_code=$2 WHERE account_id=$1',[account,code]).catch(()=>{});
       // The provider body and token are never persisted or passed to a logger.
       console.error(`Meta creatives read failed (${code}).`);

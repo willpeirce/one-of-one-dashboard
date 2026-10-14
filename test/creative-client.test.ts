@@ -16,15 +16,22 @@ const ad = (creative: string, values: Record<string, unknown> = {}) => ({ id: `i
   creative: { id: creative, thumbnail_url: 'https://scontent.xx.fbcdn.net/invented-64.jpg' }, ...values });
 function reader(route: (url: URL, init?: RequestInit) => unknown | Promise<unknown>, credential?: string) {
   const token = credential ?? `invented-${randomBytes(16).toString('hex')}`;
-  const requests: { url: URL; init?: RequestInit }[] = [], logs: unknown[] = [];
+  const requests: { url: URL; init?: RequestInit; timeoutMs?: number }[] = [], logs: unknown[] = [];
+  const timeouts = new WeakMap<AbortSignal, number>();
   const fetcher: typeof fetch = async (input, init) => {
-    const url = new URL(String(input)); requests.push({ url, init });
+    const url = new URL(String(input)); requests.push({ url, init, timeoutMs: init?.signal ? timeouts.get(init.signal) : undefined });
     const value = await route(url, init);
     if (value instanceof Response) return value;
     return new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json', 'x-fb-trace-id': token } });
   };
-  const options = { fetch: fetcher, sleep: async () => {}, log: (entry: unknown) => logs.push(entry) };
+  const options = { fetch: fetcher, sleep: async () => {}, log: (entry: unknown) => logs.push(entry),
+    timeoutSignal: (ms: number) => { const signal = new AbortController().signal; timeouts.set(signal, ms); return signal; } };
   return { client: new MetaCreativeClient(new MetaSpend(token, options), options), requests, token, logs };
+}
+async function collect(pages: AsyncIterable<CatalogueRead[]>): Promise<CatalogueRead[]> {
+  const entries: CatalogueRead[] = [];
+  for await (const page of pages) entries.push(...page);
+  return entries;
 }
 const account = { currency: 'GBP', timezone_name: 'Europe/London' };
 const picture = () => new Response(jpeg, { headers: { 'content-type': 'image/jpeg' } });
@@ -46,7 +53,7 @@ test('SHARE catalogue reads the object story and stores the explicitly requested
     if (url.pathname.endsWith('/invented-video')) return { title: 'Invented creator upload', length: 12.4, format: [{ width: 600, height: 800 }] };
     throw new Error('Unexpected invented request');
   });
-  const entries = detailed(await mock.client.readCatalogue('invented-account', settings, now));
+  const entries = detailed(await collect(mock.client.readCatalogue('invented-account', settings, now)));
   assert.equal(entries.length, 1);
   assert.equal(entries[0]!.media.key, 'invented-video');
   assert.equal(entries[0]!.media.kind, 'video');
@@ -61,7 +68,10 @@ test('SHARE catalogue reads the object story and stores the explicitly requested
   assert.ok(mock.requests.every(request => !request.url.pathname.endsWith('/invented-64.jpg')));
   assert.ok(mock.requests.every(request => request.init?.method === 'GET'));
   assert.ok(mock.requests.filter(request => request.url.hostname !== 'graph.facebook.com').every(request => !new Headers(request.init?.headers).has('authorization')));
-  const statuses = JSON.parse(mock.requests.find(request => request.url.pathname.endsWith('/ads'))!.url.searchParams.get('effective_status')!);
+  const listing = mock.requests.find(request => request.url.pathname.endsWith('/ads'))!;
+  assert.equal(listing.url.searchParams.get('limit'), '25'); assert.equal(listing.timeoutMs, 60_000);
+  assert.ok(mock.requests.filter(request => request.url.hostname === 'graph.facebook.com' && request !== listing).every(request => request.timeoutMs === 10_000), 'Metadata and media lookups retain ten-second timeouts');
+  const statuses = JSON.parse(listing.url.searchParams.get('effective_status')!);
   assert.deepEqual(statuses, ['ACTIVE', 'PAUSED', 'ARCHIVED', 'CAMPAIGN_PAUSED', 'ADSET_PAUSED', 'PENDING_REVIEW', 'DISAPPROVED', 'PREAPPROVED', 'PENDING_BILLING_INFO', 'IN_PROCESS', 'WITH_ISSUES']);
 });
 
@@ -76,13 +86,13 @@ test('refused SHARE reads retain their 600 picture with a refillable creative ke
       if (url.pathname.endsWith('/invented-denied')) return { object_type: 'SHARE', effective_object_story_id: 'invented-refused-story', thumbnail_url: 'https://scontent.xx.fbcdn.net/invented-600.jpg', link_url: `https://example.invalid/${encodeURIComponent(mock.token)}` };
       return new Response(JSON.stringify({ error: { code: 200, message: mock.token } }), { status: 403 });
     });
-    const first = detailed(await mock.client.readCatalogue('invented-account', settings, now));
+    const first = detailed(await collect(mock.client.readCatalogue('invented-account', settings, now)));
     assert.equal(first[0]!.media.key, 'creative:invented-denied');
     assert.deepEqual(first[0]!.media.thumbnail, jpeg);
     assert.equal(first[0]!.ad.facebookUrl, null);
     assert.equal(first[0]!.ad.linkUrl, null);
     const logs = captured.length;
-    await mock.client.readCatalogue('invented-account', settings, now);
+    await collect(mock.client.readCatalogue('invented-account', settings, now));
     assert.equal(captured.length, logs);
     assert.ok(!JSON.stringify([first, captured, mock.logs]).includes(mock.token));
   } finally { console.info = originalInfo; }
@@ -96,7 +106,7 @@ test('placement customisation has one primary hash and one alternate; duplicate 
     return { object_type: 'PHOTO', thumbnail_url: 'https://scontent.xx.fbcdn.net/invented-feed600.jpg',
       asset_feed_spec: { images: [{ hash: 'invented-first-hash' }, { hash: 'invented-second-hash' }] } };
   });
-  const entries = detailed(await mock.client.readCatalogue('invented-account', settings, now));
+  const entries = detailed(await collect(mock.client.readCatalogue('invented-account', settings, now)));
   assert.equal(entries[0]!.media.key, 'invented-first-hash');
   assert.deepEqual(entries[0]!.media.alternates, [{ kind: 'image', key: 'invented-second-hash' }]);
   assert.equal(entries[0]!.media, entries[1]!.media);
@@ -112,7 +122,7 @@ test('persisted groups update metadata without replenishing cap-evicted bytes on
     throw new Error('A stored group must not re-download media in the catalogue');
   });
   mock.client.rememberStoredMedia(['video:invented-video']);
-  const result = detailed(await mock.client.readCatalogue('invented-account', settings, now));
+  const result = detailed(await collect(mock.client.readCatalogue('invented-account', settings, now)));
   assert.equal(result[0]!.media.title, 'Invented updated title');
   assert.equal(result[0]!.media.thumbnail, null);
   assert.deepEqual(result[0]!.media.frames, []);
@@ -137,6 +147,7 @@ test('daily ad insights page, retain attribution actions and record the two-seco
   assert.equal(results[1]!.threeSecondPlays, 0); assert.equal(results[1]!.threeSecondSource, 'video_view');
   for (const request of mock.requests.filter(request => request.url.pathname.endsWith('/insights'))) {
     assert.equal(request.url.searchParams.get('level'), 'ad'); assert.equal(request.url.searchParams.get('time_increment'), '1');
+    assert.equal(request.timeoutMs, 60_000, 'Every daily insights page gets sixty seconds');
   }
 });
 
@@ -187,6 +198,7 @@ test('group frequency reads one deduplicated Meta account aggregate across the e
   assert.equal(requests.length, 1);
   const request = requests[0]!;
   assert.equal(request.init?.method, 'GET');
+  assert.equal(request.timeoutMs, 60_000, 'The exact frequency window gets sixty seconds');
   assert.equal(request.url.searchParams.get('fields'), 'impressions,reach,frequency');
   assert.equal(request.url.searchParams.get('level'), 'account');
   assert.equal(request.url.searchParams.has('time_increment'), false);
@@ -225,7 +237,7 @@ test('stored ads refresh from list rows only, while changed creatives and a clea
     if (url.pathname.endsWith(`/` + creativeId)) return { id: creativeId, image_hash: `hash-${creativeId}`, thumbnail_url: 'https://scontent.xx.fbcdn.net/invented-600.jpg' };
     throw new Error('Unexpected invented request');
   });
-  const first = detailed(await mock.client.readCatalogue('invented-account', settings, now));
+  const first = detailed(await collect(mock.client.readCatalogue('invented-account', settings, now)));
   assert.equal(first.length, 1);
   mock.client.rememberStoredAds([{ id: 'invented-stable-ad', creativeId, mediaGroupId: 'invented-group' }]);
   name = 'Invented renamed ad'; status = 'ACTIVE';
@@ -234,18 +246,18 @@ test('stored ads refresh from list rows only, while changed creatives and a clea
   const currentSettings = { ...settings, metaOwners: [{ campaignId: campaign.id, owner: 'ours' as const }] };
   let previous = mock.requests.length;
   const later = new Date(now.getTime() + 30 * 60_000);
-  const refreshed = await mock.client.readCatalogue('invented-account', currentSettings, later);
+  const refreshed = await collect(mock.client.readCatalogue('invented-account', currentSettings, later));
   assert.deepEqual(refreshed, [{ ad: { id: 'invented-stable-ad', name, status, effectiveStatus: status, lastSeen: later.toISOString(),
     adSetId: adset.id, adSetName: adset.name, campaignId: campaign.id, campaignName: campaign.name, owner: 'ours', market: 'us' }, media: null }]);
   assert.deepEqual(mock.requests.slice(previous).map(request => request.url.pathname.split('/').at(-1)), ['ads']);
   creativeId = 'invented-replacement'; previous = mock.requests.length;
-  const changed = detailed(await mock.client.readCatalogue('invented-account', currentSettings, later));
+  const changed = detailed(await collect(mock.client.readCatalogue('invented-account', currentSettings, later)));
   assert.equal(changed[0]!.ad.creativeId, creativeId);
   assert.ok(mock.requests.slice(previous).some(request => request.url.pathname.endsWith('/invented-replacement')));
   mock.client.rememberStoredAds([{ id: 'invented-stable-ad', creativeId, mediaGroupId: 'invented-group' }]);
-  assert.equal((await mock.client.readCatalogue('invented-account', currentSettings, later))[0]!.media, null);
+  assert.equal((await collect(mock.client.readCatalogue('invented-account', currentSettings, later)))[0]!.media, null);
   mock.client.rememberStoredAds([]); previous = mock.requests.length;
-  assert.ok(detailed(await mock.client.readCatalogue('invented-account', currentSettings, later))[0]!.media);
+  assert.ok(detailed(await collect(mock.client.readCatalogue('invented-account', currentSettings, later)))[0]!.media);
   assert.ok(mock.requests.slice(previous).some(request => request.url.pathname.endsWith('/invented-replacement')));
 });
 
@@ -262,7 +274,7 @@ test('distinct creative IDs sharing a listed image hash expand once and retain t
     if (url.pathname.endsWith('/invented-first')) return { ...listed[0]!.creative, thumbnail_url: 'https://scontent.xx.fbcdn.net/invented-shared-600.jpg' };
     throw new Error('The shared picture must expand once');
   });
-  const entries = detailed(await mock.client.readCatalogue('invented-account', settings, now));
+  const entries = detailed(await collect(mock.client.readCatalogue('invented-account', settings, now)));
   assert.equal(entries.length, 2); assert.equal(entries[0]!.media, entries[1]!.media);
   assert.equal(entries[1]!.ad.body, 'Invented second copy'); assert.equal(entries[1]!.ad.title, 'Invented second title');
   assert.equal(entries[1]!.ad.callToAction, 'LEARN_MORE'); assert.equal(entries[1]!.ad.linkUrl, 'https://example.invalid/second');
@@ -283,7 +295,7 @@ test('different SHARE stories pointing at one video expand once; a stored post p
     if (url.pathname.endsWith('/invented-shared-video/thumbnails')) return { data: [] };
     throw new Error('Unexpected duplicate creative expansion');
   });
-  const entries = detailed(await mock.client.readCatalogue('invented-account', settings, now));
+  const entries = detailed(await collect(mock.client.readCatalogue('invented-account', settings, now)));
   assert.equal(entries.length, 2); assert.equal(entries[0]!.media, entries[1]!.media);
   assert.equal(entries[1]!.ad.body, 'Invented second story copy');
   assert.equal(mock.requests.filter(request => /^\/v25\.0\/invented-(first|second)$/.test(request.url.pathname)).length, 1);
@@ -294,7 +306,7 @@ test('different SHARE stories pointing at one video expand once; a stored post p
     throw new Error('Stored post media must not expand or download');
   });
   stored.client.rememberStoredMedia(['image:post:invented-picture-post']);
-  const existing = detailed(await stored.client.readCatalogue('invented-account', settings, now));
+  const existing = detailed(await collect(stored.client.readCatalogue('invented-account', settings, now)));
   assert.equal(existing[0]!.media.key, 'post:invented-picture-post'); assert.equal(existing[0]!.media.thumbnail, null);
   assert.ok(stored.requests.every(request => !request.url.pathname.endsWith('/invented-post-creative') && request.url.hostname === 'graph.facebook.com'));
 });
@@ -318,13 +330,13 @@ test('any refused expansion among three ads falls back to nested fields and emit
         }
         return { thumbnail_url: `https://scontent.xx.fbcdn.net/${url.pathname.split('/').at(-1)}-600.jpg` };
       });
-      const entries = detailed(await mock.client.readCatalogue('invented-account', settings, now));
+      const entries = detailed(await collect(mock.client.readCatalogue('invented-account', settings, now)));
       assert.equal(entries.length, 3); assert.equal(entries[1]!.ad.body, 'Invented refused nested copy');
       assert.equal(entries[1]!.ad.title, 'Invented refused nested title'); assert.equal(entries[1]!.media.key, 'invented-refused-hash');
       assert.deepEqual(entries[1]!.media.thumbnail, jpeg);
       assert.ok(mock.requests.some(request => request.url.pathname.endsWith('/invented-refused-64.jpg')));
       assert.deepEqual(logs, ['1 creatives read at reduced detail']);
-      await mock.client.readCatalogue('invented-account', settings, now);
+      await collect(mock.client.readCatalogue('invented-account', settings, now));
       assert.deepEqual(logs, ['1 creatives read at reduced detail', '1 creatives read at reduced detail']);
       assert.ok(!JSON.stringify([entries, logs, mock.logs]).includes(mock.token));
     } finally { info.mock.restore(); }
@@ -339,6 +351,80 @@ test('ads without a creative are skipped without discarding valid catalogue rows
     if (url.pathname.endsWith('/invented-present')) return { image_hash: 'invented-present-hash', thumbnail_url: 'https://scontent.xx.fbcdn.net/invented-present-600.jpg' };
     throw new Error('A missing creative must not trigger a read');
   });
-  const entries = detailed(await mock.client.readCatalogue('invented-account', settings, now));
+  const entries = detailed(await collect(mock.client.readCatalogue('invented-account', settings, now)));
   assert.deepEqual(entries.map(entry => entry.ad.id), ['invented-ad-invented-present']);
+});
+
+test('catalogue pages arrive before the next list read and share creative, post and media caches across pages', async () => {
+  const paging = (after: string) => ({ next: 'https://graph.facebook.com/ignored-provider-url', cursors: { after } });
+  const nested = { id: 'invented-shared-creative', object_type: 'SHARE', effective_object_story_id: 'invented-shared-story', body: 'Invented original copy' };
+  const mock = reader(url => {
+    if (url.hostname !== 'graph.facebook.com') return picture();
+    if (url.pathname.endsWith('/act_invented-account')) return account;
+    if (url.pathname.endsWith('/ads')) {
+      if (!url.searchParams.has('after')) return { data: [ad(nested.id, { creative: nested })], paging: paging('invented-second-page') };
+      if (url.searchParams.get('after') === 'invented-second-page') return {
+        data: [ad(nested.id, { id: 'invented-second-ad', creative: nested })], paging: paging('invented-third-page'),
+      };
+      return { data: [ad('invented-other-creative', { creative: { ...nested, id: 'invented-other-creative', body: 'Invented other copy' } })] };
+    }
+    if (url.pathname.endsWith('/invented-shared-story')) return {
+      attachments: { data: [{ type: 'photo', media: { image: { src: 'https://scontent.xx.fbcdn.net/invented-story.jpg' } } }] },
+      permalink_url: 'https://www.facebook.com/invented-shared-story',
+    };
+    if (url.pathname.endsWith('/invented-shared-creative')) return { ...nested, thumbnail_url: 'https://scontent.xx.fbcdn.net/invented-shared-600.jpg' };
+    throw new Error('Unexpected duplicate enrichment');
+  });
+  const iterator = mock.client.readCatalogue('invented-account', settings, now)[Symbol.asyncIterator]();
+  const first = detailed((await iterator.next()).value!);
+  assert.equal(first.length, 1);
+  assert.equal(mock.requests.filter(request => request.url.pathname.endsWith('/ads')).length, 1, 'No later page is fetched before the consumer resumes');
+  const second = detailed((await iterator.next()).value!);
+  const third = detailed((await iterator.next()).value!);
+  assert.equal(second[0]!.media, first[0]!.media); assert.equal(third[0]!.media, first[0]!.media);
+  assert.equal(third[0]!.ad.body, 'Invented other copy');
+  assert.equal((await iterator.next()).done, true);
+  assert.equal(mock.requests.filter(request => request.url.pathname.endsWith('/invented-shared-story')).length, 1);
+  assert.equal(mock.requests.filter(request => request.url.pathname.endsWith('/invented-shared-creative')).length, 1);
+  assert.equal(mock.requests.filter(request => request.url.pathname.endsWith('/invented-other-creative')).length, 0);
+  assert.equal(mock.requests.filter(request => request.url.hostname !== 'graph.facebook.com').length, 1);
+  assert.deepEqual(mock.requests.filter(request => request.url.pathname.endsWith('/ads')).map(request => [request.url.searchParams.get('limit'), request.timeoutMs]),
+    [['25', 60_000], ['25', 60_000], ['25', 60_000]]);
+});
+
+test('reduced-detail counts accumulate across yielded pages and log once even if a later list page fails', async t => {
+  for (const fail of [false, true]) {
+    const logs: string[] = [];
+    const info = t.mock.method(console, 'info', (line: string) => logs.push(line));
+    try {
+      const mock = reader(url => {
+        if (url.hostname !== 'graph.facebook.com') return picture();
+        if (url.pathname.endsWith('/act_invented-account')) return account;
+        if (url.pathname.endsWith('/ads')) {
+          const cursor = url.searchParams.get('after');
+          if (cursor === 'invented-final-page') {
+            if (fail) throw new DOMException('Invented abort', 'AbortError');
+            return { data: [] };
+          }
+          const creativeId = cursor ? 'invented-second-refused' : 'invented-first-refused';
+          return { data: [ad(creativeId, { creative: {
+            id: creativeId, image_hash: `${creativeId}-hash`, thumbnail_url: 'https://scontent.xx.fbcdn.net/invented-default.jpg',
+          } })], paging: { next: 'https://graph.facebook.com/ignored-provider-url', cursors: { after: cursor ? 'invented-final-page' : 'invented-second-page' } } };
+        }
+        return new Response(JSON.stringify({ error: { code: 200 } }), { status: 403 });
+      });
+      const iterator = mock.client.readCatalogue('invented-account', settings, now)[Symbol.asyncIterator]();
+      assert.equal((await iterator.next()).value!.length, 1);
+      assert.equal((await iterator.next()).value!.length, 1);
+      assert.deepEqual(logs, [], 'The count is for the whole pass, not each page');
+      if (fail) await assert.rejects(iterator.next(), error => error instanceof AdError && error.code === 'timeout');
+      else {
+        assert.deepEqual((await iterator.next()).value, []);
+        assert.equal((await iterator.next()).done, true);
+      }
+      assert.deepEqual(logs, ['2 creatives read at reduced detail']);
+      assert.equal((await iterator.next()).done, true);
+      assert.equal(logs.length, 1);
+    } finally { info.mock.restore(); }
+  }
 });

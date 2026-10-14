@@ -5,7 +5,7 @@ import { MetaSpend, parseMeta } from '../src/ad-spend/clients.js';
 import { AdError } from '../src/ad-spend/model.js';
 import { MetaCreativeClient } from '../src/creatives/client.js';
 import { defaultSettings } from '../src/settings.js';
-import type { AdInsight } from '../src/creatives/model.js';
+import type { AdInsight, CatalogueRead } from '../src/creatives/model.js';
 
 // Every identifier, date, number and API response in these tests is invented.
 const accountId = 'invented-clock-account';
@@ -33,10 +33,12 @@ function daily(day: string, adId = 'invented-clock-ad'): Record<string, unknown>
     spend: '9999', impressions: '9999', actions: action(99, 'omni_purchase'), action_values: action(9999, 'omni_purchase') };
 }
 function mock(zone: string, dailyRows: Record<string, unknown>[], hourlyRows: Record<string, unknown>[], currency = 'GBP') {
-  const requests: { url: URL; method: string | undefined }[] = [], logs: unknown[] = [];
+  const requests: { url: URL; method: string | undefined; timeoutMs: number | undefined }[] = [], logs: unknown[] = [];
+  const timeouts = new WeakMap<AbortSignal, number>();
   const token = `invented-${randomBytes(16).toString('hex')}`;
-  const options = { sleep: async () => {}, log: (entry: unknown) => logs.push(entry), fetch: (async (input, init) => {
-    const url = new URL(String(input)); requests.push({ url, method: init?.method });
+  const options = { sleep: async () => {}, log: (entry: unknown) => logs.push(entry),
+    timeoutSignal: (ms: number) => { const signal = new AbortController().signal; timeouts.set(signal, ms); return signal; }, fetch: (async (input, init) => {
+    const url = new URL(String(input)); requests.push({ url, method: init?.method, timeoutMs: init?.signal ? timeouts.get(init.signal) : undefined });
     let body: unknown;
     if (url.pathname.endsWith(`/act_${accountId}`)) body = { currency, timezone_name: zone };
     else if (url.pathname.endsWith('/ads')) body = { data: [] };
@@ -64,9 +66,11 @@ function assertSpendAlignment(hourlyRows: Record<string, unknown>[], insights: A
   }
   assert.deepEqual([...ads].sort(), [...adSets].sort(), 'Ad-day sums use the same UK boundaries as the hero’s Meta ad-set spend');
 }
-function assertClockRequests(requests: { url: URL }[], from: string, to: string, paddedFrom: string, paddedTo: string) {
+function assertClockRequests(requests: { url: URL; timeoutMs: number | undefined }[], from: string, to: string, paddedFrom: string, paddedTo: string) {
   const reports = requests.filter(request => request.url.pathname.endsWith('/insights'));
   assert.equal(reports.length, 2, 'One daily audience read and one hourly additive read');
+  assert.ok(reports.every(request => request.timeoutMs === 60_000), 'Daily and hourly insights both get sixty seconds');
+  assert.equal(requests.find(request => request.url.pathname.endsWith(`/act_${accountId}`))!.timeoutMs, 10_000);
   const hourlyRequest = reports.find(request => request.url.searchParams.has('breakdowns'))!.url;
   const dailyRequest = reports.find(request => !request.url.searchParams.has('breakdowns'))!.url;
   assert.equal(hourlyRequest.searchParams.get('breakdowns'), 'hourly_stats_aggregated_by_advertiser_time_zone');
@@ -155,6 +159,7 @@ test('Europe/London keeps the single daily-report path and account metadata is c
   assert.equal(result.length, 1); assertAdditive(result[0]!, 1);
   const report = api.requests.filter(request => request.url.pathname.endsWith('/insights'));
   assert.equal(report.length, 1); assert.equal(report[0]!.url.searchParams.has('breakdowns'), false);
+  assert.equal(report[0]!.timeoutMs, 60_000);
   assert.equal(report[0]!.url.searchParams.get('time_increment'), '1');
   assert.equal(result[0]!.reach, 444); assert.equal(result[0]!.frequency, 2.25); assert.equal(result[0]!.averagePlayTime, 4.5);
   await api.client.readInsights(accountId, '2026-10-25', '2026-10-25');
@@ -163,8 +168,11 @@ test('Europe/London keeps the single daily-report path and account metadata is c
 
 test('GBP GMT catalogue and exact frequency reads are allowed, with frequency retaining account-day dates', async () => {
   const api = mock('GMT', [], []);
-  assert.deepEqual(await api.client.readCatalogue(accountId, defaultSettings(), new Date('2026-10-13T12:00:00Z')), []);
+  const entries: CatalogueRead[] = [];
+  for await (const page of api.client.readCatalogue(accountId, defaultSettings(), new Date('2026-10-13T12:00:00Z'))) entries.push(...page);
+  assert.deepEqual(entries, []);
   assert.equal(await api.client.readFrequency(accountId, ['invented-clock-ad'], '2026-10-07', '2026-10-13'), 3.1);
+  assert.equal(api.requests.find(request => request.url.pathname.endsWith('/insights'))!.timeoutMs, 60_000);
   const report = api.requests.find(request => request.url.pathname.endsWith('/insights'))!.url;
   assert.equal(report.searchParams.get('level'), 'account'); assert.equal(report.searchParams.has('breakdowns'), false);
   assert.equal(report.searchParams.has('time_increment'), false);

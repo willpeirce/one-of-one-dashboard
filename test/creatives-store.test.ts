@@ -19,7 +19,7 @@ function entry(id = 'invented-video', title = 'Invented unboxing', length = 18):
 function insight(adId:string,day='2026-10-12',spend=100): AdInsight {
   return {adId,adSetId:'invented-set',day,spend,impressions:1000,reach:300,frequency:3.333,linkClicks:50,threeSecondPlays:200,threeSecondSource:'video_view',plays:500,thruPlays:80,plays25:180,plays50:100,plays75:60,plays100:40,averagePlayTime:8,addsToCart:20,purchases:7,purchaseValue:350};
 }
-const reader = (readInsights:CreativeReader['readInsights']): CreativeReader => ({ readCatalogue:async()=>[],readInsights,videoSource:async()=>{throw new Error('unused');},imageBytes:async()=>new Uint8Array(),videoFrames:async()=>[] });
+const reader = (readInsights:CreativeReader['readInsights']): CreativeReader => ({ readCatalogue:async function*(){yield [];},readInsights,videoSource:async()=>{throw new Error('unused');},imageBytes:async()=>new Uint8Array(),videoFrames:async()=>[] });
 
 test('Auto_Cropped titles and durations merge once; a manual split survives refresh and supports audited undo', async()=>{
   const db=await createTestDatabase();
@@ -141,7 +141,7 @@ test('the spend worker refreshes creative status on its existing 30-minute sched
     await db.query('INSERT INTO pulse.settings(values) VALUES($1)',[JSON.stringify({...defaultSettings(),metaAdAccountId:'900000000999'})]);
     const source=reader(async()=>[]);
     source.rememberStoredMedia=keys=>known.push(keys);
-    source.readCatalogue=async()=>{reads++;const row=entry();row.ad.effectiveStatus=reads===1?'ACTIVE':'PAUSED';return [row];};
+    source.readCatalogue=async function*(){reads++;const row=entry();row.ad.effectiveStatus=reads===1?'ACTIVE':'PAUSED';yield [row];};
     const worker=new SpendWorker(db,env,{clock:()=>clock,readers:{meta:{read:async()=>[]}},creativeReader:source});
     await worker.tick('meta');assert.equal(reads,1);assert.deepEqual(known,[[]]);
     clock=new Date(now.getTime()+60_000);await worker.tick('meta');assert.equal(reads,1);

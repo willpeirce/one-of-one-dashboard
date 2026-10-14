@@ -78,9 +78,9 @@ test('campaign and creative catalogue failures follow committed spend, preserve 
   assert.deepEqual(await readMetaCampaigns(db, s, e), before);
   assert.deepEqual(logs, [
     'Meta campaigns read failed (http 400, meta 100/1487694).',
-    'Meta creatives read failed (http 400, meta 100/1487694 at catalogue).',
+    'Meta creatives read failed (http 400, meta 100/1487694 at catalogue after 0 ads).',
   ]);
-  assert.equal((await db.query<{ error_code: string }>('SELECT error_code FROM pulse.creative_jobs WHERE account_id=$1', [s.metaAdAccountId])).rows[0]!.error_code, 'http 400, meta 100/1487694 at catalogue');
+  assert.equal((await db.query<{ error_code: string }>('SELECT error_code FROM pulse.creative_jobs WHERE account_id=$1', [s.metaAdAccountId])).rows[0]!.error_code, 'http 400, meta 100/1487694 at catalogue after 0 ads');
   assert.ok(!logs.join('').includes('private') && !logs.join('').includes('https://') && !logs.join('').includes(s.metaAdAccountId));
 });
 
@@ -111,10 +111,10 @@ test('spend failure stays unavailable even when the independent campaign read su
   assert.equal((await spendFacts(db, s, e, 'live', '2026-10-10', '2026-10-10', now)).sources[0]!.status, 'source unavailable');
   assert.equal((await readMetaCampaigns(db, s, e))[0]!.name, campaign.name);
   assert.deepEqual(logs, [
-    'Meta creatives read failed (http 400, meta 100/1487694 at catalogue).',
+    'Meta creatives read failed (http 400, meta 100/1487694 at catalogue after 0 ads).',
     'Ad spend meta failed (http 400, meta 100/1487694).',
   ]);
-  assert.equal((await db.query<{ error_code: string }>('SELECT error_code FROM pulse.creative_jobs WHERE account_id=$1', [s.metaAdAccountId])).rows[0]!.error_code, 'http 400, meta 100/1487694 at catalogue');
+  assert.equal((await db.query<{ error_code: string }>('SELECT error_code FROM pulse.creative_jobs WHERE account_id=$1', [s.metaAdAccountId])).rows[0]!.error_code, 'http 400, meta 100/1487694 at catalogue after 0 ads');
   assert.ok(!logs.join('').includes('private') && !logs.join('').includes(e.META_ACCESS_TOKEN));
 });
 

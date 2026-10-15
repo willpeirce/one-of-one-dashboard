@@ -65,6 +65,10 @@ test('shipping refunds reduce the refund UK day even for an earlier order and ne
   const current = { ...earlier, id: 'gid://shopify/Order/990002', day: '2026-09-30', shippingPence: 0, refunds: [] };
   const hero = margin([earlier, current]);
   assert.equal(hero.net.n, 100); assert.equal(hero.profit.n, 61);
+  assert.equal(hero.contribution.n, 81);
+  assert.deepEqual(hero.contribution.d.extra!.slice(0, 3), [
+    ['Net sales', '£100.00'], ['Shipping income net of tax', '£0.00'], ['Shipping refunds', '£2.00'],
+  ]);
   assert.match(hero.margin.d.extra!.find(([label]) => label === 'Shipping charged')![1], /^-£2.00/);
   const before = margin([earlier], '2026-09-28');
   assert.equal(before.net.n, 100); assert.equal(before.profit.n, 68);
@@ -81,6 +85,7 @@ test('unpaid orders add neither net sales nor margin shipping, costs or fees', a
   const baseline = margin([paid]), withUnpaid = margin([paid, ...unpaid]);
   assert.deepEqual(withUnpaid.margin, baseline.margin);
   assert.deepEqual(withUnpaid.profit, baseline.profit);
+  assert.deepEqual(withUnpaid.contribution, baseline.contribution);
   assert.equal(withUnpaid.net.n, baseline.net.n);
 });
 

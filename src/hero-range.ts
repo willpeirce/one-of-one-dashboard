@@ -1,6 +1,7 @@
 import type { Detail, HeroMetric, HeroPeriod, State, Zone } from './dashboard-types.js';
 import type { SourceId } from './sources.js';
 import { profitAndMargin } from './profit.js';
+import { contributionMetric } from './contribution.js';
 import { formatNumber, formatPounds } from './money.js';
 
 const DAY = 86_400_000;
@@ -195,8 +196,11 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
   const ratioComparison = (value: number, base: number | null): string => base === null ? 'no earlier days to compare' : `${one ? '7-day avg' : `prev ${n} days`} ${formatPounds(base)}${!partial && base ? ` · ${value >= base ? '+' : '−'}${percent(value, base)}%` : ''}`;
   const cr = metrics.cr(t);
   const roas = metrics.roas(t);
-  const margin = metrics.margin(t);
-  const profit = profitAndMargin({ netSales: t.net, landedCost: t.net * 0.25, adSpend: t.spend }).profit;
+  const result = profitAndMargin({ netSales: t.net, landedCost: t.net * 0.25, adSpend: t.spend });
+  const { profit, margin } = result;
+  const sampleWaterfall: [string, string][] = [['Net sales', formatPounds(t.net)],
+    ['Contribution', formatPounds(result.contribution)], ['Ad spend', formatPounds(t.spend)],
+    ['After ad spend', formatPounds(result.contribution - t.spend)], ['Net profit', formatPounds(profit)]];
   const geoUnknown = selected.some((row) => row.date === '2026-09-22' || row.date === '2026-09-23');
   const marketRates = geoUnknown ? 'UK unknown · US unknown'
     : `UK ${rounded(100 * divide(t.uk, t.ukS), 1)}% · US ${rounded(100 * divide(t.us, t.usS), 1)}%`;
@@ -269,13 +273,22 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
     margin: metric({ n: margin, state: 'est', suf: '%', dp: 1, ss: 'sample estimate · costs model not built',
       d: detail('margin', { hs: '%', rule: `No bar until the costs are real. At ${formatNumber(roas, 2)}× ROAS the true number may be near zero.`,
         src: 'Shopify net sales and orders, knowledge/costs.md, Meta + Google + TikTok spend',
-        why: `Sample only. Assumes non-ad costs at 25% of net sales until knowledge/costs.md is filled: 1 − ${money(t.spend)} ÷ ${money(t.net)} − 25% = ${Math.round(margin)}%.` }),
+        why: `Sample only. Assumes non-ad costs at 25% of net sales until knowledge/costs.md is filled: 1 − ${money(t.spend)} ÷ ${money(t.net)} − 25% = ${Math.round(margin)}%.`, extra: sampleWaterfall }),
     }, ['shopify', 'meta', 'google-ads', 'github-hq']),
+    contribution: contributionMetric({ result,
+      net: metric({ n: t.net, state: 'est', ss: '', unavailable: selected.some(row => row.netKnown === false),
+        d: { why: '', rule: '', src: `Shopify sample data and invented costs · UK days ${when}` } }, ['shopify']),
+      orders: selected.some(row => row.countsKnown === false) ? null : t.o,
+      components: [['Net sales', formatPounds(t.net)], ['Shipping income net of tax', '£0.00'], ['Shipping refunds', '£0.00'],
+        ['Landed cost', `${formatPounds(t.net * 0.25)} · sample assumption`], ['Fulfilment', '£0.00'], ['Payment fees', '£0.00']],
+      afterAds: formatPounds(result.contribution - t.spend), omitted: [], soFar: partial,
+      rule: 'Sample only. Invented non-ad costs are 25% of net sales until known costs replace this preview.',
+    }),
     profit: metric({ n: profit, state: 'est', pre: '£', dp: 2, ss: 'sample estimate · costs model not built',
       d: { rule: 'Sample only. Assumes non-ad costs at 25% of net sales until known costs replace this preview.',
         src: 'Shopify net sales and orders, knowledge/costs.md, Meta + Google + TikTok spend',
         why: `Sample only. Net sales less ad spend and assumed non-ad costs of 25%: ${formatPounds(profit)}. This is the same pound total used to calculate net margin.`,
-        extra: [['Net profit', formatPounds(profit)]],
+        extra: sampleWaterfall,
       },
     }, ['shopify', 'meta', 'google-ads', 'github-hq']),
     ukcpo: cpo('ukcpo', 'UK'), uscpo: cpo('uscpo', 'US'),

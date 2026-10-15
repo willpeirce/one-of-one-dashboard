@@ -21,7 +21,7 @@ export async function installMarketUpdateHook(context: BrowserContext): Promise<
 export async function checkMarketHero(page: Page, snapshot: DashboardSnapshot, width: number): Promise<void> {
   const checkView = async (period: HeroPeriod, market: HeroMarket) => {
     const model = market === 'all' ? period : period.markets![market];
-    const expected = Object.fromEntries((['net', 'orders', 'aov', 'cac', 'cr', 'spend', 'roas', 'margin', 'profit'] as const)
+    const expected = Object.fromEntries((['net', 'orders', 'aov', 'cac', 'cr', 'spend', 'roas', 'margin', 'contribution', 'profit'] as const)
       .map(key => [key, model[key].unavailable ? model[key].unavailableLabel ?? 'No data' : formatMetricNumber(model[key].n, model[key])]));
     await page.waitForFunction(values => Object.entries(values).every(([key, value]) => document.querySelector(`#hero [data-k="${key}"] .sv`)?.textContent === value), expected);
     assert.equal(await page.locator('#eyebrow').textContent(), model.eyebrow);
@@ -30,6 +30,12 @@ export async function checkMarketHero(page: Page, snapshot: DashboardSnapshot, w
     await page.locator('#hero [data-k="net"]').click();
     assert.match(await page.locator('#sh-extra').textContent() ?? '', /Total sales \(incl\. shipping and tax\)/);
     if (!model.grossUnavailable) assert.ok((await page.locator('#sh-extra').textContent() ?? '').includes(formatPounds(model.gross)));
+    await page.locator('#sh-x').click();
+    assert.equal(await page.locator('#hero [data-k="contribution"] .ss').innerText(), model.contribution.ss);
+    assert.doesNotMatch(model.contribution.ss, /before overheads|store-wide/);
+    await page.locator('#hero [data-k="contribution"]').click();
+    assert.equal(await page.locator('#sh-title').innerText(), 'Contribution');
+    assert.deepEqual(await page.locator('#sh-extra dd').allTextContents(), model.contribution.d.extra!.map(([, value]) => value));
     await page.locator('#sh-x').click();
     assert.equal(await page.locator('#market [aria-selected="true"]').getAttribute('data-market'), market);
     assert.equal(await page.locator('[data-k="ukcpo"]').isVisible(), market !== 'us');
@@ -72,8 +78,16 @@ export async function checkMarketHero(page: Page, snapshot: DashboardSnapshot, w
     assert.equal(heroRequests, 0, 'market taps use views already in the snapshot');
     const zero = structuredClone(snapshot); zero.generatedAt = new Date(Date.parse(snapshot.generatedAt) + 500).toISOString();
     zero.hero.today.markets!.us.gross = 0; zero.hero.today.markets!.us.grossUnavailable = false;
+    const updated = zero.hero.today.markets!.us.contribution;
+    updated.n += 5;
+    updated.d.extra = updated.d.extra!.map(([label, value]) => [label, label === 'Contribution' ? formatPounds(updated.n) : value]);
+    await page.locator('#hero [data-k="contribution"]').click();
     await page.evaluate(next => (window as unknown as { pulseMarketStream: EventSource }).pulseMarketStream.dispatchEvent(new MessageEvent('dashboard', { data: JSON.stringify(next) })), zero);
     await page.waitForFunction(() => document.querySelector('#hero .gross')?.textContent === 'Total £0.00');
+    assert.equal(await page.locator('#hero [data-k="contribution"] .sv').innerText(), formatPounds(updated.n));
+    assert.equal(await page.locator('#sh-title').innerText(), 'Contribution');
+    assert.equal(await page.locator('#sh-extra dt:text-is("Contribution") + dd').innerText(), formatPounds(updated.n));
+    await page.locator('#sh-x').click();
     await page.locator('[data-period="7d"]').click();
     await checkView(snapshot.hero['7d'], 'us');
     const replay = structuredClone(snapshot);

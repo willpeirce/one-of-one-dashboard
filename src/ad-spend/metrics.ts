@@ -5,6 +5,7 @@ import { costOrder, type ShopifyCost } from '../shopify/costs.js';
 import { isFreeOrder, paidOrder, type Order } from '../shopify/model.js';
 import { overheadsForPeriod, sampleOverheads } from '../overheads.js';
 import { profitAndMargin } from '../profit.js';
+import { contributionMetric } from '../contribution.js';
 import { formatNumber, formatPounds } from '../money.js';
 import { adNames, decimalMicros, type AdSource } from './model.js';
 import type { SpendFacts } from './store.js';
@@ -243,6 +244,20 @@ export function applySpend(
     landedCost: landed / 100, fulfilment: fulfilment / 100,
     paymentFees: fees / 100, adSpend: total, overheads: overheadTotal,
   });
+  const afterAds = `${formatPounds(result.contribution - total)}${gaps.length ? ` · ${gapLines(gaps, 'spend')}` : !available ? ' · ad spend unavailable' : ''}`;
+  hero.contribution = contributionMetric({ result, net: hero.net,
+    orders: hero.orders.unavailable || hero.aov.unavailable || inputs.orderDetailsFrom && from < inputs.orderDetailsFrom ? null : hero.orders.n,
+    components: [
+      ['Net sales', hero.net.unavailable ? 'Unknown' : formatPounds(hero.net.n)],
+      ['Shipping income net of tax', formatPounds(shippingNet / 100)],
+      ['Shipping refunds', `${formatPounds(shippingRefunds / 100)}${missingShippingRefunds ? '; older refund detail awaiting refresh' : ''}`],
+      ['Landed cost', `${formatPounds(landed / 100)}${missingLanded ? `; unknown costs on ${formatNumber(missingLanded)} orders left out` : ''}`],
+      ['Fulfilment', `${formatPounds(fulfilment / 100)}${missingFulfilment ? `; ${formatNumber(missingFulfilment)} unknown orders left out` : ''}`],
+      ['Payment fees', settings.paymentFeePercent === null ? 'Not set; left out' : `${formatPounds(fees / 100)} · Settings percentage of net sales`],
+    ],
+    afterAds, omitted: omitted.filter(item => item !== 'overheads'), soFar: to === today,
+    rule: 'Shipping income is added net of tax because fulfilment includes postage; shipping refunds are deducted net of tax on their refund UK day. Discounts are already deducted in net sales. The same paid orders as net sales supply costs; unpaid, cancelled and test orders are excluded. Unknown costs and older shipping refund detail awaiting refresh are named and left out. No unobserved stock returns or fee refunds are assumed.',
+  });
   hero.margin = {
     ...hero.margin,
     unavailableLabel: '—',
@@ -261,7 +276,7 @@ export function applySpend(
       rule: `Monthly overhead items are spread evenly over each calendar month's days; today uses the elapsed fraction of the real UK day. ${marketView ? 'Store-wide: overheads are not split by market until the costs sheet is.' : 'Margin is after overheads.'} Shipping income is added net of tax because fulfilment includes postage; shipping refunds are deducted net of tax on their refund UK day. Net sales remains the divisor and the payment-fee basis. The same paid orders as net sales supply shipping income and costs; unpaid, cancelled and test orders are excluded. Discounts are already deducted in Shopify net sales, so are not subtracted twice. Unknown costs and older shipping refund detail awaiting refresh are named and left out. Item refunds reduce sales on their UK day; no unobserved stock returns or fee refunds are assumed.`,
       src: label,
       extra: [
-        ...split,
+        ['Net sales', formatPounds(hero.net.n)],
         [
           'Landed costs',
           `${formatPounds(landed / 100)}${missingLanded ? `; unknown costs on ${formatNumber(missingLanded)} orders left out` : ''}`,
@@ -277,9 +292,14 @@ export function applySpend(
             ? 'Not set; left out'
             : `${formatPounds(fees / 100)} · Settings percentage of net sales`,
         ],
+        ['Contribution', formatPounds(result.contribution)],
+        ['Ad spend', formatPounds(total)],
+        ['After ad spend', afterAds],
         ...overheadRows,
         ['Discounts', 'Already deducted in net sales'],
         ['Left out', omitted.join(', ') || 'None of these components'],
+        ...split,
+        ['Net profit', formatPounds(result.profit)],
       ],
     },
   };
@@ -293,7 +313,6 @@ export function applySpend(
     d: {
       ...hero.margin.d,
       why: `Net profit is net sales plus shipping income net of tax, less shipping refunds, less available landed costs, fulfilment, payment fees and all counted ad spend${marketView ? '' : ' and overheads'}. ${marketView ? 'Store-wide: overheads are not split by market until the costs sheet is.' : 'Profit is after overheads.'} Shipping income is added because fulfilment includes postage. This is the same pound total used to calculate net margin.`,
-      extra: [...hero.margin.d.extra!, ['Net profit', formatPounds(result.profit)]],
     },
   };
   const meta = spend.sources.find(source => source.source === 'meta');

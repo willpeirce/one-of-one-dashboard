@@ -443,9 +443,11 @@ button[disabled]{cursor:not-allowed}.act[disabled]{opacity:.5}
 .hero-controls{display:flex;flex-wrap:wrap;gap:8px;align-items:start;grid-column:1/-1}
 .hero-controls .seg{margin-bottom:12px}
 #market{flex-shrink:0}
-.profit-line{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px;border:1px solid var(--line);border-radius:var(--r2);padding:10px 14px;background:var(--glass);color:var(--ink);cursor:pointer;text-align:left}
+.profit-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.profit-line{display:flex;flex-wrap:wrap;align-content:start;align-items:center;gap:8px;min-width:0;border:1px solid var(--line);border-radius:var(--r2);padding:10px 14px;background:var(--glass);color:var(--ink);cursor:pointer;text-align:left;overflow-wrap:anywhere}
 .profit-line .sv{font-size:20px}
-.profit-line .ss{flex-basis:100%;text-align:right}
+.profit-line .sample-label{flex-basis:100%;margin:0}
+.profit-line .ss{flex-basis:100%;white-space:pre-line}
 .tile.dial[data-src="meta"] .wm{opacity:.15}
 @media (max-width:760px){.hero-controls{display:block}#market{width:max-content;min-width:180px}.hero-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 #hero .profit-line[data-state="warn"]{border-color:var(--warn);box-shadow:inset 4px 0 0 var(--warn)}

@@ -7,6 +7,7 @@ import { profitAndMargin } from '../src/profit.js';
 import { defaultSettings } from '../src/settings.js';
 import { cleanOrder, type Order } from '../src/shopify/model.js';
 import { fixture } from '../src/shopify/sample.js';
+import { formatNumber, formatPounds } from '../src/money.js';
 
 test('one unrounded profit total supplies margin without changing the net-sales divisor', () => {
   const result = profitAndMargin({ netSales: 123.45, shippingIncome: 6.25, landedCost: 18.75,
@@ -16,6 +17,16 @@ test('one unrounded profit total supplies margin without changing the net-sales 
   assert.equal(result.margin, 100 * expected / 123.45);
   assert.equal(profitAndMargin({ netSales: 0, adSpend: 5 }).margin, 0);
   assert.equal(profitAndMargin({ netSales: 0, adSpend: 5 }).profit, -5);
+});
+
+test('contribution deducts each non-ad cost once and profit is contribution less ads and overheads', () => {
+  const result = profitAndMargin({ netSales: 120, shippingIncome: 8, shippingRefunds: 3,
+    landedCost: 20, fulfilment: 9, paymentFees: 4, adSpend: 15, overheads: 6 });
+  assert.equal(result.contribution, 92);
+  assert.equal(result.contributionMargin, 100 * 92 / 120);
+  assert.equal(result.profit, result.contribution - 15 - 6);
+  assert.equal(profitAndMargin({ netSales: 0, fulfilment: 5 }).contributionMargin, null);
+  assert.equal(profitAndMargin({ netSales: -20, fulfilment: 5 }).contributionMargin, 125);
 });
 
 test('profit equals the margin numerator for every period and All, UK and US', async (t) => {
@@ -63,6 +74,23 @@ test('profit equals the margin numerator for every period and All, UK and US', a
     const perDayFulfilment = market === 'all' ? 12 : market === 'uk' ? 5 : 7;
     const perDaySpend = market === 'all' ? 53 : market === 'uk' ? 20 : 30;
     const expected = (perDayNet + perDayShipping - perDayLanded - perDayFulfilment - perDayNet * 0.02 - perDaySpend) * dates.length - overhead;
+    const contribution = (perDayNet + perDayShipping - perDayLanded - perDayFulfilment - perDayNet * 0.02) * dates.length;
+    assert.ok(Math.abs(hero.contribution.n - contribution) < 1e-10);
+    assert.ok(Math.abs(hero.profit.n - (hero.contribution.n - hero.spend.n - overhead)) < 1e-10);
+    assert.equal(hero.contribution.ss.split('\n')[0], `${formatNumber(100 * contribution / hero.net.n, 0)}% of net sales · ${formatPounds(contribution / hero.orders.n)} an order`);
+    assert.equal(hero.contribution.state, 'est');
+    assert.equal(hero.contribution.unavailable, false);
+    assert.equal(hero.contribution.mode, 'live');
+    assert.deepEqual(hero.contribution.source, ['shopify']);
+    assert.doesNotMatch(hero.contribution.ss, /overheads|store-wide|ad spend/i);
+    assert.equal(hero.contribution.ss.includes('so far'), period.to === '2026-10-09');
+    assert.deepEqual(hero.contribution.d.extra!.map(([label]) => label), ['Net sales', 'Shipping income net of tax', 'Shipping refunds', 'Landed cost', 'Fulfilment', 'Payment fees', 'Contribution', 'After ad spend', 'Contribution an order']);
+    assert.deepEqual(hero.contribution.d.extra!.slice(-3), [['Contribution', formatPounds(contribution)], ['After ad spend', formatPounds(contribution - hero.spend.n)], ['Contribution an order', formatPounds(contribution / hero.orders.n)]]);
+    const waterfall = hero.margin.d.extra!;
+    assert.equal(waterfall[0]![0], 'Net sales');
+    assert.deepEqual(waterfall.slice(waterfall.findIndex(([label]) => label === 'Contribution'), waterfall.findIndex(([label]) => label === 'Contribution') + 3), [
+      ['Contribution', formatPounds(contribution)], ['Ad spend', formatPounds(hero.spend.n)], ['After ad spend', formatPounds(contribution - hero.spend.n)],
+    ]);
     assert.ok(Math.abs(hero.profit.n - expected) < 1e-10);
     assert.equal(hero.margin.n, 100 * hero.profit.n / hero.net.n);
     assert.equal(hero.profit.dp, 2);
@@ -74,7 +102,7 @@ test('profit equals the margin numerator for every period and All, UK and US', a
     assert.equal(hero.profit.mode, hero.margin.mode);
     assert.deepEqual(hero.profit.source, hero.margin.source);
     assert.equal(hero.profit.d.rule, hero.margin.d.rule);
-    assert.deepEqual(hero.profit.d.extra!.slice(0, -1), hero.margin.d.extra);
+    assert.deepEqual(hero.profit.d.extra, hero.margin.d.extra);
     assert.deepEqual(hero.profit.d.extra!.at(-1), ['Net profit', `£${expected.toFixed(2)}`]);
     assert.equal(hero.profit.d.hist, undefined);
     assert.match(hero.profit.d.why, /same pound total used to calculate net margin/);
@@ -96,11 +124,14 @@ test('profit keeps missing costs, unavailable data and losses in the same neutra
   assert.equal(hero.profit.state, hero.margin.state);
   assert.equal(hero.profit.ss, hero.margin.ss);
   assert.match(hero.profit.ss, /left out: payment fees, older order cost detail, overheads/);
+  assert.match(hero.contribution.ss, /left out: payment fees, older order cost detail/);
+  assert.doesNotMatch(hero.contribution.ss, /overheads|ad spend/);
   assert.deepEqual(hero.profit.d.extra!.at(-1), ['Net profit', '-£10.00']);
   applySpend(hero, [], settings, '2026-10-09', { spend: { ...spend, rows: [], sources: [] }, costs: [], estimates: [] });
   assert.equal(hero.profit.unavailable, true);
   assert.equal(hero.profit.unavailable, hero.margin.unavailable);
   assert.equal(hero.profit.unavailableLabel, '—');
+  assert.equal(hero.contribution.unavailable, false);
 });
 
 test('known profit stays visible for free-send losses, negative net sales and zero ad spend', async () => {
@@ -129,9 +160,17 @@ test('known profit stays visible for free-send losses, negative net sales and ze
     assert.equal(hero.profit.n, scenario.profit);
     assert.equal(hero.profit.unavailable, false);
     assert.equal(hero.margin.unavailable, true);
+    assert.equal(hero.contribution.unavailable, false);
+    assert.equal(hero.contribution.state, 'est');
+    if (scenario.net === 0) assert.match(hero.contribution.ss, /^Unknown percentage of net sales/);
+    if (scenario.count === 0) {
+      assert.doesNotMatch(hero.contribution.ss, /an order/);
+      assert.deepEqual(hero.contribution.d.extra!.at(-1), ['Contribution an order', 'Unknown']);
+    }
     hero.net.unavailable = true;
     applySpend(hero, scenario.orders, settings, '2026-10-01', inputs);
     assert.equal(hero.profit.unavailable, true);
+    assert.equal(hero.contribution.unavailable, true);
     hero.net.unavailable = false;
     applySpend(hero, scenario.orders, settings, '2026-10-01', { ...inputs, spend: { ...spend, sources: [] } });
     assert.equal(hero.profit.unavailable, true);

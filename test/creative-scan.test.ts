@@ -105,7 +105,7 @@ test('video sends poster plus six ordered frames and newest merged copy; validat
   } }));
   assert.deepEqual(result, { state: 'done', attempts: 1, done: 1, failed: 0 });
   const body = requests[0], content = body.messages[0].content;
-  assert.equal(body.model, settings().creativeScanModel); assert.equal(body.temperature, 0); assert.equal(body.max_tokens, 1500);
+  assert.equal(body.model, settings().creativeScanModel); assert.equal('temperature' in body, false); assert.equal(body.max_tokens, 1500);
   assert.equal(content.length, 8);
   assert.deepEqual(content.slice(0, 7).map((block: any) => Buffer.from(block.source.data, 'base64').at(-1)), [99, 1, 2, 3, 4, 5, 6]);
   assert.ok(content.slice(0, 7).every((block: any) => block.source.media_type === 'image/jpeg'));

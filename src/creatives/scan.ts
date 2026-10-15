@@ -137,7 +137,7 @@ async function request(settings: Settings, options: ScanOptions, kind: CreativeK
     const response = await (options.fetch ?? fetch)(ENDPOINT, {
       method: 'POST', redirect: 'error', signal: controller.signal,
       headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({ model: settings.creativeScanModel, temperature: 0, max_tokens: MAX_OUTPUT, system,
+      body: JSON.stringify({ model: settings.creativeScanModel, max_tokens: MAX_OUTPUT, system,
         messages: [{ role: 'user', content: [...images, { type: 'text', text: copy }] }] }),
     });
     httpStatus = response.status;

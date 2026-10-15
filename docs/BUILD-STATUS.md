@@ -28,6 +28,7 @@ Updated in every pull request.
 | Change | Batch 4, built on creative-scan-lifts; migration 017 (creative_scans, media_groups.detail_reduced_at); CREATIVE_SCAN_ENABLED and ANTHROPIC_API_KEY now in use; one outbound POST to api.anthropic.com behind the flag; every Meta call a GET | a–f built; daily detail retries, attributes, tagging, scans and lifts | existing flag/key; scan prices and daily cap in Settings | after Publish, run migration 017 and follow the scan, tags, lifts and next-morning checks below |
 | 2 | Meta | spend and market CPO built; hero CAC is cost per counted order; purchases, ad-set dials, first-order CAC and kill/step rules remain | needs Meta key + account Settings | spend comparison pending |
 | 2 fix | Creative passes run detached so long catalogues never starve hero spend | built on `fix-creative-blocking-spend` after catalogue timeout PR #26; one pass at a time, shutdown waits; no migration | no new keys or Settings | after Publish, Meta spend becomes fresh while the creative catalogue keeps growing |
+| 2 fix | Creative scan omits the deprecated temperature parameter rejected by the model | built on `scan-no-temperature`; text-only response parsing retained; no migration | no new Settings or secrets | after Publish, confirm an eligible scan completes without the temperature-related HTTP 400 |
 | 3 | Google Ads | spend built; conversions, ad-set dials and kill/step rules remain | needs three existing Google keys + account Settings | spend comparison pending |
 | 4 | Mailchimp | not started | no | no |
 | 5 | Workflow side (Handover) | not started | no | no |
@@ -36,7 +37,7 @@ Updated in every pull request.
 
 ## Next step
 
-Review `contribution-margin`, then merge, Pull and Publish in Replit. Run `npm run migrate` in the Shell (nothing new to apply; run it anyway). The builder does not deploy.
+Review `scan-no-temperature`, then merge, Pull and Publish in Replit. No migration, new Settings or secrets. Confirm an eligible creative scan completes without the temperature-related HTTP 400; existing retry timing still applies. The builder does not deploy.
 
 **Contribution acceptance (14 Oct):** on Home, Contribution sits with Net profit, its sub-line shows the percentage of net sales and the per-order figure, tapping it opens its breakdown sheet, and switching UK/US changes it. It stays plain when ad spend is stale; the after-ads sheet row carries the spend caveat. No migration, new Settings or live-source agreement is claimed.
 

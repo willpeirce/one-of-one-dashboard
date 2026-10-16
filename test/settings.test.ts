@@ -22,8 +22,8 @@ test('settings initialize once with specified defaults, unknowns unset and no de
   assert.deepEqual(first.values, validateSettings(defaultSettings()));
   assert.equal(first.values.goalOrdersPerDay, 100);
   assert.equal(first.values.goalNetMarginPercent, 20);
-  assert.equal(first.values.cppUkBreakEvenGbp, 18.56);
-  assert.equal(first.values.cppUsBreakEvenGbp, 22.70);
+  assert.equal(first.values.cppUkBreakEvenGbp, 20);
+  assert.equal(first.values.cppUsBreakEvenGbp, 25);
   assert.equal(first.values.blendedMetaTripwireGbp, 28);
   assert.equal(first.values.safetyWeeks, 3);
   assert.deepEqual(first.values.overheads, []);

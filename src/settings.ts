@@ -1,3 +1,4 @@
+import { adRulesDefaults, type AdRules } from './meta-adsets/settings.js';
 import { appConfig } from './config.js';
 import { invalidateMetaCampaigns } from './ad-spend/campaign-cache.js';
 import type { Database } from './db.js';
@@ -9,6 +10,7 @@ export const SETTINGS_KEY_NAMES = Object.freeze(sourceDefinitions.flatMap((sourc
 type KeyName = (typeof SETTINGS_KEY_NAMES)[number];
 
 export interface Settings {
+  adRules: AdRules;
   goalOrdersPerDay: number;
   goalNetMarginPercent: number;
   overheads: OverheadItem[];
@@ -54,7 +56,7 @@ export interface Settings {
   googleCustomerId: string;
   googleLoginCustomerId: string;
   tiktokAdvertiserId: string;
-  metaOwners: { campaignId: string; owner: 'ours' | 'freelancer' }[];
+  metaOwners: { campaignId: string; owner: 'ours' | 'freelancer'; test?: boolean }[];
   expectedGoogleCampaigns: { campaignId: string }[];
   blendedMetaTripwireGbp: number;
   creatorRules: {
@@ -112,12 +114,13 @@ export function creativeSettingsDefaults() {
 
 export function defaultSettings(): Settings {
   return {
+    adRules: adRulesDefaults(),
     goalOrdersPerDay: 100,
     goalNetMarginPercent: 20,
     overheads: [],
-    cppUkBreakEvenGbp: 18.56,
+    cppUkBreakEvenGbp: 20,
     cppUkTargetGbp: 15.78,
-    cppUsBreakEvenGbp: 22.70,
+    cppUsBreakEvenGbp: 25,
     cppUsTargetGbp: 19.30,
     paymentFeePercent: null,
     startingCogs: appConfig.shopify.stockProducts.flatMap((product) => 'sku' in product ? [{ sku: product.sku, unitCostGbp: null }] : []),
@@ -249,7 +252,24 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
   const defaults = defaultSettings();
   const value = object(input, Object.keys(defaults), '');
   const rules = object(value.creatorRules, Object.keys(defaults.creatorRules), 'creatorRules');
+  const ad = object(value.adRules, Object.keys(adRulesDefaults()), 'adRules');
+  const parseMarket = (market: 'uk' | 'us') => {
+    const p = `adRules.${market}`, r = object(ad[market], Object.keys(adRulesDefaults()[market]), p);
+    const overrideGbp = number(r.overrideGbp, `${p}.overrideGbp`, 100_000, true, false, 0.01);
+    const overrideUntil = r.overrideUntil === '' ? '' : date(r.overrideUntil, `${p}.overrideUntil`);
+    if ((overrideGbp === null) !== (overrideUntil === '')) invalid(`${p}.overrideUntil`);
+    return {overrideGbp,overrideUntil,
+      killBar:requiredNumber(r.killBar, `${p}.killBar`, 10, false, 1),
+      slippingBar:requiredNumber(r.slippingBar, `${p}.slippingBar`, 10, false, 1),
+      atcBarGbp:requiredNumber(r.atcBarGbp, `${p}.atcBarGbp`, 100_000, false, 0.01),
+      upliftPercent:requiredNumber(r.upliftPercent, `${p}.upliftPercent`, 1000)};
+  };
   const settings: Settings = {
+    adRules: {uk:parseMarket('uk'),us:parseMarket('us'),
+      killFloorGbp:requiredNumber(ad.killFloorGbp,'adRules.killFloorGbp',100_000,false,0.01),
+      slippingFloorGbp:requiredNumber(ad.slippingFloorGbp,'adRules.slippingFloorGbp',100_000,false,0.01),
+      freelancerTriggerGbp:requiredNumber(ad.freelancerTriggerGbp,'adRules.freelancerTriggerGbp',100_000,false,0.01),
+      testShareCapPercent:requiredNumber(ad.testShareCapPercent,'adRules.testShareCapPercent',100)},
     goalOrdersPerDay: requiredNumber(value.goalOrdersPerDay, 'goalOrdersPerDay', 100_000, true, 1),
     goalNetMarginPercent: requiredNumber(value.goalNetMarginPercent, 'goalNetMarginPercent', 100),
     overheads: list(value.overheads, 'overheads', (row, path) => {
@@ -316,9 +336,12 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
     googleLoginCustomerId: accountId(value.googleLoginCustomerId, 'googleLoginCustomerId', true),
     tiktokAdvertiserId: accountId(value.tiktokAdvertiserId, 'tiktokAdvertiserId'),
     metaOwners: list(value.metaOwners, 'metaOwners', (row, path) => {
-      const parsed = object(row, ['campaignId', 'owner'], path);
+      const hasTest = !!row && typeof row === 'object' && Object.hasOwn(row, 'test');
+      const parsed = object(row, hasTest ? ['campaignId', 'owner', 'test'] : ['campaignId', 'owner'], path);
+      const test = hasTest ? bool(parsed.test, `${path}.test`) : undefined;
+      if (test && parsed.owner !== 'ours') invalid(`${path}.test`);
       if (typeof parsed.campaignId !== 'string' || !/^\d{1,24}$/.test(parsed.campaignId)) return invalid(`${path}.campaignId`);
-      return { campaignId: parsed.campaignId, owner: choice(parsed.owner, `${path}.owner`, ['ours', 'freelancer'] as const) };
+      return { campaignId: parsed.campaignId, owner: choice(parsed.owner, `${path}.owner`, ['ours', 'freelancer'] as const), ...(test === undefined ? {} : { test }) };
     }, (row) => row.campaignId, 10_000),
     expectedGoogleCampaigns: list(value.expectedGoogleCampaigns, 'expectedGoogleCampaigns', (row, path) => {
       const parsed = object(row, ['campaignId'], path);
@@ -385,6 +408,7 @@ function storedSettings(input: unknown): Settings {
   // version or creating an audit entry; the next ordinary save persists them.
   const stored: Record<string, unknown> = {
     ...creativeSettingsDefaults(),
+    adRules: adRulesDefaults(),
     series1OrderDate: defaults.series1OrderDate,
     series1UkLandingOffsetDays: defaults.series1UkLandingOffsetDays,
     series1UsLandingOffsetDays: defaults.series1UsLandingOffsetDays,

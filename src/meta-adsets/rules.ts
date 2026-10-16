@@ -40,18 +40,18 @@ export function judgeAdSet(set: StoredAdSet, days: SetDay[], settings: Settings,
   const last=days.find(d=>d.day===yesterday),budget=market?weekdayBudget(set.dailyBudget,market,yesterday,settings,set.flatBudget):null;
   let proposedBase:number|null=null,proposedWeekday:number|null=null,stepPercent:number|null=null;
   const cpp=ratio(totals.spend,totals.purchases),cpatc=ratio(totals.spend,totals.addsToCart);
-  const beText=be?`${formatPounds(be.value)}${be.note?` · ${be.note}`:''}`:'Unknown market';
+  const beText=be?`${market!.toUpperCase()} break-even ${formatPounds(be.value)}${be.note?` · ${be.note}`:''}`:'Unknown market';
   if(market&&be) {
     const rules=settings.adRules[market],bar=be.value*rules.killBar;
     if(enough&&totals.spend>=settings.adRules.killFloorGbp && totals.purchases!==null && (totals.purchases===0||cpp!>bar))
-      add('purchase-cost','Kill',`${formatPounds(totals.spend)} on ${formatNumber(totals.purchases)} purchases, ${cost(totals.spend,totals.purchases)}${totals.purchases?' each':''} against ${formatPounds(bar)}${be.note?` · ${be.note}`:''}`,`${formatPounds(totals.spend)} spend`,`${cost(totals.spend,totals.purchases)} per purchase`);
+      add('purchase-cost','Kill',`${formatPounds(totals.spend)} on ${formatNumber(totals.purchases)} purchases, ${cost(totals.spend,totals.purchases)}${totals.purchases?' each':''} against ${formatPounds(bar)} · ${beText}`,`${formatPounds(totals.spend)} spend`,`${cost(totals.spend,totals.purchases)} per purchase`);
     if(enough&&totals.spend>=settings.adRules.killFloorGbp&&totals.addsToCart!==null&&(totals.addsToCart===0||cpatc!>rules.atcBarGbp))
       add('atc-cost','Kill',`${formatPounds(totals.spend)} on ${totals.addsToCart} adds to cart against ${formatPounds(rules.atcBarGbp)} each`,`${formatPounds(totals.spend)} spend`,totals.addsToCart?`${formatPounds(cpatc!)} an add to cart`:'0 adds to cart');
     if(enough&&last&&yesterday>born&&budget!==null&&budget>0&&last.spend>=budget/2&&last.addsToCart===0)
-      add('zero-day','Kill',`${formatPounds(last.spend)} yesterday, no adds to cart, against ${formatPounds(budget/2)} half-budget`,`${formatPounds(last.spend)} yesterday`,'0 adds to cart');
+      add('zero-day','Kill',`${formatPounds(last.spend)} yesterday, no adds to cart, against ${formatPounds(budget/2)} half-budget · ${beText}`,`${formatPounds(last.spend)} yesterday`,'0 adds to cart');
     const threeDates=dates(addDays(today,-3),yesterday),three=days.filter(d=>threeDates.includes(d.day)&&d.purchases!==null&&d.addsToCart!==null),t=totalDays(three);
     if(three.length>=2&&t.spend>=settings.adRules.slippingFloorGbp&&t.purchases!==null&&(t.purchases===0||t.spend/t.purchases>be.value*rules.slippingBar))
-      add('slipping','Slipping',`${formatPounds(t.spend)} on ${t.purchases} purchases over ${three.length} of 3 days, ${cost(t.spend,t.purchases)} against ${formatPounds(be.value*rules.slippingBar)}${be.note?` · ${be.note}`:''}`,`${formatPounds(t.spend)} in ${three.length} of 3 days`,`${cost(t.spend,t.purchases)} per purchase`);
+      add('slipping','Slipping',`${formatPounds(t.spend)} on ${t.purchases} purchases over ${three.length} of 3 days, ${cost(t.spend,t.purchases)} against ${formatPounds(be.value*rules.slippingBar)} · ${beText}`,`${formatPounds(t.spend)} in ${three.length} of 3 days`,`${cost(t.spend,t.purchases)} per purchase`);
     const changes=[set.updatedTime,set.lastSignificantEdit,...(context.changes??[])].filter((v):v is string=>!!v).map(v=>ukToday(new Date(v)));
     const clean=(day:string)=>{
       const row=days.find(d=>d.day===day);

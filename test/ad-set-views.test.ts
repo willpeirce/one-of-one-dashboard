@@ -66,3 +66,23 @@ test('ad-set API day arrays are oldest first after out-of-order backfills',async
  const response=await app.inject('/api/meta/adsets');assert.equal(response.statusCode,200);
  assert.deepEqual(response.json().rows[0].days.map((d:{day:string})=>d.day),['2026-10-10','2026-10-12','2026-10-14']);
 });
+
+
+test('sheet and reasons use the catalogue market even when a campaign name points elsewhere',async t=>{
+ const {saveAdSets,parseAdSet}=await import('../src/meta-adsets/catalogue.js');
+ const {saveSpend}=await import('../src/ad-spend/store.js');
+ const db=await createTestDatabase();t.after(()=>db.close());const account='invented-market-account',campaign='invented-market-campaign';
+ const settings={...defaultSettings(),metaAdAccountId:account,metaOwners:[{campaignId:campaign,owner:'ours' as const}],cppUkBreakEvenGbp:21,cppUsBreakEvenGbp:28};
+ settings.adRules.us.overrideGbp=31;settings.adRules.us.overrideUntil='2026-10-20';
+ const now=new Date('2026-10-16T12:00:00Z');
+ for(const market of ['uk','us'] as const){
+  const id=`invented-${market}-set`;
+  await saveAdSets(db,account,[parseAdSet({id,campaign_id:campaign,name:'Invented Fern',status:'ACTIVE',effective_status:'ACTIVE',daily_budget:'2000',created_time:'2026-10-01T08:00:00Z',updated_time:'2026-10-01T08:00:00Z'},'GBP',settings)],settings,now);
+  await db.query('UPDATE pulse.meta_ad_sets SET market=$2 WHERE ad_set_id=$1',[id,market]);
+ }
+ for(const day of ['2026-10-14','2026-10-15'])await saveSpend(db,'meta',account,day,day,['uk','us'].map(market=>({source:'meta' as const,accountId:account,campaignId:campaign,campaignName:'Invented UK umbrella',adSetId:`invented-${market}-set`,adSetName:'Invented Fern',market:market as 'uk'|'us',owner:'ours' as const,day,amount:'70',currency:'GBP',purchases:1,addsToCart:0})),now);
+ const view=await readAdSetsView(db,settings,{META_ACCESS_TOKEN:randomBytes(16).toString('hex')},now);
+ const uk=view.rows.find(r=>r.set.market==='uk')!,us=view.rows.find(r=>r.set.market==='us')!;
+ assert.match(adSetSheet(uk,view),/Break-even \(UK\): £21/);
+ const sheet=adSetSheet(us,view);assert.match(sheet,/Break-even \(US\): £31.*override to 2026-10-20/);assert.match(sheet,/half-budget · US break-even £31/);assert.doesNotMatch(sheet,/UK break-even|Break-even \(UK\)/);
+});

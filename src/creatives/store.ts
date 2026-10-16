@@ -20,7 +20,7 @@ export async function saveCatalogue(db: Database, account: string, entries: Cata
     for (const entry of entries) {
       if (entry.media === null) {
         const { ad } = entry;
-        await tx.query(`UPDATE pulse.ads SET name=$4,status=$5,effective_status=$6,last_seen=$7,fetched_at=$8,
+        await tx.query(`UPDATE pulse.ads SET status_since=CASE WHEN effective_status IS DISTINCT FROM $6 THEN $8 ELSE status_since END,name=$4,status=$5,effective_status=$6,last_seen=$7,fetched_at=$8,
           ad_set_id=$9,ad_set_name=$10,campaign_id=$11,campaign_name=$12,owner=$13,market=$14
           WHERE mode=$1 AND account_id=$2 AND ad_id=$3`,
         [mode, account, ad.id, ad.name, ad.status, ad.effectiveStatus, ad.lastSeen, now,
@@ -67,7 +67,7 @@ export async function saveCatalogue(db: Database, account: string, entries: Cata
       const record = { ...ad, accountId: account, mediaGroupId: id, firstSpendDay: null };
       const fields = Object.entries(adFields).filter(([key]) => key !== 'firstSpendDay');
       const columns = fields.map(([, col]) => col), values = fields.map(([key]) => (record as any)[key]);
-      await tx.query(`INSERT INTO pulse.ads(mode,source_id,fetched_at,${columns.join(',')}) VALUES($1,$2,$3,${values.map((_, i) => `$${i + 4}`).join(',')}) ON CONFLICT(mode,account_id,ad_id) DO UPDATE SET ${columns.filter(col => col !== 'ad_id' && col !== 'account_id').map(col => `${col}=EXCLUDED.${col}`).join(',')},fetched_at=EXCLUDED.fetched_at`, [mode, ad.id, now, ...values]);
+      await tx.query(`INSERT INTO pulse.ads(mode,source_id,fetched_at,status_since,${columns.join(',')}) VALUES($1,$2,$3,$3,${values.map((_, i) => `$${i + 4}`).join(',')}) ON CONFLICT(mode,account_id,ad_id) DO UPDATE SET status_since=CASE WHEN pulse.ads.effective_status IS DISTINCT FROM EXCLUDED.effective_status THEN EXCLUDED.fetched_at ELSE pulse.ads.status_since END,${columns.filter(col => col !== 'ad_id' && col !== 'account_id').map(col => `${col}=EXCLUDED.${col}`).join(',')},fetched_at=EXCLUDED.fetched_at`, [mode, ad.id, now, ...values]);
     }
     if (expandedIds.length) await tx.query(`UPDATE pulse.ads a SET first_spend_day=(SELECT min(day) FROM pulse.ad_insights_daily i WHERE i.mode=a.mode AND i.account_id=a.account_id AND i.ad_id=a.ad_id AND i.spend>0) WHERE a.mode=$1 AND a.account_id=$2 AND a.ad_id=ANY($3::text[])`, [mode, account, expandedIds]);
   });

@@ -349,6 +349,17 @@ export class MetaCreativeClient implements CreativeReader {
     }
     return [...grouped.values()];
   }
+  async readThruPlays(account:string,from:string,to:string):Promise<import('./thruplay-repair.js').ThruPlayRow[]> {
+    insightDay(from);insightDay(to);if(from>to)throw new AdError('invalid');
+    const report=await this.meta.readAllPages(`act_${id(account)}/insights`,{
+      fields:'ad_id,date_start,video_play_actions,video_thruplay_watched_actions',level:'ad',time_increment:'1',limit:'500',
+      time_range:JSON.stringify({since:from,until:to}),
+    },60_000,true);
+    return report.map(row=>{
+      const day=insightDay(row.date_start);if(day<from||day>to)throw new AdError('invalid');
+      return {adId:id(row.ad_id),day,plays:action(row.video_play_actions),thruPlays:row.video_thruplay_watched_actions==null?null:action(row.video_thruplay_watched_actions)};
+    });
+  }
   async readFrequency(account: string, adIds: string[], from: string, to: string): Promise<number | null> {
     const validDay = (value: string) => /^20\d{2}-\d{2}-\d{2}$/.test(value)
       && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;

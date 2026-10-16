@@ -23,7 +23,7 @@ export function creativeTotals(rows: readonly AdInsight[]) {
   const hookSources = new Set<AdInsight['threeSecondSource']>();
   for (const row of rows) {
     for (const key of sums) totals[key] += row[key] ?? 0;
-    if (row.thruPlays !== null) {
+    if (row.thruPlays != null) {
       holdThreeSecondPlays += row.holdThreeSecondPlays ?? row.threeSecondPlays;
       holdDataRows++;
     }

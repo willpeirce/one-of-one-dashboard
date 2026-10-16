@@ -39,31 +39,61 @@ test('mixed missing ThruPlay days use matching denominators; all missing is n/a 
  assert.equal(stored.insights.find(r=>r.day==='2026-10-15')!.thruPlays,null);assert.equal(creativeTotals(stored.insights).holdRate,.2);
  const data=creativeData(['invented-empty-hold']);data.insights[0]!.thruPlays=null;
  const totals=aggregateCreativeGroups(data)[0]!.totals;assert.equal(totals.holdRate,null);assert.equal(totals.holdDataRows,0);
+ assert.equal(creativeTotals([{...data.insights[0]!,thruPlays:undefined} as unknown as import('../src/creatives/model.js').AdInsight]).holdDataRows,0);
  // Only the performance table's documented input fields are used here.
  const sheet={group:aggregateCreativeGroups(data)[0]!,windows:[{window:'lifetime',totals}]} as Parameters<typeof creativePerformanceTableHtml>[0];
  assert.match(creativePerformanceTableHtml(sheet),/n\/a \(no ThruPlay data\)/);
  assert.equal(creativeTotals([creativeInsight('invented-zero',{thruPlays:0,holdThreeSecondPlays:100})]).holdRate,0,'measured zero remains zero');
 });
 
-test('next daily pass re-reads fourteen historical days once, repairs old nulls and retries a failed repair',async t=>{
- const {CreativeWorker}=await import('../src/creatives/worker.js');
+test('a refused three-day ThruPlay report splits into single days with narrow paged fields and preserves spend',async t=>{
+ const {repairThruPlays,thruPlayHealth}=await import('../src/creatives/thruplay-repair.js');
  const {creativeInsight}=await import('./helpers/creatives.js');
+ const db=await createTestDatabase();t.after(()=>db.close());const account='invented-thruplay-small',now=new Date('2026-10-16T12:00:00Z');
+ const days=['2026-10-02','2026-10-03','2026-10-04'];
+ await db.query('INSERT INTO pulse.creative_jobs(account_id) VALUES($1)',[account]);
+ await db.query("INSERT INTO pulse.creative_thruplay_days(account_id,day) SELECT $1,unnest($2::date[])",[account,days]);
+ await saveInsights(db,account,days[0]!,days[2]!,days.map(day=>creativeInsight('invented-repair-ad',{day,spend:77,purchases:4,thruPlays:null,holdThreeSecondPlays:120})),now);
+ const calls:string[][]=[];const waits:number[]=[];let limited=true;
+ const options={sleep:async(ms:number)=>{waits.push(ms);},fetch:(async input=>{
+  const url=new URL(String(input));assert.equal(url.pathname.split('/').at(-1),'insights');
+  assert.equal(url.searchParams.get('fields'),'ad_id,date_start,video_play_actions,video_thruplay_watched_actions');
+  assert.equal(url.searchParams.get('limit'),'500');assert.equal(url.searchParams.get('time_increment'),'1');assert.equal(url.searchParams.has('breakdowns'),false);
+  const {since,until}=JSON.parse(url.searchParams.get('time_range')!);calls.push([since,until]);
+  if(since!==until)return Response.json({error:{code:2,error_subcode:1504044}},{status:400});
+  if(limited){limited=false;return Response.json({error:{code:80004}},{status:400});}
+  const after=url.searchParams.get('after');
+  return Response.json({data:[{ad_id:after?'invented-extra-ad':'invented-repair-ad',date_start:since,video_play_actions:[{action_type:'video_view',value:'150'}],video_thruplay_watched_actions:[{action_type:'video_view',value:'30'}]}],...(!after?{paging:{next:'unused',cursors:{after:'invented-next-page'}}}:{})});
+ }) as typeof fetch};
+ const client=new MetaCreativeClient(new MetaSpend(randomBytes(16).toString('hex'),options),options);
+ await repairThruPlays(db,client,account,now);
+ assert.deepEqual(calls.filter((r,i)=>i===0||r.join()!==calls[i-1]!.join()),[[days[0],days[2]],...days.map(day=>[day,day])]);
+ assert.ok(waits.some(ms=>ms>=15*60000));assert.equal((await thruPlayHealth(db,account)).completed,3);
+ const saved=await readLiveCreativeData(db,{...defaultSettings(),metaAdAccountId:account});
+ assert.equal(saved.insights.length,3);assert.ok(saved.insights.every(r=>r.spend===77&&r.purchases===4&&r.thruPlays===30&&r.plays===150&&r.holdThreeSecondPlays===120));
+ assert.equal(Number((await db.query<any>('SELECT count(*) FROM pulse.creative_insight_days WHERE completed')).rows[0].count),3,'video repair does not replace full-day coverage');
+});
+
+test('ThruPlay day progress survives restart, skips a failed day and retries it next UK day',async t=>{
+ const {repairThruPlays,thruPlayHealth}=await import('../src/creatives/thruplay-repair.js');
  const {AdError}=await import('../src/ad-spend/model.js');
- const db=await createTestDatabase();t.after(()=>db.close());const account='invented-hold-backfill',now=new Date('2026-10-16T12:00:00Z'),day='2026-10-05';
- await db.query('INSERT INTO pulse.creative_jobs(account_id,backfill_done,nightly_day) VALUES($1,true,$2)',[account,'2026-10-16']);
- await saveInsights(db,account,day,day,[creativeInsight('invented-repair-video',{day,thruPlays:null})],now);
- const ranges:string[][]=[];let fail=true;
- const reader:import('../src/creatives/model.js').CreativeReader={readCatalogue:async function*(){yield []},imageBytes:async()=>new Uint8Array(),videoSource:async()=>'',videoFrames:async()=>[],readInsights:async(_,from,to)=>{
-  ranges.push([from,to]);if(from==='2026-10-09'&&fail)throw new AdError('timeout');
-  return from<=day&&to>=day?[creativeInsight('invented-repair-video',{day,thruPlays:40,holdThreeSecondPlays:100})]:[];
+ const {creativeHealth}=await import('../src/creatives/store.js');
+ const {creativeHealthDetails}=await import('../src/views.js');
+ const db=await createTestDatabase();t.after(()=>db.close());const account='invented-thruplay-resume',now=new Date('2026-10-16T12:00:00Z');
+ await db.query('INSERT INTO pulse.creative_jobs(account_id) VALUES($1)',[account]);
+ const calls:string[][]=[],logs:string[]=[];t.mock.method(console,'error',(line:string)=>logs.push(line));let fail=true;
+ const reader:import('../src/creatives/model.js').CreativeReader={readCatalogue:async function*(){yield []},readInsights:async()=>[],imageBytes:async()=>new Uint8Array(),videoSource:async()=>'',videoFrames:async()=>[],readThruPlays:async(_,from,to)=>{
+  calls.push([from,to]);if(fail&&from<='2026-10-03'&&to>='2026-10-03')throw new AdError('http',400,2,1504044);return [];
  }};
- const worker=new CreativeWorker(db,reader);
- await worker.runInsights(account,defaultSettings(),now);
- assert.equal((await db.query<any>('SELECT thruplays_backfilled_at FROM pulse.creative_jobs')).rows[0].thruplays_backfilled_at,null);
- fail=false;await worker.runInsights(account,defaultSettings(),now);
- const stored=await readLiveCreativeData(db,{...defaultSettings(),metaAdAccountId:account});assert.equal(stored.insights[0]!.thruPlays,40);
+ await repairThruPlays(db,reader,account,now);
+ assert.deepEqual(await thruPlayHealth(db,account),{completed:11,total:14,failures:[{day:'2026-10-03',code:'http 400, meta 2/1504044 at backfill'}]});
+ assert.deepEqual(logs,['Meta ThruPlay backfill 2026-10-03 failed (http 400, meta 2/1504044 at backfill).']);
+ const health=await creativeHealth(db,{...defaultSettings(),metaAdAccountId:account},{META_ACCESS_TOKEN:randomBytes(16).toString('hex')},now);
+ assert.match(creativeHealthDetails(health),/ThruPlay backfill: 11 of 14 days complete.*2026-10-03: http 400, meta 2\/1504044 at backfill/);
+ calls.length=0;await repairThruPlays(db,{...reader},account,new Date('2026-10-16T12:30:00Z'));
+ assert.deepEqual(calls,[['2026-10-14','2026-10-15']]);assert.equal((await thruPlayHealth(db,account)).completed,13);
+ calls.length=0;fail=false;await repairThruPlays(db,{...reader},account,new Date('2026-10-16T23:01:00Z'));
+ assert.deepEqual(calls,[['2026-10-03','2026-10-03']]);assert.equal((await thruPlayHealth(db,account)).completed,14);
  assert.ok((await db.query<any>('SELECT thruplays_backfilled_at FROM pulse.creative_jobs')).rows[0].thruplays_backfilled_at);
- assert.deepEqual(ranges.slice(-3),[['2026-10-15','2026-10-16'],['2026-10-02','2026-10-08'],['2026-10-09','2026-10-15']]);
- ranges.length=0;await worker.runInsights(account,defaultSettings(),now);assert.deepEqual(ranges,[['2026-10-15','2026-10-16']]);
- assert.equal(Number((await db.query<any>('SELECT count(*) FROM pulse.creative_insight_days WHERE completed')).rows[0].count),15);
+ calls.length=0;await repairThruPlays(db,reader,account,new Date('2026-10-18T12:00:00Z'));assert.deepEqual(calls,[]);
 });

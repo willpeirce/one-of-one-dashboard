@@ -87,6 +87,7 @@ export function creativeHealthDetails(health: CreativeHealth): string {
     : `Backfill: ${formatNumber(health.completedDays)} of ${formatNumber(health.totalDays)} days read${health.backfillNext ? ` · next ${escapeHtml(health.backfillNext)}` : ' · first read pending'}`;
   return `<section aria-label="Meta creative imports" data-creative-health><h2>Meta creatives · ${health.mode === 'sample' ? 'sample data' : 'live'}</h2>
     <p>Catalogue: ${formatNumber(health.catalogueCount)} ads · ${progress}</p>
+    ${health.thruPlayRepair?.total?`<p data-thruplay-repair>ThruPlay backfill: ${health.thruPlayRepair.completed} of ${health.thruPlayRepair.total} days complete${health.thruPlayRepair.failures.map(f=>` · ${escapeHtml(f.day)}: ${escapeHtml(f.code)}`).join('')}</p>`:''}
     ${health.mediaFacts?`<p data-media-facts>${escapeHtml(mediaFactLine(health.mediaFacts))}</p>`:''}
     <p data-creative-reduced>${formatNumber(health.reducedCount)} creatives at reduced detail</p>
     ${health.scan ? `<p data-creative-scan>${escapeHtml(health.scan.line)}</p>${health.scan.message && !health.scan.line.includes(health.scan.message) ? `<p>${escapeHtml(health.scan.message)}</p>` : ''}` : ''}

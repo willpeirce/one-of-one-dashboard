@@ -155,7 +155,7 @@ test('Source health maps scan success and refusal to Anthropic with safe reason 
   assert.equal(failed.anthropic.status, 'error'); assert.equal(failed.anthropic.consecutiveFailures, 1);
   assert.equal(failed.anthropic.statusText, 'Scan failed: refused (http 400)');
   assert.match(failed.html, /Scan failed: refused \(http 400\)/);
-  assert.match(failed.html, /Scan: on · 0 scanned · 1 failed · £0.42 of £1.00 today/);
+  assert.match(failed.html, /Scan: on · 0 scanned · 1 failed · http 400 · £0.42 of £1.00 today/);
   assert.ok(!failed.html.includes(process.env.ANTHROPIC_API_KEY!));
 });
 

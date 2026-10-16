@@ -60,7 +60,7 @@ test('worker recomputes lifts after scans, and keeps recomputing stored evidence
   catalogueFails = true;
   const changed = insights.map(row => ({ ...row, purchases: 6 }));
   await saveInsights(db, account, '2026-10-13', '2026-10-13', changed, now);
-  await worker.run(account, settings, new Date('2026-10-14T12:30:00Z'));
+  await worker.run(account, settings, new Date('2026-10-14T12:30:00Z'), false);
   assert.equal(calls, 6, 'already scanned parents need no new request');
   assert.deepEqual(await readCreativeLifts(db, account, 'live'), []);
   assert.match((await db.query<{ error_code: string }>('SELECT error_code FROM pulse.creative_jobs WHERE account_id=$1', [account])).rows[0]!.error_code, /timeout at catalogue/);

@@ -88,9 +88,12 @@ test('profit equals the margin numerator for every period and All, UK and US', a
     assert.deepEqual(hero.contribution.d.extra!.slice(-3), [['Contribution', formatPounds(contribution)], ['After ad spend', formatPounds(contribution - hero.spend.n)], ['Contribution an order', formatPounds(contribution / hero.orders.n)]]);
     const waterfall = hero.margin.d.extra!;
     assert.equal(waterfall[0]![0], 'Net sales');
-    assert.deepEqual(waterfall.slice(waterfall.findIndex(([label]) => label === 'Contribution'), waterfall.findIndex(([label]) => label === 'Contribution') + 3), [
-      ['Contribution', formatPounds(contribution)], ['Ad spend', formatPounds(hero.spend.n)], ['After ad spend', formatPounds(contribution - hero.spend.n)],
-    ]);
+    const start=waterfall.findIndex(([label])=>label==='Contribution'),after=waterfall.findIndex(([label])=>label==='After ad spend');
+    assert.deepEqual(waterfall.slice(start,start+2),[['Contribution',formatPounds(contribution)],['Ad spend',formatPounds(hero.spend.n)]]);
+    assert.deepEqual(waterfall.slice(start+2,start+7).map(([label])=>label),['Meta ours','Meta freelancer','Meta unassigned','Google','TikTok']);
+    assert.ok(after>start+7);
+    assert.deepEqual(waterfall[after],['After ad spend',formatPounds(contribution-hero.spend.n)]);
+    assert.deepEqual(hero.profit.d.extra,waterfall);
     assert.ok(Math.abs(hero.profit.n - expected) < 1e-10);
     assert.equal(hero.margin.n, 100 * hero.profit.n / hero.net.n);
     assert.equal(hero.profit.dp, 2);

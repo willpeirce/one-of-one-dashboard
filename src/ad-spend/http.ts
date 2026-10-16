@@ -76,11 +76,13 @@ export class AdTransport {
         };
         const remaining = Number(response.headers.get('x-ratelimit-remaining') ?? 1);
         if (remaining === 0) this.next = now() + 60_000;
+        let metaRegainMs = 0;
         if (this.source === 'meta') {
           try {
             const usage = JSON.parse(
               response.headers.get('x-business-use-case-usage') ?? '{}',
             ) as Record<string, any[]>;
+            for(const row of Object.values(usage).flat()){const minutes=Number(row.estimated_time_to_regain_access);if(Number.isFinite(minutes)&&minutes>0)metaRegainMs=Math.max(metaRegainMs,minutes*60_000);}
             if (
               Object.values(usage)
                 .flat()
@@ -109,6 +111,12 @@ export class AdTransport {
           body?.code === 40100 ||
           [4, 17, 32, 613, 80000, 80004].includes(body?.error?.code)
         ) {
+          if(this.source==='meta'&&providerCode===80004){
+            const error=new AdError('rate_limit',response.status,providerCode,providerSubcode);
+            error.retryAfterMs=Math.max(15*60_000,metaRegainMs);
+            this.next=now()+250; // The catalogue waits outside the shared spend queue.
+            throw error;
+          }
           const retry = Number(response.headers.get('retry-after') ?? 1);
           this.next = now() + Math.max(1000, Number.isFinite(retry) ? retry * 1000 : 1000);
           throw new AdError('rate_limit', response.status, providerCode, providerSubcode);
@@ -130,6 +138,7 @@ export class AdTransport {
       } catch (error) {
         const safe = error instanceof AdError ? error : new AdError('timeout');
         if (
+          safe.providerCode === 80004 ||
           attempt === 3 ||
           safe.code === 'unauthorized' ||
           safe.code === 'developer_token_required' ||

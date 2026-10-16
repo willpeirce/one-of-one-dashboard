@@ -139,6 +139,7 @@ export interface SampleText extends SampleProvenance {
 
 /** Presentation data is deliberately independent of source-key readiness in stage 0b. */
 export interface DashboardSnapshot {
+  adSets?: import('./meta-adsets/presentation.js').AdSetsView;
   schemaVersion: 1;
   mode: 'sample';
   brand: 'one-of-one';

@@ -1,3 +1,4 @@
+import {checkAdSets} from './browser-adsets.js';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import type { AuthenticationResponseJSON } from '@simplewebauthn/server';
@@ -822,7 +823,7 @@ async function checkCampaignOwners(page: Page, context: BrowserContext, dashboar
     if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/meta-campaign-settings-${viewport.width}.png` });
   }
   const readSettings = async () => await (await context.request.get('/api/settings')).json() as {
-    values: { blendedMetaTripwireGbp: number; metaOwners: Array<{ campaignId: string; owner: string }> };
+    values: { blendedMetaTripwireGbp: number; metaOwners: Array<{ campaignId: string; owner: string; test?: boolean }> };
   };
   const save = async (selector: string, message: string) => {
     const response = page.waitForResponse(response => new URL(response.url()).pathname === '/api/settings' && response.request().method() === 'POST');
@@ -836,7 +837,7 @@ async function checkCampaignOwners(page: Page, context: BrowserContext, dashboar
   assert.equal((await readSettings()).values.metaOwners.some(rule => rule.campaignId === campaignId), false);
   const original = (await readSettings()).values.blendedMetaTripwireGbp;
   const changed = original === 29 ? 30 : 29;
-  const costSection = page.locator('summary').filter({ hasText: 'Cost per purchase' });
+  const costSection = page.locator('summary').filter({ hasText: 'Ad rules' });
   await costSection.click();
   const tripwire = page.locator('input[name="blendedMetaTripwireGbp"]');
   await tripwire.fill(String(changed));
@@ -864,6 +865,16 @@ async function checkCampaignOwners(page: Page, context: BrowserContext, dashboar
   await campaign.locator('[data-campaign-owner]').selectOption('ours');
   await save(`[data-meta-campaign="${campaignId}"] [data-save-campaign]`, 'Campaign owner saved.');
   assert.equal((await readSettings()).values.metaOwners.find(rule => rule.campaignId === campaignId)?.owner, 'ours');
+  await campaign.locator('[data-campaign-test]').check();
+  await save(`[data-meta-campaign="${campaignId}"] [data-save-campaign]`, 'Campaign owner saved.');
+  assert.equal((await readSettings()).values.metaOwners.find(rule => rule.campaignId === campaignId)?.test,true);
+  await page.reload();await page.locator('summary').filter({hasText:'Ad spend'}).click();
+  assert.equal(await campaign.locator('[data-campaign-test]').isChecked(),true);
+  await campaign.locator('[data-campaign-owner]').selectOption('freelancer');
+  assert.equal(await campaign.locator('[data-campaign-test]').isChecked(),false);
+  assert.equal(await campaign.locator('[data-campaign-test]').isDisabled(),true);
+  await campaign.locator('[data-campaign-owner]').selectOption('ours');
+  await save(`[data-meta-campaign="${campaignId}"] [data-save-campaign]`, 'Campaign owner saved.');
 }
 
 async function assertHero(page: Page, snapshot: DashboardSnapshot, period: Period): Promise<void> {
@@ -1746,6 +1757,11 @@ async function run(): Promise<void> {
 
     step = 'check creative pictures, playing media, windows and gallery filters at phone and desktop widths';
     await checkCreatives(context);
+    step = 'check ad-set decisions and Ads table in both widths and colour preferences';
+    for(const viewport of viewports) for(const colorScheme of ['light','dark'] as const) {
+      const adsPage=await context.newPage();await adsPage.setViewportSize(viewport);await adsPage.emulateMedia({colorScheme});
+      await checkAdSets(adsPage,origin);await adsPage.close();
+    }
 
     step = 'check same-origin manifest and installation icons';
     await checkManifest(page, context, origin);
@@ -1817,7 +1833,7 @@ async function run(): Promise<void> {
         assert.equal(await settingsPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
       }
     }
-    await settingsPage.locator('summary').filter({ hasText: 'Cost per purchase' }).click();
+    await settingsPage.locator('summary').filter({ hasText: 'Ad rules' }).click();
     const setting = settingsPage.locator('input[name="blendedMetaTripwireGbp"]');
     const initialBar = Number(await setting.inputValue());
     assert.ok(Number.isFinite(initialBar));

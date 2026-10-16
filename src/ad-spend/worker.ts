@@ -1,3 +1,4 @@
+import { saveAdSets } from '../meta-adsets/catalogue.js';
 import type { Database } from '../db.js';
 import { addDays, ukToday } from '../hero-range.js';
 import { readSettings } from '../settings.js';
@@ -26,6 +27,7 @@ export class SpendWorker {
   private readonly creativeReaders = new Map<string, CreativeReader>();
   private creativeRunning = false;
   private creativePass?: Promise<void>;
+  private creativeInsightPass?: Promise<void>;
   constructor(
     private readonly db: Database,
     private readonly env: NodeJS.ProcessEnv,
@@ -45,8 +47,11 @@ export class SpendWorker {
     await Promise.all(this.runs.values());
     await this.waitForCreatives();
   }
+  waitForCreativeInsights(): Promise<void> {
+    return this.creativeInsightPass ?? Promise.resolve();
+  }
   waitForCreatives(): Promise<void> {
-    return this.creativePass ?? Promise.resolve();
+    return Promise.all([this.creativePass,this.creativeInsightPass]).then(()=>{});
   }
   tick(source: AdSource): Promise<void> {
     const current = this.runs.get(source);
@@ -178,7 +183,16 @@ export class SpendWorker {
         console.error(`Meta campaigns read failed (${code}).`);
       }
     }
+    if (source === 'meta' && reader.readAdSets) {
+      try { await saveAdSets(this.db, account, await reader.readAdSets(account, settings), settings, now); }
+      catch (error) { console.error(`Meta ad sets read failed (${adErrorCode(error, 'meta')}).`); }
+    }
     if (source === 'meta' && (reader instanceof MetaSpend || this.options.creativeReader)) {
+      const insightReader=this.options.creativeReader??this.creativeReaders.get(readerScope)??new MetaCreativeClient(reader as MetaSpend,this.options);
+      this.creativeReaders.set(readerScope,insightReader);
+      if(!this.creativeInsightPass)this.creativeInsightPass=new CreativeWorker(this.db,insightReader,this.options.creativeScan).runInsights(account,settings,now)
+        .catch(error=>console.error(`Meta creatives read failed (${adErrorCode(error,'meta')} at insights).`))
+        .finally(()=>{this.creativeInsightPass=undefined;});
       if (this.creativeRunning) {
         console.info('Meta creatives tick skipped: pass still running.');
       } else {
@@ -186,7 +200,7 @@ export class SpendWorker {
         const creativeReader = this.options.creativeReader ?? this.creativeReaders.get(readerScope) ?? new MetaCreativeClient(reader as MetaSpend, this.options);
         this.creativeReaders.set(readerScope, creativeReader);
         this.creativeRunning = true;
-        this.creativePass = new CreativeWorker(this.db, creativeReader, this.options.creativeScan).run(account, settings, now)
+        this.creativePass = new CreativeWorker(this.db, creativeReader, this.options.creativeScan).run(account, settings, now, false)
           .catch(error => {
             console.error(`Meta creatives read failed (${adErrorCode(error, 'meta')} at catalogue after 0 ads).`);
           })

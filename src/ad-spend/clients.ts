@@ -1,3 +1,4 @@
+import { fetchAdSets, type AdSet } from '../meta-adsets/catalogue.js';
 import { addDays } from '../hero-range.js';
 import type { Settings } from '../settings.js';
 import { AdTransport, type AdTransportOptions } from './http.js';
@@ -12,10 +13,12 @@ import {
   type AdSource,
   type MetaCampaign,
 } from './model.js';
+import { metaAction, META_PURCHASE, META_ADD_TO_CART } from './meta-actions.js';
 import { spendMarket } from './placement.js';
 export interface SpendReader {
   read(account: string, from: string, to: string, settings: Settings): Promise<SpendRow[]>;
   readCampaigns?(account: string): Promise<MetaCampaign[]>;
+  readAdSets?(account: string, settings: Settings): Promise<AdSet[]>;
 }
 const label = (value: unknown): string => {
   if (typeof value !== 'string' || !value.trim() || value.length > 300)
@@ -61,6 +64,11 @@ export function parseMeta(
       owner = ownerFor('meta', campaignId, settings);
     return {
       source: 'meta',
+      impressions: r.impressions == null ? null : Number(microsDecimal(decimalMicros(String(r.impressions)))),
+      linkClicks: r.inline_link_clicks == null ? (r.actions == null ? null : metaAction(r.actions, 'link_click')) : Number(microsDecimal(decimalMicros(String(r.inline_link_clicks)))),
+      addsToCart: r.actions == null ? null : metaAction(r.actions, META_ADD_TO_CART),
+      purchases: r.actions == null ? null : metaAction(r.actions, META_PURCHASE),
+      purchaseValue: r.actions == null || r.action_values == null ? null : metaAction(r.action_values, META_PURCHASE) || metaAction(r.action_values, 'omni_purchase_values'),
       accountId: account,
       campaignId,
       campaignName,
@@ -144,20 +152,26 @@ export class MetaSpend implements SpendReader {
   private readonly http: AdTransport;
   constructor(
     private readonly token: string,
-    options: AdTransportOptions = {},
+    private readonly options: AdTransportOptions = {},
   ) {
     this.http = new AdTransport('meta', { ...options, log: options.log ? (entry) => {
       if (entry.timeoutMs !== undefined) options.log!(entry);
       else options.log!({ ...entry, requestId: entry.requestId?.includes(token) ? null : entry.requestId });
     } : undefined });
   }
-  readGraph(path: string, params: Record<string, string> = {}, timeoutMs = 10_000) {
+  async readGraph(path: string, params: Record<string, string> = {}, timeoutMs = 10_000, resumeRateLimit = false) {
     const url = new URL(`https://graph.facebook.com/${apiVersions.meta}/${path}`);
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-    return this.http.request(url.toString(), {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${this.token}` },
-    }, timeoutMs);
+    for (;;) {
+      try {
+        return await this.http.request(url.toString(), { method: 'GET', headers: { Authorization: `Bearer ${this.token}` } }, timeoutMs);
+      } catch (error) {
+        if (!resumeRateLimit || !(error instanceof AdError) || error.providerCode !== 80004) throw error;
+        // This wait is outside the transport queue, so spend and daily insights can interleave.
+        console.info('Meta creative catalogue rate limited; waiting before resuming this read.');
+        await (this.options.sleep ?? (ms => new Promise(resolve => setTimeout(resolve, ms))))(Math.max(15 * 60_000, error.retryAfterMs ?? 0));
+      }
+    }
   }
   /** A source URL may expire, but must never send the bearer credential to a browser. */
   safeMediaUrl(value: unknown): string {
@@ -170,22 +184,24 @@ export class MetaSpend implements SpendReader {
   }
   /** Shared cursor paging; never follows a provider-supplied URL carrying credentials. */
   async *readPages(path: string, params: Record<string, string> = {}, timeoutMs = 10_000,
-    options: { fallbackLimit?: number } = {}): AsyncGenerator<any[]> {
+    options: { fallbackLimit?: number; resumeRateLimit?: boolean } = {}): AsyncGenerator<any[]> {
     const cursors = new Set<string>();
     let limit = params.limit;
     let after: string | undefined;
     do {
       const query = { ...params, ...(limit ? { limit } : {}), ...(after ? { after } : {}) };
       let body: any;
+      const readPage = () => this.readGraph(path, query, timeoutMs, options.resumeRateLimit);
       try {
-        body = await this.readGraph(path, query, timeoutMs);
+        body = await readPage();
       } catch (error) {
         const fallback = options.fallbackLimit;
         if (!(error instanceof AdError) || !(error.code === 'timeout' || error.status >= 500 && error.status <= 599)
           || !fallback || !Number.isSafeInteger(fallback) || fallback < 1 || (limit !== undefined && Number(limit) <= fallback)) throw error;
         // Retry this cursor once at a smaller page size, then retain it for the rest of the list.
         limit = String(fallback);
-        body = await this.readGraph(path, { ...query, limit }, timeoutMs);
+        query.limit=limit;
+        body = await readPage();
       }
       const rows = list(body.data);
       const next = body.paging?.next ? label(body.paging?.cursors?.after) : undefined;
@@ -195,10 +211,13 @@ export class MetaSpend implements SpendReader {
       after = next;
     } while (after);
   }
-  async readAllPages(path: string, params: Record<string, string> = {}, timeoutMs = 10_000): Promise<any[]> {
+  async readAllPages(path: string, params: Record<string, string> = {}, timeoutMs = 10_000, resumeRateLimit = false): Promise<any[]> {
     const rows: any[] = [];
-    for await (const page of this.readPages(path, params, timeoutMs)) rows.push(...page);
+    for await (const page of this.readPages(path, params, timeoutMs, { resumeRateLimit })) rows.push(...page);
     return rows;
+  }
+  readAdSets(account: string, settings: Settings): Promise<AdSet[]> {
+    return fetchAdSets(this, account, settings);
   }
   async readCampaigns(account: string): Promise<MetaCampaign[]> {
     const rows: MetaCampaign[] = [], cursors = new Set<string>();
@@ -241,7 +260,7 @@ export class MetaSpend implements SpendReader {
     let after: string | undefined;
     do {
       const body = await this.readGraph(`act_${account}/insights`, {
-        fields: 'spend,campaign_id,campaign_name,adset_id,adset_name,date_start',
+        fields: 'spend,campaign_id,campaign_name,adset_id,adset_name,date_start,impressions,inline_link_clicks,actions,action_values',
         level: 'adset',
         time_increment: '1',
         time_range: JSON.stringify({

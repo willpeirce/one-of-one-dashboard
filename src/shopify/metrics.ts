@@ -132,7 +132,7 @@ function marketHero(facts: Facts, today: string, from: string, to: string, setti
   const empty = market !== 'all' && data.ready && from >= data.from && orders.length === 0;
   if (empty) {
     const message = `No ${market.toUpperCase()} orders in this period`;
-    for (const key of ['net', 'orders', 'aov', ...(!hero.spend.unavailable ? ['cac', 'roas', 'margin', 'profit'] as const : [])] as const) {
+    for (const key of ['net', 'orders', 'aov', 'contribution', ...(!hero.spend.unavailable ? ['cac', 'roas', 'margin', 'profit'] as const : [])] as const) {
       hero[key].ss = `${key === 'margin' || key === 'profit' ? 'store-wide · ' : ''}${message}`;
       hero[key].unavailable = false;
     }

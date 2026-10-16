@@ -1,3 +1,4 @@
+import { metaAction as action, META_PURCHASE, META_ADD_TO_CART } from '../ad-spend/meta-actions.js';
 import { MetaSpend } from '../ad-spend/clients.js';
 import { AdError, hourDay } from '../ad-spend/model.js';
 import { addDays } from '../hero-range.js';
@@ -29,11 +30,6 @@ const numeric = (value: unknown): number => {
 const rows = (value: unknown): any[] => {
   if (!Array.isArray(value)) throw new AdError('invalid');
   return value;
-};
-const action = (value: unknown, name?: string): number => {
-  if (value == null) return 0;
-  const list = rows(value);
-  return list.filter(row => !name || row.action_type === name).reduce((sum, row) => sum + numeric(row.value), 0);
 };
 const instant = (value: unknown, fallback: Date): string => {
   const date = value ? new Date(text(value)) : fallback;
@@ -73,7 +69,7 @@ function parseInsight(row: any, day: string): AdInsight {
     linkClicks: row.inline_link_clicks == null ? action(row.actions, 'link_click') : numeric(row.inline_link_clicks),
     threeSecondPlays: direct ? action(row.actions, 'video_view') : action(row.video_continuous_2_sec_watched_actions), threeSecondSource: direct ? 'video_view' : fallback ? 'video_continuous_2_sec_watched_actions' : 'none',
     plays: action(row.video_play_actions), thruPlays: action(row.video_thruplay_watched_actions), plays25: action(row.video_p25_watched_actions), plays50: action(row.video_p50_watched_actions), plays75: action(row.video_p75_watched_actions), plays100: action(row.video_p100_watched_actions), averagePlayTime: action(row.video_avg_time_watched_actions),
-    addsToCart: action(row.actions, 'omni_add_to_cart'), purchases: action(row.actions, 'omni_purchase'), purchaseValue: action(row.action_values, 'omni_purchase') || action(row.action_values, 'omni_purchase_values') };
+    addsToCart: action(row.actions, META_ADD_TO_CART), purchases: action(row.actions, META_PURCHASE), purchaseValue: action(row.action_values, META_PURCHASE) || action(row.action_values, 'omni_purchase_values') };
 }
 
 /** Fixed Graph GET reads share the spend adapter's version, transport and safe diagnostics. */
@@ -85,6 +81,8 @@ export class MetaCreativeClient implements CreativeReader {
   private readonly accounts = new Map<string, string>();
   private readonly knownMedia = new Set<string>();
   private readonly storedAds = new Map<string, StoredCatalogueAd>();
+  private readonly images = new Map<string, Promise<any>>();
+  private readonly videoSizes = new Map<string, {width:number;height:number}>();
   private readonly detailRetries = new Map<string, StoredCatalogueAd>();
   constructor(private readonly meta: MetaSpend, private readonly options: AdTransportOptions = {}) {
     this.fetcher = options.fetch ?? fetch;
@@ -112,10 +110,10 @@ export class MetaCreativeClient implements CreativeReader {
       return null;
     }
   }
-  private async account(account: string): Promise<string> {
+  private async account(account: string, resumeRateLimit = false): Promise<string> {
     const cached = this.accounts.get(account);
     if (cached) return cached;
-    const facts = await this.meta.readGraph(`act_${id(account)}`, { fields: 'currency,timezone_name' });
+    const facts = await this.meta.readGraph(`act_${id(account)}`, { fields: 'currency,timezone_name' }, 10_000, resumeRateLimit);
     if (facts.currency !== 'GBP') throw new AdError('unsupported_account');
     const zone = text(facts.timezone_name, 100);
     if (!zone) throw new AdError('invalid');
@@ -172,10 +170,10 @@ export class MetaCreativeClient implements CreativeReader {
     throw new AdError('http');
   }
   private creative(creativeId: string): Promise<any> {
-    return this.meta.readGraph(id(creativeId), { fields: CREATIVE_FIELDS, thumbnail_width: '600', thumbnail_height: '600' });
+    return this.meta.readGraph(id(creativeId), { fields: CREATIVE_FIELDS, thumbnail_width: '600', thumbnail_height: '600' }, 10_000, true);
   }
   private post(storyId: string): Promise<any> {
-    return this.meta.readGraph(id(storyId), { fields: 'attachments{type,media,target,subattachments},permalink_url' });
+    return this.meta.readGraph(id(storyId), { fields: 'attachments{type,media,target,subattachments},permalink_url' }, 10_000, true);
   }
   private attachment(post: any): any {
     const first = post?.attachments?.data?.[0];
@@ -183,16 +181,17 @@ export class MetaCreativeClient implements CreativeReader {
   }
   private permalink(kind: 'post' | 'instagram', sourceId: string): Promise<any | null> {
     const key = `${kind}:${sourceId}`;
-    if (!this.permalinks.has(key)) this.permalinks.set(key, this.optional(key, () => this.meta.readGraph(id(sourceId), { fields: kind === 'post' ? 'permalink_url' : 'permalink,media_type' })));
+    if (!this.permalinks.has(key)) this.permalinks.set(key, this.optional(key, () => this.meta.readGraph(id(sourceId), { fields: kind === 'post' ? 'permalink_url' : 'permalink,media_type' }, 10_000, true)));
     return this.permalinks.get(key)!;
   }
   async *readCatalogue(account: string, settings: Settings, now: Date): AsyncIterable<CatalogueRead[]> {
-    await this.account(account);
+    await this.account(account, true);
+    this.images.clear();this.videoSizes.clear();
     const creativeCache = new Map<string, any>(), mediaCache = new Map<string, CatalogueMedia>(), postCache = new Map<string, any>();
     const reduced = new Set<string>(), expanded = new Set<string>();
     const retryResults = new Map<string, CatalogueMedia | null>();
     for await (const ads of this.meta.readPages(`act_${id(account)}/ads`, { fields: `id,name,status,effective_status,created_time,adset{id,name},campaign{id,name},creative{${CREATIVE_FIELDS}}`, limit: '25',
-      effective_status: JSON.stringify(['ACTIVE', 'PAUSED', 'ARCHIVED', 'CAMPAIGN_PAUSED', 'ADSET_PAUSED', 'PENDING_REVIEW', 'DISAPPROVED', 'PREAPPROVED', 'PENDING_BILLING_INFO', 'IN_PROCESS', 'WITH_ISSUES']) }, 60_000, { fallbackLimit: 10 })) {
+      effective_status: JSON.stringify(['ACTIVE', 'PAUSED', 'ARCHIVED', 'CAMPAIGN_PAUSED', 'ADSET_PAUSED', 'PENDING_REVIEW', 'DISAPPROVED', 'PREAPPROVED', 'PENDING_BILLING_INFO', 'IN_PROCESS', 'WITH_ISSUES']) }, 60_000, { fallbackLimit: 10, resumeRateLimit: true })) {
       const entries: CatalogueRead[] = [];
       for (const row of ads) {
         if (!row.creative?.id) continue;
@@ -260,17 +259,19 @@ export class MetaCreativeClient implements CreativeReader {
         let media = retryGroupId ? retryResults.get(retryGroupId) : mediaCache.get(key);
         if (!media) {
           const actualVideoId = primary.kind === 'video' && !primary.key.includes(':') ? primary.key : null;
-          const metadata = actualVideoId ? await this.optional(`video-info:${actualVideoId}`, () => this.meta.readGraph(id(actualVideoId), { fields: 'title,length,format,picture' })) : null;
-          const format = metadata?.format?.[0];
+          const metadata = actualVideoId ? await this.optional(`video-info:${actualVideoId}`, () => this.meta.readGraph(id(actualVideoId), { fields: 'length,title,picture' }, 10_000, true)) : null;
+          const image = primary.kind === 'image' && !primary.key.includes(':') && (!this.knownMedia.has(key) || retryGroupId)
+            ? await this.optional(`image-info:${key}`, () => this.imageInfo(account, primary.key)) : null;
           const thumbnailUrl = creative.thumbnail_url ?? creative.image_url ?? attachment?.media?.image?.src ?? metadata?.picture;
           const stored = !retryGroupId && this.knownMedia.has(key);
           let thumbnail = !stored && thumbnailUrl ? await this.optional(`thumbnail:${key}`, () => this.bytes(thumbnailUrl)) : null;
           if (!stored && !thumbnail && primary.kind === 'image') thumbnail = await this.optional(`image:${key}`, () => this.imageBytes(account, primary.key));
           const frames = !stored && actualVideoId ? await this.optional(`frames:${key}`, () => this.videoFrames(actualVideoId)) ?? [] : [];
+          const size = actualVideoId ? this.videoSizes.get(actualVideoId) : image;
           media = { kind: primary.kind, key: primary.key, title: text(metadata?.title) || text(creative.title) || text(row.name, 300),
             lengthSeconds: metadata?.length == null ? null : numeric(metadata.length),
-            width: format?.width == null ? attachment?.media?.image?.width ?? null : numeric(format.width),
-            height: format?.height == null ? attachment?.media?.image?.height ?? null : numeric(format.height),
+            width: size?.width == null ? attachment?.media?.image?.width ?? null : numeric(size.width),
+            height: size?.height == null ? attachment?.media?.image?.height ?? null : numeric(size.height),
             firstSeen: now.toISOString(), detailReducedAt: reduced.has(creativeId) ? now.toISOString() : expanded.has(creativeId) ? null : undefined, thumbnail, poster: primary.kind === 'video' ? thumbnail : null, frames,
             alternates: alternatives.filter(item => item.kind !== primary.kind || item.key !== primary.key) };
           mediaCache.set(key, media);
@@ -369,6 +370,11 @@ export class MetaCreativeClient implements CreativeReader {
     const fallback = await this.meta.readGraph(id(videoId), { fields: 'download_hd_url' });
     return this.mediaUrl(fallback.download_hd_url);
   }
+  private imageInfo(account: string, key: string): Promise<any> {
+    const cacheKey=`${account}:${key}`;
+    if(!this.images.has(cacheKey))this.images.set(cacheKey,this.meta.readAllPages(`act_${id(account)}/adimages`,{hashes:JSON.stringify([id(key)]),fields:'hash,url,width,height',limit:'100'},10_000,true).then(images=>images.find(image=>image.hash===key)??null));
+    return this.images.get(cacheKey)!;
+  }
   async imageBytes(account: string, key: string, full = false): Promise<Uint8Array> {
     let url: unknown;
     if (key.startsWith('post:')) {
@@ -378,14 +384,15 @@ export class MetaCreativeClient implements CreativeReader {
       const creative = await this.creative(id(key.slice(9)));
       url = full ? creative.image_url ?? creative.thumbnail_url : creative.thumbnail_url ?? creative.image_url;
     } else {
-      const images = await this.meta.readAllPages(`act_${id(account)}/adimages`, { hashes: JSON.stringify([id(key)]), fields: 'hash,url,width,height', limit: '100' });
-      url = images.find(image => image.hash === key)?.url;
+      url = (await this.imageInfo(account,key))?.url;
     }
     return this.bytes(url);
   }
   async videoFrames(videoId: string): Promise<Uint8Array[]> {
     if (videoId.includes(':')) return [];
-    const thumbnails = await this.meta.readAllPages(`${id(videoId)}/thumbnails`, { fields: 'uri,is_preferred,width,height', limit: '10' });
+    const thumbnails = await this.meta.readAllPages(`${id(videoId)}/thumbnails`, { fields: 'uri,is_preferred,width,height', limit: '10' },10_000,true);
+    const first=thumbnails[0];
+    if(first?.width && first?.height)this.videoSizes.set(videoId,{width:numeric(first.width),height:numeric(first.height)});
     const output: Uint8Array[] = [];
     for (const thumbnail of thumbnails.slice(0, 10)) output.push(await this.bytes(thumbnail.uri, false));
     return output;

@@ -1,3 +1,4 @@
+import {updateAdSets} from './meta-adsets/browser.js';
 import { metricSign } from './metric-sign.js';
 import { radarChartHtml, radarMeasure, radarSummary, weakestRadarGauge, type RadarArea } from './radar.js';
 import { glance } from './fulfilment/view.js';
@@ -450,6 +451,7 @@ function filterDials(): void {
 
 function updateSnapshot(next: DashboardSnapshot, initial = false): void {
   snapshot = next;
+  if(snapshot.adSets)updateAdSets(snapshot.adSets,selectedMarket);
   if (snapshot.creatives) updateCreativeSnapshot(snapshot.creatives);
   if (snapshot.reviews) get('#reviews').innerHTML = reviewsPanelHtml(snapshot.reviews);
   for (const root of [document, ...all<HTMLTemplateElement>('template').map((template) => template.content)]) {
@@ -611,7 +613,7 @@ function boot(): void {
     const element = target.closest<HTMLElement>('[data-series-market],.tile,.profit-line,.rt[data-sheet]');
     if (element && details.has(element)) { showDetail(element); return; }
     const market = target.closest<HTMLElement>('#market [data-market]')?.dataset.market;
-    if (market === 'all' || market === 'uk' || market === 'us') { selectedMarket = market; renderHero(activeHero()); filterDials(); return; }
+    if (market === 'all' || market === 'uk' || market === 'us') { selectedMarket = market; if(snapshot.adSets)updateAdSets(snapshot.adSets,selectedMarket); renderHero(activeHero()); filterDials(); return; }
     const period = target.closest<HTMLElement>('[data-period]')?.dataset.period;
     if (period === 'pick') { dates.open(); return; }
     if (period === 'today' || period === 'yday' || period === '7d' || period === '30d') { setPeriod(period); return; }

@@ -148,7 +148,7 @@ test('image MIME comes from stored full bytes; missing video frames refill or ke
   assert.equal(scanImageMime(Buffer.from('<svg>invented</svg>')), null);
 });
 
-test('malformed answers wait until next UK day; repeated failure waits seven UK dates and later success recovers health', async t => {
+test('malformed answers wait until next UK day; repeated failure also waits one UK day and later success recovers health', async t => {
   await seed([entry('retry')]);
   const logs: string[] = []; t.mock.method(console, 'error', (line: string) => logs.push(line));
   let instant = new Date('2026-10-24T12:00:00Z'), calls = 0;
@@ -158,9 +158,9 @@ test('malformed answers wait until next UK day; repeated failure waits seven UK 
   assert.equal((await runCreativeScans(db, settings(), opts)).state, 'cooldown'); assert.equal(calls, 1);
   instant = new Date('2026-10-24T23:00:00Z');
   await runCreativeScans(db, settings(), opts);
-  assert.equal(new Date((await rows())[1].retry_after).toISOString(), '2026-11-01T00:00:00.000Z');
+  assert.equal(new Date((await rows())[1].retry_after).toISOString(), '2026-10-26T00:00:00.000Z');
   assert.equal((await readScanHealth(db, settings(), { mode: 'live', accountId: account, now: instant })).failed, 1);
-  instant = new Date('2026-11-01T00:00:00Z');
+  instant = new Date('2026-10-26T00:00:00Z');
   await runCreativeScans(db, settings(), { ...opts, fetch: async () => answer() });
   let health = await readScanHealth(db, settings(), { mode: 'live', accountId: account, now: instant });
   assert.equal(health.scanned, 1); assert.equal(health.failed, 0); assert.equal(health.consecutiveFailures, 0);
@@ -172,29 +172,33 @@ test('malformed answers wait until next UK day; repeated failure waits seven UK 
   assert.deepEqual(logs, ['Creative scan failed (malformed)', 'Creative scan failed (malformed)']);
 });
 
-test('429 retries once after Retry-After then stops the run, even if the retry succeeds', async t => {
+test('429 stores its safe provider code, stops without retrying and recovers next UK day', async t => {
   await seed([entry('older', false, new Date('2026-10-12T12:00:00Z')), entry('newer')]);
-  const logs: string[] = [], waits: number[] = []; let calls = 0;
+  const logs: string[] = [], waits: number[] = []; let calls = 0, instant = now;
   t.mock.method(console, 'error', (line: string) => logs.push(line));
-  const result = await runCreativeScans(db, settings(), options({ sleep: async ms => { waits.push(ms); }, fetch: async () => {
-    calls++; return calls === 1 ? new Response(JSON.stringify({ error: process.env.ANTHROPIC_API_KEY }), { status: 429, headers: { 'retry-after': '2' } }) : answer();
-  } }));
-  assert.equal(calls, 2); assert.deepEqual(waits, [2000]); assert.equal(result.done, 1); assert.equal(result.failed, 1);
-  assert.deepEqual((await rows()).map(row => [row.media_group_id, row.status, row.http_status]), [['newer', 'failed', 429], ['newer', 'done', 200]]);
-  assert.deepEqual(logs, ['Creative scan failed (http 429)']);
-  assert.ok(!JSON.stringify(await rows()).includes(process.env.ANTHROPIC_API_KEY!));
-  assert.equal((await readScanHealth(db, settings(), options())).failed, 0);
+  const opts=options({clock:()=>instant,groupId:'newer',sleep:async ms=>{waits.push(ms);},fetch:async()=>{
+    calls++;return calls===1?Response.json({error:{type:'rate_limit_error',message:process.env.ANTHROPIC_API_KEY}},{status:429}):answer();
+  }});
+  assert.equal((await runCreativeScans(db,settings(),opts)).failed,1);
+  assert.equal(calls,1);assert.deepEqual(waits,[]);
+  const saved=await rows();assert.equal(saved[0].http_status,429);assert.equal(saved[0].provider_code,'rate_limit_error');
+  assert.match((await readScanHealth(db,settings(),options())).line,/1 failed · http 429, rate_limit_error/);
+  assert.equal((await runCreativeScans(db,settings(),opts)).state,'cooldown');assert.equal(calls,1);
+  instant=scanRetryAt(now);assert.equal((await runCreativeScans(db,settings(),opts)).done,1);assert.equal(calls,2);
+  assert.deepEqual(logs,['Creative scan failed (http 429, rate_limit_error)']);
+  assert.ok(!JSON.stringify([saved,logs]).includes(process.env.ANTHROPIC_API_KEY!));
+  assert.equal((await readScanHealth(db,settings(),options())).failed,0);
 });
 
-test('5xx retry uses ten seconds by default and a second refusal gets seven-day cooldown', async t => {
-  await seed([entry('server')]); t.mock.method(console, 'error', () => {});
-  let calls = 0; const waits: number[] = [];
-  await runCreativeScans(db, settings(), options({ sleep: async ms => { waits.push(ms); }, fetch: async () => {
-    calls++; return new Response('invented outage', { status: 503 });
-  } }));
-  assert.equal(calls, 2); assert.deepEqual(waits, [10_000]);
-  const saved = await rows(); assert.equal(saved.length, 2); assert.equal(saved[1].failure_reason, 'refused');
-  assert.equal(new Date(saved[1].retry_after).toISOString(), '2026-10-20T23:00:00.000Z');
+test('5xx stops the pass and repeated failures remain eligible each next UK day', async t => {
+  await seed([entry('server')]);t.mock.method(console,'error',()=>{});
+  let instant=now,calls=0;const waits:number[]=[];
+  const opts=options({clock:()=>instant,sleep:async ms=>{waits.push(ms);},fetch:async()=>{calls++;return new Response('invented outage',{status:503});}});
+  await runCreativeScans(db,settings(),opts);assert.equal(calls,1);assert.deepEqual(waits,[]);
+  assert.equal((await runCreativeScans(db,settings(),opts)).state,'cooldown');
+  instant=scanRetryAt(now);await runCreativeScans(db,settings(),opts);assert.equal(calls,2);
+  const saved=await rows();assert.equal(saved.length,2);assert.equal(saved[1].failure_reason,'refused');
+  assert.equal(new Date(saved[1].retry_after).toISOString(),scanRetryAt(instant).toISOString());
 });
 
 test('preflight cap stops before an unaffordable request, charges actual usage and resumes next UK day', async () => {
@@ -217,18 +221,16 @@ test('preflight cap stops before an unaffordable request, charges actual usage a
   assert.equal((await runCreativeScans(db, config, { ...opts, clock: () => tomorrow })).state, 'done'); assert.equal(calls, 2);
 });
 
-test('a retry repeats the cap check and cap controls do not count as a second provider failure', async t => {
-  await seed([entry('retry-cap')]); t.mock.method(console, 'error', () => {});
-  const config = settings(), copy = 'Ad body: Invented drawing kit retry-cap\nAd title: Invented headline\nCall to action: SHOP_NOW';
-  config.creativeScanCapGbp = scanRequestReserve(config, scanSystemText('image'), copy, 1) + 0.0001;
-  let calls = 0;
-  const result = await runCreativeScans(db, config, options({ sleep: async () => {}, fetch: async () => {
-    calls++; return new Response(JSON.stringify({ usage: { input_tokens: 100, output_tokens: 50 }, error: 'invented busy' }), { status: 429 });
-  } }));
-  assert.equal(calls, 1); assert.equal(result.state, 'cap');
-  const health = await readScanHealth(db, config, { accountId: account, mode: 'live', now });
-  assert.equal(health.failed, 1); assert.equal(health.consecutiveFailures, 1); assert.equal(health.reason, 'refused');
-  assert.match(health.message!, /cap reached/);
+test('a next-day retry still checks the cap before calling the provider', async t => {
+  await seed([entry('retry-cap')]);t.mock.method(console,'error',()=>{});
+  let instant=now,calls=0;const opts=options({clock:()=>instant,fetch:async()=>{calls++;return Response.json({error:{type:'overloaded_error'}},{status:503});}});
+  await runCreativeScans(db,settings(),opts);assert.equal(calls,1);
+  instant=scanRetryAt(now);
+  assert.equal((await runCreativeScans(db,{...settings(),creativeScanCapGbp:0.000001},opts)).state,'cap');
+  assert.equal(calls,1);
+  const health=await readScanHealth(db,settings(),{accountId:account,mode:'live',now:instant});
+  assert.equal(health.failed,1);assert.equal(health.consecutiveFailures,1);assert.equal(health.reason,'refused');
+  assert.match(health.message!,/cap reached/);
 });
 
 test('worker and manual runs share the account guard, cap at twenty sequential requests and skip already completed parents', async () => {
@@ -258,8 +260,8 @@ test('missing or unsupported images fail safely; network and abort errors expose
     calls++; if (groupId === 'timeout') throw new DOMException(process.env.ANTHROPIC_API_KEY, 'AbortError');
     throw new Error(process.env.ANTHROPIC_API_KEY);
   } }));
-  assert.equal(calls, 2); assert.deepEqual(logs, ['Creative scan failed (refused)', 'Creative scan failed (network)', 'Creative scan failed (timeout)']);
-  assert.deepEqual((await rows()).map(row => row.failure_reason), ['refused', 'network', 'timeout']);
+  assert.equal(calls, 2); assert.deepEqual(logs, ['Creative scan failed (unsupported type)', 'Creative scan failed (network)', 'Creative scan failed (timeout)']);
+  assert.deepEqual((await rows()).map(row => row.failure_reason), ['unsupported type', 'network', 'timeout']);
   assert.ok(!JSON.stringify([await rows(), logs]).includes(process.env.ANTHROPIC_API_KEY!));
 });
 
@@ -337,4 +339,15 @@ test('an answer with no kept attribute is failed and leaves prior model values u
   } })) });
   assert.equal(result.state, 'failed'); assert.deepEqual(await readAttributeRows(db, 'live', account), before);
   const saved = (await rows())[1]; assert.equal(saved.failure_reason, 'malformed'); assert.equal(saved.dropped_count, 2);
+});
+
+test('oversized media stores a reason without a model call and the common failure is named', async t=>{
+  await seed([entry('oversize-a'),entry('oversize-b'),entry('unsupported')]);t.mock.method(console,'error',()=>{});
+  await db.query("UPDATE pulse.media_groups SET thumbnail=$1 WHERE id IN ('oversize-a','oversize-b')",[Buffer.alloc(5*1024*1024+1)]);
+  await db.query("UPDATE pulse.media_groups SET thumbnail=$1 WHERE id='unsupported'",[Buffer.from('invented unsupported bytes')]);
+  let calls=0;const opts=options({fetch:async()=>{calls++;return answer();}});
+  assert.equal((await runCreativeScans(db,settings(),opts)).failed,3);assert.equal(calls,0);
+  assert.deepEqual((await rows()).map(r=>r.failure_reason).sort(),['media too large','media too large','unsupported type']);
+  assert.match((await readScanHealth(db,settings(),opts)).line,/3 failed · media too large/);
+  assert.equal((await runCreativeScans(db,settings(),opts)).state,'cooldown');
 });

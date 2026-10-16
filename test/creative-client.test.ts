@@ -323,6 +323,7 @@ test('any refused expansion among three ads falls back to nested fields and mark
       const mock = reader(url => {
         if (url.hostname !== 'graph.facebook.com') return picture();
         if (url.pathname.endsWith('/act_invented-account')) return account;
+        if (url.pathname.endsWith('/adimages')) return {data:[]};
         if (url.pathname.endsWith('/ads')) return { data: listed };
         if (url.pathname.endsWith('/invented-refused')) {
           if (error === 'transport') throw new Error(mock.token);
@@ -401,6 +402,7 @@ test('reduced-detail markers travel with each yielded page even if a later list 
       const mock = reader(url => {
         if (url.hostname !== 'graph.facebook.com') return picture();
         if (url.pathname.endsWith('/act_invented-account')) return account;
+        if (url.pathname.endsWith('/adimages')) return {data:[]};
         if (url.pathname.endsWith('/ads')) {
           const cursor = url.searchParams.get('after');
           if (cursor === 'invented-final-page') {

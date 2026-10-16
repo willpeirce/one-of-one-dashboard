@@ -1,4 +1,4 @@
-import { SETTINGS_KEY_NAMES, type SettingsSnapshot } from './settings.js';
+import { SETTINGS_KEY_NAMES, type SettingsSnapshot, type Settings } from './settings.js';
 import type { ShopifyCost } from './shopify/costs.js';
 import { ukToday } from './hero-range.js';
 import { monthlyOverheadTotal } from './overheads.js';
@@ -71,21 +71,22 @@ function section(title: string, description: string, content: string, open = fal
 const number = (key: string, label: string, extra: Partial<Field> = {}): Field => ({ key, label, type: 'number', ...extra });
 const checkbox = (key: string, label: string): Field => ({ key, label, type: 'checkbox' });
 
-function campaignOwners(campaigns: readonly MetaCampaignView[], sync: CampaignSyncState): string {
+function campaignOwners(campaigns: readonly MetaCampaignView[], sync: CampaignSyncState, settings: Settings): string {
   const newest = [...campaigns].sort((a, b) => Date.parse(b.createdAt ?? b.firstSeen) - Date.parse(a.createdAt ?? a.firstSeen));
   const date = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', day: 'numeric', month: 'short', year: 'numeric' });
   const row = (campaign: MetaCampaignView) => {
     const id = `meta-owner-${campaign.id}`;
     const created = campaign.createdAt ? `<time datetime="${escapeHtml(campaign.createdAt)}">${escapeHtml(date.format(new Date(campaign.createdAt)))}</time>` : 'not provided';
-    return `<div class="setting-campaign" data-meta-campaign="${escapeHtml(campaign.id)}" data-saved-owner="${campaign.owner}" data-confirmed="${campaign.confirmed}">
+    return `<div class="setting-campaign" data-meta-campaign="${escapeHtml(campaign.id)}" data-saved-owner="${campaign.owner}" data-confirmed="${campaign.confirmed}" data-saved-test="${!!settings.metaOwners.find(r => r.campaignId === campaign.id)?.test}">
       <div class="setting-campaign-detail"><h4>${escapeHtml(campaign.name)}</h4><p class="setting-help">${escapeHtml(campaign.status.replaceAll('_', ' ').toLowerCase())} · Created ${created} · ${campaign.mode === 'sample' ? 'sample data' : 'live'}</p>${campaign.confirmed ? '' : '<span class="setting-campaign-new" data-campaign-new>New, check owner</span>'}</div>
       <div class="setting-field"><label for="${escapeHtml(id)}">Owner</label><select id="${escapeHtml(id)}" data-campaign-owner aria-label="Owner for ${escapeHtml(campaign.name)}"><option value="ours"${campaign.owner === 'ours' ? ' selected' : ''}>Ours</option><option value="freelancer"${campaign.owner === 'freelancer' ? ' selected' : ''}>Freelancer</option></select></div>
+      <label class="setting-check"><input type="checkbox" data-campaign-test${settings.metaOwners.find(r => r.campaignId === campaign.id)?.test ? ' checked' : ''}${campaign.owner !== 'ours' ? ' disabled' : ''}> Test campaign (ours only)</label>
       <button class="btn" type="button" data-save-campaign aria-label="Save owner for ${escapeHtml(campaign.name)}">Save</button>
     </div>`;
   };
   const active = newest.filter((campaign) => campaign.status === 'ACTIVE');
   const inactive = newest.filter((campaign) => campaign.status !== 'ACTIVE');
-  return `<section class="setting-collection" aria-labelledby="metaOwners-heading"><h3 id="metaOwners-heading">Meta campaigns <span class="setting-count">${formatNumber(campaigns.length)}</span></h3><p class="setting-help" data-campaign-sync data-state="${sync.state}">${escapeHtml(campaignSyncText(sync))}</p><p class="setting-help">Campaigns appear automatically. New campaigns count as Ours until you check the owner. Save each row to confirm it; this saves a local rule and does not change Meta.</p><div class="setting-campaigns">${active.map(row).join('')}</div>${inactive.length ? `<details class="setting-campaign-inactive"><summary>Show ${formatNumber(inactive.length)} inactive</summary><div class="setting-campaigns">${inactive.map(row).join('')}</div></details>` : ''}</section>`;
+  return `<section class="setting-collection" aria-labelledby="metaOwners-heading"><h3 id="metaOwners-heading">Meta campaigns <span class="setting-count">${formatNumber(campaigns.length)}</span></h3><p class="setting-help" data-campaign-sync data-state="${sync.state}">${escapeHtml(campaignSyncText(sync))}</p><p class="setting-help">Campaigns appear automatically. New campaigns have no ad-set verdict until you save their owner. Save each row to confirm it; this saves a local rule and does not change Meta.</p><div class="setting-campaigns">${active.map(row).join('')}</div>${inactive.length ? `<details class="setting-campaign-inactive"><summary>Show ${formatNumber(inactive.length)} inactive</summary><div class="setting-campaigns">${inactive.map(row).join('')}</div></details>` : ''}</section>`;
 }
 
 export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly ShopifyCost[] = [], mode: 'sample' | 'live' = 'sample', now = new Date(), metaCampaigns: readonly MetaCampaignView[] = [], campaignSync: CampaignSyncState = { state: 'pending', at: null }, creativeFlags = creativeFeatureFlags()): string {
@@ -109,11 +110,20 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     heading: 'Overheads', maxRows: 50,
     footer: `<p class="setting-overheads-total" data-overheads-total>Total this month: ${formatPounds(monthlyOverheadTotal(values.overheads, ukToday(now).slice(0, 7)))}</p><p class="setting-help">Each item is spread evenly over the days of its month.</p>`,
   })}`, true);
-  const advertising = section('Cost per purchase', 'UK and US targets, plus the blended Meta tripwire.', `<div class="settings-grid">${fields([
+  const advertising = section('Ad rules', 'Local rules: break-even, kill and step proposals. No automatic actions.', `<div class="settings-grid">${fields([
     number('cppUkBreakEvenGbp', 'UK break-even cost (£)'), number('cppUkTargetGbp', 'UK target cost (£)', { hint: 'At or below the UK break-even cost.' }),
     number('cppUsBreakEvenGbp', 'US break-even cost (£)'), number('cppUsTargetGbp', 'US target cost (£)', { hint: 'At or below the US break-even cost.' }),
     number('blendedMetaTripwireGbp', 'Blended Meta tripwire (£)', { min: 0.01 }),
-  ], values)}</div>`);
+  ], values)}</div>${(['uk','us'] as const).map(market => `<h3>${market.toUpperCase()} rules</h3><div class="settings-grid">${fields([
+    number('overrideGbp', 'Dated break-even override (£)', {nullable:true,min:0.01}),
+    {key:'overrideUntil',label:'Override until (UK day)',type:'date',optional:true},
+    number('killBar','Kill bar × break-even',{min:1,max:10}),number('slippingBar','Slipping bar × break-even',{min:1,max:10}),
+    number('atcBarGbp','Add-to-cart cost bar (£)',{min:0.01}),number('upliftPercent','Mon–Sat uplift (%)',{max:1000}),
+  ],values.adRules[market],`adRules.${market}`)}</div><p class="setting-help" data-ad-override="${market}">${values.adRules[market].overrideUntil ? `${values.adRules[market].overrideUntil < ukToday(now) ? 'Expired' : 'override to'} ${values.adRules[market].overrideUntil}` : 'No dated override'}</p>`).join('')}
+  <p class="setting-help">Daily budget is the Sunday base. Mon–Sat uses the market uplift. Spike dates are fixed in the rules.</p><div class="settings-grid">${fields([
+    number('killFloorGbp','Kill window spend floor (£)',{min:0.01}),number('slippingFloorGbp','Slipping window spend floor (£)',{min:0.01}),
+    number('freelancerTriggerGbp','Freelancer purchase-cost trigger (£)',{min:0.01}),number('testShareCapPercent','Test share cap (%)',{max:100}),
+  ],values.adRules,'adRules')}</div>`);
   const costs = section('Costs & dispatch', 'Shopify unit costs first; starting costs are the fallback.', `<div class="settings-grid">${fields([
     number('jjGbpPerUsd', 'J&J GBP per USD', { step: '0.000001', min: 0.000001, max: 100, hint: 'Check each invoice. New uploads retain this rate; earlier parcels keep theirs.' }),
     number('flatFulfilmentUkGbp', 'UK flat fulfilment cost (£)', { nullable: true }),
@@ -162,13 +172,13 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     number('creativeScanInputPrice', 'Scan input price (£ per million tokens)', { max: 10_000 }),
     number('creativeScanOutputPrice', 'Scan output price (£ per million tokens)', { max: 10_000 }),
     number('creativeScanCapGbp', 'Scan daily spend cap (£)', { max: 1_000 }),
-  ], values)}</div><dl class="setting-help" aria-label="Read-only creative flags"><dt>Creative scan flag</dt><dd data-creative-scan-flag>${creativeFlags.creativeScanEnabled ? 'On' : 'Off'}</dd><dt>Meta actions</dt><dd data-meta-actions-flag>Off · read-only, no Meta actions are built</dd></dl></section>`;
+  ], values)}</div><dl class="setting-help" aria-label="Read-only creative flags"><dt>Creative scan flag</dt><dd data-creative-scan-flag>${creativeFlags.creativeScanEnabled ? 'On' : 'Off'}</dd><dt>Meta actions</dt><dd data-meta-actions-flag>${creativeFlags.metaActionsEnabled ? 'On · our ad sets only' : 'Off · no Meta actions allowed'}</dd></dl></section>`;
   const campaigns = section('Ad spend', 'Read-only spend connections and campaign ownership.', `<div class="settings-grid">${fields([
     {key:'metaAdAccountId',label:'Meta ad account ID',optional:true,hint:'Digits only, without act_. Blank waits for keys and account setup.'},
     {key:'googleCustomerId',label:'Google customer ID',optional:true,hint:'Dashes are removed when saved.'},
     {key:'googleLoginCustomerId',label:'Google login customer ID (manager, optional)',optional:true},
     {key:'tiktokAdvertiserId',label:'TikTok advertiser ID',optional:true},
-  ], values)}</div>${campaignOwners(metaCampaigns, campaignSync)}${creativeControls}${collection('expectedGoogleCampaigns', 'Google campaign', [
+  ], values)}</div>${campaignOwners(metaCampaigns, campaignSync, values)}${creativeControls}${collection('expectedGoogleCampaigns', 'Google campaign', [
     { key: 'campaignId', label: 'Campaign ID' },
   ], values.expectedGoogleCampaigns, 'Campaign IDs expected to report on complete days. This does not enable a campaign.')}`);
   const creators = section('Creator negotiation', 'Your rules for agreeing an asset and its usage.', `<div class="settings-grid">${fields([

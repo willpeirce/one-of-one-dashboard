@@ -1,0 +1,36 @@
+import assert from 'node:assert/strict';
+import {randomBytes} from 'node:crypto';
+import test from 'node:test';
+import {MetaSpend} from '../src/ad-spend/clients.js';
+import {MetaCreativeClient} from '../src/creatives/client.js';
+import {CreativeWorker} from '../src/creatives/worker.js';
+import {creativeHealth,saveInsights} from '../src/creatives/store.js';
+import {saveSpend} from '../src/ad-spend/store.js';
+import {defaultSettings} from '../src/settings.js';
+import {createTestDatabase} from './helpers/database.js';
+import {creativeInsight} from './helpers/creatives.js';
+import type {CreativeReader} from '../src/creatives/model.js';
+test('80004 backs off outside shared transport and resumes the current catalogue cursor',async()=>{
+ const cursors:(string|null)[]=[],waits:number[]=[];let release!:()=>void,backedOff!:()=>void;
+ const paused=new Promise<void>(r=>backedOff=r),hold=new Promise<void>(r=>release=r);let limited=false;
+ const options={sleep:async(ms:number)=>{waits.push(ms);if(ms>=900000){backedOff();await hold;}},fetch:(async url=>{const u=new URL(String(url));
+  if(u.pathname.endsWith('/ads')){const after=u.searchParams.get('after');cursors.push(after);if(!after)return Response.json({data:[],paging:{next:'ignored',cursors:{after:'invented-cursor'}}});if(!limited){limited=true;return Response.json({error:{code:80004}},{status:400,headers:{'x-business-use-case-usage':JSON.stringify({invented:[{estimated_time_to_regain_access:22}]})}});}}return Response.json(u.pathname.endsWith('/ads')?{data:[]}:{currency:'GBP',timezone_name:'GMT'});
+ }) as typeof fetch};
+ const spend=new MetaSpend(randomBytes(16).toString('hex'),options),reader=new MetaCreativeClient(spend,options);
+ const run=(async()=>{for await(const _ of reader.readCatalogue('invented-account',defaultSettings(),new Date())){}})();
+ await paused;assert.ok(waits.includes(22*60000));await spend.readGraph('act_invented-account',{fields:'currency'});
+ release();await run;assert.deepEqual(cursors,[null,'invented-cursor','invented-cursor']);
+});
+test('catalogue pending never prevents a daily insight read, and incomplete days never enter watchdog percentages',async t=>{
+ const db=await createTestDatabase();t.after(()=>db.close());const account='invented-complete',now=new Date('2026-10-16T12:00:00Z'),settings={...defaultSettings(),metaAdAccountId:account};
+ let release!:()=>void;const hold=new Promise<void>(r=>release=r);let read=false;
+ const reader:CreativeReader={readCatalogue:async function*(){await hold;yield []},readInsights:async()=>{read=true;return []},imageBytes:async()=>new Uint8Array(),videoFrames:async()=>[],videoSource:async()=>''};
+ await db.query('INSERT INTO pulse.creative_jobs(account_id,backfill_done,nightly_day) VALUES($1,true,$2)',[account,'2026-10-16']);
+ const worker=new CreativeWorker(db,reader),pass=worker.run(account,settings,now,false);await worker.runInsights(account,settings,now);assert.equal(read,true);release();await pass;
+ const day='2026-10-15';await saveSpend(db,'meta',account,day,day,[{source:'meta',accountId:account,campaignId:'invented-campaign',campaignName:'Invented UK',adSetId:'invented-adset',adSetName:'Invented UK Fern',market:'uk',owner:'ours',day,amount:'100.000000',currency:'GBP'}],now);
+ await saveInsights(db,account,day,day,[creativeInsight('invented-ad',{adSetId:'invented-adset',day,spend:9})],now);
+ await db.query('UPDATE pulse.creative_insight_days SET completed=false WHERE account_id=$1',[account]);
+ let health=await creativeHealth(db,settings,{META_ACCESS_TOKEN:randomBytes(16).toString('hex')},now);assert.match(health.reconciliation!,/ad-level read incomplete on 1 day/);assert.doesNotMatch(health.reconciliation!,/91.0%/);
+ await saveInsights(db,account,day,day,[creativeInsight('invented-ad',{adSetId:'invented-adset',day,spend:100})],now);
+ health=await creativeHealth(db,settings,{META_ACCESS_TOKEN:randomBytes(16).toString('hex')},now);assert.equal(health.reconciliation,null);
+});

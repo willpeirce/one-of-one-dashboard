@@ -54,6 +54,7 @@ test('campaign and creative catalogue failures follow committed spend, preserve 
       }
       // The catalogue is another independent secondary read; refuse it explicitly.
       if (path.endsWith('/ads')) return response(failure, 400);
+      if (path.endsWith('/adsets') || path.endsWith('/insights') && new URL(String(url)).searchParams.get('level')==='ad') return response({data:[]});
       if (path.endsWith('/insights')) return response({ data: [{
         campaign_id: campaign.id, campaign_name: 'Invented Birch UK',
         adset_id: '900000000802', adset_name: 'Invented Birch audience',
@@ -65,7 +66,10 @@ test('campaign and creative catalogue failures follow committed spend, preserve 
   t.after(() => worker.stop());
   await worker.tick('meta');
   await worker.waitForCreatives();
-  assert.deepEqual(requests, ['act_9000000000', 'insights', 'campaigns', 'act_9000000000', 'ads']);
+  assert.deepEqual(requests.slice(0,3), ['act_9000000000', 'insights', 'campaigns']);
+  assert.equal(requests.filter(path=>path==='adsets').length,1);
+  assert.equal(requests.filter(path=>path==='ads').length,1);
+  assert.ok(requests.filter(path=>path==='insights').length>1,'daily creative insights continue after a catalogue failure');
   const health = (await db.query<{ mode: string; status: string; last_success_at: Date | string; consecutive_failures: number }>(
     "SELECT mode,status,last_success_at,consecutive_failures FROM pulse.source_health WHERE source='meta'",
   )).rows[0]!;
@@ -103,7 +107,8 @@ test('spend failure stays unavailable even when the independent campaign read su
   t.after(() => worker.stop());
   await worker.tick('meta');
   await worker.waitForCreatives();
-  assert.deepEqual(requests, ['act_9000000000', 'campaigns', 'act_9000000000']);
+  assert.deepEqual(requests.slice(0,2), ['act_9000000000', 'campaigns']);
+  assert.equal(requests.filter(path=>path==='act_9000000000').length,4,'spend, ad sets, daily insights and creative catalogue fail independently');
   const health = (await db.query<{ status: string; last_success_at: null; consecutive_failures: number }>(
     "SELECT status,last_success_at,consecutive_failures FROM pulse.source_health WHERE source='meta'",
   )).rows[0]!;
@@ -112,10 +117,12 @@ test('spend failure stays unavailable even when the independent campaign read su
   assert.equal(health.consecutive_failures, 1);
   assert.equal((await spendFacts(db, s, e, 'live', '2026-10-10', '2026-10-10', now)).sources[0]!.status, 'source unavailable');
   assert.equal((await readMetaCampaigns(db, s, e))[0]!.name, campaign.name);
-  assert.deepEqual(logs, [
+  assert.deepEqual([...logs].sort(), [
     'Ad spend meta failed (http 400, meta 100/1487694).',
+    'Meta ad sets read failed (http 400, meta 100/1487694).',
+    'Meta creatives read failed (http 400, meta 100/1487694 at insights).',
     'Meta creatives read failed (http 400, meta 100/1487694 at catalogue after 0 ads).',
-  ]);
+  ].sort());
   assert.equal((await db.query<{ error_code: string }>('SELECT error_code FROM pulse.creative_jobs WHERE account_id=$1', [s.metaAdAccountId])).rows[0]!.error_code, 'http 400, meta 100/1487694 at catalogue after 0 ads');
   assert.ok(!logs.join('').includes('private') && !logs.join('').includes(e.META_ACCESS_TOKEN));
 });

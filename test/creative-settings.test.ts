@@ -78,7 +78,7 @@ test('creative flags are read-only and Settings shows the current scan and lift 
   assert.match(html, /data-creative-scan-flag>On<\/dd>/);
   assert.match(settingsPage({ version: 0, values: defaultSettings() }, [], 'sample', new Date(), [], undefined, creativeFeatureFlags({})), /data-creative-scan-flag>Off<\/dd>/);
   assert.doesNotMatch(html, /(?:Attribute lifts|Creative scan) · planned|workflow not built yet|Live attribute lifts and tagging are not built yet/);
-  assert.match(html, /data-meta-actions-flag>Off · read-only, no Meta actions are built/);
+  assert.match(html, /data-meta-actions-flag>Off · no Meta actions allowed/);
   assert.doesNotMatch(html, /name="(?:creativeScanEnabled|metaActionsEnabled)"/);
   assert.doesNotMatch(html, /Scan now/);
   assert.match(html, /zero means not configured/);

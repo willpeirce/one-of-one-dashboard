@@ -65,14 +65,14 @@ function initializeSettings(form: HTMLFormElement): void {
   const lists = Array.from(form.querySelectorAll<HTMLElement>('[data-settings-list]'));
   const campaignRows = Array.from(form.querySelectorAll<HTMLElement>('[data-meta-campaign]'));
   const ownerRules = form.querySelector<HTMLInputElement>('#saved-meta-owner-rules')!;
-  let savedMetaOwners = JSON.parse(ownerRules.value) as { campaignId: string; owner: 'ours' | 'freelancer' }[];
+  let savedMetaOwners = JSON.parse(ownerRules.value) as { campaignId: string; owner: 'ours' | 'freelancer'; test?: boolean }[];
   let savedValues: JsonObject;
   let pending = false;
   let dirty = false;
   let mainDirty = false;
 
   function updateDirty(): void {
-    dirty = mainDirty || campaignRows.some((row) => row.querySelector<HTMLSelectElement>('[data-campaign-owner]')!.value !== row.dataset.savedOwner);
+    dirty = mainDirty || campaignRows.some((row) => row.querySelector<HTMLSelectElement>('[data-campaign-owner]')!.value !== row.dataset.savedOwner || String(row.querySelector<HTMLInputElement>('[data-campaign-test]')!.checked) !== row.dataset.savedTest);
   }
   function showOverheadsTotal(): void {
     const list = form.querySelector<HTMLElement>('[data-settings-list="overheads"]');
@@ -116,6 +116,11 @@ function initializeSettings(form: HTMLFormElement): void {
   function markDirty(event?: Event): void {
     if (pending) return;
     if (!(event?.target instanceof Element && event.target.closest('[data-meta-campaign]'))) mainDirty = true;
+    for (const row of campaignRows) {
+      const tick=row.querySelector<HTMLInputElement>('[data-campaign-test]')!;
+      tick.disabled=row.querySelector<HTMLSelectElement>('[data-campaign-owner]')!.value !== 'ours';
+      if (tick.disabled) tick.checked=false;
+    }
     updateDirty();
     showShopifyCosts();
     showOverheadsTotal();
@@ -170,8 +175,9 @@ function initializeSettings(form: HTMLFormElement): void {
       const owners = structuredClone(savedMetaOwners);
       const existing = owners.find((rule) => rule.campaignId === campaignId);
       if (owner !== 'ours' && owner !== 'freelancer') return;
-      if (existing) existing.owner = owner;
-      else owners.push({ campaignId, owner });
+      const test = owner === 'ours' && row.querySelector<HTMLInputElement>('[data-campaign-test]')!.checked;
+      if (existing) { existing.owner = owner; existing.test = test; }
+      else owners.push({ campaignId, owner, test });
       values.metaOwners = owners;
       saveValues(values, row);
     } else if (add) {
@@ -229,6 +235,11 @@ function initializeSettings(form: HTMLFormElement): void {
       if (input instanceof HTMLInputElement && input.type === 'checkbox') input.checked = value === true;
       else input.value = value === null || value === undefined ? '' : String(value);
     });
+    for (const market of ['uk','us']) {
+      const until=getPath(values,`adRules.${market}.overrideUntil`) as string;
+      const notice=form.querySelector<HTMLElement>(`[data-ad-override="${market}"]`);
+      if(notice) notice.textContent=until ? `${until < ukToday() ? 'Expired' : 'override to'} ${until}` : 'No dated override';
+    }
     showShopifyCosts();
     showOverheadsTotal();
     showSeriesPaceDates();
@@ -275,6 +286,7 @@ function initializeSettings(form: HTMLFormElement): void {
           if (campaign) {
             const owner = savedMetaOwners.find((rule) => rule.campaignId === campaign.dataset.metaCampaign)!.owner;
             campaign.dataset.savedOwner = owner;
+            campaign.dataset.savedTest = String(!!savedMetaOwners.find(rule => rule.campaignId === campaign.dataset.metaCampaign)?.test);
             campaign.dataset.confirmed = 'true';
             campaign.querySelector('[data-campaign-new]')?.remove();
           } else {

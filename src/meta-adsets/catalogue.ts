@@ -11,6 +11,7 @@ export interface AdSet {
   lastSignificantEdit: string | null; market: 'uk' | 'us' | 'unknown';
 }
 export interface StoredAdSet extends AdSet {
+  flatBudget: boolean | null;
   firstSeen: string; lastSeen: string; lastRead: string; campaignName: string;
   owner: 'ours' | 'freelancer' | 'unassigned';
 }
@@ -76,7 +77,7 @@ export async function saveAdSets(db: Database, account: string, rows: AdSet[], s
 export async function readAdSets(db: Database, account: string, settings: Settings): Promise<StoredAdSet[]> {
   const result = await db.query<any>(`SELECT s.*,c.name AS campaign_name FROM pulse.meta_ad_sets s LEFT JOIN pulse.meta_campaigns c ON c.account_id=s.account_id AND c.campaign_id=s.campaign_id WHERE s.account_id=$1`, [account]);
   return result.rows.map(r => ({ id:r.ad_set_id,campaignId:r.campaign_id,name:r.name,status:r.status,effectiveStatus:r.effective_status,
-    dailyBudget:r.daily_budget == null ? null : Number(r.daily_budget),lifetimeBudget:r.lifetime_budget == null ? null : Number(r.lifetime_budget),currency:r.currency,
+    flatBudget:r.flat_budget, dailyBudget:r.daily_budget == null ? null : Number(r.daily_budget),lifetimeBudget:r.lifetime_budget == null ? null : Number(r.lifetime_budget),currency:r.currency,
     createdTime:new Date(r.created_time).toISOString(),updatedTime:new Date(r.updated_time).toISOString(),learningStage:r.learning_stage,
     lastSignificantEdit:r.last_significant_edit ? new Date(r.last_significant_edit).toISOString() : null,
     market:metaSpendMarket(r.campaign_name ?? '',r.name,adSetOwner(r.campaign_id,settings)),

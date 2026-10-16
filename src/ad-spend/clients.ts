@@ -273,7 +273,12 @@ export class MetaSpend implements SpendReader {
           : { breakdowns: 'hourly_stats_aggregated_by_advertiser_time_zone' }),
         ...(after ? { after } : {}),
       });
-      rows.push(...parseMeta(body, account, curr, zone, settings));
+      // Requested action arrays are sparse: Meta omits them on zero-action hours.
+      // Normalize only this successful, explicitly requested report; legacy stored
+      // nulls remain unknown until refreshed. One empty hour must not erase the day.
+      rows.push(...parseMeta({data:list(body.data).map(row=>({...row,
+        actions:row.actions??[],action_values:row.action_values??[],
+      }))}, account, curr, zone, settings));
       const next = body.paging?.next;
       const cursor = body.paging?.cursors?.after;
       if (next && (!cursor || cursor === after)) throw new AdError('invalid');

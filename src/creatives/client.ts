@@ -68,7 +68,7 @@ function parseInsight(row: any, day: string): AdInsight {
   return { adId: id(row.ad_id), adSetId: id(row.adset_id), day, spend: numeric(row.spend), impressions: numeric(row.impressions), reach: numeric(row.reach), frequency: numeric(row.frequency),
     linkClicks: row.inline_link_clicks == null ? action(row.actions, 'link_click') : numeric(row.inline_link_clicks),
     threeSecondPlays: direct ? action(row.actions, 'video_view') : action(row.video_continuous_2_sec_watched_actions), threeSecondSource: direct ? 'video_view' : fallback ? 'video_continuous_2_sec_watched_actions' : 'none',
-    plays: action(row.video_play_actions), thruPlays: action(row.video_thruplay_watched_actions), plays25: action(row.video_p25_watched_actions), plays50: action(row.video_p50_watched_actions), plays75: action(row.video_p75_watched_actions), plays100: action(row.video_p100_watched_actions), averagePlayTime: action(row.video_avg_time_watched_actions),
+    plays: action(row.video_play_actions), thruPlays: row.video_thruplay_watched_actions == null ? null : action(row.video_thruplay_watched_actions), plays25: action(row.video_p25_watched_actions), plays50: action(row.video_p50_watched_actions), plays75: action(row.video_p75_watched_actions), plays100: action(row.video_p100_watched_actions), averagePlayTime: action(row.video_avg_time_watched_actions),
     addsToCart: action(row.actions, META_ADD_TO_CART), purchases: action(row.actions, META_PURCHASE), purchaseValue: action(row.action_values, META_PURCHASE) || action(row.action_values, 'omni_purchase_values') };
 }
 
@@ -369,6 +369,21 @@ export class MetaCreativeClient implements CreativeReader {
     if (primary?.source) return this.mediaUrl(primary.source);
     const fallback = await this.meta.readGraph(id(videoId), { fields: 'download_hd_url' });
     return this.mediaUrl(fallback.download_hd_url);
+  }
+  async readMediaFacts(account: string, group: Pick<import('./model.js').MediaGroup, 'kind'|'key'|'width'|'height'|'lengthSeconds'>, need={size:group.width===null||group.height===null,length:group.lengthSeconds===null}): Promise<import('./media-facts.js').MediaFacts> {
+    const positive = (value: unknown): number | null => Number.isFinite(Number(value)) && Number(value)>0 ? Number(value) : null;
+    if (group.key.includes(':')) return {width:null,height:null,lengthSeconds:null};
+    if (group.kind === 'image') {
+      // Do not reuse a rejected or empty catalogue cache entry on a later day's retry.
+      const rows = await this.meta.readAllPages(`act_${id(account)}/adimages`, {hashes:JSON.stringify([id(group.key)]),fields:'hash,width,height',limit:'100'},10_000,true);
+      const image = rows.find(row=>row.hash===group.key);
+      return {width:positive(image?.width),height:positive(image?.height),lengthSeconds:null};
+    }
+    const video = need.length ? await this.meta.readGraph(id(group.key),{fields:'length'},10_000,true) : null;
+    const images = need.size ? await this.meta.readAllPages(`${id(group.key)}/thumbnails`,{fields:'width,height,is_preferred',limit:'10'},10_000,true) : [];
+    const sized = images.filter(row=>positive(row.width)!==null && positive(row.height)!==null);
+    const image = sized.find(row=>row.is_preferred) ?? sized[0];
+    return {width:group.width??positive(image?.width),height:group.height??positive(image?.height),lengthSeconds:group.lengthSeconds??positive(video?.length)};
   }
   private imageInfo(account: string, key: string): Promise<any> {
     const cacheKey=`${account}:${key}`;

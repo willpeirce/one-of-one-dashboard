@@ -78,7 +78,7 @@ test('worker with scan flag off completes Meta and frequency without a scan requ
   await new CreativeWorker(db, reader(events), { clock: () => now, sleep: async () => {}, fetch: async () => {
     events.push('scan'); return answer();
   } }).run(account, settings(), now);
-  assert.deepEqual(events, ['catalogue', 'insights', 'frequency']);
+  assert.deepEqual(events, ['catalogue', 'insights', 'insights', 'insights', 'frequency']);
   assert.deepEqual(logs, []); assert.deepEqual(await scanRows(), []);
   assert.equal((await job()).error_code, null);
   assert.equal((await readScanHealth(db, settings(), { mode: 'live', accountId: account, now })).line, 'Scan: off');
@@ -89,7 +89,7 @@ test('enabled worker scans after successful Meta and exact frequency reads', asy
   await new CreativeWorker(db, reader(events), { clock: () => now, sleep: async () => {}, fetch: async (url, init) => {
     events.push('scan'); assert.equal(String(url), 'https://api.anthropic.com/v1/messages'); assert.equal(init?.method, 'POST'); return answer();
   } }).run(account, settings(), now);
-  assert.deepEqual(events, ['catalogue', 'insights', 'frequency', 'scan']);
+  assert.deepEqual(events, ['catalogue', 'insights', 'insights', 'insights', 'frequency', 'scan']);
   assert.deepEqual(await scanRows(), [{ status: 'done', failure_reason: null }]);
   assert.equal((await job()).error_code, null); assert.ok((await job()).last_success_at);
   assert.equal((await db.query('SELECT 1 FROM pulse.creative_frequencies WHERE account_id=$1', [account])).rowCount, 1);
@@ -119,7 +119,7 @@ for (const failure of ['malformed', 'network'] as const) {
     await new CreativeWorker(db, reader(events), { clock: () => now, sleep: async () => {}, fetch: async () => {
       events.push('scan'); if (failure === 'network') throw new Error(process.env.ANTHROPIC_API_KEY); return answer('invented malformed JSON');
     } }).run(account, settings(), now);
-    assert.deepEqual(events, ['catalogue', 'insights', 'frequency', 'scan']);
+    assert.deepEqual(events, ['catalogue', 'insights', 'insights', 'insights', 'frequency', 'scan']);
     assert.deepEqual(await scanRows(), [{ status: 'failed', failure_reason: failure }]);
     assert.equal((await job()).error_code, null); assert.ok((await job()).last_success_at);
     assert.deepEqual(logs, [`Creative scan failed (${failure})`]);

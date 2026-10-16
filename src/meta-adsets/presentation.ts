@@ -19,7 +19,7 @@ export function buildAdSetsView(sets:StoredAdSet[],days:Map<string,SetDay[]>,set
   return {set,days:data.filter(d=>d.day>=addDays(today,-7)&&d.day<today),
     verdict:judgeAdSet(set,data,settings,today,{...options.contexts?.get(set.id),ourMarketSpendYesterday:ours(set.market,1).spend}),
     yesterday:last?.spend??null,spend:week.spend,purchases:week.purchases,cpp:week.purchases?week.spend/week.purchases:null,cpatc:week.addsToCart?week.spend/week.addsToCart:null,
-    breakEven:be?.value??null,breakEvenNote:be?.note??'',weekdayBudget:set.market==='unknown'||set.dailyBudget===null?null:set.dailyBudget/100*(1+settings.adRules[set.market].upliftPercent/100),
+    breakEven:be?.value??null,breakEvenNote:be?.note??'',weekdayBudget:set.market==='unknown'||set.dailyBudget===null?null:set.dailyBudget/100*(set.flatBudget?1:1+settings.adRules[set.market].upliftPercent/100),
     freelancer:set.owner!=='freelancer'?[]:([3,7] as const).map(window=>{const t=totalDays(data.filter(d=>d.day>=addDays(today,-window)&&d.day<today)),o=ours(set.market,window);return {window,cpp:t.purchases?t.spend/t.purchases:null,oursCpp:o.purchases?o.spend/o.purchases:null,over:t.purchases===null||t.spend===0?null:t.purchases===0||t.spend/t.purchases>settings.adRules.freelancerTriggerGbp};}),changes:[],
   };
  }).sort((a,b)=>ownerOrder[a.set.owner]-ownerOrder[b.set.owner]||b.spend-a.spend||a.set.id.localeCompare(b.set.id));
@@ -28,7 +28,7 @@ export function buildAdSetsView(sets:StoredAdSet[],days:Map<string,SetDay[]>,set
 
 export function liveSummary(view:AdSetsView,settings:Settings,market='all') {
  const ours=view.rows.filter(r=>r.set.owner==='ours'&&r.set.effectiveStatus==='ACTIVE'&&(market==='all'||r.set.market===market));
- const budgets=ours.map(r=>r.set.market==='unknown'?null:weekdayBudget(r.set.dailyBudget,r.set.market,addDays(view.today,-1),settings));
+ const budgets=ours.map(r=>r.set.market==='unknown'?null:weekdayBudget(r.set.dailyBudget,r.set.market,addDays(view.today,-1),settings,r.set.flatBudget));
  return {count:ours.length,decisions:decisionRows(view,market).length,spend:ours.some(r=>r.yesterday===null)?null:ours.reduce((s,r)=>s+r.yesterday!,0),expected:budgets.some(b=>b===null)?null:budgets.reduce<number>((s,b)=>s+b!,0)};
 }
 export async function readAdSetsView(db:Database,settings:Settings,env:NodeJS.ProcessEnv,now:Date):Promise<AdSetsView> {
@@ -36,8 +36,8 @@ export async function readAdSetsView(db:Database,settings:Settings,env:NodeJS.Pr
  const account=settings.metaAdAccountId,today=ukToday(now);
  const [sets,sync,stored,coverage,ads,changes,actions]=await Promise.all([
   readAdSets(db,account,settings),db.query<any>('SELECT last_read FROM pulse.meta_ad_set_sync WHERE account_id=$1',[account]),
-  db.query<any>("SELECT ad_set_id,uk_day::text AS day,spend_amount,purchases,adds_to_cart FROM pulse.ad_spend WHERE mode='live' AND source='meta' AND account_id=$1 AND uk_day<$2",[account,today]),
-  db.query<{day:string}>("SELECT uk_day::text AS day FROM pulse.ad_spend_days WHERE source='meta' AND account_id=$1 AND uk_day<$2",[account,today]),
+  db.query<any>("SELECT ad_set_id,uk_day::text AS day,spend_amount,purchases,adds_to_cart FROM pulse.ad_spend WHERE mode='live' AND source='meta' AND account_id=$1 AND uk_day<$2 ORDER BY uk_day,ad_set_id",[account,today]),
+  db.query<{day:string}>("SELECT uk_day::text AS day FROM pulse.ad_spend_days WHERE source='meta' AND account_id=$1 AND uk_day<$2 AND actions_complete ORDER BY uk_day",[account,today]),
   db.query<any>("SELECT ad_set_id,effective_status,status_since FROM pulse.ads WHERE mode='live' AND account_id=$1",[account]),
   db.query<any>('SELECT * FROM pulse.meta_ad_set_changes WHERE account_id=$1 ORDER BY observed_at DESC',[account]),
   db.query<any>("SELECT ad_set_id,time FROM pulse.meta_actions WHERE account_id=$1 AND result='success' AND time>=$2",[account,addDays(today,-7)]),
@@ -68,7 +68,7 @@ export function sampleAdSetsView(settings:Settings):AdSetsView {
  const sets=['Kill','Slipping','Delivery','Test share','Step','Clear','Freelancer','Unassigned'].map((label,i):StoredAdSet=>{
   const id=`invented-adset-${i}`,campaignId=`invented-campaign-${i}`,born='2026-10-09T08:00:00Z';
   s.metaOwners.push({campaignId,owner:'ours',test:label==='Test share'});
-  const row={id,campaignId,name:`Invented — UK — ${label} Fern`,status:'ACTIVE',effectiveStatus:'ACTIVE',dailyBudget:2000,lifetimeBudget:null,currency:'GBP',createdTime:born,updatedTime:born,learningStage:label==='Delivery'?'LEARNING_LIMITED':null,lastSignificantEdit:null,market:'uk' as const,owner:i<6?'ours' as const:i===6?'freelancer' as const:'unassigned' as const,campaignName:`Invented ${label} UK`,firstSeen:born,lastSeen:'2026-10-16T08:00:00Z',lastRead:'2026-10-16T08:00:00Z'};
+  const row={id,campaignId,flatBudget:label==='Clear'?true:null,name:`Invented — UK — ${label} Fern`,status:'ACTIVE',effectiveStatus:'ACTIVE',dailyBudget:2000,lifetimeBudget:null,currency:'GBP',createdTime:born,updatedTime:born,learningStage:label==='Delivery'?'LEARNING_LIMITED':null,lastSignificantEdit:null,market:'uk' as const,owner:i<6?'ours' as const:i===6?'freelancer' as const:'unassigned' as const,campaignName:`Invented ${label} UK`,firstSeen:born,lastSeen:'2026-10-16T08:00:00Z',lastRead:'2026-10-16T08:00:00Z'};
   const data=Array.from({length:7},(_,j)=>({day:addDays('2026-10-09',j),spend:label==='Kill'?40:label==='Slipping'?(j<4?5:40):label==='Test share'?150:label==='Step'?16:21,purchases:label==='Test share'?10:1,addsToCart:label==='Test share'?20:3}));
   if(label==='Test share')row.updatedTime='2026-10-15T08:00:00Z';
   days.set(id,data);return row;

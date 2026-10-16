@@ -24,7 +24,7 @@ export interface AdInsight {
   threeSecondSource: 'video_view' | 'video_continuous_2_sec_watched_actions' | 'none';
   /** Daily denominator when video counts cannot be read hourly; absent for UK-day readers. */
   holdThreeSecondPlays?: number;
-  plays: number; thruPlays: number; plays25: number; plays50: number; plays75: number; plays100: number;
+  plays: number; thruPlays: number | null; plays25: number; plays50: number; plays75: number; plays100: number;
   averagePlayTime: number; addsToCart: number; purchases: number; purchaseValue: number;
 }
 export interface CreativeFrequencyRead { adIds: string[]; from: string; to: string; frequency: number | null }
@@ -54,6 +54,7 @@ export interface CreativeReader {
   rememberDetailRetries?(ads: StoredCatalogueAd[]): void;
   readCatalogue(account: string, settings: import('../settings.js').Settings, now: Date): AsyncIterable<CatalogueRead[]>;
   readInsights(account: string, from: string, to: string): Promise<AdInsight[]>;
+  readMediaFacts?(account:string,group:Pick<MediaGroup,'kind'|'key'|'width'|'height'|'lengthSeconds'>,need?:{size:boolean;length:boolean}):Promise<import('./media-facts.js').MediaFacts>;
   readFrequency?(account: string, adIds: string[], from: string, to: string): Promise<number | null>;
   videoSource(videoId: string): Promise<string>;
   imageBytes(account: string, key: string, full?: boolean): Promise<Uint8Array>;

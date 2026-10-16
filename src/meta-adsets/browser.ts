@@ -1,3 +1,4 @@
+import {adSetName} from './name.js';
 import {adSetCards,adSetSummary,adSetTable,adSetSheet,actionForm} from './view.js';
 import type {AdSetsView} from './presentation.js';
 let acting=false;
@@ -42,5 +43,17 @@ function confirmAction(id:string,body:{action:string;value?:unknown},summary:str
 }
 document.addEventListener('submit',event=>{const form=event.target;if(!(form instanceof HTMLFormElement)||form.id!=='adset-action-form'||!view)return;event.preventDefault();const row=view.rows.find(r=>r.set.id===form.dataset.adsetId)!;
  const action=form.querySelector<HTMLSelectElement>('[name=action]')!.value,value=action==='budget'?form.querySelector<HTMLInputElement>('[name=value]')!.valueAsNumber:action==='pause'?'PAUSED':'ACTIVE';
- confirmAction(row.set.id,{action,value},`${row.set.name} · ${action} · current ${action==='budget'?`£${row.set.dailyBudget!/100}`:row.set.status} → ${action==='budget'?`£${value}`:value} · ${row.verdict?.verdict==='Clear'?'no rule met, your call':row.verdict?.reason}`);
+ confirmAction(row.set.id,{action,value},`${adSetName(row.set.name)} · ${action} · current ${action==='budget'?`£${row.set.dailyBudget!/100}`:row.set.status} → ${action==='budget'?`£${value}`:value} · ${row.verdict?.verdict==='Clear'?'no rule met, your call':row.verdict?.reason}`);
+});
+
+document.addEventListener('submit',async event=>{
+ const form=event.target;if(!(form instanceof HTMLFormElement)||form.id!=='adset-flags-form')return;
+ event.preventDefault();acting=true;const button=form.querySelector<HTMLButtonElement>('button')!,status=form.querySelector<HTMLElement>('[role=status]')!;button.disabled=true;
+ try {
+  const response=await fetch(`/api/meta/adset/${encodeURIComponent(form.dataset.adsetId!)}/flags`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({flatBudget:form.querySelector<HTMLInputElement>('[name=flatBudget]')!.checked})});
+  if(!response.ok){status.textContent='Budget flag could not be saved.';return;}
+  status.textContent='Saved.';
+  const refreshed=await fetch('/api/meta/adsets',{credentials:'same-origin'});if(refreshed.ok)updateAdSets(await refreshed.json());
+ }catch{status.textContent='Connection interrupted. Refresh to check the flag.';}
+ finally{acting=false;button.disabled=false;}
 });

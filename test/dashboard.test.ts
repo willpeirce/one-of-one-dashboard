@@ -138,3 +138,15 @@ test('unbuilt source actions stay disabled while read-only review links and acco
   assert.ok(external.length > 0);
   assert.ok(external.every(([link]) => link.includes('data-review-link') && link.includes('rel="noopener noreferrer"')));
 });
+
+test('legacy Meta pause placeholders are absent and Act is the sole flag-gated set action',async()=>{
+ const {sampleAdSetsView}=await import('../src/meta-adsets/presentation.js');
+ const {defaultSettings}=await import('../src/settings.js');
+ const snapshot=getSampleDashboard();snapshot.adSets=sampleAdSetsView(defaultSettings());
+ for(const enabled of [false,true]){
+  snapshot.adSets.actionsEnabled=enabled;
+  const page=dashboardPage(snapshot);
+  assert.doesNotMatch(page,/<button[^>]*(?:Pause ad set|Pause · Not built yet|Step \+25% on)/);
+  assert.equal(page.includes('data-adset-act='),enabled);
+ }
+});

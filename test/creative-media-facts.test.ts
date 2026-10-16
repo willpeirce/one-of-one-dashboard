@@ -31,13 +31,58 @@ test('Meta image size and video length survive catalogue storage and become Aspe
  let retry:StoredCatalogueAd[]=[];
  const fake:CreativeReader={readCatalogue:async function*(){yield []},readInsights:async()=>[],imageBytes:async()=>new Uint8Array(),videoFrames:async()=>[],videoSource:async()=>'',rememberDetailRetries:ads=>{retry=ads;}};
  await new CreativeWorker(db,fake).run(account,defaultSettings(),now);
- assert.deepEqual(retry.map(r=>r.id),['invented-unknown']);
+ assert.deepEqual(retry,[],'missing facts no longer force creative expansion');
 });
 test('missing-fact retries select at most twenty distinct media groups a pass',async t=>{
  const db=await createTestDatabase();t.after(()=>db.close());const account='invented-bounded-facts';
  const entries:CatalogueRead[]=Array.from({length:25},(_,i)=>({ad:creativeAd(`invented-ad-${i}`,`invented-group-${i}`,{accountId:account}),media:{...creativeGroup(`invented-group-${i}`,{kind:'image',width:null,height:null}),thumbnail:null,poster:null,frames:[]}}));
- await saveCatalogue(db,account,entries,now);let retries:StoredCatalogueAd[]=[];
- const reader:CreativeReader={readCatalogue:async function*(){yield []},readInsights:async()=>[],imageBytes:async()=>new Uint8Array(),videoFrames:async()=>[],videoSource:async()=>'',rememberDetailRetries:rows=>{retries=rows;}};
+ await saveCatalogue(db,account,entries,now);let reads=0;
+ const reader:CreativeReader={readCatalogue:async function*(){yield []},readInsights:async()=>[],imageBytes:async()=>new Uint8Array(),videoFrames:async()=>[],videoSource:async()=>'',readMediaFacts:async()=>{reads++;return {width:600,height:800,lengthSeconds:null};}};
  await new CreativeWorker(db,reader).run(account,defaultSettings(),now);
- assert.equal(new Set(retries.map(r=>r.mediaGroupId)).size,20);
+ assert.equal(reads,20);
+});
+
+test('facts recover without creative or thumbnail reads, report failures, retry daily and retain unavailable results',async t=>{
+ const {mediaFactHealth,mediaFactLine}=await import('../src/creatives/media-facts.js');
+ const {readGroupAttributes}=await import('../src/creatives/attribute-store.js');
+ const {creativeHealth}=await import('../src/creatives/store.js');
+ const {creativeHealthDetails}=await import('../src/views.js');
+ const db=await createTestDatabase();t.after(()=>db.close());const account='invented-fact-recovery';
+ const entries:CatalogueRead[]=['filled','unavailable','failed'].map(label=>({ad:creativeAd(`invented-${label}`,`group-${label}`,{accountId:account}),media:{...creativeGroup(`group-${label}`,{key:`hash-${label}`,kind:'image',width:null,height:null}),thumbnail:null,poster:null,frames:[]}}));
+ await saveCatalogue(db,account,entries,now);
+ const calls:string[]=[],logs:string[]=[];let failing=true;
+ t.mock.method(console,'info',(line:string)=>logs.push(line));
+ const client=new MetaCreativeClient(new MetaSpend(randomBytes(16).toString('hex'),{sleep:async()=>{},fetch:async input=>{
+  const url=new URL(String(input));calls.push(url.pathname);
+  if(url.pathname.endsWith(`/act_${account}`))return Response.json({currency:'GBP',timezone_name:'Europe/London'});
+  if(url.pathname.endsWith('/ads'))return Response.json({data:[]});
+  assert.ok(url.pathname.endsWith('/adimages'),'facts bypass creative expansion, post, thumbnail and media download');
+  const key=JSON.parse(url.searchParams.get('hashes')!)[0];
+  if(key==='hash-failed'&&failing)return Response.json({error:{code:100}},{status:400});
+  return Response.json({data:key==='hash-unavailable'?[]:[{hash:key,width:600,height:800}]});
+ }}));
+ const settings={...defaultSettings(),metaAdAccountId:account};
+ await new CreativeWorker(db,client).run(account,settings,now,false);
+ const report=await mediaFactHealth(db,account);
+ assert.equal(report.filled,1);assert.equal(report.total,3);assert.ok(report.reasons.some(r=>r.reason==='unavailable'&&r.count===1));assert.ok(report.reasons.some(r=>r.reason.includes('http 400')&&r.count===1));
+ assert.ok(logs.includes(mediaFactLine(report)));
+ const health=await creativeHealth(db,settings,{META_ACCESS_TOKEN:randomBytes(16).toString('hex')},now);
+ assert.ok(creativeHealthDetails(health).includes(mediaFactLine(report)));
+ assert.equal((await readGroupAttributes(db,'live',account,'group-unavailable')).find(r=>r.key==='aspect')!.valueLabel,'n/a');
+ const requests=calls.length;await new CreativeWorker(db,client).run(account,settings,new Date('2026-10-16T12:30:00Z'),false);
+ assert.equal(calls.length-requests,1,'only the list (account cached), no same-day fact retry');
+ failing=false;await new CreativeWorker(db,client).run(account,settings,new Date('2026-10-16T23:01:00Z'),false);
+ assert.equal((await mediaFactHealth(db,account)).filled,2,'retry at the next UK midnight');
+ assert.equal((await db.query<any>("SELECT size_unavailable FROM pulse.media_groups WHERE id='group-unavailable'")).rows[0].size_unavailable,true);
+});
+
+test('video fact recovery reads length and sized thumbnails, retaining metadata rate-limit backoff',async()=>{
+ const calls:string[]=[],waits:number[]=[];let limited=true;
+ const client=new MetaCreativeClient(new MetaSpend(randomBytes(16).toString('hex'),{sleep:async ms=>{waits.push(ms);},fetch:async input=>{
+  const url=new URL(String(input));calls.push(url.pathname);
+  if(limited){limited=false;return Response.json({error:{code:80004}},{status:400});}
+  return Response.json(url.pathname.endsWith('/thumbnails')?{data:[{width:600,height:800,is_preferred:true}]}:{length:18});
+ }}));
+ const facts=await client.readMediaFacts('invented-account',{kind:'video',key:'invented-video',width:null,height:null,lengthSeconds:null});
+ assert.deepEqual(facts,{width:600,height:800,lengthSeconds:18});assert.ok(waits.some(ms=>ms>=15*60000));assert.equal(calls.length,3);
 });

@@ -26,7 +26,7 @@ test('ad-set catalogue reads cursor pages without a deleted/status filter, parse
   assert.equal((await db.query("SELECT column_name FROM information_schema.columns WHERE table_schema='pulse' AND table_name='meta_ad_sets' AND column_name='owner'")).rowCount,0);
 });
 
-test('extended ad-set spend aligns actions into UK days and stores absent actions as null', async t => {
+test('extended ad-set spend aligns sparse requested actions into UK days', async t => {
   const { saveSpend }=await import('../src/ad-spend/store.js');
   const db=await createTestDatabase();t.after(()=>db.close());
   const rows=[
@@ -43,10 +43,10 @@ test('extended ad-set spend aligns actions into UK days and stores absent action
   }});
   const read=await meta.read('invented-account','2026-10-25','2026-10-26',defaultSettings());
   assert.equal(read.length,2);assert.equal(read[0]!.purchases,3);assert.equal(read[0]!.addsToCart,7);assert.equal(read[0]!.purchaseValue,120);
-  assert.equal(read[1]!.purchases,null);assert.equal(read[1]!.addsToCart,null);assert.equal(read[1]!.purchaseValue,null);
+  assert.equal(read[1]!.purchases,0);assert.equal(read[1]!.addsToCart,0);assert.equal(read[1]!.purchaseValue,0);
   await saveSpend(db,'meta','invented-account','2026-10-25','2026-10-26',read,new Date());
   const stored=await db.query<any>('SELECT purchases,adds_to_cart,purchase_value FROM pulse.ad_spend ORDER BY uk_day');
-  assert.equal(Number(stored.rows[0].purchases),3);assert.equal(stored.rows[1].purchases,null);
+  assert.equal(Number(stored.rows[0].purchases),3);assert.equal(Number(stored.rows[1].purchases),0);
 });
 
 test('changes not by us audit only owned status/budget differences and flow into the sheet',async t=>{
@@ -67,4 +67,44 @@ test('changes not by us audit only owned status/budget differences and flow into
  assert.equal((await db.query('SELECT * FROM pulse.meta_ad_set_changes')).rowCount,3,'app budget suppressed; external status still observed');
  await saveAdSets(db,settings.metaAdAccountId,[{...row,dailyBudget:4000}],{...settings,metaOwners:[]},new Date('2026-10-16T08:30:00Z'));
  assert.equal((await db.query('SELECT * FROM pulse.meta_ad_set_changes')).rowCount,3);
+});
+
+test('next poll repairs old null action rows and completion, then returns to the normal window',async t=>{
+ const {SpendWorker}=await import('../src/ad-spend/worker.js');
+ const {saveSpend}=await import('../src/ad-spend/store.js');
+ const {syncSourceHealth}=await import('../src/sources.js');
+ const db=await createTestDatabase();t.after(()=>db.close());
+ const account='900000009001',env={META_ACCESS_TOKEN:randomBytes(16).toString('hex')};
+ await syncSourceHealth(db,env);
+ await db.query('INSERT INTO pulse.settings(values) VALUES($1)',[JSON.stringify({...defaultSettings(),metaAdAccountId:account})]);
+ await db.query("INSERT INTO pulse.ad_spend_jobs(source,account_id,backfill_done) VALUES('meta',$1,true)",[account]);
+ const old={source:'meta' as const,accountId:account,campaignId:'invented-campaign',campaignName:'Invented UK',adSetId:'invented-set',adSetName:'Invented UK Fern',market:'uk' as const,owner:'ours' as const,day:'2026-10-05',amount:'45.000000',currency:'GBP'};
+ await saveSpend(db,'meta',account,old.day,old.day,[old],new Date('2026-10-05T12:00:00Z'));
+ await db.query('UPDATE pulse.ad_spend_days SET actions_complete=false');
+ let now=new Date('2026-10-16T12:00:00Z');const ranges:string[][]=[];
+ const worker=new SpendWorker(db,env,{clock:()=>now,readers:{meta:{read:async(_,from,to)=>{ranges.push([from,to]);return from<=old.day?[{...old,impressions:500,linkClicks:24,addsToCart:6,purchases:3,purchaseValue:120}]:[];}}}});
+ await worker.tick('meta');
+ assert.deepEqual(ranges,[['2026-10-02','2026-10-16']]);
+ const row=(await db.query<any>('SELECT * FROM pulse.ad_spend')).rows[0];
+ assert.deepEqual(['impressions','link_clicks','adds_to_cart','purchases','purchase_value'].map(k=>Number(row[k])),[500,24,6,3,120]);
+ assert.equal((await db.query<any>('SELECT actions_complete FROM pulse.ad_spend_days WHERE uk_day=$1',[old.day])).rows[0].actions_complete,true);
+ assert.ok((await db.query<any>('SELECT actions_backfilled_at FROM pulse.ad_spend_jobs')).rows[0].actions_backfilled_at);
+ now=new Date('2026-10-16T12:30:00Z');await worker.tick('meta');
+ assert.deepEqual(ranges[1],['2026-10-14','2026-10-16']);
+ assert.equal(Number((await db.query<any>('SELECT purchases FROM pulse.ad_spend WHERE uk_day=$1',[old.day])).rows[0].purchases),3);
+ await worker.stop();
+});
+
+test('a sparse zero-action hour on a later page cannot erase earlier actions in the same UK day',async()=>{
+ const pages:URL[]=[];
+ const reader=new MetaSpend(randomBytes(16).toString('hex'),{sleep:async()=>{},fetch:async input=>{
+  const url=new URL(String(input));
+  if(!url.pathname.endsWith('/insights'))return Response.json({currency:'GBP',timezone_name:'GMT'});
+  pages.push(url);assert.match(url.searchParams.get('fields')!,/actions,action_values/);
+  const next=url.searchParams.has('after');
+  return Response.json({data:[{campaign_id:'invented-campaign',campaign_name:'Invented UK',adset_id:'invented-sparse-set',adset_name:'Invented UK Cedar',date_start:'2026-10-15',hourly_stats_aggregated_by_advertiser_time_zone:next?'12:00:00 - 12:59:59':'11:00:00 - 11:59:59',spend:'20',impressions:'100',...(next?{}:{actions:[{action_type:'omni_purchase',value:'2'},{action_type:'omni_add_to_cart',value:'4'}],action_values:[{action_type:'omni_purchase',value:'80'}]})}],...(!next?{paging:{next:'ignored',cursors:{after:'invented-page'}}}:{})});
+ }});
+ const rows=await reader.read('invented-account','2026-10-15','2026-10-15',defaultSettings());
+ assert.equal(pages.length,2);assert.equal(rows.length,1);
+ assert.equal(rows[0]!.purchases,2);assert.equal(rows[0]!.addsToCart,4);assert.equal(rows[0]!.purchaseValue,80);assert.equal(rows[0]!.amount,'40.000000');
 });

@@ -11,6 +11,7 @@ import {
 interface GroupRow {
   id: string; kind: CreativeKind; merged_into_id: string | null;
   length_seconds: number | string | null; width: number | null; height: number | null;
+  size_unavailable: boolean; length_unavailable: boolean;
   alternates: MediaGroup['alternates'];
 }
 function parentOf(groups: readonly GroupRow[], groupId: string): GroupRow {
@@ -26,7 +27,7 @@ function parentOf(groups: readonly GroupRow[], groupId: string): GroupRow {
   throw new AdError('invalid');
 }
 async function groupsInScope(db: Database, mode: SourceMode, account: string, lock = false): Promise<GroupRow[]> {
-  return (await db.query<any>(`SELECT id,kind,merged_into_id,length_seconds,width,height,alternates
+  return (await db.query<any>(`SELECT id,kind,merged_into_id,length_seconds,width,height,alternates,size_unavailable,length_unavailable
     FROM pulse.media_groups WHERE mode=$1 AND account_id=$2${lock ? ' FOR UPDATE' : ''}`, [mode, account])).rows;
 }
 async function scopedParent(db: Database, mode: SourceMode, account: string, groupId: string, lock = false): Promise<GroupRow> {
@@ -56,7 +57,9 @@ export async function readAttributeRows(db: Database, mode: SourceMode, account:
 export async function readGroupAttributes(db: Database, mode: SourceMode, account: string, groupId: string, kind?: CreativeKind): Promise<ResolvedAttribute[]> {
   const parent = await scopedParent(db, mode, account, groupId);
   if (kind && kind !== parent.kind) throw new AdError('invalid');
-  return resolveAttributes(parent.kind, await readAttributeRows(db, mode, account, parent.id));
+  return resolveAttributes(parent.kind, await readAttributeRows(db, mode, account, parent.id)).map(attribute=>
+    attribute.value===null && (attribute.key==='aspect' && parent.size_unavailable || attribute.key==='lengthBand' && parent.length_unavailable)
+      ? {...attribute,valueLabel:'n/a',source:'meta' as const} : attribute);
 }
 
 async function insertValues(db: Database, mode: SourceMode, account: string,

@@ -5,7 +5,7 @@ import {defaultSettings} from '../src/settings.js';
 import {judgeAdSet,type SetDay,type RuleContext} from '../src/meta-adsets/rules.js';
 import type {StoredAdSet} from '../src/meta-adsets/catalogue.js';
 const s=()=>defaultSettings();
-const set=(extra:Partial<StoredAdSet>={}):StoredAdSet=>({id:'invented-set',campaignId:'invented-campaign',name:'Invented — UK — Fern',status:'ACTIVE',effectiveStatus:'ACTIVE',dailyBudget:2000,lifetimeBudget:null,currency:'GBP',createdTime:'2026-10-09T08:00:00Z',updatedTime:'2026-10-09T08:00:00Z',learningStage:null,lastSignificantEdit:null,market:'uk',firstSeen:'2026-10-09T08:00:00Z',lastSeen:'2026-10-16T08:00:00Z',lastRead:'2026-10-16T08:00:00Z',campaignName:'Invented Fern UK',owner:'ours',...extra});
+const set=(extra:Partial<StoredAdSet>={}):StoredAdSet=>({id:'invented-set',flatBudget:null,campaignId:'invented-campaign',name:'Invented — UK — Fern',status:'ACTIVE',effectiveStatus:'ACTIVE',dailyBudget:2000,lifetimeBudget:null,currency:'GBP',createdTime:'2026-10-09T08:00:00Z',updatedTime:'2026-10-09T08:00:00Z',learningStage:null,lastSignificantEdit:null,market:'uk',firstSeen:'2026-10-09T08:00:00Z',lastSeen:'2026-10-16T08:00:00Z',lastRead:'2026-10-16T08:00:00Z',campaignName:'Invented Fern UK',owner:'ours',...extra});
 const days=(extra:Partial<SetDay>={}):SetDay[]=>Array.from({length:7},(_,i)=>({day:addDays('2026-10-09',i),spend:18,purchases:1,addsToCart:2,...extra}));
 const judge=(rows: SetDay[],extra:Partial<StoredAdSet>={},settings=s(),context:RuleContext={})=>judgeAdSet(set(extra),rows,settings,'2026-10-16',context)!;
 const fires=(rule:string,rows:SetDay[],extra:Partial<StoredAdSet>={},settings=s(),context:RuleContext={})=>judge(rows,extra,settings,context).reasons.some(r=>r.rule===rule);
@@ -15,7 +15,7 @@ test('purchase-cost kill needs its inclusive floor and a cost over the bar; unkn
  assert.equal(fires('purchase-cost',days({spend:5,purchases:0})),false);
  assert.equal(fires('purchase-cost',days({spend:75/7,purchases:0})),true);
  assert.equal(fires('purchase-cost',days({spend:30,purchases:null})),false);
- assert.equal(fires('purchase-cost',days({spend:30}).slice(1)),false);
+ assert.equal(fires('purchase-cost',days({spend:30}).slice(1)),true);
 });
 test('ATC kill has a two-full-day minimum, spend floor and strict cost bar',()=>{
  assert.equal(fires('atc-cost',days({spend:20,addsToCart:1})),true);
@@ -82,12 +82,38 @@ test('clean verdict, all firing reasons ordered, freelancer/unassigned/inactive 
 });
 
 test('short rule windows do not wait for older missing history',()=>{
- const recent=days({spend:40}).slice(-3);assert.equal(fires('slipping',recent),true);assert.equal(fires('purchase-cost',recent),false);
+ const recent=days({spend:40}).slice(-3);assert.equal(fires('slipping',recent),true);assert.equal(fires('purchase-cost',recent),true);
  const clean=days({spend:16}).slice(-2);const v=judge(clean);assert.equal(v.verdict,'Step');assert.equal(v.stepPercent,20);
- const yesterday=days({spend:20,addsToCart:0}).slice(-1);assert.equal(fires('zero-day',yesterday),true);
+ const yesterday=days({spend:20,addsToCart:0}).slice(-1);assert.equal(fires('zero-day',yesterday),false);
 });
 
 test('Step takes precedence over Delivery when both fire, independently of Home card ordering',()=>{
  const v=judge(days({spend:16}),{dailyBudget:10000});
  assert.equal(v.verdict,'Step');assert.deepEqual(v.reasons.map(r=>r.verdict),['Step','Delivery']);
+});
+
+test('partial action windows judge matching spend after two complete days and name missing dates',()=>{
+ const data=days({spend:40,purchases:null,addsToCart:null});
+ for(const i of [0,1,3,4])data[i]={...data[i]!,purchases:1,addsToCart:3};
+ const v=judge(data);assert.equal(v.verdict,'Kill');assert.equal(v.spend,160);assert.equal(v.cpp,40);
+ assert.match(v.reason,/no action data for 3 of 7 days \(2026-10-11, 2026-10-14, 2026-10-15\)/);
+ assert.equal(fires('purchase-cost',[data[0]!]),false);
+});
+
+test('flat budgets use base every day for Delivery, zero-day, steps and the Live sets summary',async()=>{
+ const {buildAdSetsView,liveSummary}=await import('../src/meta-adsets/presentation.js');
+ const {adSetSummary,adSetTable}=await import('../src/meta-adsets/view.js');
+ const settings=s();settings.adRules.uk.upliftPercent=50;
+ const data=days();data[6]={...data[6]!,spend:12,addsToCart:0};
+ assert.equal(fires('under-budget',data,{},settings),true);
+ assert.equal(fires('zero-day',data,{},settings),false);
+ assert.equal(fires('under-budget',data,{flatBudget:true},settings),false);
+ assert.equal(fires('zero-day',data,{flatBudget:true},settings),true);
+ assert.equal(judge(days(),{flatBudget:true},settings).proposedWeekday,24);
+ for(const [flatBudget,expected] of [[null,30],[true,20]] as const){
+  const view=buildAdSetsView([set({flatBudget})],new Map([['invented-set',data]]),settings,'2026-10-16',{mode:'live',lastRead:'2026-10-16T08:00:00Z',accountYesterday:12});
+  assert.equal(liveSummary(view,settings).expected,expected);
+  assert.match(adSetSummary(view),new RegExp(`against £${expected}.00 expected`));
+  if(flatBudget)assert.match(adSetTable(view),/£20.00 · flat/);
+ }
 });

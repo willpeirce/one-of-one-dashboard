@@ -27,3 +27,42 @@ test('live catalogue never silently falls back to sample; its freshness is indep
  await db.query('INSERT INTO pulse.meta_ad_set_sync(account_id,last_read) VALUES($1,$2)',[s.metaAdAccountId,'2026-10-16T09:59:00Z']);
  assert.equal((await readAdSetsView(db,s,env,new Date('2026-10-16T12:00:00Z'))).stale,true);
 });
+
+test('one set-name formatter serves cards, rows, sheet and action review without budget-only headings',async()=>{
+ const {adSetName}=await import('../src/meta-adsets/name.js');
+ const {actionForm}=await import('../src/meta-adsets/view.js');
+ assert.equal(adSetName('Invented type — Cedar grove — £24'),'Cedar grove');
+ assert.equal(adSetName('Cedar grove'),'Cedar grove');
+ assert.equal(adSetName('Cedar - Grove'),'Cedar - Grove');
+ assert.equal(adSetName('Invented - Oak - £24'),'Invented - Oak - £24');
+ const view=sampleAdSetsView(defaultSettings()),row=view.rows[0]!;
+ row.set.name='Invented type — Cedar grove — £24';
+ for(const html of [adSetCards(view),adSetTable(view),adSetSheet(row,view),actionForm(row)]){
+  assert.match(html,/Cedar grove/);assert.doesNotMatch(html,/Invented type|£24/);
+ }
+});
+
+test('freelancer missing purchases have one short explanation instead of two unknown templates',()=>{
+ const view=sampleAdSetsView(defaultSettings()),row=view.rows.find(r=>r.set.owner==='freelancer')!;
+ row.freelancer[1]!.over=null;row.freelancer[1]!.cpp=null;
+ for(const html of [adSetTable({...view,rows:[row]}),adSetSheet(row,view)]){
+  assert.equal((html.match(/no purchase data yet/g)??[]).length,1);
+  assert.doesNotMatch(html,/3d under trigger|7d unknown|ours Unknown/);
+ }
+});
+
+test('ad-set API day arrays are oldest first after out-of-order backfills',async t=>{
+ const Fastify=(await import('fastify')).default;
+ const {registerAdSets}=await import('../src/meta-adsets/routes.js');
+ const {saveAdSets,parseAdSet}=await import('../src/meta-adsets/catalogue.js');
+ const {saveSpend}=await import('../src/ad-spend/store.js');
+ const db=await createTestDatabase();t.after(()=>db.close());
+ const account='900000009201',set='900000009202',campaign='900000009203',now=new Date('2026-10-16T12:00:00Z');
+ const settings={...defaultSettings(),metaAdAccountId:account,metaOwners:[{campaignId:campaign,owner:'ours' as const}]};
+ await db.query('INSERT INTO pulse.settings(values) VALUES($1)',[JSON.stringify(settings)]);
+ await saveAdSets(db,account,[parseAdSet({id:set,campaign_id:campaign,name:'Invented UK Linden',status:'ACTIVE',effective_status:'ACTIVE',daily_budget:'2000',created_time:'2026-10-01T08:00:00Z',updated_time:'2026-10-01T08:00:00Z'},'GBP',settings)],settings,now);
+ for(const day of ['2026-10-14','2026-10-10','2026-10-12'])await saveSpend(db,'meta',account,day,day,[{source:'meta',accountId:account,campaignId:campaign,campaignName:'Invented UK',adSetId:set,adSetName:'Invented UK Linden',market:'uk',owner:'ours',day,amount:'20',currency:'GBP',purchases:2,addsToCart:4}],now);
+ const app=Fastify();t.after(()=>app.close());registerAdSets(app,db,{session:async()=> 'invented-credential'} as unknown as import('../src/auth.js').Auth,{META_ACCESS_TOKEN:randomBytes(16).toString('hex')},()=>now);
+ const response=await app.inject('/api/meta/adsets');assert.equal(response.statusCode,200);
+ assert.deepEqual(response.json().rows[0].days.map((d:{day:string})=>d.day),['2026-10-10','2026-10-12','2026-10-14']);
+});

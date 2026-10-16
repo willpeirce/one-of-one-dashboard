@@ -9,6 +9,11 @@ export async function checkAdSets(page:Page,origin:string):Promise<void>{
  assert.match(await page.locator('[data-owner=freelancer]').innerText(),/3d under trigger/);
  await page.locator('[data-adset-market=us]').click();assert.equal(await page.locator('[data-adset-row]').count(),0);
  await page.locator('[data-adset-market=all]').click();await page.locator('[data-adset-open]').first().click();await page.locator('#adset-sheet[open]').waitFor();await page.locator('[data-adset-close]').click();
- if(process.env.PULSE_SCREENSHOT_DIR)await page.screenshot({path:`${process.env.PULSE_SCREENSHOT_DIR}/adsets-${page.viewportSize()!.width}-${await page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')}.png`,fullPage:true});
+ if(page.viewportSize()!.width===390){
+  assert.ok((await page.locator('td[data-label=Reason]').first().boundingBox())!.width>300,'phone reason uses the full row width');
+  assert.ok((await page.locator('.adset-table caption').boundingBox())!.width>300,'phone caption uses the full table width');
+ }
+ const top=(await page.locator('header.top').boundingBox())!,main=(await page.locator('main').boundingBox())!;assert.ok(main.y>=top.y+top.height,'Ads content clears the shared header');
+ if(process.env.PULSE_SCREENSHOT_DIR)await page.screenshot({path:`${process.env.PULSE_SCREENSHOT_DIR}/adsets-${page.viewportSize()!.width}-${await page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')}.png`,fullPage:false});
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
 }

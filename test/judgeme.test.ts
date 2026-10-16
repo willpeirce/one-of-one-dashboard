@@ -279,6 +279,16 @@ test('empty reviews use only the title chip and preserve pending, unavailable an
   }
 });
 
+test('review source chips label web and email flows and retain other raw wording',()=>{
+ for(const [source,label] of [['web','Web'],['new-rre-flow','Email request'],['invented-email-flow','Email request'],['invented-channel','invented channel']]){
+  const panel=sampleReviews();panel.rows=[{...panel.rows[0]!,source:source!,flagged:false}];
+  for(const html of [reviewsPanelHtml(panel),reviewSheetHtml(panel.rows[0]!,panel)]){
+   assert.ok(html.includes(`<span class="chip info">${label}</span>`));
+   assert.doesNotMatch(html,/New rre flow/);
+  }
+ }
+});
+
 
 test('waiting reviews retain email flags last, use only explicit hidden/published fields and report source counts', async t => {
   const db=await createTestDatabase();t.after(()=>db.close());await syncSourceHealth(db,{JUDGEME_API_TOKEN:token()});

@@ -96,7 +96,7 @@ test('video fact recovery reads length and sized thumbnails, retaining metadata 
 });
 
 
-test('permission-refused direct reads recover through creatives, image bytes and the account video edge',async t=>{
+test('refused image reads recover through creative bytes and video facts use the account video list',async t=>{
  const {refreshMediaFacts}=await import('../src/creatives/media-facts.js');
  const db=await createTestDatabase();t.after(()=>db.close());const account='invented-fallback-account';
  const png=Buffer.alloc(24);Buffer.from([137,80,78,71,13,10,26,10]).copy(png);png.write('IHDR',12);png.writeUInt32BE(640,16);png.writeUInt32BE(960,20);
@@ -109,14 +109,15 @@ test('permission-refused direct reads recover through creatives, image bytes and
   if(['adimages','key-video','thumbnails'].includes(path))return Response.json({error:{code:10,message:'Invented permission refusal'}},{status:400});
   if(path==='creative-image')return Response.json({image_hash:'key-image',image_url:'https://media.fbcdn.net/invented.png'});
   if(path==='creative-video')return Response.json({video_id:'key-video',thumbnail_url:'https://media.fbcdn.net/invented.png'});
-  assert.equal(path,'advideos');assert.deepEqual(JSON.parse(url.searchParams.get('ids')!),['key-video']);
-  return Response.json({data:[{id:'key-video',length:19,format:[{width:640,height:960}]}]});
+  assert.equal(path,'advideos');assert.equal(url.searchParams.has('ids'),false);
+  return Response.json({data:[{id:'key-video',length:19,thumbnails:{data:[{width:640,height:960,is_preferred:true}]}}]});
  }) as typeof fetch};
  const client=new MetaCreativeClient(new MetaSpend(randomBytes(16).toString('hex'),options),options);
  await refreshMediaFacts(db,client,account,now);
  const facts=(await db.query<any>('SELECT kind,width,height,length_seconds,facts_error,facts_attempts FROM pulse.media_groups ORDER BY kind')).rows;
  assert.deepEqual(facts.map(r=>[r.kind,r.width,r.height,r.length_seconds===null?null:Number(r.length_seconds),r.facts_error,r.facts_attempts]),[['image',640,960,null,null,0],['video',640,960,19,null,0]]);
- for(const path of ['adimages','key-video','thumbnails','creative-image','creative-video','advideos'])assert.ok(paths.includes(path));
+ for(const path of ['adimages','creative-image','advideos'])assert.ok(paths.includes(path));
+ for(const path of ['key-video','thumbnails','creative-video'])assert.ok(!paths.includes(path));
  const before=paths.length;await refreshMediaFacts(db,client,account,new Date('2026-10-17T12:00:00Z'));assert.equal(paths.length,before);
 });
 

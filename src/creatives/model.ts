@@ -56,6 +56,7 @@ export interface CreativeReader {
   readInsights(account: string, from: string, to: string, options?: {hourlyLimit: 250}): Promise<AdInsight[]>;
   readThruPlays?(account:string,from:string,to:string):Promise<import('./thruplay-repair.js').ThruPlayRow[]>;
   readMediaFacts?(account:string,group:import('./media-facts.js').MediaFactGroup,need?:{size:boolean;length:boolean}):Promise<import('./media-facts.js').MediaFacts>;
+  readAccountVideoPage?(account:string,after?:string|null):Promise<import('./media-facts.js').AccountVideoPage>;
   readFrequency?(account: string, adIds: string[], from: string, to: string): Promise<number | null>;
   videoSource(videoId: string): Promise<string>;
   imageBytes(account: string, key: string, full?: boolean): Promise<Uint8Array>;

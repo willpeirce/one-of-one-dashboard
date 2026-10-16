@@ -12,12 +12,13 @@ export async function readInsightChunk(db: Database, reader: CreativeReader, acc
   from: string, to: string, now: Date, options: {advance?: boolean; markRefused?: boolean} = {}): Promise<void> {
   const cooling=(await db.query<{day:string}>(`SELECT day::text FROM pulse.creative_insight_days
     WHERE account_id=$1 AND day BETWEEN $2 AND $3 AND NOT completed AND error_code IS NOT NULL
-      AND retry_after>$4 ORDER BY day`,[account,from,to,now])).rows;
+      AND ($5::boolean OR retry_after>$4) ORDER BY day`,[account,from,to,now,!options.markRefused])).rows;
   if(cooling.length){
     let start=from;
     for(const {day} of cooling){
       if(start<day) await readInsightChunk(db,reader,account,start,addDays(day,-1),now,options);
-      // This refusal is already durable. Do not re-read it through a nightly overlap.
+      // Known refusals belong to the bounded retry queue, including after they
+      // become due. A nightly overlap must not recreate generic attention.
       if(options.advance) await db.query('UPDATE pulse.creative_jobs SET backfill_next=$2 WHERE account_id=$1',[account,addDays(day,1)]);
       start=addDays(day,1);
     }

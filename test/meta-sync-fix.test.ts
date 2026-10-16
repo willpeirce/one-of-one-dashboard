@@ -109,7 +109,7 @@ test('spend failure stays unavailable even when the independent campaign read su
   await worker.tick('meta');
   await worker.waitForCreatives();
   assert.deepEqual(requests.slice(0,2), ['act_9000000000', 'campaigns']);
-  assert.equal(requests.filter(path=>path==='act_9000000000').length,4,'spend, ad sets, daily insights and creative catalogue fail independently');
+  assert.equal(requests.filter(path=>path==='act_9000000000').length,5,'spend, ad sets, recent insights, historical insights and creative catalogue fail independently');
   const health = (await db.query<{ status: string; last_success_at: null; consecutive_failures: number }>(
     "SELECT status,last_success_at,consecutive_failures FROM pulse.source_health WHERE source='meta'",
   )).rows[0]!;
@@ -122,6 +122,7 @@ test('spend failure stays unavailable even when the independent campaign read su
     'Ad spend meta failed (http 400, meta 100/1487694).',
     'Meta ad sets read failed (http 400, meta 100/1487694).',
     'Meta creatives read failed (http 400, meta 100/1487694 at insights).',
+    'Meta creatives read failed (http 400, meta 100/1487694 at backfill).',
     'Meta creatives read failed (http 400, meta 100/1487694 at catalogue after 0 ads).',
   ].sort());
   const repair=(await db.query<{day:string;completed:boolean;error_code:string|null}>('SELECT day::text,completed,error_code FROM pulse.creative_thruplay_days WHERE account_id=$1 ORDER BY day',[s.metaAdAccountId])).rows;

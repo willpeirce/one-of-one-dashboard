@@ -65,8 +65,14 @@ test('a terminal day is marked and skipped; later success retains its day line a
   await db.query('UPDATE pulse.creative_jobs SET nightly_day=NULL WHERE account_id=$1',[account]);
   await worker.runInsights(account,settings,new Date('2026-10-16T10:30:00Z'));
   assert.ok(requests.every(r=>r.from>'2026-10-12'||r.to<'2026-10-12'),'nightly reads respect the marked day cooldown');
-  recover=true;
+  requests.length=0;
   await worker.runInsights(account,settings,new Date('2026-10-17T10:00:00Z'));
+  assert.deepEqual(requests.filter(r=>r.from<='2026-10-12'&&r.to>='2026-10-12'),[
+    {from:'2026-10-12',to:'2026-10-12',limit:undefined},{from:'2026-10-12',to:'2026-10-12',limit:250},
+  ],'only the bounded refused-day queue retries a due marked day');
+  assert.equal((await db.query('SELECT error_code FROM pulse.creative_jobs')).rows[0]!.error_code,null);
+  recover=true;
+  await worker.runInsights(account,settings,new Date('2026-10-18T10:00:00Z'));
   assert.deepEqual((await db.query(`SELECT completed,error_code,retry_after FROM pulse.creative_insight_days WHERE day='2026-10-12'`)).rows[0],
     {completed:true,error_code:null,retry_after:null});
 });

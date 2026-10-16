@@ -22,6 +22,8 @@ export interface AdInsight {
   adId: string; adSetId: string; day: string; spend: number; impressions: number; reach: number;
   frequency: number; linkClicks: number; threeSecondPlays: number;
   threeSecondSource: 'video_view' | 'video_continuous_2_sec_watched_actions' | 'none';
+  /** Daily denominator when video counts cannot be read hourly; absent for UK-day readers. */
+  holdThreeSecondPlays?: number;
   plays: number; thruPlays: number; plays25: number; plays50: number; plays75: number; plays100: number;
   averagePlayTime: number; addsToCart: number; purchases: number; purchaseValue: number;
 }

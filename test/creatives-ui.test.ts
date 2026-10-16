@@ -318,9 +318,9 @@ test('every creative sheet explains UK-day counts and Meta account-day reach and
       assert.ok(sheet);
       const html = creativeSheetHtml(sheet);
       assert.match(html, /data-creative-day-boundaries/);
-      assert.match(html, /Spend, impressions, clicks, purchases, purchase value and video-play counts use UK days/);
+      assert.match(html, /Spend, impressions, clicks, purchases, purchase value and hook counts use UK days/);
       assert.match(html, /hourly reports are aligned to Europe\/London/);
-      assert.match(html, /Reach, frequency and average play time keep Meta account days, including the separate seven-day frequency report/);
+      assert.match(html, /Video plays, ThruPlays, completion counts and the hold-rate denominator keep account days, as do reach, frequency and average play time, including the separate seven-day frequency report/);
       assert.match(html, /For a GMT account during British Summer Time, those day boundaries differ by one hour/);
       assert.match(html, /24h means the last complete UK day plus today so far/);
     }
@@ -380,5 +380,6 @@ test('a Strong lift Decide card uses its evidence identity and Done persists unt
   await saveCreativeLifts(h.db, 'sample-meta-account', 'sample', [{ ...strong, attributeKey: 'productEarly', value: 'yes' }]);
   const next = (await read()).cards.find(row => row.kind === 'decide')!;
   assert.equal(next.id, 'creative-lift-video-productEarly-yes');
-  assert.ok(next.brief?.includes('Meta says'));
+  assert.ok(next.brief?.includes('Product on screen in the first 3 seconds'));
+  assert.equal(next.strength, 'Strong');
 });

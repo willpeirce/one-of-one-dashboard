@@ -14,6 +14,7 @@ import { checkHomeChapters, checkFulfilmentChapter } from './chapter-browser-che
 import { checkRadar } from './browser-radar.js';
 import { checkMarketHero, installMarketUpdateHook } from './browser-market.js';
 import { checkGrossHistoryProgress } from './browser-gross-history.js';
+import { metricSign } from '../src/metric-sign.js';
 import { checkCreatives } from './browser-creatives.js';
 import { checkCreativeSettings } from './browser-creative-settings.js';
 
@@ -227,6 +228,8 @@ async function checkNegativeProfit(context: BrowserContext): Promise<void> {
       await page.setViewportSize(viewport);
       const profit = page.locator('#hero [data-k="profit"]');
       assert.equal(await profit.locator('.sv').innerText(), '-£10.00');
+      assert.equal(await profit.getAttribute('data-sign'), 'negative');
+      assert.match(await profit.evaluate(el => getComputedStyle(el).backgroundImage), /255, 96, 115, 0.18/);
       assert.equal(await page.getByRole('button', { name: /Net profit.*-£10\.00/ }).count(), 1);
       await profit.click();
       assert.equal(await page.locator('#sh-extra dd').last().innerText(), '-£10.00');
@@ -234,6 +237,7 @@ async function checkNegativeProfit(context: BrowserContext): Promise<void> {
       await page.locator('#sh-x').click();
       const contribution = page.locator('#hero [data-k="contribution"]');
       assert.equal(await contribution.locator('.sv').innerText(), '-£5.00');
+      assert.equal(await contribution.getAttribute('data-sign'), 'negative');
       assert.match(await contribution.locator('.ss').innerText(), /^Unknown percentage of net sales/);
       assert.equal(await contribution.getAttribute('data-state'), 'est');
       await contribution.click();
@@ -866,6 +870,10 @@ async function assertHero(page: Page, snapshot: DashboardSnapshot, period: Perio
   await assertHeroModel(page, snapshot.hero[period]);
   assert.equal(await page.locator(`#period [data-period="${period}"]`).getAttribute('aria-selected'), 'true');
   assert.equal(await page.locator('#picklbl').textContent(), 'Dates');
+  for (const key of ['margin', 'contribution', 'profit'] as const) {
+    const metric = snapshot.hero[period][key] as HeroMetric;
+    assert.equal(await page.locator(`#hero [data-k="${key}"]`).getAttribute('data-sign'), metricSign({ n: metric.n ?? NaN, unavailable: metric.unavailable }));
+  }
 }
 
 async function assertDarkAppearance(page: Page, logo = false): Promise<string> {

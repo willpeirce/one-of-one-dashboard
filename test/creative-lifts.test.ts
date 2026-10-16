@@ -10,7 +10,7 @@ import { deriveCreativeLiftPresentation } from '../src/creatives/lift-presentati
 import { toggleWillAttribute } from '../src/creatives/attribute-store.js';
 import { createTestDatabase } from './helpers/database.js';
 import type { Database } from '../src/db.js';
-import { saveCatalogue, saveInsights } from '../src/creatives/store.js';
+import { saveCatalogue, saveInsights, readLiveCreativeData } from '../src/creatives/store.js';
 
 const now = new Date('2026-10-14T12:00:00Z');
 const settings = defaultSettings();
@@ -119,30 +119,30 @@ test('window includes the current UK day across BST and excludes older and futur
   data.insights.forEach(row => { row.day = '2026-07-01'; });
   data.insights.push({ ...data.insights[0]!, day: '2026-06-01', spend: 9999 }, { ...data.insights[0]!, day: '2026-07-02', spend: 9999 });
   const lift = computeCreativeLifts(data, attributes, settings, midnight)[0]!;
-  assert.equal(lift.metrics.from, '2026-06-02'); assert.equal(lift.metrics.to, '2026-07-01');
+  assert.equal(lift.metrics.from, '2026-06-25'); assert.equal(lift.metrics.to, '2026-07-01');
   assert.equal(lift.metrics.with.spend, 150);
   assert.deepEqual(computeCreativeLifts({ ...data, groups: [...data.groups].reverse(), insights: [...data.insights].reverse() },
     [...attributes].reverse(), settings, midnight), [lift], 'input order does not change bootstrap seed or examples');
 });
 
-test('winning lines rank CPP difference while briefs prioritise confidence and derive stable per-kind cards', () => {
+test('summaries and briefs use the same winning value, strength, order and stable card id', () => {
   const { data, attributes } = fixture();
   const strong = computeCreativeLifts(data, attributes, settings, now)[0]!;
-  const likely: CreativeLift = { ...strong, id: 'invented-second-lift', attributeKey: 'slabEarly', value: 'yes', label: 'slab in the first 3 seconds', confidence: 'Likely',
-    metrics: { ...strong.metrics, share: 0.9, without: { ...strong.metrics.without, costPerPurchase: 60 } } };
-  const hint: CreativeLift = { ...strong, id: 'invented-hint', confidence: 'Hint', label: 'hint only' };
-  const result = deriveCreativeLiftPresentation([strong, likely, hint], data);
-  assert.equal(result.winning.video, 'slab in the first 3 seconds (Likely) · hook: unboxing (Strong)');
-  assert.equal(result.winning.image, 'Not enough data yet');
-  assert.match(result.makeNext.video!.line, /^Next video: hook: unboxing · slab/);
-  assert.match(result.makeNext.video!.brief, /Meta says cost per purchase £5.00 with it vs £25.00 without it/);
-  assert.match(result.makeNext.video!.brief, /Best examples: Invented video 0; Invented video 1/);
-  assert.match(result.makeNext.video!.brief, /correlations, not proof of cause/);
+  const likely: CreativeLift = { ...strong, id: 'invented-second-lift', attributeKey: 'slabEarly', value: 'yes', confidence: 'Likely',
+    metrics: { ...strong.metrics, share: 0.9, withGroupIds: ['invented-separate'], without: { ...strong.metrics.without, costPerPurchase: 60 } } };
+  const hint: CreativeLift = { ...strong, id: 'invented-hint', confidence: 'Hint' };
+  const result = deriveCreativeLiftPresentation([likely, hint, strong], data);
+  assert.match(result.makeNext.video.line, /^Open with an unboxing/);
+  assert.equal(result.cards[0]!.reason, result.makeNext.video.bullets[0]!.text);
+  assert.equal(result.cards[0]!.strength, result.makeNext.video.bullets[0]!.confidence);
+  assert.match(result.makeNext.video.brief, /£5 a purchase against £25/);
+  assert.match(result.makeNext.video.brief, /Copy: Invented video 0 · Invented video 1/);
+  assert.match(result.makeNext.video.brief, /Patterns, not proof/);
   assert.equal(result.cards.length, 1); assert.equal(result.cards[0]!.picture, data.groups[0]!.thumbnailUrl);
-  assert.equal(result.cards[0]!.brief, result.makeNext.video!.brief);
+  assert.equal(result.cards[0]!.brief, result.makeNext.video.brief);
   assert.equal(result.cards[0]!.id, deriveCreativeLiftPresentation([{ ...strong, computedAt: '2027-01-01T00:00:00Z' }], data).cards[0]!.id);
   assert.notEqual(result.cards[0]!.id, deriveCreativeLiftPresentation([{ ...strong, value: 'reveal' }], data).cards[0]!.id);
-  assert.equal(deriveCreativeLiftPresentation([hint], data).makeNext.video, undefined);
+  assert.equal(deriveCreativeLiftPresentation([hint], data).makeNext.video.bullets.length, 0);
   assert.equal(deriveCreativeLiftPresentation([likely], data).cards.length, 0);
 });
 
@@ -168,15 +168,16 @@ test('live recompute after a Will edit removes the old lift and changes its brie
   const { data, attributes } = fixture();
   await persistFixture(db, data, attributes);
   const before = await recomputeCreativeLifts(db, account, data, settings, now);
-  assert.equal(before.length, 1);
+  assert.deepEqual([...new Set(before.map(lift => lift.windowDays))].sort(), [1, 3, 7]);
+  assert.equal(before.filter(lift => lift.market === 'all').length, 3);
   assert.ok(deriveCreativeLiftPresentation(before, data).makeNext.video);
   await toggleWillAttribute(db, 'live', account, attributes[0]!.groupId, 'hookType', 'question', now);
   const after = await recomputeCreativeLifts(db, account, data, settings, now);
   assert.equal(after.length, 0);
   assert.equal((await readCreativeLifts(db, account, 'live')).length, 0);
-  assert.equal(deriveCreativeLiftPresentation(after, data).makeNext.video, undefined);
+  assert.equal(deriveCreativeLiftPresentation(after, data).makeNext.video.bullets.length, 0);
   await saveCreativeLifts(db, account, 'sample', before);
-  assert.equal((await recomputeCreativeLifts(db, account, { ...data, mode: 'sample' }, settings, now)).length, 1);
+  assert.equal((await recomputeCreativeLifts(db, account, { ...data, mode: 'sample' }, settings, now)).length, before.length);
 });
 
 test('overlapping worker and tag recomputes refresh attributes and insights inside their shared guard', async t => {
@@ -219,4 +220,34 @@ test('overlapping worker and tag recomputes refresh attributes and insights insi
     assert.deepEqual(stored.metrics, current[0]!.metrics);
     assert.equal(liveReads, 2);
   } finally { release(); await worker; }
+});
+
+test('recompute stores all three UK windows separately and reads each market/window back', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const { data, attributes } = fixture();
+  await persistFixture(db, data, attributes);
+  for (const [day, spend] of [['2026-10-12', 20], ['2026-10-08', 30]] as const) {
+    await saveInsights(db, account, day, day, data.insights.map(row => ({ ...row, day, spend })), now);
+  }
+  const all = await recomputeCreativeLifts(db, account, data, settings, now);
+  for (const [windowDays, from, spend] of [[1, '2026-10-14', 150], [3, '2026-10-12', 210], [7, '2026-10-08', 300]] as const) {
+    const stored = await readCreativeLifts(db, account, 'live', { windowDays, market: 'all' });
+    assert.equal(stored.length, 1); assert.equal(stored[0]!.windowDays, windowDays);
+    assert.equal(stored[0]!.metrics.from, from); assert.equal(stored[0]!.metrics.with.spend, spend);
+    assert.equal(stored[0]!.metrics.withGroupIds.length, 3);
+  }
+  assert.ok(all.every(lift => [1, 3, 7].includes(lift.windowDays)));
+  assert.equal((await readCreativeLifts(db, account, 'live', { market: 'us' })).length, 0);
+});
+
+test('stored ThruPlays survive the live read and yield nonzero lift hold with the matching daily denominator', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const { data, attributes } = fixture();
+  data.insights.forEach(row => { row.thruPlays = 80; row.threeSecondPlays = 100; row.holdThreeSecondPlays = 200; });
+  await persistFixture(db, data, attributes);
+  const stored = await readLiveCreativeData(db, { ...settings, metaAdAccountId: account });
+  assert.equal(stored.insights[0]!.thruPlays, 80);
+  const lift = computeCreativeLifts(stored, attributes, settings, now)[0]!;
+  assert.equal(lift.metrics.with.holdRate, .4); assert.equal(lift.metrics.without.holdRate, .4);
+  assert.equal(lift.metrics.with.hookRate, .1, 'hook keeps its UK-hour numerator');
 });

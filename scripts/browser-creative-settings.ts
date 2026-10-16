@@ -9,7 +9,7 @@ export async function checkCreativeSettings(page: Page, context: BrowserContext)
     creativeDefaultWindow: '7d', creativeSpendFloorGbp: 61.25, creativePurchaseMinimum: 3,
     creativeFadeFrequency: 3.5, creativeFadeCtrDropPercent: 44, creativeWeeklyTarget: 8,
     creativeHitWinnerSpendGbp: 120, creativeHitKilledSpendGbp: 90,
-    creativeHitKilledTargetMultiplier: 1.75, creativeLiftWindowDays: 28,
+    creativeHitKilledTargetMultiplier: 1.75,
     creativeLiftMinimumGroups: 4, creativeLiftMinimumSpendGbp: 175,
     creativeMediaCapMb: 350, creativeScanModel: 'claude-invented-browser-model',
     creativeScanInputPrice: 1.25, creativeScanOutputPrice: 6.25,

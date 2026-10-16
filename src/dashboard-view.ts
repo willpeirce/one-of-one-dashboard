@@ -1,3 +1,4 @@
+import { metricSign } from './metric-sign.js';
 import { glance } from './fulfilment/view.js';
 import { creativePanelHtml, creativeCardsHtml, creativeDialogHtml } from './creatives/view.js';
 import type { DashboardSnapshot } from './dashboard-types.js';
@@ -43,7 +44,8 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
     (_button, tag: string, key: typeof heroKeys[number]) => {
       const metric = snapshot.hero.today[key], display = metric.unavailable ? metric.unavailableLabel ?? 'No data' : formatMetricNumber(metric.n, metric);
       const status = metric.statusLabel ?? ({ good: 'Good', warn: 'Watch', decide: 'Decide', alarm: 'Alarm', info: 'Info', sofar: 'So far', est: 'Estimate' }[metric.state]);
-      const opening = tag.replace(/data-mode="[^"]+"/, `data-mode="${metric.mode}"`).replace(/data-source="[^"]+"/, `data-source="${metric.source.join(' ')}"`).replace(/data-state="[^"]+"/, `data-state="${metric.state}"`);
+      const signedTag = ['margin', 'contribution', 'profit'].includes(key) ? tag.replace(/>$/, ` data-sign="${metricSign(metric)}">`) : tag;
+      const opening = signedTag.replace(/data-mode="[^"]+"/, `data-mode="${metric.mode}"`).replace(/data-source="[^"]+"/, `data-source="${metric.source.join(' ')}"`).replace(/data-state="[^"]+"/, `data-state="${metric.state}"`);
       return `${opening}<span class="sl">${heroLabels[key]}</span><span class="sv${key === 'net' ? ' big' : ''}" style="--number-chars:${display.length}">${escapeHtml(display)}</span>${key === 'net' ? `<span class="gross">${snapshot.hero.today.grossUnavailable ? 'Total unavailable' : `Total ${escapeHtml(formatPounds(snapshot.hero.today.gross))}`}</span><span class="spark" data-spark="${snapshot.hero.today.spark.join(',')}" aria-hidden="true"></span>` : ''}<span class="ss">${escapeHtml(metric.ss)}</span><span class="chip ${metric.state}">${({ good: '✓', warn: '!', decide: '◆', alarm: '✕', info: 'i', sofar: '·', est: '≈' }[metric.state])} ${escapeHtml(status)}</span></button>`;
     });
   if (snapshot.shopify) {

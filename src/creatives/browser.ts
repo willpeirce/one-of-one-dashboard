@@ -1,3 +1,5 @@
+import { fullEvidenceHtml } from './lift-view.js';
+import type { LiftWindowDays } from './lifts.js';
 import type { CreativeView, CreativeSheet, CreativeSelection } from './presentation-types.js';
 import { creativePanelHtml, creativeGalleryHtml, creativeCardsHtml, creativeSheetHtml, creativeAttributesHtml, creativeTagRowHtml, creativeAttributeFiltersHtml } from './view.js';
 import type { ResolvedAttribute } from './attributes.js';
@@ -6,6 +8,8 @@ import type { ScanResult } from './scan.js';
 
 let view: CreativeView | undefined;
 let selection: CreativeSelection = { window: '3d', market: 'all', owner: 'all' };
+let rememberedWindow: LiftWindowDays = 7;
+try { const saved = Number(localStorage.getItem('pulse-creative-evidence-window')); if (saved === 1 || saved === 3 || saved === 7) rememberedWindow = saved; } catch { /* Storage may be disabled. */ }
 let generation = 0;
 let sheetGeneration = 0;
 let lastMerge: string | undefined;
@@ -42,8 +46,8 @@ function render(next: CreativeView): void {
   }
 }
 export function updateCreativeSnapshot(next: CreativeView): void {
-  if (!view) selection = { ...next.selection };
-  if ((selection.window ?? '3d') === (next.selection.window ?? '3d') && (selection.market ?? 'all') === 'all' && (selection.owner ?? 'all') === 'all' && !selection.attribute && !selection.value && (selection.kind ?? 'all') === 'all' && (selection.live ?? 'all') === 'all') render(next);
+  if (!view) selection = { ...next.selection, liftWindow: rememberedWindow };
+  if ((selection.liftWindow ?? 7) === (next.selection.liftWindow ?? 7) && (selection.window ?? '3d') === (next.selection.window ?? '3d') && (selection.market ?? 'all') === 'all' && (selection.owner ?? 'all') === 'all' && !selection.attribute && !selection.value && (selection.kind ?? 'all') === 'all' && (selection.live ?? 'all') === 'all') render(next);
   else void refresh();
 }
 async function refresh(): Promise<void> {
@@ -67,7 +71,7 @@ async function openSheet(groupId: string, tagging = false): Promise<void> {
   try {
     await noteWrites;
     if (current !== sheetGeneration || !dialog.open) return;
-    const sheet = await read<CreativeSheet>(`/api/creatives/${encodeURIComponent(groupId)}?window=${selection.window ?? '3d'}`);
+    const sheet = await read<CreativeSheet>(`/api/creatives/${encodeURIComponent(groupId)}?window=${selection.window ?? '3d'}&liftWindow=${selection.liftWindow ?? 7}&market=${selection.market ?? 'all'}`);
     if (current !== sheetGeneration || !dialog.open) return;
     activeSheet = sheet;
     body.innerHTML = creativeSheetHtml(sheet);
@@ -161,7 +165,7 @@ async function scanNow(button: HTMLButtonElement): Promise<void> {
   }
 }
 async function copyBrief(text: string, button: HTMLButtonElement): Promise<void> {
-  try { await navigator.clipboard.writeText(text); button.textContent = 'Copied'; }
+  try { await navigator.clipboard.writeText(text); button.setAttribute('aria-label', 'Copied'); brieflySaved(element('#creative-gallery-status'), 'Copied'); }
   catch { status('Copy was unavailable. Open the creative and try again.'); }
 }
 async function cardAction(cardId: string, action: 'done' | 'snooze' | 'undo'): Promise<void> {
@@ -186,6 +190,19 @@ async function mergeAction(action: 'merge' | 'split' | 'undo', groupIds: string[
 document.addEventListener('click', event => {
   const target = event.target instanceof Element ? event.target : undefined;
   if (!target) return;
+  const evidence = target.closest<HTMLElement>('[data-full-evidence]')?.dataset.fullEvidence;
+  if (view && (evidence === 'video' || evidence === 'image')) {
+    flushNote(); sheetGeneration++; activeSheet = undefined; noteGeneration++;
+    const body = element('#creative-sheet-body'), dialog = element<HTMLDialogElement>('#creative-sheet');
+    if (body && dialog) { body.innerHTML = fullEvidenceHtml(view.lifts, evidence, selection.liftWindow ?? 7, view.mode); if (!dialog.open) dialog.showModal(); }
+    return;
+  }
+  const days = Number(target.closest<HTMLElement>('[data-lift-window]')?.dataset.liftWindow);
+  if (days === 1 || days === 3 || days === 7) {
+    selection.liftWindow = days; rememberedWindow = days;
+    try { localStorage.setItem('pulse-creative-evidence-window', String(days)); } catch { /* Keep the choice for this page. */ }
+    void refresh(); return;
+  }
   const scan = target.closest<HTMLButtonElement>('[data-creative-scan]');
   if (scan) { void scanNow(scan); return; }
   const tag = target.closest<HTMLElement>('[data-creative-tag]');
@@ -245,6 +262,6 @@ dialog?.addEventListener('close', () => { flushNote(); sheetGeneration++; active
 dialog?.addEventListener('click', event => { if (event.target === dialog) dialog.close(); });
 const state = element('#creative-state');
 if (state) {
-  try { const next = JSON.parse(state.dataset.view ?? '{}') as CreativeView; selection = next.selection; render(next); state.remove(); }
+  try { const next = JSON.parse(state.dataset.view ?? '{}') as CreativeView; selection = { ...next.selection, liftWindow: rememberedWindow }; render(next); state.remove(); if (rememberedWindow !== (next.selection.liftWindow ?? 7)) void refresh(); }
   catch { status('Could not finish loading creatives. Refresh to try again.'); }
 }

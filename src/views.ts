@@ -91,7 +91,7 @@ export function creativeHealthDetails(health: CreativeHealth): string {
     <p>Media store: ${mb(health.bytes)} MB of ${mb(health.capBytes)} MB · last successful read ${timestamp(health.lastSuccessAt)}</p>
     ${health.error ? `<p role="status">Creative read needs attention (${escapeHtml(health.error)}).${/^unsupported_account(?: at (?:catalogue(?: after \d+ ads)?|insights|backfill))?$/.test(health.error) ? ' Creative insights need a GBP account.' : ''} Stored data is retained.</p>` : ''}
     ${health.reconciliation ? `<p class="notice" data-creative-reconciliation>${escapeHtml(health.reconciliation)}</p>` : ''}
-    <p>Creative spend and counts use UK days; hourly reports are aligned to Europe/London when the Meta account timezone differs. Reach, frequency and average play time keep Meta account days.</p>
+    <p>Creative spend, impressions, clicks, purchases and hook counts use UK days; hourly reports are aligned to Europe/London when the Meta account timezone differs. Video plays, ThruPlays, completion counts and the matching hold-rate denominator keep Meta account days because video fields are unavailable hourly. Reach, frequency and average play time keep Meta account days.</p>
     <p>Ad-level comparisons use days read by both imports. The hero keeps the ad-set spend figure.</p></section>`;
 }
 

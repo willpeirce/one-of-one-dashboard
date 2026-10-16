@@ -51,7 +51,7 @@ test('worker recomputes lifts after scans, and keeps recomputing stored evidence
   } });
   await worker.run(account, settings, now);
   assert.equal(calls, 6);
-  const first = await readCreativeLifts(db, account, 'live');
+  const first = await readCreativeLifts(db, account, 'live', { windowDays: 7, market: 'all' });
   assert.equal(first.length, 1);
   assert.equal(first[0]?.value, 'unboxing-flat-lay');
   assert.equal(first[0]?.confidence, 'Strong');

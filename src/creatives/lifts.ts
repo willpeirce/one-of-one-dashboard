@@ -2,12 +2,17 @@ import type { Database } from '../db.js';
 import { addDays, ukToday } from '../hero-range.js';
 import type { Settings } from '../settings.js';
 import type { SourceMode } from '../sources.js';
-import { attributesForKind, resolveAttributes, type AttributeDefinition, type AttributeRow, type CreativeKind } from './attributes.js';
+import { attributesForKind, resolveAttributes, type AttributeRow, type CreativeKind } from './attributes.js';
 import { readAttributeRows } from './attribute-store.js';
+import { creativeLiftLabel } from './lift-phrasing.js';
+export { creativeLiftLabel } from './lift-phrasing.js';
 import type { CreativeData } from './model.js';
 import { aggregateCreativeGroups, type GroupPerformance } from './ranking.js';
 import { readLiveCreativeData } from './store.js';
 
+export const creativeLiftWindows = [1, 3, 7] as const;
+export type LiftWindowDays = typeof creativeLiftWindows[number];
+export type LiftMarket = 'all' | 'uk' | 'us';
 export type LiftConfidence = 'Hint' | 'Likely' | 'Strong';
 export interface LiftSideMetrics {
   groupCount: number; spend: number; purchases: number; purchaseValue: number;
@@ -15,13 +20,13 @@ export interface LiftSideMetrics {
   hookRate: number | null; holdRate: number | null;
 }
 export interface CreativeLift {
-  id: string; kind: CreativeKind; attributeKey: string; value: string;
+  id: string; windowDays: LiftWindowDays; market: LiftMarket; kind: CreativeKind; attributeKey: string; value: string;
   attributeLabel: string; valueLabel: string; label: string; confidence: LiftConfidence;
   metrics: { with: LiftSideMetrics; without: LiftSideMetrics; share: number;
-    from: string; to: string; exampleGroupIds: string[] };
+    from: string; to: string; withGroupIds: string[]; exampleGroupIds: string[] };
   computedAt: string;
 }
-export type CreativeLiftSettings = Pick<Settings, 'creativeLiftWindowDays' | 'creativeLiftMinimumGroups' | 'creativeLiftMinimumSpendGbp'>;
+export type CreativeLiftSettings = Pick<Settings, 'creativeLiftMinimumGroups' | 'creativeLiftMinimumSpendGbp'>;
 type PurchaseTotals = { spend: number; purchases: number };
 const ratio = (a: number, b: number): number | null => b > 0 ? a / b : null;
 
@@ -64,29 +69,21 @@ function candidateSeed(seed: number, key: string): number {
 }
 
 function sideMetrics(groups: readonly GroupPerformance[], kind: CreativeKind): LiftSideMetrics {
-  const sum = (key: 'spend' | 'purchases' | 'purchaseValue' | 'addsToCart' | 'linkClicks' | 'threeSecondPlays' | 'impressions' | 'thruPlays') =>
+  const sum = (key: 'spend' | 'purchases' | 'purchaseValue' | 'addsToCart' | 'linkClicks' | 'threeSecondPlays' | 'impressions' | 'thruPlays' | 'holdThreeSecondPlays') =>
     groups.reduce((total, group) => total + group.totals[key], 0);
   const spend = sum('spend'), purchases = sum('purchases'), purchaseValue = sum('purchaseValue');
   return { groupCount: groups.length, spend, purchases, purchaseValue, costPerPurchase: ratio(spend, purchases),
     roas: ratio(purchaseValue, spend), addToCartRate: ratio(sum('addsToCart'), sum('linkClicks')),
     hookRate: kind === 'video' ? ratio(sum('threeSecondPlays'), sum('impressions')) : null,
-    holdRate: kind === 'video' ? ratio(sum('thruPlays'), sum('threeSecondPlays')) : null };
-}
-
-export function creativeLiftLabel(attribute: AttributeDefinition, value: string): string {
-  const label = attribute.values.find(option => option.value === value)?.label ?? value;
-  const name = attribute.label[0]!.toLowerCase() + attribute.label.slice(1);
-  if (value === 'yes') return name;
-  if (attribute.key === 'slabsShown') return `${label} ${value === '1' ? 'slab' : 'slabs'}`;
-  if (['lengthBand', 'setting', 'format', 'firstSeen', 'aspect'].includes(attribute.key)) return label;
-  return `${name}: ${label}`;
+    holdRate: kind === 'video' ? ratio(sum('thruPlays'), sum('holdThreeSecondPlays')) : null };
 }
 
 /** All resolved parents are candidates, including zero-spend parents; aggregate floors apply to each side. */
 export function computeCreativeLifts(data: CreativeData, rows: readonly AttributeRow[], settings: CreativeLiftSettings,
-  now = new Date(), options: { seed?: number } = {}): CreativeLift[] {
-  const to = ukToday(now), from = addDays(to, 1 - settings.creativeLiftWindowDays);
-  const groups = aggregateCreativeGroups(data, { from, to }).sort((a, b) => a.group.id.localeCompare(b.group.id));
+  now = new Date(), options: { seed?: number; windowDays?: LiftWindowDays; market?: LiftMarket } = {}): CreativeLift[] {
+  const windowDays = options.windowDays ?? 7, market = options.market ?? 'all';
+  const to = ukToday(now), from = addDays(to, 1 - windowDays);
+  const groups = aggregateCreativeGroups(data, { from, to, market }).sort((a, b) => a.group.id.localeCompare(b.group.id));
   const rowsByGroup = new Map<string, AttributeRow[]>();
   for (const row of rows) {
     const values = rowsByGroup.get(row.groupId) ?? [];
@@ -113,9 +110,9 @@ export function computeCreativeLifts(data: CreativeData, rows: readonly Attribut
       const exampleGroupIds = [...withGroups].filter(group => group.totals.costPerPurchase != null)
         .sort((a, b) => a.totals.costPerPurchase! - b.totals.costPerPurchase! || b.totals.purchases - a.totals.purchases || a.group.id.localeCompare(b.group.id))
         .slice(0, 2).map(group => group.group.id);
-      lifts.push({ id: `lift-${kind}-${attribute.key}-${option.value}`, kind, attributeKey: attribute.key, value: option.value,
+      lifts.push({ id: `lift-${windowDays}-${market}-${kind}-${attribute.key}-${option.value}`, windowDays, market, kind, attributeKey: attribute.key, value: option.value,
         attributeLabel: attribute.label, valueLabel: option.label, label: creativeLiftLabel(attribute, option.value), confidence,
-        metrics: { with: withMetrics, without: withoutMetrics, share, from, to, exampleGroupIds }, computedAt: now.toISOString() });
+        metrics: { with: withMetrics, without: withoutMetrics, share, from, to, withGroupIds: withGroups.map(group => group.group.id), exampleGroupIds }, computedAt: now.toISOString() });
     }
   }
   return lifts;
@@ -131,9 +128,9 @@ export async function saveCreativeLifts(db: Database, account: string, mode: Sou
   await db.transaction(async tx => {
     await tx.query('DELETE FROM pulse.attribute_lifts WHERE mode=$1 AND account_id=$2', [mode, account]);
     for (const lift of lifts) await tx.query(`INSERT INTO pulse.attribute_lifts
-      (id,mode,account_id,kind,attribute_key,value,metrics,confidence,computed_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      (id,mode,account_id,kind,attribute_key,value,metrics,confidence,computed_at,window_days,market) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
     [creativeLiftStorageId(account, mode, lift.id), mode, account, lift.kind, lift.attributeKey, JSON.stringify(lift.value),
-      JSON.stringify(lift.metrics), lift.confidence, lift.computedAt]);
+      JSON.stringify(lift.metrics), lift.confidence, lift.computedAt, lift.windowDays, lift.market]);
   });
 }
 
@@ -151,10 +148,11 @@ function validDay(input: unknown): input is string {
 }
 
 /** Old or malformed rows do not produce recommendations; labels always come from the shared schema. */
-export async function readCreativeLifts(db: Database, account: string, mode: SourceMode): Promise<CreativeLift[]> {
-  const rows = (await db.query<any>(`SELECT id,kind,attribute_key,value,metrics,confidence,computed_at
+export async function readCreativeLifts(db: Database, account: string, mode: SourceMode, selection: { windowDays?: LiftWindowDays; market?: LiftMarket } = {}): Promise<CreativeLift[]> {
+  const rows = (await db.query<any>(`SELECT id,kind,attribute_key,value,metrics,confidence,computed_at,window_days,market
     FROM pulse.attribute_lifts WHERE mode=$1 AND account_id=$2 ORDER BY kind,attribute_key,value::text,id`, [mode, account])).rows;
   return rows.flatMap(row => {
+    if (selection.windowDays && row.window_days !== selection.windowDays || selection.market && row.market !== selection.market) return [];
     if (row.kind !== 'video' && row.kind !== 'image') return [];
     const attribute = attributesForKind(row.kind).find(candidate => candidate.key === row.attribute_key);
     const option = attribute?.values.find(candidate => candidate.value === row.value);
@@ -162,10 +160,13 @@ export async function readCreativeLifts(db: Database, account: string, mode: Sou
     if (!attribute || !option || !metrics || !validSide(metrics.with) || !validSide(metrics.without)
       || !finiteNonnegative(metrics.share) || metrics.share > 1 || liftConfidence(metrics.share) !== row.confidence
       || !validDay(metrics.from) || !validDay(metrics.to) || metrics.from > metrics.to
+      || !creativeLiftWindows.includes(row.window_days) || !['all', 'uk', 'us'].includes(row.market)
+      || addDays(metrics.to, 1 - row.window_days) !== metrics.from
+      || !Array.isArray(metrics.withGroupIds) || !metrics.withGroupIds.every((id: unknown) => typeof id === 'string')
       || !Array.isArray(metrics.exampleGroupIds) || metrics.exampleGroupIds.length > 2
       || !metrics.exampleGroupIds.every((id: unknown) => typeof id === 'string')
       || !Number.isFinite(new Date(row.computed_at).getTime())) return [];
-    return [{ id: row.id, kind: row.kind, attributeKey: attribute.key, value: option.value,
+    return [{ id: row.id, windowDays: row.window_days, market: row.market, kind: row.kind, attributeKey: attribute.key, value: option.value,
       attributeLabel: attribute.label, valueLabel: option.label, label: creativeLiftLabel(attribute, option.value),
       confidence: row.confidence, metrics, computedAt: new Date(row.computed_at).toISOString() }];
   });
@@ -187,7 +188,8 @@ export async function recomputeCreativeLifts(db: Database, account: string, data
       readLiveCreativeData(db, { ...settings, metaAdAccountId: account }),
       readAttributeRows(db, data.mode, account),
     ]);
-    const lifts = computeCreativeLifts(current, rows, settings, now);
+    const lifts = creativeLiftWindows.flatMap(windowDays => (['all', 'uk', 'us'] as const)
+      .flatMap(market => computeCreativeLifts(current, rows, settings, now, { windowDays, market })));
     await saveCreativeLifts(db, account, data.mode, lifts);
     return lifts;
   });

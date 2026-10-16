@@ -59,21 +59,21 @@ test('invented sample attributes cover each source, unsure and unknown states wi
 
 test('invented sample lifts use canonical figures and existing examples for both types with one Strong card', () => {
   const data = sampleCreativeData(defaultSettings(), now);
-  const lifts = sampleCreativeStoredLifts(now);
+  const lifts = sampleCreativeStoredLifts(now).filter(lift => lift.windowDays === 7 && lift.market === 'all');
   assert.deepEqual(lifts.map(lift => lift.kind), ['video', 'image']);
   assert.equal(lifts.filter(lift => lift.confidence === 'Strong').length, 1);
   const presentation = deriveCreativeLiftPresentation(lifts, data);
   assert.equal(presentation.cards.length, 1);
   assert.equal(presentation.cards[0]!.kind, 'decide');
   for (const kind of ['video', 'image'] as const) {
-    assert.match(presentation.makeNext[kind]!.line, new RegExp(`^Next ${kind}:`));
-    assert.match(presentation.makeNext[kind]!.brief, /Sample data: invented lift illustrations/);
-    assert.match(presentation.makeNext[kind]!.brief, /Meta says cost per purchase/);
-    assert.doesNotMatch(presentation.winning[kind], /Not enough data yet/);
+    assert.equal(presentation.makeNext[kind].line, presentation.makeNext[kind].bullets[0]!.text);
+    assert.match(presentation.makeNext[kind]!.brief, /Patterns, not proof/);
+    assert.match(presentation.makeNext[kind]!.brief, /a purchase/);
+    assert.doesNotMatch(presentation.makeNext[kind].line, /Not enough data yet/);
   }
   for (const lift of lifts) {
-    assert.match(lift.id, /^invented-batch4-lift-/);
-    assert.equal(lift.metrics.from, '2026-09-15');
+    assert.match(lift.id, /^invented-brief-/);
+    assert.equal(lift.metrics.from, '2026-10-08');
     assert.equal(lift.metrics.to, '2026-10-14');
     for (const side of [lift.metrics.with, lift.metrics.without]) {
       assert.equal(side.costPerPurchase, side.spend / side.purchases);
@@ -101,12 +101,12 @@ test('sample mode renders the attributes, form, queue, scan-off state, lifts, br
   assert.match(html, /data-queue-group="sample-video-3"/);
   assert.match(html, /Model unsure/);
   assert.match(html, /name="attribute"/);
-  assert.match(html, /Video lifts/);
-  assert.match(html, /Image lifts/);
-  assert.match(html, /fixed invented lift illustrations/);
-  assert.match(html, /Next video:/);
-  assert.match(html, /Next image:/);
-  assert.match(html, /Copy video brief/);
+  assert.match(html, /data-make-next="video"/);
+  assert.match(html, /data-make-next="image"/);
+  assert.match(html, /invented lift illustrations/);
+  assert.match(html, /Make next/);
+  assert.match(html, /aria-label="Copy video instructions"/);
+  assert.doesNotMatch(html, /Copy video brief|Copy image brief/);
   assert.doesNotMatch(html, /Scan now|deferred to the next batch/);
   const sheet = await buildCreativeSheet(data, settings, '2026-10-14', 'sample-video-3', {}, async () => ({ count: 3, mode: 'sample' }));
   assert.ok(sheet);

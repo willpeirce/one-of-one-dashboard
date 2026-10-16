@@ -155,7 +155,6 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     number('creativeMediaCapMb', 'Media storage cap (MB)', { integer: true, min: 1, max: 10_000 }),
     { key: 'creativeFreelancerInitial', label: 'Freelancer initial', maxlength: 1, hint: 'One letter for the owner mark on each picture.' },
   ], values)}</div><h3>Attribute lifts</h3><p class="setting-help">Compare tagged creatives of the same type. Each side must meet both minimums. A lift is a correlation, not a cause.</p><div class="settings-grid">${fields([
-    number('creativeLiftWindowDays', 'Lift window (days)', { integer: true, min: 1, max: 365 }),
     number('creativeLiftMinimumGroups', 'Lift minimum groups per side', { integer: true, min: 1, max: 1_000 }),
     number('creativeLiftMinimumSpendGbp', 'Lift minimum spend per side (£)', { min: 0.01, max: 100_000 }),
   ], values)}</div><h3>Creative scan</h3><p class="setting-help">Prices are pounds per million tokens; zero means not configured. Check the model’s current prices and convert them to pounds before enabling the scan.</p><p class="setting-help" data-creative-scan-prices${values.creativeScanInputPrice > 0 && values.creativeScanOutputPrice > 0 ? ' hidden' : ''}>Set the scan prices in Settings</p><div class="settings-grid">${fields([

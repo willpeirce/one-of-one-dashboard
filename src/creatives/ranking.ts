@@ -19,20 +19,21 @@ const sums = ['spend', 'impressions', 'reach', 'linkClicks', 'threeSecondPlays',
 /** Rates are ratios of totals, never averages of the individual ad/day rates. */
 export function creativeTotals(rows: readonly AdInsight[]) {
   const totals = Object.fromEntries(sums.map(key => [key, 0])) as Record<typeof sums[number], number>;
-  let weightedPlayTime = 0;
+  let weightedPlayTime = 0, holdThreeSecondPlays = 0;
   const hookSources = new Set<AdInsight['threeSecondSource']>();
   for (const row of rows) {
     for (const key of sums) totals[key] += row[key];
+    holdThreeSecondPlays += row.holdThreeSecondPlays ?? row.threeSecondPlays;
     weightedPlayTime += row.averagePlayTime * row.plays;
     if (row.threeSecondSource !== 'none') hookSources.add(row.threeSecondSource);
   }
   return {
-    ...totals,
+    ...totals, holdThreeSecondPlays,
     roas: ratio(totals.purchaseValue, totals.spend),
     costPerPurchase: ratio(totals.spend, totals.purchases),
     ctr: ratio(totals.linkClicks, totals.impressions),
     hookRate: ratio(totals.threeSecondPlays, totals.impressions),
-    holdRate: ratio(totals.thruPlays, totals.threeSecondPlays),
+    holdRate: ratio(totals.thruPlays, holdThreeSecondPlays),
     watchThroughRate: ratio(totals.plays100, totals.plays),
     addToCartRate: ratio(totals.addsToCart, totals.linkClicks),
     averagePlayTime: ratio(weightedPlayTime, totals.plays),

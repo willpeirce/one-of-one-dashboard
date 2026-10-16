@@ -215,6 +215,9 @@ test('three missing sources cap tile lines at two plus a count, but detail names
   assert.equal(hero.spend.n, 0);
   assert.equal(hero.spend.unavailable, true);
   assert.equal(hero.spend.ss, 'Meta missing · total excludes Meta\nGoogle missing · total excludes Google\n+1 more');
+  for (const metric of [hero.contribution, hero.margin, hero.profit]) {
+    assert.deepEqual(metric.d.extra!.find(([label]) => label === 'After ad spend'), ['After ad spend', 'Unknown · ad spend unavailable']);
+  }
   assert.equal(hero.roas.ss, 'Excludes Meta spend\nExcludes Google spend\n+1 more');
   for (const name of ['Meta', 'Google', 'TikTok']) assert.ok(hero.spend.d.src.includes(`Excludes ${name} spend`));
   for (const metric of [hero.spend, hero.margin, hero.profit, hero.roas]) {

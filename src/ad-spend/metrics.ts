@@ -244,7 +244,8 @@ export function applySpend(
     landedCost: landed / 100, fulfilment: fulfilment / 100,
     paymentFees: fees / 100, adSpend: total, overheads: overheadTotal,
   });
-  const afterAds = `${formatPounds(result.contribution - total)}${gaps.length ? ` · ${gapLines(gaps, 'spend')}` : !available ? ' · ad spend unavailable' : ''}`;
+  const afterAds = !available ? 'Unknown · ad spend unavailable'
+    : `${formatPounds(result.contribution - total)}${gaps.length ? ` · ${gapLines(gaps, 'spend')}` : ''}`;
   hero.contribution = contributionMetric({ result, net: hero.net,
     orders: hero.orders.unavailable || hero.aov.unavailable || inputs.orderDetailsFrom && from < inputs.orderDetailsFrom ? null : hero.orders.n,
     components: [
@@ -294,11 +295,11 @@ export function applySpend(
         ],
         ['Contribution', formatPounds(result.contribution)],
         ['Ad spend', formatPounds(total)],
+        ...split,
         ['After ad spend', afterAds],
         ...overheadRows,
         ['Discounts', 'Already deducted in net sales'],
         ['Left out', omitted.join(', ') || 'None of these components'],
-        ...split,
         ['Net profit', formatPounds(result.profit)],
       ],
     },

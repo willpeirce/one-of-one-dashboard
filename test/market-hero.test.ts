@@ -61,7 +61,7 @@ test('geo guard applies to UK/US independently while All stays measured and empt
   const guarded = shopifyHero(facts(list, false), today, date, date, settings, undefined, undefined, input);
   assert.equal(guarded.cr.unavailable, false); assert.equal(guarded.markets!.uk.cr.unavailable, true); assert.equal(guarded.markets!.uk.cr.unavailableLabel, 'Unknown');
   const empty = shopifyHero(facts(list.filter(row => row.market !== 'US')), today, date, date, settings, undefined, undefined, input).markets!.us;
-  for (const key of ['net', 'orders', 'aov', 'cac'] as const) { assert.equal(empty[key].n, 0); assert.equal(empty[key].unavailable, false); assert.match(empty[key].ss, /No US orders in this period/); }
+  for (const key of ['net', 'orders', 'aov', 'cac', 'contribution'] as const) { assert.equal(empty[key].n, 0); assert.equal(empty[key].unavailable, false); assert.match(empty[key].ss, /No US orders in this period/); }
   assert.equal(empty.cr.n, 0);
 });
 test('AOV/CAC comparisons use summed facts and show seven-day averages or previous N days with no red', () => {
@@ -124,4 +124,13 @@ test('CAC never compares or charts a zero for live days whose ad-source coverage
   const h = shopifyHero(facts(list), today, date, date, settings, undefined, undefined, inputs);
   assert.equal(h.cac.n, 9.75); assert.equal(h.cac.state, 'info'); assert.match(h.cac.ss, /no earlier days to compare/); assert.deepEqual(h.cac.d.hist, []);
   assert.equal(h.markets!.uk.cac.n, 10); assert.equal(h.markets!.uk.cac.state, 'info'); assert.deepEqual(h.markets!.uk.cac.d.hist, []);
+});
+
+test('empty market Contribution remains clear even when no ad spend source is usable', async()=>{
+  const missing=spend();missing.sources=missing.sources.map(source=>({...source,status:'source unavailable',failures:2}));missing.rows=[];missing.days=[];
+  const hero=shopifyHero(facts([]),today,date,date,settings,undefined,undefined,{spend:missing,costs:[],estimates:[],now});
+  for(const market of ['uk','us'] as const){
+    assert.equal(hero.markets![market].contribution.ss,`No ${market.toUpperCase()} orders in this period`);
+    assert.equal(hero.markets![market].contribution.unavailable,false);
+  }
 });

@@ -25,7 +25,7 @@ export function creativeTotals(rows: readonly AdInsight[]) {
   for (const row of rows) {
     for (const key of sums) totals[key] += row[key] ?? 0;
     if(row.spend>0){spendDays.add(row.day);if(row.plays==null)missingPlayDays.add(row.day);}
-    if (row.thruPlays != null && row.plays != null) {
+    if (row.thruPlays != null) {
       holdThreeSecondPlays += row.holdThreeSecondPlays ?? row.threeSecondPlays;
       holdDataRows++;
     }

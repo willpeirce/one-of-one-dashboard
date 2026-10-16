@@ -86,4 +86,9 @@ test('hold waits for every spend day and repair follows scored video windows, me
  await repairThruPlays(db,reader,account,later,'lifetime');assert.deepEqual(calls.at(-1),[day,day]);assert.equal(calls.length,3);
  assert.equal((await group()).totals.holdRate,.3);
  assert.equal(creativeTotals([creativeInsight('invented-zero-spend',{spend:0,plays:null})]).holdMissingPlayDays,0);
+ const paired=creativeTotals([
+  creativeInsight('invented-counted',{plays:150,thruPlays:20,holdThreeSecondPlays:100}),
+  creativeInsight('invented-zero-spend',{spend:0,plays:null,thruPlays:10,holdThreeSecondPlays:50}),
+ ]);
+ assert.equal(paired.holdRate,.2,'every counted ThruPlay retains its matching denominator');
 });

@@ -410,7 +410,7 @@ export class MetaCreativeClient implements CreativeReader {
       if(need.size&&(width===null||height===null)){
         takeSize(imageSize(group.bytes));
         const url=matches?(creative.image_url??media.feed.images?.find((r:any)=>r.hash===group.key)?.url??media.spec.link_data?.picture??creative.thumbnail_url):null;
-        if((width===null||height===null)&&url)takeSize(imageSize(await attempt('image bytes',()=>this.bytes(url,false))));
+        if((width===null||height===null)&&url)takeSize(imageSize(await attempt('bytes',()=>this.bytes(url,false))));
       }
       const videoId=group.kind==='video'?(matches?media.primary!.key:!group.key.includes(':')?group.key:null):null;
       if(videoId&&missing()){

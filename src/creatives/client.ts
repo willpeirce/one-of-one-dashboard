@@ -353,12 +353,15 @@ export class MetaCreativeClient implements CreativeReader {
   async readThruPlays(account:string,from:string,to:string):Promise<import('./thruplay-repair.js').ThruPlayRow[]> {
     insightDay(from);insightDay(to);if(from>to)throw new AdError('invalid');
     const report=await this.meta.readAllPages(`act_${id(account)}/insights`,{
-      fields:'ad_id,date_start,video_play_actions,video_thruplay_watched_actions',level:'ad',time_increment:'1',limit:'500',
+      fields:'ad_id,date_start,video_play_actions,video_thruplay_watched_actions,actions,video_continuous_2_sec_watched_actions',level:'ad',time_increment:'1',limit:'500',
       time_range:JSON.stringify({since:from,until:to}),
     },60_000,true);
     return report.map(row=>{
       const day=insightDay(row.date_start);if(day<from||day>to)throw new AdError('invalid');
-      return {adId:id(row.ad_id),day,plays:row.video_play_actions==null?null:action(row.video_play_actions),thruPlays:row.video_thruplay_watched_actions==null?null:action(row.video_thruplay_watched_actions)};
+      const direct=Array.isArray(row.actions)&&row.actions.some((item:any)=>item.action_type==='video_view');
+      return {adId:id(row.ad_id),day,plays:row.video_play_actions==null?null:action(row.video_play_actions),thruPlays:row.video_thruplay_watched_actions==null?null:action(row.video_thruplay_watched_actions),
+        holdThreeSecondPlays:row.actions==null&&row.video_continuous_2_sec_watched_actions==null?undefined
+          :direct?action(row.actions,'video_view'):action(row.video_continuous_2_sec_watched_actions)};
     });
   }
   async readFrequency(account: string, adIds: string[], from: string, to: string): Promise<number | null> {

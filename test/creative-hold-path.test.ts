@@ -77,7 +77,7 @@ test('a refused three-day ThruPlay report splits into single days with narrow pa
  const calls:string[][]=[];const waits:number[]=[];let limited=true;
  const options={sleep:async(ms:number)=>{waits.push(ms);},fetch:(async input=>{
   const url=new URL(String(input));assert.equal(url.pathname.split('/').at(-1),'insights');
-  assert.equal(url.searchParams.get('fields'),'ad_id,date_start,video_play_actions,video_thruplay_watched_actions');
+  assert.equal(url.searchParams.get('fields'),'ad_id,date_start,video_play_actions,video_thruplay_watched_actions,actions,video_continuous_2_sec_watched_actions');
   assert.equal(url.searchParams.get('limit'),'500');assert.equal(url.searchParams.get('time_increment'),'1');assert.equal(url.searchParams.has('breakdowns'),false);
   const {since,until}=JSON.parse(url.searchParams.get('time_range')!);calls.push([since,until]);
   if(since!==until)return Response.json({error:{code:2,error_subcode:1504044}},{status:400});
@@ -107,7 +107,7 @@ test('ThruPlay day progress survives restart, skips a failed day and retries it 
  await db.query("INSERT INTO pulse.creative_jobs(account_id,backfill_done,insights_error,error_code) VALUES($1,true,$2,$2)",[account,'http 400, meta 2/1504044 at backfill']);
  const calls:string[][]=[],logs:string[]=[];t.mock.method(console,'error',(line:string)=>logs.push(line));let fail=true;
  const reader:import('../src/creatives/model.js').CreativeReader={readCatalogue:async function*(){yield []},readInsights:async()=>[],imageBytes:async()=>new Uint8Array(),videoSource:async()=>'',videoFrames:async()=>[],readThruPlays:async(_,from,to)=>{
-  calls.push([from,to]);if(fail&&from<='2026-10-03'&&to>='2026-10-03')throw new AdError('http',400,2,1504044);return [];
+  calls.push([from,to]);if(fail&&from<='2026-10-03'&&to>='2026-10-03')throw new AdError('http',400,2,1504044);return Array.from({length:14},(_,i)=>({adId:'invented-resume-ad',day:addDays('2026-10-02',i),plays:150,thruPlays:30})).filter(row=>row.day>=from&&row.day<=to);
  }};
  await repairThruPlays(db,reader,account,now,'lifetime');
  assert.deepEqual(await thruPlayHealth(db,account,now,'lifetime'),{completed:11,total:14,failures:[{day:'2026-10-03',code:'http 400, meta 2/1504044 at backfill'}]});

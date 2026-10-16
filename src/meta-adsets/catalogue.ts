@@ -80,7 +80,7 @@ export async function readAdSets(db: Database, account: string, settings: Settin
     flatBudget:r.flat_budget, dailyBudget:r.daily_budget == null ? null : Number(r.daily_budget),lifetimeBudget:r.lifetime_budget == null ? null : Number(r.lifetime_budget),currency:r.currency,
     createdTime:new Date(r.created_time).toISOString(),updatedTime:new Date(r.updated_time).toISOString(),learningStage:r.learning_stage,
     lastSignificantEdit:r.last_significant_edit ? new Date(r.last_significant_edit).toISOString() : null,
-    market:metaSpendMarket(r.campaign_name ?? '',r.name,adSetOwner(r.campaign_id,settings)),
+    market:r.market,
     owner:adSetOwner(r.campaign_id,settings),campaignName:r.campaign_name ?? '',
     firstSeen:new Date(r.first_seen).toISOString(),lastSeen:new Date(r.last_seen).toISOString(),lastRead:new Date(r.last_read).toISOString(),
   }));

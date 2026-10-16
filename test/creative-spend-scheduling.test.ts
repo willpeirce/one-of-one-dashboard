@@ -93,7 +93,7 @@ test('a pending creative pass lets the next 30-minute spend and campaign poll fi
   await first;
   await assertCommittedPoll(db, 1, now);
   await worker.waitForCreativeInsights();
-  assert.equal(insightsReads, 3, 'daily read plus the two one-time repair chunks');
+  assert.equal(insightsReads, 1);
 
   let creativeFinished = false;
   const pending = worker.waitForCreatives().then(() => { creativeFinished = true; });
@@ -108,17 +108,17 @@ test('a pending creative pass lets the next 30-minute spend and campaign poll fi
   assert.deepEqual([spendReads, campaignReads, catalogueReads], [2, 2, 1]);
   assert.equal(creativeFinished, false);
   await worker.waitForCreativeInsights();
-  assert.equal(insightsReads, 4);
+  assert.equal(insightsReads, 2);
   assert.deepEqual(logs, ['Meta creatives tick skipped: pass still running.']);
 
   release.resolve();
   await pending;
-  assert.equal(insightsReads, 4, 'daily reads continue while the catalogue is pending');
+  assert.equal(insightsReads, 2, 'daily reads continue while the catalogue is pending');
   clock = new Date(now.getTime() + 2 * SPEND_POLL_INTERVAL_MS);
   await worker.tick('meta');
   await worker.waitForCreatives();
   await assertCommittedPoll(db, 3, clock);
-  assert.deepEqual([spendReads, campaignReads, catalogueReads, insightsReads], [3, 3, 2, 5]);
+  assert.deepEqual([spendReads, campaignReads, catalogueReads, insightsReads], [3, 3, 2, 3]);
   assert.equal(logs.length, 1, 'the completed pass releases the creative guard');
 });
 
@@ -159,7 +159,7 @@ test('stop waits for both pending spend and the creative pass that spend starts 
   await assertCommittedPoll(db, 1, now);
   releaseCreative.resolve();
   await stopping;
-  assert.equal(insightsReads, 3, 'daily read plus the two one-time repair chunks');
+  assert.equal(insightsReads, 1);
   assert.equal((await db.query('SELECT error_code FROM pulse.creative_jobs')).rows[0]!.error_code, null);
   clock = new Date(now.getTime() + SPEND_POLL_INTERVAL_MS);
   await worker.tick('meta');
@@ -183,7 +183,7 @@ test('a detached catalogue failure logs its stage after zero ads and preserves c
   await worker.tick('meta');
   await worker.waitForCreatives();
   await assertCommittedPoll(db, 1, now);
-  assert.equal(insightsReads, 3, 'daily read plus the two one-time repair chunks');
+  assert.equal(insightsReads, 1);
   assert.deepEqual(logs, ['Meta creatives read failed (http 400, meta 100/1815001 at catalogue after 0 ads).']);
   const job = (await db.query('SELECT error_code,last_success_at FROM pulse.creative_jobs WHERE account_id=$1', [account])).rows[0]!;
   assert.equal(job.error_code, 'http 400, meta 100/1815001 at catalogue after 0 ads');

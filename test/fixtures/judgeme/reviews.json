@@ -22,7 +22,7 @@
         "external_id": 920002
       },
       "source": "email",
-      "curated": "not-yet",
+      "curated": "ok",
       "hidden": false,
       "verified": "buyer",
       "created_at": "2026-09-30T09:00:00Z",
@@ -40,7 +40,8 @@
             "original": "https://example.test/sample.jpg"
           }
         }
-      ]
+      ],
+      "published": false
     },
     {
       "id": 900102,
@@ -62,7 +63,7 @@
         "external_id": 920002
       },
       "source": "email",
-      "curated": "not-yet",
+      "curated": "ok",
       "hidden": false,
       "verified": "buyer",
       "created_at": "2026-09-30T10:00:00Z",
@@ -80,7 +81,8 @@
             "original": "https://example.test/sample.jpg"
           }
         }
-      ]
+      ],
+      "published": false
     },
     {
       "id": 900103,
@@ -102,7 +104,7 @@
         "external_id": 920002
       },
       "source": "email",
-      "curated": "not-yet",
+      "curated": "ok",
       "hidden": false,
       "verified": "buyer",
       "created_at": "2026-09-30T08:00:00Z",
@@ -120,7 +122,8 @@
             "original": "https://example.test/sample.jpg"
           }
         }
-      ]
+      ],
+      "published": false
     },
     {
       "id": 900104,
@@ -160,7 +163,8 @@
             "original": "https://example.test/sample.jpg"
           }
         }
-      ]
+      ],
+      "published": true
     },
     {
       "id": 900105,
@@ -182,7 +186,7 @@
         "external_id": 920002
       },
       "source": "email",
-      "curated": "not-yet",
+      "curated": "ok",
       "hidden": true,
       "verified": "buyer",
       "created_at": "2026-09-30T11:00:00Z",
@@ -200,7 +204,8 @@
             "original": "https://example.test/sample.jpg"
           }
         }
-      ]
+      ],
+      "published": false
     },
     {
       "id": 900106,
@@ -240,7 +245,8 @@
             "original": "https://example.test/sample.jpg"
           }
         }
-      ]
+      ],
+      "published": false
     },
     {
       "id": 900107,

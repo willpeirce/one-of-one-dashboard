@@ -80,7 +80,7 @@ test('seven-day backfill checkpoints resume after failure; daily and nightly win
     const source=reader(async(_account,from,to)=>{reads.push([from,to]); if(from==='2026-08-14'&&fail)throw new Error(token); return [];});
     const worker=new CreativeWorker(db,source);
     await worker.run(account,settings(),now);
-    assert.deepEqual(reads,[['2026-10-12','2026-10-13'],['2026-10-06','2026-10-12'],['2026-09-29','2026-10-05'],['2026-10-06','2026-10-12'],['2026-08-07','2026-08-13'],['2026-08-14','2026-08-20']]);
+    assert.deepEqual(reads,[['2026-10-12','2026-10-13'],['2026-10-06','2026-10-12'],['2026-08-07','2026-08-13'],['2026-08-14','2026-08-20']]);
     assert.equal((await db.query<any>('SELECT backfill_next::text FROM pulse.creative_jobs')).rows[0]!.backfill_next,'2026-08-14');
     assert.equal(JSON.stringify(logs).includes(token),false);
     reads.length=0;fail=false;

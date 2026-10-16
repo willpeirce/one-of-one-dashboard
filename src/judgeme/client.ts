@@ -44,7 +44,7 @@ export class JudgeMeClient {
       try {
         const url = new URL('https://api.judge.me/api/v1/reviews');
         url.search = new URLSearchParams({ api_token: this.#token, shop_domain: appConfig.shopify.storeDomain,
-          page: String(page), per_page: '100', published: 'false' }).toString();
+          page: String(page), per_page: '100' }).toString();
         const response = await this.#fetch(url, { method: 'GET', redirect: 'error', signal: AbortSignal.timeout(10_000) });
         if (!response.ok) {
           failure = new JudgeMeReadError('http', response.status);

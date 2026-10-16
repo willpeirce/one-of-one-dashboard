@@ -7,6 +7,7 @@ import { AdTransport } from '../src/ad-spend/http.js';
 import { AdError, adErrorCode } from '../src/ad-spend/model.js';
 import { readMetaCampaigns, saveMetaCampaigns, spendFacts } from '../src/ad-spend/store.js';
 import { SpendWorker } from '../src/ad-spend/worker.js';
+import { addDays } from '../src/hero-range.js';
 import { defaultSettings } from '../src/settings.js';
 import { syncSourceHealth } from '../src/sources.js';
 import { createTestDatabase } from './helpers/database.js';
@@ -122,7 +123,11 @@ test('spend failure stays unavailable even when the independent campaign read su
     'Meta ad sets read failed (http 400, meta 100/1487694).',
     'Meta creatives read failed (http 400, meta 100/1487694 at insights).',
     'Meta creatives read failed (http 400, meta 100/1487694 at catalogue after 0 ads).',
+    ...Array.from({length:12},(_,i)=>`Meta ThruPlay backfill ${addDays('2026-09-26',i)} failed (http 400, meta 100/1487694 at backfill).`),
   ].sort());
+  const repair=(await db.query<{day:string;completed:boolean;error_code:string|null}>('SELECT day::text,completed,error_code FROM pulse.creative_thruplay_days WHERE account_id=$1 ORDER BY day',[s.metaAdAccountId])).rows;
+  assert.equal(repair.length,14);assert.ok(repair.every(row=>!row.completed));
+  assert.deepEqual(repair.filter(row=>row.error_code).map(row=>row.day),Array.from({length:12},(_,i)=>addDays('2026-09-26',i)));
   assert.equal((await db.query<{ error_code: string }>('SELECT error_code FROM pulse.creative_jobs WHERE account_id=$1', [s.metaAdAccountId])).rows[0]!.error_code, 'http 400, meta 100/1487694 at catalogue after 0 ads');
   assert.ok(!logs.join('').includes('private') && !logs.join('').includes(e.META_ACCESS_TOKEN));
 });

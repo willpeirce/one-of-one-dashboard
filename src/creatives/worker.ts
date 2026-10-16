@@ -1,3 +1,4 @@
+import {repairThruPlays} from './thruplay-repair.js';
 import {refreshMediaFacts} from './media-facts.js';
 import type { Database } from '../db.js';
 import type { Settings } from '../settings.js';
@@ -30,7 +31,7 @@ export class CreativeWorker {
     let catalogueCompleted = false;
     try {
       await this.db.query('INSERT INTO pulse.creative_jobs(account_id) VALUES($1) ON CONFLICT DO NOTHING',[account]);
-      try { await refreshMediaFacts(this.db,this.reader,account,now); }
+      try { await refreshMediaFacts(this.db,this.reader,account,now,settings.creativeDefaultWindow); }
       catch { console.error('Meta media facts progress could not be saved.'); }
       const retryGroups = await this.db.query<{id:string}>(`SELECT g.id FROM pulse.media_groups g WHERE mode='live' AND account_id=$1
         AND g.detail_reduced_at<=$2::timestamptz-interval '24 hours'
@@ -92,15 +93,6 @@ export class CreativeWorker {
         await this.db.query('UPDATE pulse.creative_jobs SET nightly_day=$2 WHERE account_id=$1',[account,today]);
       }
       step = 'backfill';
-      // The pre-fix daily rows cannot supply a reliable hold numerator. Repair
-      // the last 14 full days once, in two bounded reads; retry after any failure.
-      if (!job.thruplays_backfilled_at) {
-        for (const offset of [-14,-7]) {
-          const from=addDays(today,offset);
-          await readAndSave(from,addDays(from,6));
-        }
-        await this.db.query('UPDATE pulse.creative_jobs SET thruplays_backfilled_at=$2 WHERE account_id=$1',[account,now]);
-      }
       let cursor = job.backfill_next;
       for (let chunk=0; chunk<4 && !job.backfill_done && cursor<=yesterday; chunk++) {
         const end = [addDays(cursor,6),yesterday].sort()[0]!;
@@ -115,6 +107,8 @@ export class CreativeWorker {
       await this.db.query('UPDATE pulse.creative_jobs SET insights_error=$2,error_code=COALESCE(catalogue_error,$2) WHERE account_id=$1',[account,code]).catch(()=>{});
       console.error(`Meta creatives read failed (${code}).`);
     }
+    try { await repairThruPlays(this.db,this.reader,account,now); }
+    catch(error){ console.error(`Meta ThruPlay repair could not finish (${adErrorCode(error,'meta')} at backfill).`); }
     // Frequency is a separate exact-window read: failure cannot invalidate saved insights.
     if (this.reader.readFrequency) {
       try {

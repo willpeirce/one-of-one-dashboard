@@ -117,3 +117,18 @@ test('flat budgets use base every day for Delivery, zero-day, steps and the Live
   if(flatBudget)assert.match(adSetTable(view),/£20.00 · flat/);
  }
 });
+
+
+test('identical UK and US days name their own break-even and dated override in each cost reason',()=>{
+ const settings=s();settings.cppUkBreakEvenGbp=21;settings.cppUsBreakEvenGbp=28;
+ settings.adRules.us.overrideGbp=31;settings.adRules.us.overrideUntil='2026-10-20';
+ const rows=days({spend:70,purchases:1,addsToCart:0});
+ const uk=judge(rows,{market:'uk'},settings),us=judge(rows,{market:'us'},settings);
+ assert.equal(uk.breakEven,21);assert.equal(us.breakEven,31);
+ for(const rule of ['zero-day','purchase-cost','slipping']){
+  assert.match(uk.reasons.find(r=>r.rule===rule)!.text,/UK break-even £21/);
+  assert.match(us.reasons.find(r=>r.rule===rule)!.text,/US break-even £31.*override to 2026-10-20/);
+  assert.doesNotMatch(us.reasons.find(r=>r.rule===rule)!.text,/UK break-even|break-even £21/);
+ }
+ assert.equal(judge(rows,{market:'unknown'},settings).breakEven,null);
+});

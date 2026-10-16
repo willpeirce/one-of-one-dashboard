@@ -10,6 +10,8 @@ export interface Review {
   createdAt: string;
   published: boolean;
   hidden: boolean;
+  flagged: boolean | null;
+  source: string | null;
   curated: 'ok' | 'spam' | 'not-yet';
 }
 
@@ -25,7 +27,7 @@ export interface ReviewsPanel {
 
 export function waitingReviews(rows: readonly Review[]): Review[] {
   return rows.filter(row => !row.published && !row.hidden).sort((a, b) =>
-    Number(b.rating <= 3) - Number(a.rating <= 3) || b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id));
+    Number(a.flagged === true) - Number(b.flagged === true) || Number(b.rating <= 3) - Number(a.rating <= 3) || b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id));
 }
 
 /** Explicit allowlist: v1 reviewer, IP, photo URLs and other fields never leave the client. */
@@ -35,7 +37,7 @@ export function cleanReview(input: unknown): Review | null {
     || Number(r.rating) < 1 || Number(r.rating) > 5 || typeof r.body !== 'string'
     || typeof r.created_at !== 'string' || !Number.isFinite(Date.parse(r.created_at))
     || typeof r.curated !== 'string' || !['ok', 'spam', 'not-yet'].includes(r.curated) || typeof r.hidden !== 'boolean'
-    || ('published' in r && typeof r.published !== 'boolean')
+    || typeof r.published !== 'boolean'
     || !Array.isArray(r.pictures)) return null;
   // PostgreSQL text/jsonb rejects NUL and lone surrogates; keep one bad value out of the batch.
   if ([r.body, r.product_title, r.product_handle].some(value => typeof value === 'string' && /[\u0000\uD800-\uDFFF]/u.test(value))) return null;
@@ -49,6 +51,7 @@ export function cleanReview(input: unknown): Review | null {
     // The documented v1 review response has no country field. Never infer it from an IP.
     market: null, verifiedBuyer: r.verified === 'buyer', photoCount: r.pictures.length,
     createdAt: created.toISOString(), curated,
-    published: typeof r.published === 'boolean' ? r.published : curated === 'ok', hidden: r.hidden || curated === 'spam',
+    published: r.published, hidden: r.hidden, flagged: curated === 'spam',
+    source: typeof r.source === 'string' && /^[a-z][a-z0-9_-]{0,39}$/.test(r.source) ? r.source : null,
   };
 }

@@ -59,7 +59,7 @@ test('reduced groups retry daily, recover in place, preserve history and expose 
   assert.equal(paths.filter(path => path.startsWith('invented-creative-')).length, 1, 'Two ads share one reduced media group');
   assert.deepEqual(new Uint8Array(original.thumbnail), small);
   assert.equal(new Date(original.detail_reduced_at).toISOString(), started.toISOString());
-  assert.deepEqual(info, ['1 creatives read at reduced detail']);
+  assert.deepEqual(info.filter(line=>!line.startsWith('Media facts:')), ['1 creatives read at reduced detail']);
   assert.equal((await creativeHealth(db, settings, { META_ACCESS_TOKEN: inventedCredential }, started)).reducedCount, 1);
 
   await saveInsights(db, account, historic.day, historic.day, [historic], started);
@@ -81,7 +81,7 @@ test('reduced groups retry daily, recover in place, preserve history and expose 
   listedName = 'Invented refreshed ad'; listedCopy = 'Invented ignored list copy';
   await run(23);
   assert.equal(paths.filter(path => path.startsWith('invented-creative-')).length, 0);
-  assert.deepEqual(info, ['1 creatives read at reduced detail']);
+  assert.deepEqual(info.filter(line=>!line.startsWith('Media facts:')), ['1 creatives read at reduced detail']);
 
   await run(25);
   assert.equal(paths.filter(path => path.startsWith('invented-creative-')).length, 1, 'A repeated refusal is attempted once for the shared group');
@@ -106,7 +106,7 @@ test('reduced groups retry daily, recover in place, preserve history and expose 
   assert.equal(group.detail_reduced_at, null); assert.equal(group.detail_retry_after, null);
   assert.deepEqual(await snapshots(), preserved);
   assert.equal((await db.query<any>('SELECT media_group_id FROM pulse.ads WHERE ad_id=$1', [historic.adId])).rows[0]!.media_group_id, groupId);
-  assert.deepEqual(info, []); assert.deepEqual(errors, []);
+  assert.deepEqual(info.filter(line=>!line.startsWith('Media facts:')), []); assert.deepEqual(errors, []);
   assert.equal((await creativeHealth(db, settings, { META_ACCESS_TOKEN: inventedCredential }, atHour(50))).reducedCount, 0);
 
   // A newly revealed key upgrades its original row, rather than orphaning its tags and merges.

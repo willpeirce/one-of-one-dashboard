@@ -1,3 +1,4 @@
+import {refreshMediaFacts} from './media-facts.js';
 import type { Database } from '../db.js';
 import type { Settings } from '../settings.js';
 import { addDays, ukToday } from '../hero-range.js';
@@ -29,8 +30,10 @@ export class CreativeWorker {
     let catalogueCompleted = false;
     try {
       await this.db.query('INSERT INTO pulse.creative_jobs(account_id) VALUES($1) ON CONFLICT DO NOTHING',[account]);
+      try { await refreshMediaFacts(this.db,this.reader,account,now); }
+      catch { console.error('Meta media facts progress could not be saved.'); }
       const retryGroups = await this.db.query<{id:string}>(`SELECT g.id FROM pulse.media_groups g WHERE mode='live' AND account_id=$1
-        AND ((g.detail_reduced_at<=$2::timestamptz-interval '24 hours') OR (g.kind='image' AND (g.width IS NULL OR g.height IS NULL)) OR (g.kind='video' AND g.length_seconds IS NULL))
+        AND g.detail_reduced_at<=$2::timestamptz-interval '24 hours'
         AND (g.detail_retry_after IS NULL OR g.detail_retry_after<=$2)
         AND EXISTS(SELECT 1 FROM pulse.ads a WHERE a.mode=g.mode AND a.account_id=g.account_id AND a.media_group_id=g.id)
         ORDER BY g.fetched_at,g.id LIMIT 20`,[account,now]);

@@ -370,6 +370,21 @@ export class MetaCreativeClient implements CreativeReader {
     const fallback = await this.meta.readGraph(id(videoId), { fields: 'download_hd_url' });
     return this.mediaUrl(fallback.download_hd_url);
   }
+  async readMediaFacts(account: string, group: Pick<import('./model.js').MediaGroup, 'kind'|'key'|'width'|'height'|'lengthSeconds'>, need={size:group.width===null||group.height===null,length:group.lengthSeconds===null}): Promise<import('./media-facts.js').MediaFacts> {
+    const positive = (value: unknown): number | null => Number.isFinite(Number(value)) && Number(value)>0 ? Number(value) : null;
+    if (group.key.includes(':')) return {width:null,height:null,lengthSeconds:null};
+    if (group.kind === 'image') {
+      // Do not reuse a rejected or empty catalogue cache entry on a later day's retry.
+      const rows = await this.meta.readAllPages(`act_${id(account)}/adimages`, {hashes:JSON.stringify([id(group.key)]),fields:'hash,width,height',limit:'100'},10_000,true);
+      const image = rows.find(row=>row.hash===group.key);
+      return {width:positive(image?.width),height:positive(image?.height),lengthSeconds:null};
+    }
+    const video = need.length ? await this.meta.readGraph(id(group.key),{fields:'length'},10_000,true) : null;
+    const images = need.size ? await this.meta.readAllPages(`${id(group.key)}/thumbnails`,{fields:'width,height,is_preferred',limit:'10'},10_000,true) : [];
+    const sized = images.filter(row=>positive(row.width)!==null && positive(row.height)!==null);
+    const image = sized.find(row=>row.is_preferred) ?? sized[0];
+    return {width:group.width??positive(image?.width),height:group.height??positive(image?.height),lengthSeconds:group.lengthSeconds??positive(video?.length)};
+  }
   private imageInfo(account: string, key: string): Promise<any> {
     const cacheKey=`${account}:${key}`;
     if(!this.images.has(cacheKey))this.images.set(cacheKey,this.meta.readAllPages(`act_${id(account)}/adimages`,{hashes:JSON.stringify([id(key)]),fields:'hash,url,width,height',limit:'100'},10_000,true).then(images=>images.find(image=>image.hash===key)??null));

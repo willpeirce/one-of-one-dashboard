@@ -30,7 +30,7 @@ export class CreativeWorker {
     let catalogueCompleted = false;
     try {
       await this.db.query('INSERT INTO pulse.creative_jobs(account_id) VALUES($1) ON CONFLICT DO NOTHING',[account]);
-      try { await refreshMediaFacts(this.db,this.reader,account,now); }
+      try { await refreshMediaFacts(this.db,this.reader,account,now,settings.creativeDefaultWindow); }
       catch { console.error('Meta media facts progress could not be saved.'); }
       const retryGroups = await this.db.query<{id:string}>(`SELECT g.id FROM pulse.media_groups g WHERE mode='live' AND account_id=$1
         AND g.detail_reduced_at<=$2::timestamptz-interval '24 hours'

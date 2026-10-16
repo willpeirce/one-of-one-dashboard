@@ -1,6 +1,8 @@
+import {imageSize} from './image-size.js';
+import type {MediaFactGroup,MediaFacts} from './media-facts.js';
 import { metaAction as action, META_PURCHASE, META_ADD_TO_CART } from '../ad-spend/meta-actions.js';
 import { MetaSpend } from '../ad-spend/clients.js';
-import { AdError, hourDay } from '../ad-spend/model.js';
+import { AdError, adErrorCode, hourDay } from '../ad-spend/model.js';
 import { addDays } from '../hero-range.js';
 import type { AdTransportOptions } from '../ad-spend/http.js';
 import { spendMarket } from '../ad-spend/placement.js';
@@ -370,20 +372,44 @@ export class MetaCreativeClient implements CreativeReader {
     const fallback = await this.meta.readGraph(id(videoId), { fields: 'download_hd_url' });
     return this.mediaUrl(fallback.download_hd_url);
   }
-  async readMediaFacts(account: string, group: Pick<import('./model.js').MediaGroup, 'kind'|'key'|'width'|'height'|'lengthSeconds'>, need={size:group.width===null||group.height===null,length:group.lengthSeconds===null}): Promise<import('./media-facts.js').MediaFacts> {
+  async readMediaFacts(account: string, group: MediaFactGroup, need={size:group.width===null||group.height===null,length:group.lengthSeconds===null}): Promise<MediaFacts> {
     const positive = (value: unknown): number | null => Number.isFinite(Number(value)) && Number(value)>0 ? Number(value) : null;
-    if (group.key.includes(':')) return {width:null,height:null,lengthSeconds:null};
-    if (group.kind === 'image') {
-      // Do not reuse a rejected or empty catalogue cache entry on a later day's retry.
-      const rows = await this.meta.readAllPages(`act_${id(account)}/adimages`, {hashes:JSON.stringify([id(group.key)]),fields:'hash,width,height',limit:'100'},10_000,true);
-      const image = rows.find(row=>row.hash===group.key);
-      return {width:positive(image?.width),height:positive(image?.height),lengthSeconds:null};
+    const failures:string[]=[];
+    const attempt=async<T>(step:string,read:()=>Promise<T>):Promise<T|null>=>{
+      try{return await read();}catch(error){failures.push(`${adErrorCode(error,'meta')} at ${step}`);return null;}
+    };
+    let width=group.width,height=group.height,lengthSeconds=group.lengthSeconds;
+    const takeSize=(value:any)=>{if(need.size){width??=positive(value?.width);height??=positive(value?.height);}};
+    if(!group.key.includes(':')){
+      if(group.kind==='image'&&need.size){
+        const images=await attempt('adimages',()=>this.meta.readAllPages(`act_${id(account)}/adimages`,{hashes:JSON.stringify([id(group.key)]),fields:'hash,width,height',limit:'100'},10_000,true));
+        takeSize(images?.find(row=>row.hash===group.key));
+      }else if(group.kind==='video'){
+        if(need.length){const video=await attempt('video',()=>this.meta.readGraph(id(group.key),{fields:'length'},10_000,true));lengthSeconds??=positive(video?.length);}
+        if(need.size){const images=await attempt('thumbnails',()=>this.meta.readAllPages(`${id(group.key)}/thumbnails`,{fields:'width,height,is_preferred',limit:'10'},10_000,true));takeSize(images?.find(row=>row.is_preferred)??images?.[0]);}
+      }
     }
-    const video = need.length ? await this.meta.readGraph(id(group.key),{fields:'length'},10_000,true) : null;
-    const images = need.size ? await this.meta.readAllPages(`${id(group.key)}/thumbnails`,{fields:'width,height,is_preferred',limit:'10'},10_000,true) : [];
-    const sized = images.filter(row=>positive(row.width)!==null && positive(row.height)!==null);
-    const image = sized.find(row=>row.is_preferred) ?? sized[0];
-    return {width:group.width??positive(image?.width),height:group.height??positive(image?.height),lengthSeconds:group.lengthSeconds??positive(video?.length)};
+    const missing=()=>need.size&&(width===null||height===null)||group.kind==='video'&&need.length&&lengthSeconds===null;
+    if(missing()){
+      const creativeId=group.creativeId??(group.key.startsWith('creative:')?group.key.slice(9):null);
+      const creative=creativeId?await attempt('creative',()=>this.creative(creativeId)):null;
+      const media=creative?creativeMedia(creative):null;
+      // Never attach another asset's dimensions when a creative contains several media.
+      const matches=media?.primary?.kind===group.kind&&(group.key.includes(':')||media.primary.key===group.key);
+      if(need.size&&(width===null||height===null)){
+        takeSize(imageSize(group.bytes));
+        const url=matches?(creative.image_url??media.feed.images?.find((r:any)=>r.hash===group.key)?.url??media.spec.link_data?.picture??creative.thumbnail_url):null;
+        if((width===null||height===null)&&url)takeSize(imageSize(await attempt('image bytes',()=>this.bytes(url,false))));
+      }
+      const videoId=group.kind==='video'?(matches?media.primary!.key:!group.key.includes(':')?group.key:null):null;
+      if(videoId&&missing()){
+        const videos=await attempt('advideos',()=>this.meta.readAllPages(`act_${id(account)}/advideos`,{ids:JSON.stringify([id(videoId)]),fields:'id,length,format',limit:'100'},10_000,true));
+        const video=videos?.find(row=>row.id===videoId);
+        if(need.length)lengthSeconds??=positive(video?.length);
+        takeSize(video?.format?.find((f:any)=>positive(f.width)&&positive(f.height)));
+      }
+    }
+    return {width,height,lengthSeconds,...(failures.length?{failures}: {})};
   }
   private imageInfo(account: string, key: string): Promise<any> {
     const cacheKey=`${account}:${key}`;

@@ -43,7 +43,6 @@ export interface Settings {
   creativeHitWinnerSpendGbp: number;
   creativeHitKilledSpendGbp: number;
   creativeHitKilledTargetMultiplier: number;
-  creativeLiftWindowDays: number;
   creativeLiftMinimumGroups: number;
   creativeLiftMinimumSpendGbp: number;
   creativeMediaCapMb: number;
@@ -99,7 +98,6 @@ export function creativeSettingsDefaults() {
     creativeHitWinnerSpendGbp: 100,
     creativeHitKilledSpendGbp: 75,
     creativeHitKilledTargetMultiplier: 1.5,
-    creativeLiftWindowDays: 30,
     creativeLiftMinimumGroups: 3,
     creativeLiftMinimumSpendGbp: 150,
     creativeMediaCapMb: 300,
@@ -303,7 +301,6 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
     creativeHitWinnerSpendGbp: requiredNumber(value.creativeHitWinnerSpendGbp, 'creativeHitWinnerSpendGbp', 100_000, false, 0.01),
     creativeHitKilledSpendGbp: requiredNumber(value.creativeHitKilledSpendGbp, 'creativeHitKilledSpendGbp', 100_000, false, 0.01),
     creativeHitKilledTargetMultiplier: requiredNumber(value.creativeHitKilledTargetMultiplier, 'creativeHitKilledTargetMultiplier', 100, false, 1),
-    creativeLiftWindowDays: requiredNumber(value.creativeLiftWindowDays, 'creativeLiftWindowDays', 365, true, 1),
     creativeLiftMinimumGroups: requiredNumber(value.creativeLiftMinimumGroups, 'creativeLiftMinimumGroups', 1_000, true, 1),
     creativeLiftMinimumSpendGbp: requiredNumber(value.creativeLiftMinimumSpendGbp, 'creativeLiftMinimumSpendGbp', 100_000, false, 0.01),
     creativeMediaCapMb: requiredNumber(value.creativeMediaCapMb, 'creativeMediaCapMb', 10_000, true, 1),

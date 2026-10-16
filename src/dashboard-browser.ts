@@ -1,3 +1,4 @@
+import { metricSign } from './metric-sign.js';
 import { radarChartHtml, radarMeasure, radarSummary, weakestRadarGauge, type RadarArea } from './radar.js';
 import { glance } from './fulfilment/view.js';
 import { updateCreativeSnapshot } from './creatives/browser.js';
@@ -240,6 +241,7 @@ function renderHero(hero: HeroPeriod, animate = false): void {
     }
     get('.ss', element).textContent = metric.ss;
     element.dataset.state = metric.state;
+    if (['margin', 'contribution', 'profit'].includes(key)) element.dataset.sign = metricSign(metric);
     element.dataset.detail = JSON.stringify(metric.d);
     statChip(element, metric.state, metric.statusLabel);
     details.set(element, { state: metric.state, title: key === 'profit' ? 'Net profit' : key === 'contribution' ? 'Contribution' : key === 'margin' ? 'Net margin' : get('.sl', element).textContent ?? '', detail: metric.d, mode: metric.mode });

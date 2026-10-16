@@ -7,7 +7,7 @@ import { creativeLiftStorageId, saveCreativeLifts } from './lifts.js';
 /** Seeds invented examples in their own account/mode, preserving later sample edits. */
 export async function seedCreativeSample(db: Database, settings: Settings, now: Date): Promise<void> {
   // A lift illustration is a stable version marker, independent of editable tags or merges.
-  const marker = creativeLiftStorageId(SAMPLE_CREATIVE_ACCOUNT, 'sample', 'invented-batch4-lift-video');
+  const marker = creativeLiftStorageId(SAMPLE_CREATIVE_ACCOUNT, 'sample', 'invented-brief-7-all-video');
   if ((await db.query("SELECT id FROM pulse.attribute_lifts WHERE mode='sample' AND account_id=$1 AND id=$2", [SAMPLE_CREATIVE_ACCOUNT, marker])).rowCount) return;
   const present = await db.query<{ id: string; merged_into_id: string | null }>(
     "SELECT id,merged_into_id FROM pulse.media_groups WHERE mode='sample' AND account_id=$1", [SAMPLE_CREATIVE_ACCOUNT]);

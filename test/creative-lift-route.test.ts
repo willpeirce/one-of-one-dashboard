@@ -70,14 +70,14 @@ test('an authenticated live tag POST recomputes the stored lift and changes pane
   assert.equal(before.statusCode, 200);
   const original = before.json<CreativeView>();
   assert.equal(original.mode, 'live'); assert.equal(original.lifts.length, 1);
-  assert.equal(original.lifts[0]!.confidence, 'Strong'); assert.match(original.makeNext.video!.brief, /Hook: unboxing/);
+  assert.equal(original.lifts[0]!.confidence, 'Strong'); assert.match(original.makeNext.video!.brief, /Open with an unboxing/);
   const response = await h.app.inject({ method: 'POST', url: `/api/creatives/${firstGroup}/attributes`,
     headers: h.headers, payload: { key: 'hookType', value: 'question' } });
   assert.equal(response.statusCode, 200); assert.equal(response.json().attribute.source, 'will');
   assert.equal(response.json().attribute.value, 'question'); assert.equal(h.published(), 1);
   assert.deepEqual(await readCreativeLifts(h.db, account, 'live'), [], 'moving one parent under the minimum removes the lift');
   const after = (await h.app.inject({ url: '/api/creatives', headers: h.headers })).json<CreativeView>();
-  assert.equal(after.winning.video, 'Not enough data yet'); assert.equal(after.makeNext.video, undefined);
+  assert.equal(after.makeNext.video.empty, 'Not enough yet. Scans and spend fill this in.'); assert.equal(after.makeNext.video.bullets.length, 0);
   assert.equal(after.cards.some(card => card.kind === 'decide'), false);
   const sheet = (await h.app.inject({ url: `/api/creatives/${firstGroup}`, headers: h.headers })).json<CreativeSheet>();
   assert.equal(sheet.attributes.find(attribute => attribute.key === 'hookType')!.source, 'will'); assert.equal(sheet.brief, undefined);
@@ -85,7 +85,7 @@ test('an authenticated live tag POST recomputes the stored lift and changes pane
   const cleared = await h.app.inject({ method: 'POST', url: `/api/creatives/${firstGroup}/attributes`,
     headers: h.headers, payload: { key: 'hookType', value: 'question' } });
   assert.equal(cleared.statusCode, 200); assert.equal(cleared.json().attribute.source, 'model');
-  assert.equal((await readCreativeLifts(h.db, account, 'live')).length, 1);
+  assert.equal((await readCreativeLifts(h.db, account, 'live', { windowDays: 7, market: 'all' })).length, 1);
 });
 
 test('a derived lift replacement failure does not turn a durable tag toggle into a failed save', async t => {
@@ -98,5 +98,5 @@ test('a derived lift replacement failure does not turn a durable tag toggle into
   const attributes = await readGroupAttributes(h.db, 'live', account, firstGroup);
   assert.equal(attributes.find(attribute => attribute.key === 'hookType')!.willValue, 'question');
   assert.equal(h.published(), 1); assert.deepEqual(logs, ['Creative lifts could not be refreshed.']);
-  assert.equal((await readCreativeLifts(h.db, account, 'live')).length, 1, 'failed replacement retains the previous stored derivation');
+  assert.equal((await readCreativeLifts(h.db, account, 'live', { windowDays: 7, market: 'all' })).length, 1, 'failed replacement retains the previous stored derivation');
 });

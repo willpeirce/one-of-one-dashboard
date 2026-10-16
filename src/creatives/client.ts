@@ -8,10 +8,10 @@ import type { AdInsight, CatalogueEntry, CatalogueMedia, CatalogueRead, Catalogu
 
 const CREATIVE_FIELDS = 'id,object_type,thumbnail_url,image_hash,image_url,video_id,object_story_spec,asset_feed_spec,effective_object_story_id,effective_instagram_media_id,body,title,call_to_action_type,link_url,url_tags,status';
 const INSIGHT_FIELDS = 'ad_id,adset_id,date_start,spend,impressions,reach,frequency,inline_link_clicks,actions,action_values,video_continuous_2_sec_watched_actions,video_play_actions,video_thruplay_watched_actions,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions,video_avg_time_watched_actions';
-const ACCOUNT_DAY_FIELDS = 'ad_id,adset_id,date_start,reach,frequency,video_avg_time_watched_actions';
-const HOURLY_FIELDS = INSIGHT_FIELDS.split(',').filter(field => !['reach', 'frequency', 'video_avg_time_watched_actions'].includes(field)).join(',');
-const ADDITIVE_FIELDS = ['spend', 'impressions', 'linkClicks', 'plays', 'thruPlays',
-  'plays25', 'plays50', 'plays75', 'plays100', 'addsToCart', 'purchases', 'purchaseValue'] as const;
+const VIDEO_FIELDS = INSIGHT_FIELDS.split(',').filter(field => field.startsWith('video_'));
+const ACCOUNT_DAY_FIELDS = ['ad_id', 'adset_id', 'date_start', 'reach', 'frequency', 'actions', ...VIDEO_FIELDS].join(',');
+const HOURLY_FIELDS = INSIGHT_FIELDS.split(',').filter(field => !['reach', 'frequency'].includes(field) && !field.startsWith('video_')).join(',');
+const ADDITIVE_FIELDS = ['spend', 'impressions', 'linkClicks', 'addsToCart', 'purchases', 'purchaseValue'] as const;
 const MAX_MEDIA_BYTES = 8 * 1024 * 1024;
 const id = (value: unknown): string => {
   const valueString = String(value ?? '');
@@ -307,8 +307,12 @@ export class MetaCreativeClient implements CreativeReader {
       const day = insightDay(row.date_start);
       if (day < from || day > to) throw new AdError('invalid');
       // Non-additive measurements retain their account-day date, even when UK days differ.
-      return parseInsight(hourly ? { ad_id: row.ad_id, adset_id: row.adset_id,
-        reach: row.reach, frequency: row.frequency, video_avg_time_watched_actions: row.video_avg_time_watched_actions } : row, day);
+      if (!hourly) return parseInsight(row, day);
+      // Video fields are unavailable with hourly breakdowns. Keep the daily
+      // plays and their matching hold denominator instead of silently storing zero.
+      const parsed = parseInsight(Object.fromEntries(ACCOUNT_DAY_FIELDS.split(',').map(field => [field, row[field]])), day);
+      return { ...parsed, holdThreeSecondPlays: parsed.threeSecondPlays, threeSecondPlays: 0,
+        addsToCart: 0, purchases: 0, purchaseValue: 0, linkClicks: 0 };
     });
     if (!hourly) return daily;
     const keyFor = (row: AdInsight) => JSON.stringify([row.adId, row.day]);
@@ -323,13 +327,13 @@ export class MetaCreativeClient implements CreativeReader {
       const hour = Number(/^([0-2]\d):/.exec(row.hourly_stats_aggregated_by_advertiser_time_zone ?? '')?.[1]);
       const day = hourDay(accountDay, hour, zone);
       if (day < from || day > to) continue;
-      const parsed = parseInsight({ ...row, reach: undefined, frequency: undefined, video_avg_time_watched_actions: undefined }, day);
+      const parsed = parseInsight(Object.fromEntries(HOURLY_FIELDS.split(',').map(field => [field, row[field]])), day);
       const key = keyFor(parsed), current = grouped.get(key);
       const hook = hooks.get(key) ?? { direct: 0, fallback: 0, hasDirect: false, hasFallback: false };
       if (parsed.threeSecondSource === 'video_view') { hook.direct += parsed.threeSecondPlays; hook.hasDirect = true; }
       else if (parsed.threeSecondSource === 'video_continuous_2_sec_watched_actions') { hook.fallback += parsed.threeSecondPlays; hook.hasFallback = true; }
       hooks.set(key, hook);
-      if (!current) { grouped.set(key, parsed); continue; }
+      if (!current) { grouped.set(key, { ...parsed, holdThreeSecondPlays: 0 }); continue; }
       if (current.adSetId !== parsed.adSetId) throw new AdError('invalid');
       for (const field of ADDITIVE_FIELDS) current[field] += parsed[field];
     }

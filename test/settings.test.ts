@@ -92,7 +92,7 @@ test('the database audit CHECK covers every Settings key plus named retired keys
   const allowedKeys = [...checks.rows[0]!.definition.matchAll(/'([a-zA-Z][a-zA-Z0-9]*)'/g)]
     .map((match) => match[1]!);
   const settingsKeys = Object.keys(defaultSettings()).sort();
-  const retiredSettingsKeys = ['monthlyOverheadsGbp'];
+  const retiredSettingsKeys = ['monthlyOverheadsGbp', 'creativeLiftWindowDays'];
   assert.deepEqual(allowedKeys.sort(), [...settingsKeys, ...retiredSettingsKeys].sort());
 
   const insert = (field: string) => db.query(`

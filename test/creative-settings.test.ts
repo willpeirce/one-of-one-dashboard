@@ -15,7 +15,7 @@ const edits = {
   creativeDefaultWindow: '7d', creativeSpendFloorGbp: 63.25, creativePurchaseMinimum: 3,
   creativeFadeFrequency: 3.4, creativeFadeCtrDropPercent: 45, creativeWeeklyTarget: 9,
   creativeHitWinnerSpendGbp: 111, creativeHitKilledSpendGbp: 82,
-  creativeHitKilledTargetMultiplier: 1.6, creativeLiftWindowDays: 21,
+  creativeHitKilledTargetMultiplier: 1.6,
   creativeLiftMinimumGroups: 4, creativeLiftMinimumSpendGbp: 180,
   creativeMediaCapMb: 360, creativeScanModel: 'claude-invented-test-model',
   creativeScanInputPrice: 1.25, creativeScanOutputPrice: 5.75,
@@ -64,7 +64,7 @@ test('creative settings reject invalid ranges, unrecognised windows and unsafe m
   for (const [key, value] of [
     ['creativeDefaultWindow', '30d'], ['creativePurchaseMinimum', 1.5], ['creativeFadeCtrDropPercent', 101],
     ['creativeWeeklyTarget', 0], ['creativeHitKilledTargetMultiplier', 0.9], ['creativeMediaCapMb', 0],
-    ['creativeLiftWindowDays', 366], ['creativeLiftMinimumGroups', 0], ['creativeFreelancerInitial', 'FA'],
+    ['creativeLiftMinimumGroups', 0], ['creativeFreelancerInitial', 'FA'],
     ['creativeScanModel', 'https://example.invalid/model'], ['creativeScanModel', 'sk-ant-invented-credential'],
   ]) assert.throws(() => validateSettings({ ...defaultSettings(), [String(key)]: value }), SettingsValidationError);
   assert.equal(validateSettings({ ...defaultSettings(), creativeFreelancerInitial: 'q' }).creativeFreelancerInitial, 'Q');
@@ -161,6 +161,6 @@ test('batch 4 upgrades reserved sample examples without resetting existing media
   assert.equal(upgraded.find(row => row.key === 'hookType')!.value, 'unboxing');
   assert.equal(upgraded.find(row => row.key === 'lengthBand')!.source, 'meta');
   assert.equal(upgraded.find(row => row.key === 'productEarly')!.source, 'model');
-  assert.equal((await readCreativeLifts(db, SAMPLE_CREATIVE_ACCOUNT, 'sample')).length, 2);
+  assert.equal((await readCreativeLifts(db, SAMPLE_CREATIVE_ACCOUNT, 'sample')).length, sampleCreativeStoredLifts(now).length);
   assert.deepEqual((await db.query("SELECT value FROM pulse.media_attributes WHERE id='invented-live-attribute'")).rows[0]!.value, { value: 'question' });
 });

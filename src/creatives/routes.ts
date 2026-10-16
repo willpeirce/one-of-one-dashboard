@@ -57,11 +57,12 @@ export function buildCreativeView(data: CreativeData, settings: Settings, today:
     picture: data.groups.find(group => group.id === row.groupId)?.thumbnailUrl ?? '',
     title: `Fading: ${row.title}`, reason: row.reasons.join('; '), mode: data.mode,
   }));
-  const presentation = deriveCreativeLiftPresentation(lifts, data);
-  cards.push(...presentation.cards);
+  const presentation = deriveCreativeLiftPresentation(lifts, data, { windowDays: selected.liftWindow ?? 7, market: selected.market ?? 'all', today });
+  const home = deriveCreativeLiftPresentation(lifts, data, { market: selected.market ?? 'all', today });
+  cards.push(...home.cards);
   return { scan: unscannedView(settings), mode: data.mode, accountId: accountFor(data, settings), selection: selected, top, performance, groups, cards,
     taggingQueue: creativeTaggingQueue(data, attributes, settings.creativeSpendFloorGbp, today), attributeFilters: creativeAttributeOptions(selected.kind),
-    lifts, winning: presentation.winning, makeNext: presentation.makeNext,
+    lifts: lifts.filter(lift => lift.windowDays === (selected.liftWindow ?? 7) && lift.market === (selected.market ?? 'all')), homeMakeNext: home.makeNext, makeNext: presentation.makeNext,
     targets: { uk: settings.cppUkTargetGbp, us: settings.cppUsTargetGbp }, freelancerInitial: settings.creativeFreelancerInitial,
     merged: data.groups.filter(group => group.mergedIntoId).map(group => ({ id: group.id, title: group.title, parentId: group.mergedIntoId! })) };
 }
@@ -81,9 +82,9 @@ export async function readCreativeView(db: Database, settings: Settings, env: No
 function parseSelection(query: unknown, detail = false): CreativeSelection {
   if (!query || typeof query !== 'object') return {};
   const values = query as Record<string, unknown>;
-  const choices: Record<string, readonly string[]> = { window: ['24h', '3d', '7d'], market: ['all', 'uk', 'us'], owner: ['all', 'ours', 'freelancer', 'unassigned'], kind: ['all', 'video', 'image'], live: ['all', 'true', 'false'] };
+  const choices: Record<string, readonly string[]> = { liftWindow: ['1', '3', '7'], window: ['24h', '3d', '7d'], market: ['all', 'uk', 'us'], owner: ['all', 'ours', 'freelancer', 'unassigned'], kind: ['all', 'video', 'image'], live: ['all', 'true', 'false'] };
   for (const [key, value] of Object.entries(values)) {
-    if (detail && key !== 'window' || typeof value !== 'string') throw new CreativeInputError();
+    if (detail && !['window', 'liftWindow', 'market'].includes(key) || typeof value !== 'string') throw new CreativeInputError();
     if (key === 'attribute' || key === 'value') continue;
     if (!Object.hasOwn(choices, key) || !choices[key]!.includes(value)) throw new CreativeInputError();
   }
@@ -91,7 +92,7 @@ function parseSelection(query: unknown, detail = false): CreativeSelection {
     const definition = creativeAttributeOptions((values.kind ?? 'all') as 'all' | 'video' | 'image').find(attribute => attribute.key === values.attribute);
     if (!definition || values.value && !definition.values.some(option => option.value === values.value)) throw new CreativeInputError();
   }
-  return { ...values, ...(values.live && values.live !== 'all' ? { live: values.live === 'true' } : {}) } as CreativeSelection;
+  return { ...values, ...(values.liftWindow ? { liftWindow: Number(values.liftWindow) } : {}), ...(values.live && values.live !== 'all' ? { live: values.live === 'true' } : {}) } as CreativeSelection;
 }
 export async function buildCreativeSheet(data: CreativeData, settings: Settings, today: string, id: string, selection: CreativeSelection, shopifyOrders: ShopifyOrders, lifts = sampleLifts(data, today)): Promise<CreativeSheet | null> {
   const parent = parentGroup(id, data.groups);
@@ -107,12 +108,13 @@ export async function buildCreativeSheet(data: CreativeData, settings: Settings,
   for (const ad of group.ads) addLink('Instagram', ad.instagramUrl);
   for (const ad of group.ads) addLink('Facebook', ad.facebookUrl);
   for (const ad of group.ads) addLink('Ads Manager', adsManagerLink(accountFor(data, settings), ad.id));
+  const brief = deriveCreativeLiftPresentation(lifts, data, { today, windowDays: selection.liftWindow ?? 7, market: selection.market ?? 'all' }).makeNext[group.group.kind];
   return { scan: unscannedView(settings), mode: data.mode, group,
     windows: (['24h', '3d', '7d', 'lifetime'] as const).map(window => ({ window, totals: aggregateCreativeGroups(data, creativeWindowRange(window, today)).find(row => row.group.id === parent?.id)!.totals })),
     comparison: { ...range, purchases: data.insights.filter(row => row.day >= range.from && row.day <= range.to).reduce((sum, row) => sum + row.purchases, 0), shopifyOrders: orders.count, shopifyMode: orders.mode },
     frequency: { value: exactCreativeFrequency(data, group.ads.map(ad => ad.id), addDays(today, -6), today), eligible: hasFadingHistory(group, today) },
     links, ads: group.ads, attributes: resolveAttributes(group.group.kind, sampleAttributeRows(data).filter(row => row.groupId === group.group.id)), note: '',
-    brief: deriveCreativeLiftPresentation(lifts, data).makeNext[group.group.kind]?.brief };
+    brief: brief.bullets.length ? brief.brief : undefined, finding: brief.bullets[0] };
 }
 export function safeVideoSource(value: string, token?: string): string | null {
   const url = safeCreativeLink(value);

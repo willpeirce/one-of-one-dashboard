@@ -1,3 +1,4 @@
+import { checkMakeNext } from './browser-make-next.js';
 import assert from 'node:assert/strict';
 import type { BrowserContext, Page } from 'playwright';
 import { dashboardPage } from '../src/dashboard-view.js';
@@ -149,13 +150,7 @@ export async function checkCreatives(context: BrowserContext): Promise<void> {
       await page.goto('/creatives');
       await page.locator('#creative-filters').waitFor();
       assert.ok(await page.locator('#creative-gallery .creative-picture').count() >= 6);
-      assert.match(await page.locator('#creative-gallery').innerText(), /Video lifts/);
-      assert.match(await page.locator('#creative-gallery').innerText(), /Image lifts/);
-      assert.match(await page.locator('#creative-gallery').innerText(), /Strong/);
-      assert.match(await page.locator('#creative-gallery').innerText(), /correlation, not a cause/);
-      assert.match(await page.locator('[data-make-next="video"]').innerText(), /Next video:/);
-      assert.match(await page.locator('[data-make-next="image"]').innerText(), /Next image:/);
-      assert.match(await page.locator('[data-make-next="video"] [data-creative-copy]').getAttribute('data-creative-copy') ?? '', /Meta says.*cost per purchase/);
+      await checkMakeNext(page, width);
       await page.locator('[data-creative-tag="sample-video-3"]').click();
       await page.locator('#creative-tagging').waitFor();
       assert.ok(await page.locator('.creative-attribute').count() > 20);

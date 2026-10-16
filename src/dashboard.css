@@ -454,3 +454,6 @@ button[disabled]{cursor:not-allowed}.act[disabled]{opacity:.5}
 #hero .profit-line[data-state="warn"] .ss{white-space:pre-line}
 
 .gross{font-size:12px;line-height:1.4;color:var(--muted);opacity:.7;font-variant-numeric:tabular-nums}
+
+#hero :is([data-k="margin"],[data-k="contribution"],[data-k="profit"])[data-sign="positive"]{background:linear-gradient(var(--glass),var(--glass)),linear-gradient(rgba(85,224,159,.18),rgba(85,224,159,.18))}
+#hero :is([data-k="margin"],[data-k="contribution"],[data-k="profit"])[data-sign="negative"]{background:linear-gradient(var(--glass),var(--glass)),linear-gradient(rgba(255,96,115,.18),rgba(255,96,115,.18))}

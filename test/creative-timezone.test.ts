@@ -9,7 +9,8 @@ import type { AdInsight, CatalogueRead } from '../src/creatives/model.js';
 
 // Every identifier, date, number and API response in these tests is invented.
 const accountId = 'invented-clock-account';
-const dailyFields = ['ad_id', 'adset_id', 'date_start', 'reach', 'frequency', 'video_avg_time_watched_actions'];
+const videoFields = ['video_continuous_2_sec_watched_actions', 'video_play_actions', 'video_thruplay_watched_actions', 'video_p25_watched_actions', 'video_p50_watched_actions', 'video_p75_watched_actions', 'video_p100_watched_actions', 'video_avg_time_watched_actions'];
+const dailyFields = ['ad_id', 'adset_id', 'date_start', 'reach', 'frequency', 'actions', ...videoFields];
 const perHour = { spend: 1.25, impressions: 100, linkClicks: 5, threeSecondPlays: 7, plays: 11,
   thruPlays: 3, plays25: 9, plays50: 6, plays75: 4, plays100: 2, addsToCart: 4, purchases: .5, purchaseValue: 7.75 } as const;
 const action = (value: number, actionType = 'video_view') => [{ action_type: actionType, value: String(value) }];
@@ -28,9 +29,9 @@ function hourly(day: string, hour: number, scale = 1, adId = 'invented-clock-ad'
     reach: '98765', frequency: '77', video_avg_time_watched_actions: action(99) };
 }
 function daily(day: string, adId = 'invented-clock-ad'): Record<string, unknown> {
-  return { ad_id: adId, adset_id: `invented-set-${adId}`, date_start: day, reach: '444', frequency: '2.25',
+  return { ...hourly(day, 0, 24, adId), ad_id: adId, adset_id: `invented-set-${adId}`, date_start: day, reach: '444', frequency: '2.25',
     video_avg_time_watched_actions: action(4.5),
-    spend: '9999', impressions: '9999', actions: action(99, 'omni_purchase'), action_values: action(9999, 'omni_purchase') };
+    spend: '9999', impressions: '9999', actions: [...action(168), ...action(99, 'omni_purchase')], action_values: action(9999, 'omni_purchase') };
 }
 function mock(zone: string, dailyRows: Record<string, unknown>[], hourlyRows: Record<string, unknown>[], currency = 'GBP') {
   const requests: { url: URL; method: string | undefined; timeoutMs: number | undefined }[] = [], logs: unknown[] = [];
@@ -51,7 +52,7 @@ function mock(zone: string, dailyRows: Record<string, unknown>[], hourlyRows: Re
   return { client, requests, token, logs };
 }
 function assertAdditive(row: AdInsight, hours: number) {
-  for (const [key, amount] of Object.entries(perHour)) assert.equal(row[key as keyof typeof perHour], amount * hours, `${key} follows the UK hours only`);
+  for (const [key, amount] of Object.entries(perHour).filter(([key]) => !['plays','thruPlays','plays25','plays50','plays75','plays100'].includes(key))) assert.equal(row[key as keyof typeof perHour], amount * hours, `${key} follows the UK hours only`);
 }
 function assertSpendAlignment(hourlyRows: Record<string, unknown>[], insights: AdInsight[], zone: string, from: string, to: string) {
   const spent = parseMeta({ data: hourlyRows.map(row => ({ ...row, campaign_id: 'invented-clock-campaign', campaign_name: 'Invented UK discovery', adset_name: 'Invented UK set' })) }, accountId, 'GBP', zone, defaultSettings());
@@ -79,7 +80,7 @@ function assertClockRequests(requests: { url: URL; timeoutMs: number | undefined
   assert.deepEqual(JSON.parse(hourlyRequest.searchParams.get('time_range')!), { since: paddedFrom, until: paddedTo });
   assert.deepEqual(JSON.parse(dailyRequest.searchParams.get('time_range')!), { since: from, until: to });
   assert.deepEqual(dailyRequest.searchParams.get('fields')!.split(',').sort(), [...dailyFields].sort());
-  for (const field of ['reach', 'frequency', 'video_avg_time_watched_actions']) assert.ok(!hourlyRequest.searchParams.get('fields')!.split(',').includes(field), `${field} is never requested hourly`);
+  for (const field of ['reach', 'frequency', ...videoFields]) assert.ok(!hourlyRequest.searchParams.get('fields')!.split(',').includes(field), `${field} is never requested hourly`);
 }
 
 test('GMT creatives include all 25 UK hours at the autumn clock change and trim the padded dates', async () => {
@@ -89,6 +90,7 @@ test('GMT creatives include all 25 UK hours at the autumn clock change and trim 
   assert.equal(result.length, 1); assert.equal(result[0]!.day, '2026-10-25');
   assertAdditive(result[0]!, 25);
   assertSpendAlignment(rows, result, 'GMT', '2026-10-25', '2026-10-25');
+  assert.equal(result[0]!.thruPlays, 72); assert.equal(result[0]!.holdThreeSecondPlays, 168);
   assert.equal(result[0]!.reach, 444); assert.equal(result[0]!.frequency, 2.25); assert.equal(result[0]!.averagePlayTime, 4.5);
   assertClockRequests(api.requests, '2026-10-25', '2026-10-25', '2026-10-24', '2026-10-26');
   assert.ok(api.requests.every(request => request.method === 'GET'));
@@ -102,6 +104,7 @@ test('GMT creatives include 23 UK hours at the spring clock change with no repea
   assert.equal(result.length, 1); assert.equal(result[0]!.day, '2027-03-28');
   assertAdditive(result[0]!, 23);
   assertSpendAlignment(rows, result, 'GMT', '2027-03-28', '2027-03-28');
+  assert.equal(result[0]!.thruPlays, 72); assert.equal(result[0]!.holdThreeSecondPlays, 168);
   assert.equal(result[0]!.reach, 444); assert.equal(result[0]!.frequency, 2.25); assert.equal(result[0]!.averagePlayTime, 4.5);
   assertClockRequests(api.requests, '2027-03-28', '2027-03-28', '2027-03-27', '2027-03-29');
 });
@@ -132,10 +135,10 @@ test('rebucketing preserves daily-only audience rows and hourly-only additive ro
   assertAdditive(additive, 2); assert.equal(additive.reach, 0); assert.equal(additive.frequency, 0); assert.equal(additive.averagePlayTime, 0);
 });
 
-test('each UK ad day uses true three-second plays when any hour reports them and otherwise sums the two-second fallback', async () => {
+test('hourly hooks use real actions and ignore unsupported video fields, without inventing a zero-action fallback', async () => {
   for (const example of [
     { label: 'One hour omits its zero video_view action', direct: 7, expected: 7, source: 'video_view' },
-    { label: 'All hours omit video_view', direct: null, expected: 5, source: 'video_continuous_2_sec_watched_actions' },
+    { label: 'All hours omit video_view', direct: null, expected: 0, source: 'none' },
     { label: 'An explicit zero video_view still takes precedence', direct: 0, expected: 0, source: 'video_view' },
   ]) {
     const first = hourly('2026-09-29', 23), second = hourly('2026-09-30', 0);

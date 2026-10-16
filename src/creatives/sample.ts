@@ -1,3 +1,6 @@
+import { creativeLiftLabel } from './lift-phrasing.js';
+import { attributesForKind } from './attributes.js';
+import { creativeLiftWindows } from './lifts.js';
 import { appConfig } from '../config.js';
 import type { Settings } from '../settings.js';
 import { ukToday } from '../hero-range.js';
@@ -148,7 +151,7 @@ const sampleLiftExamples = [
 /** Fixed invented lift illustrations; their groups/figures are not calculated from this small gallery. */
 export function sampleCreativeStoredLifts(now = new Date(appConfig.shopify.sampleNow)): import('./lifts.js').CreativeLift[] {
   const today = ukToday(now);
-  return sampleLiftExamples.map(lift => {
+  return creativeLiftWindows.flatMap(windowDays => (['all', 'uk', 'us'] as const).flatMap(market => sampleLiftExamples.map(lift => {
     const video = lift.kind === 'video';
     const side = (withValue: boolean) => {
       const spend = withValue ? lift.withSpendGbp : lift.withoutSpendGbp;
@@ -159,11 +162,12 @@ export function sampleCreativeStoredLifts(now = new Date(appConfig.shopify.sampl
         purchaseValue: spend * roas, costPerPurchase, roas, addToCartRate: withValue ? 0.15 : 0.08,
         hookRate: video ? (withValue ? 0.4 : 0.3) : null, holdRate: video ? (withValue ? 0.5 : 0.4) : null };
     };
-    return { id: `invented-batch4-lift-${lift.kind}`, kind: lift.kind, attributeKey: lift.attributeKey, value: lift.value,
+    return { id: `invented-brief-${windowDays}-${market}-${lift.kind}`, windowDays, market, kind: lift.kind, attributeKey: lift.attributeKey, value: lift.value,
       attributeLabel: video ? 'Slab in the first 3 seconds' : 'Format', valueLabel: video ? 'yes' : 'unboxing flat lay',
-      label: lift.label, confidence: lift.confidence, metrics: { with: side(true), without: side(false),
-        share: video ? 0.975 : 0.9, from: dayBefore(today, 29), to: today,
+      label: creativeLiftLabel(attributesForKind(lift.kind).find(attribute => attribute.key === lift.attributeKey)!, lift.value), confidence: lift.confidence, metrics: { with: side(true), without: side(false),
+        share: video ? 0.975 : 0.9, from: dayBefore(today, windowDays - 1), to: today,
+        withGroupIds: video ? ['sample-video-1', 'sample-video-2'] : ['sample-image-1', 'sample-image-2'],
         exampleGroupIds: video ? ['sample-video-1', 'sample-video-2'] : ['sample-image-1', 'sample-image-2'] },
       computedAt: now.toISOString() };
-  });
+  })));
 }

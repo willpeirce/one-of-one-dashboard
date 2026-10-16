@@ -30,21 +30,24 @@ export function liveSummary(view:AdSetsView,settings:Settings,market='all') {
 export async function readAdSetsView(db:Database,settings:Settings,env:NodeJS.ProcessEnv,now:Date):Promise<AdSetsView> {
  if(!settings.metaAdAccountId||!env.META_ACCESS_TOKEN)return sampleAdSetsView(settings);
  const account=settings.metaAdAccountId,today=ukToday(now);
- const [sets,sync,stored,coverage,ads]=await Promise.all([
+ const [sets,sync,stored,coverage,ads,changes]=await Promise.all([
   readAdSets(db,account,settings),db.query<any>('SELECT last_read FROM pulse.meta_ad_set_sync WHERE account_id=$1',[account]),
   db.query<any>("SELECT ad_set_id,uk_day::text AS day,spend_amount,purchases,adds_to_cart FROM pulse.ad_spend WHERE mode='live' AND source='meta' AND account_id=$1 AND uk_day<$2",[account,today]),
   db.query<{day:string}>("SELECT uk_day::text AS day FROM pulse.ad_spend_days WHERE source='meta' AND account_id=$1 AND uk_day<$2",[account,today]),
   db.query<any>("SELECT ad_set_id,effective_status,status_since FROM pulse.ads WHERE mode='live' AND account_id=$1",[account]),
+  db.query<any>('SELECT * FROM pulse.meta_ad_set_changes WHERE account_id=$1 ORDER BY observed_at DESC',[account]),
  ]);
  const days=new Map<string,SetDay[]>(),contexts=new Map<string,RuleContext>();
  for(const set of sets){
   const born=ukToday(new Date(set.createdTime));
   const rows=stored.rows.filter(r=>r.ad_set_id===set.id);
   days.set(set.id,coverage.rows.filter(r=>r.day>=born).map(({day})=>{const row=rows.find(r=>r.day===day);return {day,spend:row?Number(row.spend_amount):0,purchases:row?row.purchases===null?null:Number(row.purchases):0,addsToCart:row?row.adds_to_cart===null?null:Number(row.adds_to_cart):0};}));
-  contexts.set(set.id,{ads:ads.rows.filter(r=>r.ad_set_id===set.id).map(r=>({effectiveStatus:r.effective_status,statusSince:new Date(r.status_since).toISOString()}))});
+  contexts.set(set.id,{changes:changes.rows.filter(r=>r.ad_set_id===set.id).map(r=>new Date(r.observed_at).toISOString()),ads:ads.rows.filter(r=>r.ad_set_id===set.id).map(r=>({effectiveStatus:r.effective_status,statusSince:new Date(r.status_since).toISOString()}))});
  }
  const lastRead=sync.rows[0]?new Date(sync.rows[0].last_read).toISOString():null,yesterday=addDays(today,-1);
- return buildAdSetsView(sets,days,settings,today,{mode:'live',lastRead,stale:!!lastRead&&now.getTime()-Date.parse(lastRead)>2*60*60_000,accountYesterday:coverage.rows.some(r=>r.day===yesterday)?stored.rows.filter(r=>r.day===yesterday).reduce((s,r)=>s+Number(r.spend_amount),0):null,contexts});
+ const view=buildAdSetsView(sets,days,settings,today,{mode:'live',lastRead,stale:!!lastRead&&now.getTime()-Date.parse(lastRead)>2*60*60_000,accountYesterday:coverage.rows.some(r=>r.day===yesterday)?stored.rows.filter(r=>r.day===yesterday).reduce((s,r)=>s+Number(r.spend_amount),0):null,contexts});
+ for(const row of view.rows)row.changes=changes.rows.filter(c=>c.ad_set_id===row.set.id).slice(0,50).map(c=>({time:new Date(c.observed_at).toISOString(),field:c.field,old:c.old_value,value:c.new_value}));
+ return view;
 }
 /** All sample identities, dates and measures are invented and remain in sample mode. */
 export function sampleAdSetsView(settings:Settings):AdSetsView {

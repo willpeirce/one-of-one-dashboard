@@ -48,3 +48,23 @@ test('extended ad-set spend aligns actions into UK days and stores absent action
   const stored=await db.query<any>('SELECT purchases,adds_to_cart,purchase_value FROM pulse.ad_spend ORDER BY uk_day');
   assert.equal(Number(stored.rows[0].purchases),3);assert.equal(stored.rows[1].purchases,null);
 });
+
+test('changes not by us audit only owned status/budget differences and flow into the sheet',async t=>{
+ const {readAdSetsView}=await import('../src/meta-adsets/presentation.js');
+ const {adSetSheet}=await import('../src/meta-adsets/view.js');
+ const {parseAdSet}=await import('../src/meta-adsets/catalogue.js');
+ const db=await createTestDatabase();t.after(()=>db.close());
+ const settings={...defaultSettings(),metaAdAccountId:'invented-account',metaOwners:[{campaignId:'invented-campaign',owner:'ours' as const}]};
+ const row=parseAdSet(invented('invented-a'),'GBP',settings);
+ await saveAdSets(db,settings.metaAdAccountId,[row],settings,new Date('2026-10-14T08:00:00Z'));
+ await saveAdSets(db,settings.metaAdAccountId,[{...row,status:'PAUSED',dailyBudget:3000}],settings,new Date('2026-10-15T08:00:00Z'));
+ assert.equal((await db.query("SELECT * FROM pulse.audit_log WHERE event='ad set changed outside the app'")).rowCount,2);
+ await saveAdSets(db,settings.metaAdAccountId,[{...row,status:'PAUSED',dailyBudget:3000}],settings,new Date('2026-10-15T08:30:00Z'));
+ assert.equal((await db.query('SELECT * FROM pulse.meta_ad_set_changes')).rowCount,2);
+ const view=await readAdSetsView(db,settings,{META_ACCESS_TOKEN:randomBytes(16).toString('hex')},new Date('2026-10-16T08:00:00Z'));
+ assert.match(adSetSheet(view.rows[0]!,view),/daily_budget: 2500 → 3000/);
+ await saveAdSets(db,settings.metaAdAccountId,[row],settings,new Date('2026-10-16T08:00:00Z'),{id:row.id,field:'daily_budget',value:'2500'});
+ assert.equal((await db.query('SELECT * FROM pulse.meta_ad_set_changes')).rowCount,3,'app budget suppressed; external status still observed');
+ await saveAdSets(db,settings.metaAdAccountId,[{...row,dailyBudget:4000}],{...settings,metaOwners:[]},new Date('2026-10-16T08:30:00Z'));
+ assert.equal((await db.query('SELECT * FROM pulse.meta_ad_set_changes')).rowCount,3);
+});

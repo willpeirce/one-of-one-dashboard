@@ -50,10 +50,17 @@ export async function fetchAdSets(meta: MetaSpend, account: string, settings: Se
   const rows = await meta.readAllPages(`act_${account}/adsets`, { fields: AD_SET_FIELDS, limit: '100' });
   return rows.filter(row => row.effective_status !== 'DELETED' && row.status !== 'DELETED').map(row => parseAdSet(row, currency, settings));
 }
-export async function saveAdSets(db: Database, account: string, rows: AdSet[], settings: Settings, now: Date): Promise<void> {
+export async function saveAdSets(db: Database, account: string, rows: AdSet[], settings: Settings, now: Date, appAction?: {id:string;field:'status'|'daily_budget';value:string}): Promise<void> {
   await db.transaction(async tx => {
     const campaigns = await tx.query<{campaign_id: string; name: string}>('SELECT campaign_id,name FROM pulse.meta_campaigns WHERE account_id=$1', [account]);
     for (const row of rows) {
+      const previous=(await tx.query<any>('SELECT status,daily_budget FROM pulse.meta_ad_sets WHERE account_id=$1 AND ad_set_id=$2 FOR UPDATE',[account,row.id])).rows[0];
+      if(previous && adSetOwner(row.campaignId,settings)==='ours') for(const [field,value] of [['status',row.status],['daily_budget',row.dailyBudget]] as const) {
+        const old=String(previous[field]??''),next=String(value??'');
+        if(old===next || appAction?.id===row.id && appAction.field===field && appAction.value===next)continue;
+        const audit=await tx.query<{id:string}>("INSERT INTO pulse.audit_log(event,occurred_at) VALUES('ad set changed outside the app',$1) RETURNING id",[now]);
+        await tx.query('INSERT INTO pulse.meta_ad_set_changes(audit_id,account_id,ad_set_id,field,old_value,new_value,observed_at) VALUES($1,$2,$3,$4,$5,$6,$7)',[audit.rows[0]!.id,account,row.id,field,old,next,now]);
+      }
       const campaignName = campaigns.rows.find(c => c.campaign_id === row.campaignId)?.name ?? '';
       const market = metaSpendMarket(campaignName, row.name, adSetOwner(row.campaignId, settings));
       await tx.query(`INSERT INTO pulse.meta_ad_sets(account_id,ad_set_id,campaign_id,name,status,effective_status,daily_budget,lifetime_budget,currency,created_time,updated_time,learning_stage,last_significant_edit,market,first_seen,last_seen,last_read)

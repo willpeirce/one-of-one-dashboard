@@ -172,7 +172,7 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     number('creativeScanInputPrice', 'Scan input price (£ per million tokens)', { max: 10_000 }),
     number('creativeScanOutputPrice', 'Scan output price (£ per million tokens)', { max: 10_000 }),
     number('creativeScanCapGbp', 'Scan daily spend cap (£)', { max: 1_000 }),
-  ], values)}</div><dl class="setting-help" aria-label="Read-only creative flags"><dt>Creative scan flag</dt><dd data-creative-scan-flag>${creativeFlags.creativeScanEnabled ? 'On' : 'Off'}</dd><dt>Meta actions</dt><dd data-meta-actions-flag>Off · read-only, no Meta actions are built</dd></dl></section>`;
+  ], values)}</div><dl class="setting-help" aria-label="Read-only creative flags"><dt>Creative scan flag</dt><dd data-creative-scan-flag>${creativeFlags.creativeScanEnabled ? 'On' : 'Off'}</dd><dt>Meta actions</dt><dd data-meta-actions-flag>${creativeFlags.metaActionsEnabled ? 'On · our ad sets only' : 'Off · no Meta actions allowed'}</dd></dl></section>`;
   const campaigns = section('Ad spend', 'Read-only spend connections and campaign ownership.', `<div class="settings-grid">${fields([
     {key:'metaAdAccountId',label:'Meta ad account ID',optional:true,hint:'Digits only, without act_. Blank waits for keys and account setup.'},
     {key:'googleCustomerId',label:'Google customer ID',optional:true,hint:'Dashes are removed when saved.'},

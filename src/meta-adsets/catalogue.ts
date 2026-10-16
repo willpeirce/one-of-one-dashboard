@@ -58,6 +58,8 @@ export async function saveAdSets(db: Database, account: string, rows: AdSet[], s
       if(previous && adSetOwner(row.campaignId,settings)==='ours') for(const [field,value] of [['status',row.status],['daily_budget',row.dailyBudget]] as const) {
         const old=String(previous[field]??''),next=String(value??'');
         if(old===next || appAction?.id===row.id && appAction.field===field && appAction.value===next)continue;
+        const own=await tx.query(`SELECT id FROM pulse.meta_actions WHERE account_id=$1 AND ad_set_id=$2 AND result='success' AND action=ANY($3::text[]) AND old_value=$4 AND new_value=$5 AND time>(SELECT last_read FROM pulse.meta_ad_sets WHERE account_id=$1 AND ad_set_id=$2) LIMIT 1`,[account,row.id,field==='status'?['pause','resume']:['budget'],old,next]);
+        if(own.rowCount)continue;
         const audit=await tx.query<{id:string}>("INSERT INTO pulse.audit_log(event,occurred_at) VALUES('ad set changed outside the app',$1) RETURNING id",[now]);
         await tx.query('INSERT INTO pulse.meta_ad_set_changes(audit_id,account_id,ad_set_id,field,old_value,new_value,observed_at) VALUES($1,$2,$3,$4,$5,$6,$7)',[audit.rows[0]!.id,account,row.id,field,old,next,now]);
       }
@@ -68,7 +70,7 @@ export async function saveAdSets(db: Database, account: string, rows: AdSet[], s
         ON CONFLICT(account_id,ad_set_id) DO UPDATE SET campaign_id=EXCLUDED.campaign_id,name=EXCLUDED.name,status=EXCLUDED.status,effective_status=EXCLUDED.effective_status,daily_budget=EXCLUDED.daily_budget,lifetime_budget=EXCLUDED.lifetime_budget,currency=EXCLUDED.currency,created_time=EXCLUDED.created_time,updated_time=EXCLUDED.updated_time,learning_stage=EXCLUDED.learning_stage,last_significant_edit=EXCLUDED.last_significant_edit,market=EXCLUDED.market,last_seen=EXCLUDED.last_seen,last_read=EXCLUDED.last_read`,
       [account,row.id,row.campaignId,row.name,row.status,row.effectiveStatus,row.dailyBudget,row.lifetimeBudget,row.currency,row.createdTime,row.updatedTime,row.learningStage,row.lastSignificantEdit,market,now]);
     }
-    await tx.query('INSERT INTO pulse.meta_ad_set_sync(account_id,last_read) VALUES($1,$2) ON CONFLICT(account_id) DO UPDATE SET last_read=EXCLUDED.last_read', [account,now]);
+    if (!appAction) await tx.query('INSERT INTO pulse.meta_ad_set_sync(account_id,last_read) VALUES($1,$2) ON CONFLICT(account_id) DO UPDATE SET last_read=EXCLUDED.last_read', [account,now]);
   });
 }
 export async function readAdSets(db: Database, account: string, settings: Settings): Promise<StoredAdSet[]> {

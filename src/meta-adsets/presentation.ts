@@ -1,3 +1,7 @@
+import {decisionRows} from './decision-rows.js';
+export {decisionRows} from './decision-rows.js';
+import {readMetaActions,type MetaAction} from './actions.js';
+import {creativeFeatureFlags} from '../creatives/config.js';
 import type { Database } from '../db.js';
 import type { Settings } from '../settings.js';
 import { addDays,ukToday } from '../hero-range.js';
@@ -5,11 +9,11 @@ import { readAdSets, type StoredAdSet } from './catalogue.js';
 import {judgeAdSet,totalDays,verdictOrder,type SetDay,type SetVerdict,type RuleContext} from './rules.js';
 import {breakEven,weekdayBudget} from './settings.js';
 export interface AdSetRow { set: StoredAdSet; days: SetDay[]; verdict: SetVerdict|null; yesterday: number|null; spend: number; purchases: number|null; cpp: number|null; cpatc:number|null; breakEven:number|null; breakEvenNote:string; weekdayBudget:number|null; freelancer: {window:3|7; cpp:number|null; oursCpp:number|null; over:boolean|null}[]; changes: {time:string;field:string;old:string;value:string}[] }
-export interface AdSetsView { mode:'sample'|'live';today:string;lastRead:string|null;stale:boolean;count:number;rows:AdSetRow[];accountYesterday:number|null;actionsEnabled:boolean }
-export function buildAdSetsView(sets:StoredAdSet[],days:Map<string,SetDay[]>,settings:Settings,today:string,options:{mode:'sample'|'live';lastRead:string|null;stale?:boolean;accountYesterday:number|null;contexts?:Map<string,RuleContext>}):AdSetsView {
+export interface AdSetsView { mode:'sample'|'live';today:string;lastRead:string|null;stale:boolean;count:number;rows:AdSetRow[];accountYesterday:number|null;actionsEnabled:boolean; actions?:MetaAction[] }
+export function buildAdSetsView(sets:StoredAdSet[],days:Map<string,SetDay[]>,settings:Settings,today:string,options:{mode:'sample'|'live';lastRead:string|null;stale?:boolean;accountYesterday:number|null;contexts?:Map<string,RuleContext>;recentActionIds?:string[]}):AdSetsView {
  const yesterday=addDays(today,-1),ownerOrder={ours:0,freelancer:1,unassigned:2};
  const ours=(market:string,window:number)=>totalDays(sets.filter(s=>s.owner==='ours'&&s.market===market).flatMap(s=>(days.get(s.id)??[]).filter(d=>d.day>=addDays(today,-window)&&d.day<today)));
- const rows=sets.filter(s=>s.effectiveStatus==='ACTIVE').map(set=>{
+ const rows=sets.filter(s=>s.effectiveStatus==='ACTIVE'||options.recentActionIds?.includes(s.id)).map(set=>{
   const data=days.get(set.id)??[],last=data.find(d=>d.day===yesterday),week=totalDays(data.filter(d=>d.day>=addDays(today,-7)&&d.day<today));
   const be=set.market==='unknown'?null:breakEven(settings,set.market,today);
   return {set,days:data.filter(d=>d.day>=addDays(today,-7)&&d.day<today),
@@ -21,7 +25,7 @@ export function buildAdSetsView(sets:StoredAdSet[],days:Map<string,SetDay[]>,set
  }).sort((a,b)=>ownerOrder[a.set.owner]-ownerOrder[b.set.owner]||b.spend-a.spend||a.set.id.localeCompare(b.set.id));
  return {...options,today,count:sets.length,stale:options.stale??false,rows,actionsEnabled:false};
 }
-export function decisionRows(view:AdSetsView,market='all'):AdSetRow[]{return view.rows.filter(r=>r.verdict&&r.verdict.verdict!=='Clear'&&(market==='all'||r.set.market===market)).sort((a,b)=>verdictOrder.indexOf(a.verdict!.verdict)-verdictOrder.indexOf(b.verdict!.verdict)||b.spend-a.spend||a.set.id.localeCompare(b.set.id));}
+
 export function liveSummary(view:AdSetsView,settings:Settings,market='all') {
  const ours=view.rows.filter(r=>r.set.owner==='ours'&&r.set.effectiveStatus==='ACTIVE'&&(market==='all'||r.set.market===market));
  const budgets=ours.map(r=>r.set.market==='unknown'?null:weekdayBudget(r.set.dailyBudget,r.set.market,addDays(view.today,-1),settings));
@@ -30,12 +34,13 @@ export function liveSummary(view:AdSetsView,settings:Settings,market='all') {
 export async function readAdSetsView(db:Database,settings:Settings,env:NodeJS.ProcessEnv,now:Date):Promise<AdSetsView> {
  if(!settings.metaAdAccountId||!env.META_ACCESS_TOKEN)return sampleAdSetsView(settings);
  const account=settings.metaAdAccountId,today=ukToday(now);
- const [sets,sync,stored,coverage,ads,changes]=await Promise.all([
+ const [sets,sync,stored,coverage,ads,changes,actions]=await Promise.all([
   readAdSets(db,account,settings),db.query<any>('SELECT last_read FROM pulse.meta_ad_set_sync WHERE account_id=$1',[account]),
   db.query<any>("SELECT ad_set_id,uk_day::text AS day,spend_amount,purchases,adds_to_cart FROM pulse.ad_spend WHERE mode='live' AND source='meta' AND account_id=$1 AND uk_day<$2",[account,today]),
   db.query<{day:string}>("SELECT uk_day::text AS day FROM pulse.ad_spend_days WHERE source='meta' AND account_id=$1 AND uk_day<$2",[account,today]),
   db.query<any>("SELECT ad_set_id,effective_status,status_since FROM pulse.ads WHERE mode='live' AND account_id=$1",[account]),
   db.query<any>('SELECT * FROM pulse.meta_ad_set_changes WHERE account_id=$1 ORDER BY observed_at DESC',[account]),
+  db.query<any>("SELECT ad_set_id,time FROM pulse.meta_actions WHERE account_id=$1 AND result='success' AND time>=$2",[account,addDays(today,-7)]),
  ]);
  const days=new Map<string,SetDay[]>(),contexts=new Map<string,RuleContext>();
  for(const set of sets){
@@ -45,7 +50,14 @@ export async function readAdSetsView(db:Database,settings:Settings,env:NodeJS.Pr
   contexts.set(set.id,{changes:changes.rows.filter(r=>r.ad_set_id===set.id).map(r=>new Date(r.observed_at).toISOString()),ads:ads.rows.filter(r=>r.ad_set_id===set.id).map(r=>({effectiveStatus:r.effective_status,statusSince:new Date(r.status_since).toISOString()}))});
  }
  const lastRead=sync.rows[0]?new Date(sync.rows[0].last_read).toISOString():null,yesterday=addDays(today,-1);
- const view=buildAdSetsView(sets,days,settings,today,{mode:'live',lastRead,stale:!!lastRead&&now.getTime()-Date.parse(lastRead)>2*60*60_000,accountYesterday:coverage.rows.some(r=>r.day===yesterday)?stored.rows.filter(r=>r.day===yesterday).reduce((s,r)=>s+Number(r.spend_amount),0):null,contexts});
+ const view=buildAdSetsView(sets,days,settings,today,{recentActionIds:actions.rows.filter(a=>now.getTime()-new Date(a.time).getTime()<=86_400_000).map(a=>a.ad_set_id),mode:'live',lastRead,stale:!!lastRead&&now.getTime()-Date.parse(lastRead)>2*60*60_000,accountYesterday:coverage.rows.some(r=>r.day===yesterday)?stored.rows.filter(r=>r.day===yesterday).reduce((s,r)=>s+Number(r.spend_amount),0):null,contexts});
+ view.actionsEnabled=creativeFeatureFlags(env).metaActionsEnabled;
+ view.actions=await readMetaActions(db,account);
+ for(const row of view.rows){
+   const times=actions.rows.filter(a=>a.ad_set_id===row.set.id).map(a=>new Date(a.time).toISOString());
+   const context=contexts.get(row.set.id)??{};context.changes=[...(context.changes??[]),...times];
+   row.verdict=judgeAdSet(row.set,days.get(row.set.id)??[],settings,today,{...context,ourMarketSpendYesterday:sets.filter(s=>s.owner==='ours'&&s.market===row.set.market).flatMap(s=>days.get(s.id)??[]).filter(d=>d.day===yesterday).reduce((n,d)=>n+d.spend,0)});
+ }
  for(const row of view.rows)row.changes=changes.rows.filter(c=>c.ad_set_id===row.set.id).slice(0,50).map(c=>({time:new Date(c.observed_at).toISOString(),field:c.field,old:c.old_value,value:c.new_value}));
  return view;
 }

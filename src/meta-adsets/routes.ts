@@ -1,3 +1,4 @@
+import {saveAdSetFlags} from './flags.js';
 import {MetaActionsClient} from './actions-client.js';
 import {actOnAdSet,AdActionError} from './actions.js';
 import {MetaSpend} from '../ad-spend/clients.js';
@@ -24,6 +25,13 @@ export function registerAdSets(app:FastifyInstance,db:Database,auth:Auth,env:Nod
     if(error instanceof AdActionError)return reply.code(error.statusCode).send({error:error.statusCode===502?'Meta action failed.':'Ad-set action refused.'});
     throw error;
   }
+ });
+ app.post('/api/meta/adset/:id/flags',{bodyLimit:1024},async(request,reply)=>{
+  const who=await auth.session(request);if(!who)return reply.code(401).send({error:'Sign in to continue.'});
+  try {
+   await saveAdSetFlags(db,(request.params as {id:string}).id,request.body,who,clock());
+   await publish().catch(()=>{});return {saved:true};
+  }catch(error){if(error instanceof AdActionError)return reply.code(error.statusCode).send({error:'Ad-set flag refused.'});throw error;}
  });
  app.get('/ads',async(request,reply)=>{if(!await auth.session(request))return reply.redirect('/login');return reply.type('text/html; charset=utf-8').send(adsPage(await readAdSetsView(db,(await readSettings(db)).values,env,clock())));});
  app.get('/api/meta/adsets',async(request,reply)=>{if(!await auth.session(request))return reply.code(401).send({error:'Sign in to continue.'});return readAdSetsView(db,(await readSettings(db)).values,env,clock());});

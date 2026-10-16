@@ -37,7 +37,7 @@ export function judgeAdSet(set: StoredAdSet, days: SetDay[], settings: Settings,
   const market=set.market==='unknown'?null:set.market,be=market?breakEven(settings,market,today):null;
   const reasons:RuleReason[]=[];
   const add=(rule:string,verdict:VerdictWord,text:string,a:string,b:string)=>reasons.push({rule,verdict,text,figures:[a,b]});
-  const last=days.find(d=>d.day===yesterday),budget=market?weekdayBudget(set.dailyBudget,market,yesterday,settings):null;
+  const last=days.find(d=>d.day===yesterday),budget=market?weekdayBudget(set.dailyBudget,market,yesterday,settings,set.flatBudget):null;
   let proposedBase:number|null=null,proposedWeekday:number|null=null,stepPercent:number|null=null;
   const cpp=ratio(totals.spend,totals.purchases),cpatc=ratio(totals.spend,totals.addsToCart);
   const beText=be?`${formatPounds(be.value)}${be.note?` · ${be.note}`:''}`:'Unknown market';
@@ -62,7 +62,7 @@ export function judgeAdSet(set: StoredAdSet, days: SetDay[], settings: Settings,
       proposedBase=Math.round(set.dailyBudget/100*(1+stepPercent/100)*2)/2;
       // Nearest 50p may cross the hard +30% action ceiling: use the nearest permitted 50p instead.
       if(proposedBase>set.dailyBudget/100*1.3)proposedBase=Math.floor(set.dailyBudget/100*1.3*2)/2;
-      proposedWeekday=proposedBase*(1+rules.upliftPercent/100);
+      proposedWeekday=proposedBase*(set.flatBudget?1:1+rules.upliftPercent/100);
       add('two-clean-days','Step',`Two clean days at or below ${beText}; base +${stepPercent}% to ${formatPounds(proposedBase)}`,`${formatPounds(set.dailyBudget/100)} current base`,`${formatPounds(proposedBase)} proposed base`);
     }
   }

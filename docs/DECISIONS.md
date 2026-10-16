@@ -511,3 +511,5 @@ The hold-rate drop was the non-UK account request: it read video_* only hourly, 
 2026-10-16, batch validation: use invented fixtures only, real PostgreSQL 17 locally and in CI, plus the existing Chromium virtual-passkey smoke at 390px/1280px under light/dark browser preferences. This task deliberately combines twelve ordered commits, superseding the normal one-stage-per-PR scope; docs/spec remains unchanged. No new dependencies or live credentials are needed for verification.
 
 Rule precedence follows item 4 (Kill, Slipping, Step, Delivery, Test share); Home presentation independently follows item 5 (Kill, Slipping, Delivery, Test share, Step). Every firing reason remains visible in the sheet.
+
+2026-10-16, Stage 2 flat budgets: a per-set nullable flat_budget flag lives in the catalogue; true uses the base every day, null/false follows the market uplift. The signed-in /ads sheet saves only this local flag with an audit row, independent of the Meta action switch and with no Meta call; catalogue refreshes preserve it.

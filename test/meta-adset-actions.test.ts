@@ -60,3 +60,35 @@ test('Act endpoint enforces flag, ownership, cap, audit and 24-hour undo; token 
  const view=sampleAdSetsView(settings);assert.doesNotMatch(adSetCards(view)+adSetTable(view),/data-adset-act/);
  view.actionsEnabled=true;const table=adSetTable(view);assert.equal((table.match(/data-adset-act/g)??[]).length,6);
 });
+
+test('flat budget endpoint saves only our local flag, audits it and survives catalogue refresh with actions off',async t=>{
+ const {readAdSets}=await import('../src/meta-adsets/catalogue.js');
+ const {adSetSheet}=await import('../src/meta-adsets/view.js');
+ const db=await createTestDatabase();t.after(()=>db.close());
+ const initial=await readSettings(db),settings={...initial.values,metaAdAccountId:'900000009101',metaOwners:[{campaignId:'900000009102',owner:'ours' as const}]};
+ await saveSettings(db,{...initial,values:settings},'invented-credential');
+ const now=new Date('2026-10-16T12:00:00Z');
+ const row=parseAdSet({id:'900000009103',campaign_id:'900000009102',name:'Invented UK Cedar',status:'ACTIVE',effective_status:'ACTIVE',daily_budget:'2000',created_time:now.toISOString(),updated_time:now.toISOString()},'GBP',settings);
+ await saveAdSets(db,settings.metaAdAccountId,[row,{...row,id:'900000009104',campaignId:'900000009105'}],settings,now);
+ let signedIn=true,calls=0;
+ const app=Fastify({logger:false});t.after(()=>app.close());
+ registerAdSets(app,db,{session:async()=>signedIn?'invented-credential':null} as unknown as Auth,{},()=>now,{fetch:async()=>{calls++;throw new Error('No source call allowed');}});
+ const post=(id:string,payload:unknown)=>app.inject({method:'POST',url:`/api/meta/adset/${id}/flags`,headers:{'content-type':'application/json'},payload:JSON.stringify(payload)});
+ signedIn=false;assert.equal((await post(row.id,{flatBudget:true})).statusCode,401);signedIn=true;
+ assert.equal((await post('900000009104',{flatBudget:true})).statusCode,403);
+ assert.equal((await post(row.id,{flatBudget:true,dailyBudget:3000})).statusCode,400);
+ assert.equal((await post(row.id,{flatBudget:'true'})).statusCode,400);
+ const before=(await readAdSets(db,settings.metaAdAccountId,settings)).find(r=>r.id===row.id)!;
+ assert.equal(before.flatBudget,null);
+ assert.equal((await post(row.id,{flatBudget:true})).statusCode,200);
+ const after=(await readAdSets(db,settings.metaAdAccountId,settings)).find(r=>r.id===row.id)!;
+ assert.deepEqual(after,{...before,flatBudget:true});
+ const audit=(await db.query<any>("SELECT * FROM pulse.audit_log WHERE event LIKE 'ad set flat budget%'")).rows;
+ assert.equal(audit.length,1);assert.match(audit[0].event,/null → true/);assert.equal(audit[0].credential_id,'invented-credential');
+ await saveAdSets(db,settings.metaAdAccountId,[row],settings,new Date(now.getTime()+1800000));
+ assert.equal((await readAdSets(db,settings.metaAdAccountId,settings))[0]!.flatBudget,true);
+ assert.equal((await post(row.id,{flatBudget:false})).statusCode,200);assert.equal(calls,0);
+ const sample=sampleAdSetsView(settings),flat=sample.rows.filter(r=>r.set.flatBudget);
+ assert.equal(flat.length,1);assert.match(adSetSheet(flat[0]!,sample),/name="flatBudget" checked/);
+ assert.doesNotMatch(adSetSheet(sample.rows.find(r=>r.set.owner==='freelancer')!,sample),/Flat budget, no schedule/);
+});

@@ -17,6 +17,6 @@ export function isSpikeDay(market: AdMarket, day: string): boolean {
   const last=new Date(Date.UTC(date.getUTCFullYear(),date.getUTCMonth()+1,0)).getUTCDate();
   return n>=last-1 || (market==='uk' ? n>=24 && n<=26 : n===1 || n===15);
 }
-export function weekdayBudget(baseMinor: number | null, market: AdMarket, day: string, settings: Settings): number | null {
-  return baseMinor === null ? null : baseMinor/100*(new Date(`${day}T12:00:00Z`).getUTCDay()===0 ? 1 : 1+settings.adRules[market].upliftPercent/100);
+export function weekdayBudget(baseMinor: number | null, market: AdMarket, day: string, settings: Settings, flatBudget: boolean | null = null): number | null {
+  return baseMinor === null ? null : baseMinor/100*(flatBudget || new Date(`${day}T12:00:00Z`).getUTCDay()===0 ? 1 : 1+settings.adRules[market].upliftPercent/100);
 }

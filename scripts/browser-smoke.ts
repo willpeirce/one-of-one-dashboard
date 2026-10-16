@@ -1,3 +1,4 @@
+import {checkAdSets} from './browser-adsets.js';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import type { AuthenticationResponseJSON } from '@simplewebauthn/server';
@@ -1756,6 +1757,11 @@ async function run(): Promise<void> {
 
     step = 'check creative pictures, playing media, windows and gallery filters at phone and desktop widths';
     await checkCreatives(context);
+    step = 'check ad-set decisions and Ads table in both widths and colour preferences';
+    for(const viewport of viewports) for(const colorScheme of ['light','dark'] as const) {
+      const adsPage=await context.newPage();await adsPage.setViewportSize(viewport);await adsPage.emulateMedia({colorScheme});
+      await checkAdSets(adsPage,origin);await adsPage.close();
+    }
 
     step = 'check same-origin manifest and installation icons';
     await checkManifest(page, context, origin);

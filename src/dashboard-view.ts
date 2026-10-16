@@ -1,3 +1,4 @@
+import {adSetCards,adSetSummary,adSetsDialog} from './meta-adsets/view.js';
 import { metricSign } from './metric-sign.js';
 import { glance } from './fulfilment/view.js';
 import { creativePanelHtml, creativeCardsHtml, creativeDialogHtml } from './creatives/view.js';
@@ -25,6 +26,11 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
     if (value === undefined) throw new Error('Dashboard sample binding is missing');
     return escapeHtml(value);
   });
+  if(snapshot.adSets){
+    content=content.replace('<div class="deck" id="deck">',`<div class="deck" id="deck"><div id="adset-cards">${adSetCards(snapshot.adSets)}</div>`);
+    content=content.replace(/(<div class="panel" id="p-ads" data-panel="ads">[\s\S]*?<\/div>)/,`$1<div id="adset-summary">${adSetSummary(snapshot.adSets)}</div>`);
+    content+=adSetsDialog();
+  }
   const pace = snapshot.widgets.w017;
   if (snapshot.creatives) {
     content = content.replace('<div class="deck" id="deck">', `<div class="deck" id="deck"><div id="creative-cards">${creativeCardsHtml(snapshot.creatives.cards)}</div><div id="creative-feedback" role="status" aria-live="polite"></div>`);
@@ -78,7 +84,7 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
   content = content.replace(/<span class="avatar"[\s\S]*?<\/span><\/span>/, `<details class="account-menu" id="account-menu">
     <summary class="avatar" aria-label="Account menu">W</summary>
     <nav class="account-links" aria-label="Account">
-      <a href="/creatives">Creatives</a><a href="/fulfilment">Fulfilment costs</a><a href="/sources">Source health${badge('source-health-count', failing, 'failing checks')}</a><a href="/settings">Settings${badge('settings-count', unconfirmed, 'campaigns to confirm')}</a><a href="/audit">Audit log</a>
+      <a href="/ads">Ads</a><a href="/creatives">Creatives</a><a href="/fulfilment">Fulfilment costs</a><a href="/sources">Source health${badge('source-health-count', failing, 'failing checks')}</a><a href="/settings">Settings${badge('settings-count', unconfirmed, 'campaigns to confirm')}</a><a href="/audit">Audit log</a>
       <button type="button" id="sign-out" disabled>Sign out</button>
     </nav>
   </details>`);
@@ -100,7 +106,7 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
   <link rel="stylesheet" href="/assets/fonts.css">
   <link rel="stylesheet" href="/assets/dashboard.css">
   <link rel="stylesheet" href="/assets/fulfilment.css">
-  <link rel="stylesheet" href="/assets/creatives.css">
+  <link rel="stylesheet" href="/assets/creatives.css"><link rel="stylesheet" href="/assets/adsets.css">
   <script type="module" src="/assets/browser.js"></script>
   <script type="module" src="/assets/dashboard.js"></script>
 </head>

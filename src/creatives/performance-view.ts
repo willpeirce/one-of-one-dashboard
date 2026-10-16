@@ -16,7 +16,7 @@ export function creativePerformanceTableHtml(sheet: CreativeSheet): string {
     { label: 'Per purchase', value: row => row.costPerPurchase === null ? '—' : formatPounds(row.costPerPurchase) },
     ...(sheet.group.group.kind === 'video' ? [
       { label: 'Hook', value: (row: Totals) => percent(row.hookRate) },
-      { label: 'Hold', value: (row: Totals) => percent(row.holdRate) },
+      { label: 'Hold', value: (row: Totals) => row.holdDataRows===0?'n/a (no ThruPlay data)':percent(row.holdRate) },
       { label: 'Watch-through', value: (row: Totals) => percent(row.watchThroughRate) },
     ] : []),
     { label: 'Add to cart', value: row => percent(row.addToCartRate) },

@@ -121,7 +121,7 @@ export async function readLiveCreativeData(db: Database, settings: Settings): Pr
   ]);
   return { mode: 'live', frequencyReads: frequency.rows.map(r => ({adIds:r.ad_ids,from:r.from_day,to:r.to_day,frequency:r.frequency == null ? null : Number(r.frequency)})), ads: ads.rows.map(r => { const owner = settings.metaOwners.find(rule => rule.campaignId === r.campaignId)?.owner ?? 'unassigned'; return { ...r, owner, market: metaSpendMarket(r.campaignName, r.adSetName, owner), createdAt: iso(r.createdAt), lastSeen: iso(r.lastSeen), firstSpendDay: day(r.firstSpendDay) }; }),
     groups: groups.rows.map(r => ({ id:r.id, kind:r.kind, key:r.key, title:r.title, lengthSeconds:r.length_seconds == null ? null : Number(r.length_seconds), width:r.width, height:r.height, firstSeen:iso(r.first_seen), mergedIntoId:r.merged_into_id, alternates:r.alternates, thumbnailUrl:`/media/${encodeURIComponent(r.id)}` })),
-    insights: insights.rows.map(r => Object.fromEntries(Object.entries(r).map(([key,value]) => [key, key === 'day' ? day(value) : key === 'holdThreeSecondPlays' && value == null ? undefined : ['adId','adSetId','threeSecondSource'].includes(key) ? value : Number(value)])) as unknown as AdInsight),
+    insights: insights.rows.map(r => Object.fromEntries(Object.entries(r).map(([key,value]) => [key, key === 'day' ? day(value) : key === 'thruPlays' && value == null ? null : key === 'holdThreeSecondPlays' && value == null ? undefined : ['adId','adSetId','threeSecondSource'].includes(key) ? value : Number(value)])) as unknown as AdInsight),
   };
 }
 

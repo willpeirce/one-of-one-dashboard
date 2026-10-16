@@ -68,7 +68,7 @@ function parseInsight(row: any, day: string): AdInsight {
   return { adId: id(row.ad_id), adSetId: id(row.adset_id), day, spend: numeric(row.spend), impressions: numeric(row.impressions), reach: numeric(row.reach), frequency: numeric(row.frequency),
     linkClicks: row.inline_link_clicks == null ? action(row.actions, 'link_click') : numeric(row.inline_link_clicks),
     threeSecondPlays: direct ? action(row.actions, 'video_view') : action(row.video_continuous_2_sec_watched_actions), threeSecondSource: direct ? 'video_view' : fallback ? 'video_continuous_2_sec_watched_actions' : 'none',
-    plays: action(row.video_play_actions), thruPlays: action(row.video_thruplay_watched_actions), plays25: action(row.video_p25_watched_actions), plays50: action(row.video_p50_watched_actions), plays75: action(row.video_p75_watched_actions), plays100: action(row.video_p100_watched_actions), averagePlayTime: action(row.video_avg_time_watched_actions),
+    plays: action(row.video_play_actions), thruPlays: row.video_thruplay_watched_actions == null ? null : action(row.video_thruplay_watched_actions), plays25: action(row.video_p25_watched_actions), plays50: action(row.video_p50_watched_actions), plays75: action(row.video_p75_watched_actions), plays100: action(row.video_p100_watched_actions), averagePlayTime: action(row.video_avg_time_watched_actions),
     addsToCart: action(row.actions, META_ADD_TO_CART), purchases: action(row.actions, META_PURCHASE), purchaseValue: action(row.action_values, META_PURCHASE) || action(row.action_values, 'omni_purchase_values') };
 }
 

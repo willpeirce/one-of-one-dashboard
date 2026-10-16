@@ -62,7 +62,7 @@ const withoutRefreshFields = (row: Record<string, unknown>) => Object.fromEntrie
     'status_since', 'ad_set_id', 'ad_set_name', 'campaign_id', 'campaign_name', 'owner', 'market'].includes(key)),
 );
 async function completedJob(db: Database) {
-  await db.query('INSERT INTO pulse.creative_jobs(account_id,backfill_done,nightly_day) VALUES($1,true,$2)', [account, '2026-10-13']);
+  await db.query('INSERT INTO pulse.creative_jobs(account_id,backfill_done,nightly_day,thruplays_backfilled_at) VALUES($1,true,$2::date,$2::timestamptz)', [account, '2026-10-13']);
 }
 function deferred() {
   let resolve!: () => void;
@@ -326,7 +326,7 @@ test('worker supplies stored mappings for list-only refresh and reads a changed 
   assert.equal(updated.title, 'Invented revised headline');
   assert.notEqual(updated.media_group_id, before[0]!.media_group_id);
   assert.equal((await db.query('SELECT * FROM pulse.ad_insights_daily')).rowCount, 1, 'creative replacement retains historical insights');
-  assert.deepEqual(logs, []);
+  assert.deepEqual(logs.filter(line=>!line.startsWith('Media facts:')), []);
 });
 
 test('stored ads refresh campaign placement from the list and current ownership without creative reads', async (t) => {
@@ -388,7 +388,7 @@ test('stored ads refresh campaign placement from the list and current ownership 
   const dataAfter = await snapshot(db);
   assert.deepEqual(dataAfter.media_groups, dataBefore.media_groups);
   assert.deepEqual(dataAfter.ad_insights_daily, dataBefore.ad_insights_daily);
-  assert.deepEqual(logs, []);
+  assert.deepEqual(logs.filter(line=>!line.startsWith('Media facts:')), []);
 });
 
 test('daily, nightly and backfill failures retain the failed window and identify the step safely', async (t) => {

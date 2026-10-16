@@ -27,3 +27,17 @@ test('live catalogue never silently falls back to sample; its freshness is indep
  await db.query('INSERT INTO pulse.meta_ad_set_sync(account_id,last_read) VALUES($1,$2)',[s.metaAdAccountId,'2026-10-16T09:59:00Z']);
  assert.equal((await readAdSetsView(db,s,env,new Date('2026-10-16T12:00:00Z'))).stale,true);
 });
+
+test('one set-name formatter serves cards, rows, sheet and action review without budget-only headings',async()=>{
+ const {adSetName}=await import('../src/meta-adsets/name.js');
+ const {actionForm}=await import('../src/meta-adsets/view.js');
+ assert.equal(adSetName('Invented type — Cedar grove — £24'),'Cedar grove');
+ assert.equal(adSetName('Cedar grove'),'Cedar grove');
+ assert.equal(adSetName('Cedar - Grove'),'Cedar - Grove');
+ assert.equal(adSetName('Invented - Oak - £24'),'Invented - Oak - £24');
+ const view=sampleAdSetsView(defaultSettings()),row=view.rows[0]!;
+ row.set.name='Invented type — Cedar grove — £24';
+ for(const html of [adSetCards(view),adSetTable(view),adSetSheet(row,view),actionForm(row)]){
+  assert.match(html,/Cedar grove/);assert.doesNotMatch(html,/Invented type|£24/);
+ }
+});

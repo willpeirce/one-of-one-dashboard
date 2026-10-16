@@ -86,3 +86,8 @@ test('short rule windows do not wait for older missing history',()=>{
  const clean=days({spend:16}).slice(-2);const v=judge(clean);assert.equal(v.verdict,'Step');assert.equal(v.stepPercent,20);
  const yesterday=days({spend:20,addsToCart:0}).slice(-1);assert.equal(fires('zero-day',yesterday),true);
 });
+
+test('Step takes precedence over Delivery when both fire, independently of Home card ordering',()=>{
+ const v=judge(days({spend:16}),{dailyBudget:10000});
+ assert.equal(v.verdict,'Step');assert.deepEqual(v.reasons.map(r=>r.verdict),['Step','Delivery']);
+});

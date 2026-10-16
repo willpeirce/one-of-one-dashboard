@@ -509,3 +509,5 @@ The hold-rate drop was the non-UK account request: it read video_* only hourly, 
 2026-10-16, Contribution review notes (item 12): when every spend source is unusable, After ad spend is Unknown rather than contribution minus an invented zero. Margin/profit show source splits immediately after Ad spend. Empty UK/US periods give Contribution the same explicit no-orders message as other market tiles.
 
 2026-10-16, batch validation: use invented fixtures only, real PostgreSQL 17 locally and in CI, plus the existing Chromium virtual-passkey smoke at 390px/1280px under light/dark browser preferences. This task deliberately combines twelve ordered commits, superseding the normal one-stage-per-PR scope; docs/spec remains unchanged. No new dependencies or live credentials are needed for verification.
+
+Rule precedence follows item 4 (Kill, Slipping, Step, Delivery, Test share); Home presentation independently follows item 5 (Kill, Slipping, Delivery, Test share, Step). Every firing reason remains visible in the sheet.

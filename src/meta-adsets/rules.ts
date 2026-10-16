@@ -17,7 +17,7 @@ export interface RuleContext {
   ads?: {effectiveStatus: string; statusSince: string}[];
   ourMarketSpendYesterday?: number;
 }
-export const verdictOrder: VerdictWord[] = ['Kill','Slipping','Delivery','Test share','Step','Clear'];
+export const verdictOrder: VerdictWord[] = ['Kill','Slipping','Step','Delivery','Test share','Clear'];
 export function totalDays(rows: SetDay[]): {spend: number; purchases: number | null; addsToCart: number | null} {
   const sum = (key:'purchases'|'addsToCart') => rows.length && rows.every(r=>r[key] !== null) ? rows.reduce((s,r)=>s+r[key]!,0) : null;
   return {spend:Math.round(rows.reduce((s,r)=>s+r.spend,0)*1e6)/1e6,purchases:sum('purchases'),addsToCart:sum('addsToCart')};

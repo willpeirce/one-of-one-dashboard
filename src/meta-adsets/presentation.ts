@@ -6,7 +6,7 @@ import type { Database } from '../db.js';
 import type { Settings } from '../settings.js';
 import { addDays,ukToday } from '../hero-range.js';
 import { readAdSets, type StoredAdSet } from './catalogue.js';
-import {judgeAdSet,totalDays,verdictOrder,type SetDay,type SetVerdict,type RuleContext} from './rules.js';
+import {judgeAdSet,totalDays,type SetDay,type SetVerdict,type RuleContext} from './rules.js';
 import {breakEven,weekdayBudget} from './settings.js';
 export interface AdSetRow { set: StoredAdSet; days: SetDay[]; verdict: SetVerdict|null; yesterday: number|null; spend: number; purchases: number|null; cpp: number|null; cpatc:number|null; breakEven:number|null; breakEvenNote:string; weekdayBudget:number|null; freelancer: {window:3|7; cpp:number|null; oursCpp:number|null; over:boolean|null}[]; changes: {time:string;field:string;old:string;value:string}[] }
 export interface AdSetsView { mode:'sample'|'live';today:string;lastRead:string|null;stale:boolean;count:number;rows:AdSetRow[];accountYesterday:number|null;actionsEnabled:boolean; actions?:MetaAction[] }

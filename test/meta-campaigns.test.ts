@@ -152,7 +152,8 @@ test('Meta worker refreshes the catalogue once per actual poll, outside backfill
       const request = new URL(String(url));
       assert.equal(init?.method, 'GET');
       if (request.pathname.endsWith('/campaigns')) { catalogueReads++; return response(body); }
-      if (request.pathname.endsWith('/insights')) { spendReads++; return response({ data: [] }); }
+      if (request.pathname.endsWith('/insights')) { if(request.searchParams.get('level')==='adset')spendReads++; return response({ data: [] }); }
+      if (request.pathname.endsWith('/adsets') || request.pathname.endsWith('/ads')) return response({data:[]});
       return response({ currency: 'GBP', timezone_name: 'Europe/London' });
     },
   });

@@ -40,6 +40,7 @@ export interface MetaCampaignView extends MetaCampaign {
   mode: SourceMode;
 }
 export class AdError extends Error {
+  retryAfterMs?: number;
   readonly status: number;
   readonly providerCode: number | undefined;
   readonly providerSubcode: number | undefined;

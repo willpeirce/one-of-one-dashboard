@@ -59,7 +59,7 @@ async function snapshot(db: Database) {
 }
 const withoutRefreshFields = (row: Record<string, unknown>) => Object.fromEntries(
   Object.entries(row).filter(([key]) => !['name', 'status', 'effective_status', 'last_seen', 'fetched_at',
-    'ad_set_id', 'ad_set_name', 'campaign_id', 'campaign_name', 'owner', 'market'].includes(key)),
+    'status_since', 'ad_set_id', 'ad_set_name', 'campaign_id', 'campaign_name', 'owner', 'market'].includes(key)),
 );
 async function completedJob(db: Database) {
   await db.query('INSERT INTO pulse.creative_jobs(account_id,backfill_done,nightly_day) VALUES($1,true,$2)', [account, '2026-10-13']);
@@ -89,9 +89,9 @@ test('the exact deleted-object list refusal names catalogue and leaves all saved
   }));
   let frequencyReads = 0;
   client.readFrequency = async () => { frequencyReads++; return 1; };
-  await new CreativeWorker(db, client).run(account, settings(), now);
+  await new CreativeWorker(db, client).run(account, settings(), now, false);
   assert.deepEqual(requests, [`act_${account}`, 'ads']);
-  assert.equal(frequencyReads, 0, 'a refused catalogue cannot write independent frequency results');
+  assert.equal(frequencyReads, 0, 'the catalogue-only pass does not run frequency');
   assert.deepEqual(await snapshot(db), before);
   const job = (await db.query('SELECT error_code,last_catalogue_at,last_success_at FROM pulse.creative_jobs')).rows[0]!;
   assert.deepEqual(job, { error_code: 'http 400, meta 100/1815001 at catalogue after 0 ads', last_catalogue_at: null, last_success_at: null });
@@ -143,6 +143,7 @@ test('completed catalogue pages remain visible after a later timeout and a fresh
           ...(next ? { paging: { next: `https://graph.facebook.com/v25.0/act_${account}/ads?after=${next}`, cursors: { after: next } } } : {}) });
       }
       if (path === 'insights') return response({ data: [] });
+      if (path === 'adimages') return response({ data: [{ hash: JSON.parse(url.searchParams.get('hashes')!)[0], width: 600, height: 600 }] });
       const detail = /^invented-paged-(creative|story|instagram|media)-(\d+)(?:\.jpg)?$/.exec(path);
       assert.ok(detail, 'Only invented catalogue enrichment is expected');
       const kind = detail[1]!, index = Number(detail[2]);
@@ -154,7 +155,7 @@ test('completed catalogue pages remain visible after a later timeout and a fresh
     }) as typeof fetch,
   };
   const client = () => new MetaCreativeClient(new MetaSpend(credential, options), options);
-  const firstPass = new CreativeWorker(db, client()).run(account, settings(), now);
+  const firstPass = new CreativeWorker(db, client()).run(account, settings(), now, false);
   try {
     await Promise.race([pageThreeStarted.promise, firstPass.then(() => { throw new Error('Catalogue stopped before requesting its third page'); })]);
     assert.equal((await creativeHealth(db, settings(), env, now)).catalogueCount, 50, 'Source health sees committed pages while page three is still running');
@@ -170,7 +171,7 @@ test('completed catalogue pages remain visible after a later timeout and a fresh
   assert.deepEqual(job, { error_code: 'timeout at catalogue after 50 ads', last_catalogue_at: null, last_success_at: null, backfill_next: '2026-08-07' });
   assert.deepEqual(logs, ['Meta creatives read failed (timeout at catalogue after 50 ads).']);
   assert.ok(!JSON.stringify([job, logs]).includes(credential));
-  assert.equal(requests.filter(request => request.path === 'insights').length, 0, 'neither ordinary insights nor the independent frequency report run after catalogue failure');
+  assert.equal(requests.filter(request => request.path === 'insights').length, 0, 'the catalogue-only pass does not run insights or frequency');
   const savedAd = (await db.query('SELECT * FROM pulse.ads WHERE ad_id=$1', [listed[0]!.id])).rows[0]!;
   const savedMedia = (await db.query('SELECT * FROM pulse.media_groups ORDER BY id')).rows;
   failing = false;
@@ -215,7 +216,7 @@ test('a failed page transaction is not counted and partial catalogue progress st
     // A repeated primary key with a new media identity fails after the first row in this page.
     yield [entry('rolled-back'), { ...entry('collision'), media: { ...entry('collision').media, id: entry().media.id } }];
   };
-  await new CreativeWorker(db, source).run(account, { ...settings(), creativeMediaCapMb: 1 / (1024 * 1024) }, now);
+  await new CreativeWorker(db, source).run(account, { ...settings(), creativeMediaCapMb: 1 / (1024 * 1024) }, now, false);
   assert.deepEqual((await db.query('SELECT ad_id FROM pulse.ads')).rows, [{ ad_id: entry().ad.id }]);
   assert.deepEqual((await db.query('SELECT id,thumbnail FROM pulse.media_groups')).rows, [{ id: entry().media.id, thumbnail: null }]);
   const job = (await db.query('SELECT error_code,last_catalogue_at FROM pulse.creative_jobs')).rows[0]!;
@@ -253,6 +254,7 @@ test('metadata-only catalogue refresh changes only list fields in the matching m
     assert.equal(row.name, 'Invented renamed ad');
     assert.equal(row.status, 'PAUSED');
     assert.equal(row.effective_status, 'CAMPAIGN_PAUSED');
+    assert.equal(new Date(row.status_since as string).toISOString(), now.toISOString());
     assert.equal(row.ad_set_id, placement.adSetId);
     assert.equal(row.ad_set_name, placement.adSetName);
     assert.equal(row.campaign_id, placement.campaignId);
@@ -288,6 +290,7 @@ test('worker supplies stored mappings for list-only refresh and reads a changed 
         : { id: entry().ad.creativeId, effective_object_story_id: 'invented-story', effective_instagram_media_id: 'invented-instagram', body: 'Invented ignored list copy' },
     }] });
     if (request.pathname.endsWith('/insights')) return response({ data: [] });
+    if (request.pathname.endsWith('/adimages')) return response({ data: [] });
     if (request.pathname.endsWith('/invented-creative-revised')) return response({
       id: 'invented-creative-revised', image_hash: 'invented-image-revised', body: 'Invented revised copy', title: 'Invented revised headline',
       thumbnail_url: 'https://media.fbcdn.net/invented-revised.jpg',
@@ -299,7 +302,7 @@ test('worker supplies stored mappings for list-only refresh and reads a changed 
   const client = new MetaCreativeClient(new MetaSpend(randomBytes(16).toString('hex'), options), options);
   const worker = new CreativeWorker(db, client);
   await worker.run(account, settings(), now);
-  assert.deepEqual(paths, [`act_${account}`, 'ads', 'insights']);
+  assert.deepEqual([...paths].sort(), [`act_${account}`, 'ads', 'insights'].sort());
   const refreshed = (await db.query('SELECT * FROM pulse.ads ORDER BY ad_id')).rows;
   assert.deepEqual(withoutRefreshFields(refreshed[0]!), withoutRefreshFields(before[0]!));
   assert.equal(refreshed[0]!.name, 'Invented renamed ad');
@@ -316,7 +319,7 @@ test('worker supplies stored mappings for list-only refresh and reads a changed 
   changed = true;
   paths.length = 0;
   await worker.run(account, settings(), new Date(now.getTime() + 30 * 60_000));
-  assert.deepEqual(paths, ['ads', 'invented-creative-revised', 'media.fbcdn.net', 'insights']);
+  assert.deepEqual([...paths].sort(), ['ads', 'invented-creative-revised', 'adimages', 'media.fbcdn.net', 'insights'].sort());
   const updated = (await db.query('SELECT * FROM pulse.ads WHERE ad_id=$1', [entry().ad.id])).rows[0]!;
   assert.equal(updated.creative_id, 'invented-creative-revised');
   assert.equal(updated.body, 'Invented revised copy');
@@ -361,7 +364,7 @@ test('stored ads refresh campaign placement from the list and current ownership 
   const client = new MetaCreativeClient(new MetaSpend(randomBytes(16).toString('hex'), options), options);
   const worker = new CreativeWorker(db, client);
   await worker.run(account, settings(), now);
-  assert.deepEqual(paths, [`act_${account}`, 'ads', 'insights']);
+  assert.deepEqual([...paths].sort(), [`act_${account}`, 'ads', 'insights'].sort());
   const unassigned = (await db.query('SELECT * FROM pulse.ads')).rows[0]!;
   assert.equal(unassigned.owner, 'unassigned');
   assert.equal(unassigned.market, 'uk', 'unassigned placement continues to use the UK campaign');
@@ -369,7 +372,7 @@ test('stored ads refresh campaign placement from the list and current ownership 
   const later = new Date(now.getTime() + 30 * 60_000);
   paths.length = 0;
   await worker.run(account, currentSettings, later);
-  assert.deepEqual(paths, ['ads', 'insights']);
+  assert.deepEqual([...paths].sort(), ['ads', 'insights'].sort());
   const refreshed = (await db.query('SELECT * FROM pulse.ads')).rows[0]!;
   assert.equal(refreshed.owner, 'ours');
   assert.equal(refreshed.market, 'us', 'the changed local owner rule uses the US ad set with the same creative');

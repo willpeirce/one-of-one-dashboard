@@ -59,7 +59,7 @@ test('ad insight chunks replace atomically, preserve first-spend day and compare
     await saveInsights(db,account,'2026-10-12','2026-10-12',[insight('ad-invented-video','2026-10-12',100.5)],now);
     health=await creativeHealth(db,settings(),env,now); assert.equal(health.reconciliation,null);
     await saveSpend(db,'meta',account,'2026-10-11','2026-10-11',[{...spendRow,day:'2026-10-11'}],now);
-    assert.equal((await creativeHealth(db,settings(),env,now)).reconciliation,null,'unfinished ad history is not reported as a zero');
+    assert.equal((await creativeHealth(db,settings(),env,now)).reconciliation,'ad-level read incomplete on 1 day','unfinished ad history is named without a fabricated percentage');
     const data=await readCreativeData(db,settings(),env,now);
     assert.equal(data.insights.length,1); assert.equal(data.insights[0]!.spend,100.5);
     assert.equal(data.ads[0]!.firstSpendDay,'2026-10-12');

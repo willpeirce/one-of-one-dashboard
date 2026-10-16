@@ -110,10 +110,10 @@ export class MetaCreativeClient implements CreativeReader {
       return null;
     }
   }
-  private async account(account: string): Promise<string> {
+  private async account(account: string, resumeRateLimit = false): Promise<string> {
     const cached = this.accounts.get(account);
     if (cached) return cached;
-    const facts = await this.meta.readGraph(`act_${id(account)}`, { fields: 'currency,timezone_name' });
+    const facts = await this.meta.readGraph(`act_${id(account)}`, { fields: 'currency,timezone_name' }, 10_000, resumeRateLimit);
     if (facts.currency !== 'GBP') throw new AdError('unsupported_account');
     const zone = text(facts.timezone_name, 100);
     if (!zone) throw new AdError('invalid');
@@ -170,10 +170,10 @@ export class MetaCreativeClient implements CreativeReader {
     throw new AdError('http');
   }
   private creative(creativeId: string): Promise<any> {
-    return this.meta.readGraph(id(creativeId), { fields: CREATIVE_FIELDS, thumbnail_width: '600', thumbnail_height: '600' });
+    return this.meta.readGraph(id(creativeId), { fields: CREATIVE_FIELDS, thumbnail_width: '600', thumbnail_height: '600' }, 10_000, true);
   }
   private post(storyId: string): Promise<any> {
-    return this.meta.readGraph(id(storyId), { fields: 'attachments{type,media,target,subattachments},permalink_url' });
+    return this.meta.readGraph(id(storyId), { fields: 'attachments{type,media,target,subattachments},permalink_url' }, 10_000, true);
   }
   private attachment(post: any): any {
     const first = post?.attachments?.data?.[0];
@@ -181,17 +181,17 @@ export class MetaCreativeClient implements CreativeReader {
   }
   private permalink(kind: 'post' | 'instagram', sourceId: string): Promise<any | null> {
     const key = `${kind}:${sourceId}`;
-    if (!this.permalinks.has(key)) this.permalinks.set(key, this.optional(key, () => this.meta.readGraph(id(sourceId), { fields: kind === 'post' ? 'permalink_url' : 'permalink,media_type' })));
+    if (!this.permalinks.has(key)) this.permalinks.set(key, this.optional(key, () => this.meta.readGraph(id(sourceId), { fields: kind === 'post' ? 'permalink_url' : 'permalink,media_type' }, 10_000, true)));
     return this.permalinks.get(key)!;
   }
   async *readCatalogue(account: string, settings: Settings, now: Date): AsyncIterable<CatalogueRead[]> {
-    await this.account(account);
+    await this.account(account, true);
     this.images.clear();this.videoSizes.clear();
     const creativeCache = new Map<string, any>(), mediaCache = new Map<string, CatalogueMedia>(), postCache = new Map<string, any>();
     const reduced = new Set<string>(), expanded = new Set<string>();
     const retryResults = new Map<string, CatalogueMedia | null>();
     for await (const ads of this.meta.readPages(`act_${id(account)}/ads`, { fields: `id,name,status,effective_status,created_time,adset{id,name},campaign{id,name},creative{${CREATIVE_FIELDS}}`, limit: '25',
-      effective_status: JSON.stringify(['ACTIVE', 'PAUSED', 'ARCHIVED', 'CAMPAIGN_PAUSED', 'ADSET_PAUSED', 'PENDING_REVIEW', 'DISAPPROVED', 'PREAPPROVED', 'PENDING_BILLING_INFO', 'IN_PROCESS', 'WITH_ISSUES']) }, 60_000, { fallbackLimit: 10 })) {
+      effective_status: JSON.stringify(['ACTIVE', 'PAUSED', 'ARCHIVED', 'CAMPAIGN_PAUSED', 'ADSET_PAUSED', 'PENDING_REVIEW', 'DISAPPROVED', 'PREAPPROVED', 'PENDING_BILLING_INFO', 'IN_PROCESS', 'WITH_ISSUES']) }, 60_000, { fallbackLimit: 10, resumeRateLimit: true })) {
       const entries: CatalogueRead[] = [];
       for (const row of ads) {
         if (!row.creative?.id) continue;
@@ -259,7 +259,7 @@ export class MetaCreativeClient implements CreativeReader {
         let media = retryGroupId ? retryResults.get(retryGroupId) : mediaCache.get(key);
         if (!media) {
           const actualVideoId = primary.kind === 'video' && !primary.key.includes(':') ? primary.key : null;
-          const metadata = actualVideoId ? await this.optional(`video-info:${actualVideoId}`, () => this.meta.readGraph(id(actualVideoId), { fields: 'length,title,picture' })) : null;
+          const metadata = actualVideoId ? await this.optional(`video-info:${actualVideoId}`, () => this.meta.readGraph(id(actualVideoId), { fields: 'length,title,picture' }, 10_000, true)) : null;
           const image = primary.kind === 'image' && !primary.key.includes(':') && (!this.knownMedia.has(key) || retryGroupId)
             ? await this.optional(`image-info:${key}`, () => this.imageInfo(account, primary.key)) : null;
           const thumbnailUrl = creative.thumbnail_url ?? creative.image_url ?? attachment?.media?.image?.src ?? metadata?.picture;
@@ -372,7 +372,7 @@ export class MetaCreativeClient implements CreativeReader {
   }
   private imageInfo(account: string, key: string): Promise<any> {
     const cacheKey=`${account}:${key}`;
-    if(!this.images.has(cacheKey))this.images.set(cacheKey,this.meta.readAllPages(`act_${id(account)}/adimages`,{hashes:JSON.stringify([id(key)]),fields:'hash,url,width,height',limit:'100'}).then(images=>images.find(image=>image.hash===key)??null));
+    if(!this.images.has(cacheKey))this.images.set(cacheKey,this.meta.readAllPages(`act_${id(account)}/adimages`,{hashes:JSON.stringify([id(key)]),fields:'hash,url,width,height',limit:'100'},10_000,true).then(images=>images.find(image=>image.hash===key)??null));
     return this.images.get(cacheKey)!;
   }
   async imageBytes(account: string, key: string, full = false): Promise<Uint8Array> {
@@ -390,7 +390,7 @@ export class MetaCreativeClient implements CreativeReader {
   }
   async videoFrames(videoId: string): Promise<Uint8Array[]> {
     if (videoId.includes(':')) return [];
-    const thumbnails = await this.meta.readAllPages(`${id(videoId)}/thumbnails`, { fields: 'uri,is_preferred,width,height', limit: '10' });
+    const thumbnails = await this.meta.readAllPages(`${id(videoId)}/thumbnails`, { fields: 'uri,is_preferred,width,height', limit: '10' },10_000,true);
     const first=thumbnails[0];
     if(first?.width && first?.height)this.videoSizes.set(videoId,{width:numeric(first.width),height:numeric(first.height)});
     const output: Uint8Array[] = [];

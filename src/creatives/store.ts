@@ -16,6 +16,8 @@ const insightFields = { adId: 'ad_id', adSetId: 'ad_set_id', day: 'day', spend: 
 
 export async function saveCatalogue(db: Database, account: string, entries: CatalogueRead[], now: Date, mode: SourceMode = 'live'): Promise<void> {
   await db.transaction(async tx => {
+    // Catalogue and insights download independently, but their brief writes share ad rows.
+    await tx.query('SELECT pg_advisory_xact_lock(1668244582,hashtext($1))',[`${mode}:${account}`]);
     const expandedIds: string[] = [];
     for (const entry of entries) {
       if (entry.media === null) {
@@ -75,6 +77,8 @@ export async function saveCatalogue(db: Database, account: string, entries: Cata
 
 export async function saveInsights(db: Database, account: string, from: string, to: string, rows: AdInsight[], now: Date, next?: string, mode: SourceMode = 'live'): Promise<void> {
   await db.transaction(async tx => {
+    // Catalogue and insights download independently, but their brief writes share ad rows.
+    await tx.query('SELECT pg_advisory_xact_lock(1668244582,hashtext($1))',[`${mode}:${account}`]);
     await tx.query('DELETE FROM pulse.ad_insights_daily WHERE mode=$1 AND account_id=$2 AND day BETWEEN $3 AND $4', [mode, account, from, to]);
     const fields = Object.entries(insightFields), columns = fields.map(([,col]) => col);
     for (const row of rows) {
@@ -84,7 +88,7 @@ export async function saveInsights(db: Database, account: string, from: string, 
     }
     await tx.query(`UPDATE pulse.ads a SET first_spend_day=(SELECT min(day) FROM pulse.ad_insights_daily i WHERE i.mode=a.mode AND i.account_id=a.account_id AND i.ad_id=a.ad_id AND i.spend>0) WHERE a.mode=$1 AND a.account_id=$2`, [mode, account]);
     if (mode === 'live') {
-      await tx.query(`INSERT INTO pulse.creative_insight_days(account_id,day,fetched_at) SELECT $1,day,$4 FROM generate_series($2::date,$3::date,interval '1 day') day ON CONFLICT(account_id,day) DO UPDATE SET fetched_at=EXCLUDED.fetched_at`, [account, from, to, now]);
+      await tx.query(`INSERT INTO pulse.creative_insight_days(account_id,day,fetched_at,completed) SELECT $1,day,$4,true FROM generate_series($2::date,$3::date,interval '1 day') day ON CONFLICT(account_id,day) DO UPDATE SET fetched_at=EXCLUDED.fetched_at,completed=true`, [account, from, to, now]);
       if (next) await tx.query('UPDATE pulse.creative_jobs SET backfill_next=$2 WHERE account_id=$1', [account, next]);
     }
   });
@@ -232,15 +236,16 @@ export async function creativeHealth(db: Database, settings: Settings, env: Node
   const [job, count, coverage, gaps, bytes, reducedCount] = await Promise.all([
     db.query<any>('SELECT *,backfill_next::text FROM pulse.creative_jobs WHERE account_id=$1',[account]),
     db.query<any>("SELECT count(*) FROM pulse.ads WHERE mode='live' AND account_id=$1",[account]),
-    db.query<any>('SELECT count(*) FROM pulse.creative_insight_days WHERE account_id=$1',[account]),
+    db.query<any>('SELECT count(*) FROM pulse.creative_insight_days WHERE account_id=$1 AND completed',[account]),
     db.query<any>(`WITH ads AS (SELECT day,ad_set_id,sum(spend) AS spend FROM pulse.ad_insights_daily WHERE mode='live' AND account_id=$1 GROUP BY day,ad_set_id), sets AS (SELECT uk_day AS day,ad_set_id,sum(spend_amount) AS spend FROM pulse.ad_spend WHERE mode='live' AND source='meta' AND account_id=$1 GROUP BY uk_day,ad_set_id)
       SELECT COALESCE(a.day,s.day)::text AS day,CASE WHEN COALESCE(s.spend,0)=0 THEN CASE WHEN COALESCE(a.spend,0)=0 THEN 0 ELSE 100 END ELSE abs(COALESCE(a.spend,0)-s.spend)/s.spend*100 END AS percent
       FROM ads a FULL JOIN sets s ON a.day=s.day AND a.ad_set_id=s.ad_set_id
-      JOIN pulse.creative_insight_days c ON c.account_id=$1 AND c.day=COALESCE(a.day,s.day)
+      JOIN pulse.creative_insight_days c ON c.account_id=$1 AND c.day=COALESCE(a.day,s.day) AND c.completed
       JOIN pulse.ad_spend_days d ON d.source='meta' AND d.account_id=$1 AND d.uk_day=COALESCE(a.day,s.day)`,[account]),
     mediaBytesUsed(db,account),
     reducedDetailCount(db,account),
   ]);
+  const incomplete=Number((await db.query<any>(`SELECT count(*) FROM pulse.ad_spend_days d LEFT JOIN pulse.creative_insight_days c ON c.account_id=d.account_id AND c.day=d.uk_day WHERE d.source='meta' AND d.account_id=$1 AND (c.completed IS DISTINCT FROM true)`,[account])).rows[0]?.count??0);
   const j = job.rows[0];
-  return {mode,scan,catalogueCount:Number(count.rows[0]?.count ?? 0),reducedCount,backfillNext:j?.backfill_next ?? null,backfillDone:j?.backfill_done ?? false,completedDays:Number(coverage.rows[0]?.count ?? 0),totalDays:Math.max(0,Math.round((Date.parse(ukToday(now))-Date.parse('2026-08-07'))/86400000)+1),bytes,capBytes:settings.creativeMediaCapMb*1024*1024,lastSuccessAt:j?.last_success_at ? iso(j.last_success_at) : null,reconciliation:reconciliationLine(gaps.rows.map(r => ({day:r.day,percent:Number(r.percent)}))),error:j?.error_code ?? null};
+  return {mode,scan,catalogueCount:Number(count.rows[0]?.count ?? 0),reducedCount,backfillNext:j?.backfill_next ?? null,backfillDone:j?.backfill_done ?? false,completedDays:Number(coverage.rows[0]?.count ?? 0),totalDays:Math.max(0,Math.round((Date.parse(ukToday(now))-Date.parse('2026-08-07'))/86400000)+1),bytes,capBytes:settings.creativeMediaCapMb*1024*1024,lastSuccessAt:j?.last_success_at ? iso(j.last_success_at) : null,reconciliation:[incomplete?`ad-level read incomplete on ${incomplete} ${incomplete===1?'day':'days'}`:null,reconciliationLine(gaps.rows.map(r => ({day:r.day,percent:Number(r.percent)})))].filter(Boolean).join(' · ')||null,error:j?.error_code ?? null};
 }

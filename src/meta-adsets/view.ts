@@ -19,7 +19,7 @@ export function adSetSummary(view:AdSetsView,market='all'):string {
  const expected=rows.some(r=>sunday?r.set.dailyBudget===null:r.weekdayBudget===null)?null:rows.reduce((s,r)=>s+(sunday?r.set.dailyBudget!/100:r.weekdayBudget!),0);
  return `<a class="adset-live glass" href="/ads" data-live-sets><strong>Live sets</strong><span>${rows.length} live sets, ours · ${decisionRows(view,market).length} need a decision · ${money(spend)} yesterday against ${money(expected)} expected</span></a>`;
 }
-const freelancer=(row:AdSetRow)=>row.freelancer.map(f=>`${f.window}d ${f.over===null?'unknown':f.over?'over trigger':'under trigger'} · ${money(f.cpp)} CPP · ours ${money(f.oursCpp)} in ${row.set.market.toUpperCase()}`).join('; ');
+const freelancer=(row:AdSetRow)=>row.freelancer.some(f=>f.over===null)?'no purchase data yet':row.freelancer.map(f=>`${f.window}d ${f.over?'over trigger':'under trigger'} · ${money(f.cpp)} CPP · ours ${money(f.oursCpp)} in ${row.set.market.toUpperCase()}`).join('; ');
 export function adSetTable(view:AdSetsView,market='all'):string {
  const rows=view.rows.filter(r=>market==='all'||r.set.market===market);
  const columns=['Set','Campaign','Market','Base / Mon–Sat','Yesterday','7-day spend','Purchases','CPP / break-even','Cost per ATC','Verdict','Reason'];

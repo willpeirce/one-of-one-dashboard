@@ -41,3 +41,12 @@ test('one set-name formatter serves cards, rows, sheet and action review without
   assert.match(html,/Cedar grove/);assert.doesNotMatch(html,/Invented type|£24/);
  }
 });
+
+test('freelancer missing purchases have one short explanation instead of two unknown templates',()=>{
+ const view=sampleAdSetsView(defaultSettings()),row=view.rows.find(r=>r.set.owner==='freelancer')!;
+ row.freelancer[1]!.over=null;row.freelancer[1]!.cpp=null;
+ for(const html of [adSetTable({...view,rows:[row]}),adSetSheet(row,view)]){
+  assert.equal((html.match(/no purchase data yet/g)??[]).length,1);
+  assert.doesNotMatch(html,/3d under trigger|7d unknown|ours Unknown/);
+ }
+});

@@ -33,13 +33,27 @@ test('Meta image size and video length survive catalogue storage and become Aspe
  await new CreativeWorker(db,fake).run(account,defaultSettings(),now);
  assert.deepEqual(retry,[],'missing facts no longer force creative expansion');
 });
-test('missing-fact retries select at most twenty distinct media groups a pass',async t=>{
+test('media facts try forty groups, scored parents first by spend, and persist the run report',async t=>{
+ const {refreshMediaFacts,mediaFactHealth,mediaFactLine}=await import('../src/creatives/media-facts.js');
  const db=await createTestDatabase();t.after(()=>db.close());const account='invented-bounded-facts';
- const entries:CatalogueRead[]=Array.from({length:25},(_,i)=>({ad:creativeAd(`invented-ad-${i}`,`invented-group-${i}`,{accountId:account}),media:{...creativeGroup(`invented-group-${i}`,{kind:'image',width:null,height:null}),thumbnail:null,poster:null,frames:[]}}));
- await saveCatalogue(db,account,entries,now);let reads=0;
- const reader:CreativeReader={readCatalogue:async function*(){yield []},readInsights:async()=>[],imageBytes:async()=>new Uint8Array(),videoFrames:async()=>[],videoSource:async()=>'',readMediaFacts:async()=>{reads++;return {width:600,height:800,lengthSeconds:null};}};
- await new CreativeWorker(db,reader).run(account,defaultSettings(),now);
- assert.equal(reads,20);
+ const entries:CatalogueRead[]=Array.from({length:60},(_,i)=>({ad:creativeAd(`invented-ad-${i}`,`invented-group-${i}`,{accountId:account}),media:{...creativeGroup(`invented-group-${i}`,{key:`invented-key-${i}`,kind:'image',width:null,height:null}),thumbnail:null,poster:null,frames:[]}}));
+ await saveCatalogue(db,account,entries,now);
+ await saveInsights(db,account,'2026-10-16','2026-10-16',[57,58,59].map((i,n)=>creativeInsight(`invented-ad-${i}`,{day:'2026-10-16',spend:[48,72,24][n]!})),now);
+ await db.query('INSERT INTO pulse.creative_jobs(account_id) VALUES($1)',[account]);
+ const reads:string[]=[],logs:string[]=[];t.mock.method(console,'info',(line:string)=>logs.push(line));
+ const reader:CreativeReader={readCatalogue:async function*(){yield []},readInsights:async()=>[],imageBytes:async()=>new Uint8Array(),videoFrames:async()=>[],videoSource:async()=>'',readMediaFacts:async(_account,group)=>{
+  reads.push(group.key);const refused=['invented-key-58','invented-key-59'].includes(group.key),missing=group.key==='invented-key-59';
+  return {width:missing?null:600,height:missing?null:800,lengthSeconds:null,...(refused?{failures:['http 400, meta 10 at adimages']}:{})};
+ }};
+ await refreshMediaFacts(db,reader,account,now);
+ assert.equal(reads.length,40);assert.equal(new Set(reads).size,40);
+ assert.deepEqual(reads.slice(0,3),['invented-key-58','invented-key-57','invented-key-59']);
+ const report=await mediaFactHealth(db,account,now);
+ assert.deepEqual(report.run,{tried:40,filled:39,refused:2,reasons:[{reason:'http 400, meta 10 at adimages',count:2}]});
+ assert.equal(report.filled,2);assert.equal(report.total,3);
+ assert.match(mediaFactLine(report),/last run 2026-10-16T12:00:00.000Z: 40 tried, 39 filled, 2 refused \(http 400, meta 10 at adimages on 2\)/);
+ assert.deepEqual(logs,[mediaFactLine(report)]);
+ assert.equal((await mediaFactHealth(db,account,now,'lifetime')).total,3);
 });
 
 test('facts retry once daily, stop after three failures, and count only scored parents in the window',async t=>{

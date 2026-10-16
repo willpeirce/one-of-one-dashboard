@@ -107,7 +107,7 @@ export class CreativeWorker {
       await this.db.query('UPDATE pulse.creative_jobs SET insights_error=$2,error_code=COALESCE(catalogue_error,$2) WHERE account_id=$1',[account,code]).catch(()=>{});
       console.error(`Meta creatives read failed (${code}).`);
     }
-    try { await repairThruPlays(this.db,this.reader,account,now); }
+    try { await repairThruPlays(this.db,this.reader,account,now,settings.creativeDefaultWindow); }
     catch(error){ console.error(`Meta ThruPlay repair could not finish (${adErrorCode(error,'meta')} at backfill).`); }
     // Frequency is a separate exact-window read: failure cannot invalidate saved insights.
     if (this.reader.readFrequency) {

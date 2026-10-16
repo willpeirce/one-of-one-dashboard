@@ -19,8 +19,8 @@ function links(review: Review): string {
   return `${review.rating <= 3 ? `<a class="act primary" data-review-link href="${href}" target="_blank" rel="noopener noreferrer">Read in Judge.me</a>` : ''}<a class="act" data-review-link href="${href}" target="_blank" rel="noopener noreferrer">Open in Judge.me</a>`;
 }
 function reviewChips(review: Review): string {
-  const source=review.source?.replace(/[-_]/g,' ');
-  const label=source==='email' ? 'Email request' : source ? source[0]!.toUpperCase()+source.slice(1) : null;
+  const source=review.source;
+  const label=source==='web'?'Web':source&&/rre|email/i.test(source)?'Email request':source?.replaceAll('-',' ')??null;
   const chips = `${review.flagged ? '<span class="chip warn">Flagged by Judge.me</span>' : ''}${label ? `<span class="chip info">${esc(label)}</span>` : ''}`;
   return chips ? `<span class="review-chips">${chips}</span>` : '';
 }

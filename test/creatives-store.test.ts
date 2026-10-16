@@ -82,6 +82,7 @@ test('seven-day backfill checkpoints resume after failure; daily and nightly win
     await worker.run(account,settings(),now);
     assert.deepEqual(reads,[['2026-10-12','2026-10-13'],['2026-10-06','2026-10-12'],['2026-08-07','2026-08-13'],['2026-08-14','2026-08-20']]);
     assert.equal((await db.query<any>('SELECT backfill_next::text FROM pulse.creative_jobs')).rows[0]!.backfill_next,'2026-08-14');
+    assert.equal((await db.query('SELECT error_code FROM pulse.creative_jobs')).rows[0]!.error_code,'unknown at backfill');
     assert.equal(JSON.stringify(logs).includes(token),false);
     reads.length=0;fail=false;
     await worker.run(account,settings(),new Date(now.getTime()+1800000));
@@ -90,6 +91,7 @@ test('seven-day backfill checkpoints resume after failure; daily and nightly win
     assert.equal(reads.some(([from])=>from==='2026-08-07'),false);
     assert.equal(reads.some(([from])=>from==='2026-10-06'),false,'nightly runs once per UK day');
     assert.equal((await db.query<any>('SELECT backfill_next::text FROM pulse.creative_jobs')).rows[0]!.backfill_next,'2026-09-11');
+    assert.deepEqual((await db.query('SELECT error_code,insights_error FROM pulse.creative_jobs')).rows,[{error_code:null,insights_error:null}]);
   } finally {console.error=original;await db.close();}
 });
 

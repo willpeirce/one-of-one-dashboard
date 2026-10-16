@@ -75,7 +75,7 @@ function sideMetrics(groups: readonly GroupPerformance[], kind: CreativeKind): L
   return { groupCount: groups.length, spend, purchases, purchaseValue, costPerPurchase: ratio(spend, purchases),
     roas: ratio(purchaseValue, spend), addToCartRate: ratio(sum('addsToCart'), sum('linkClicks')),
     hookRate: kind === 'video' ? ratio(sum('threeSecondPlays'), sum('impressions')) : null,
-    holdRate: kind === 'video' ? ratio(sum('thruPlays'), sum('holdThreeSecondPlays')) : null };
+    holdRate: kind === 'video' && !groups.some(group=>group.totals.holdMissingPlayDays>0) ? ratio(sum('thruPlays'), sum('holdThreeSecondPlays')) : null };
 }
 
 /** All resolved parents are candidates, including zero-spend parents; aggregate floors apply to each side. */

@@ -65,12 +65,13 @@ function insightDay(value: unknown): string {
   return day;
 }
 function parseInsight(row: any, day: string): AdInsight {
+  const videoCount = (value: unknown): number | null => value == null ? null : action(value);
   const direct = Array.isArray(row.actions) && row.actions.some((item: any) => item.action_type === 'video_view');
   const fallback = Array.isArray(row.video_continuous_2_sec_watched_actions) && row.video_continuous_2_sec_watched_actions.length > 0;
   return { adId: id(row.ad_id), adSetId: id(row.adset_id), day, spend: numeric(row.spend), impressions: numeric(row.impressions), reach: numeric(row.reach), frequency: numeric(row.frequency),
     linkClicks: row.inline_link_clicks == null ? action(row.actions, 'link_click') : numeric(row.inline_link_clicks),
     threeSecondPlays: direct ? action(row.actions, 'video_view') : action(row.video_continuous_2_sec_watched_actions), threeSecondSource: direct ? 'video_view' : fallback ? 'video_continuous_2_sec_watched_actions' : 'none',
-    plays: action(row.video_play_actions), thruPlays: row.video_thruplay_watched_actions == null ? null : action(row.video_thruplay_watched_actions), plays25: action(row.video_p25_watched_actions), plays50: action(row.video_p50_watched_actions), plays75: action(row.video_p75_watched_actions), plays100: action(row.video_p100_watched_actions), averagePlayTime: action(row.video_avg_time_watched_actions),
+    plays: videoCount(row.video_play_actions), thruPlays: videoCount(row.video_thruplay_watched_actions), plays25: videoCount(row.video_p25_watched_actions), plays50: videoCount(row.video_p50_watched_actions), plays75: videoCount(row.video_p75_watched_actions), plays100: videoCount(row.video_p100_watched_actions), averagePlayTime: action(row.video_avg_time_watched_actions),
     addsToCart: action(row.actions, META_ADD_TO_CART), purchases: action(row.actions, META_PURCHASE), purchaseValue: action(row.action_values, META_PURCHASE) || action(row.action_values, 'omni_purchase_values') };
 }
 
@@ -352,12 +353,15 @@ export class MetaCreativeClient implements CreativeReader {
   async readThruPlays(account:string,from:string,to:string):Promise<import('./thruplay-repair.js').ThruPlayRow[]> {
     insightDay(from);insightDay(to);if(from>to)throw new AdError('invalid');
     const report=await this.meta.readAllPages(`act_${id(account)}/insights`,{
-      fields:'ad_id,date_start,video_play_actions,video_thruplay_watched_actions',level:'ad',time_increment:'1',limit:'500',
+      fields:'ad_id,date_start,video_play_actions,video_thruplay_watched_actions,actions,video_continuous_2_sec_watched_actions',level:'ad',time_increment:'1',limit:'500',
       time_range:JSON.stringify({since:from,until:to}),
     },60_000,true);
     return report.map(row=>{
       const day=insightDay(row.date_start);if(day<from||day>to)throw new AdError('invalid');
-      return {adId:id(row.ad_id),day,plays:action(row.video_play_actions),thruPlays:row.video_thruplay_watched_actions==null?null:action(row.video_thruplay_watched_actions)};
+      const direct=Array.isArray(row.actions)&&row.actions.some((item:any)=>item.action_type==='video_view');
+      return {adId:id(row.ad_id),day,plays:row.video_play_actions==null?null:action(row.video_play_actions),thruPlays:row.video_thruplay_watched_actions==null?null:action(row.video_thruplay_watched_actions),
+        holdThreeSecondPlays:row.actions==null&&row.video_continuous_2_sec_watched_actions==null?undefined
+          :direct?action(row.actions,'video_view'):action(row.video_continuous_2_sec_watched_actions)};
     });
   }
   async readFrequency(account: string, adIds: string[], from: string, to: string): Promise<number | null> {
@@ -410,7 +414,7 @@ export class MetaCreativeClient implements CreativeReader {
       if(need.size&&(width===null||height===null)){
         takeSize(imageSize(group.bytes));
         const url=matches?(creative.image_url??media.feed.images?.find((r:any)=>r.hash===group.key)?.url??media.spec.link_data?.picture??creative.thumbnail_url):null;
-        if((width===null||height===null)&&url)takeSize(imageSize(await attempt('image bytes',()=>this.bytes(url,false))));
+        if((width===null||height===null)&&url)takeSize(imageSize(await attempt('bytes',()=>this.bytes(url,false))));
       }
       const videoId=group.kind==='video'?(matches?media.primary!.key:!group.key.includes(':')?group.key:null):null;
       if(videoId&&missing()){

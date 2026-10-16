@@ -1,3 +1,4 @@
+import {readInsightChunk} from './insight-backfill.js';
 import {repairThruPlays} from './thruplay-repair.js';
 import {refreshMediaFacts} from './media-facts.js';
 import type { Database } from '../db.js';
@@ -5,7 +6,7 @@ import type { Settings } from '../settings.js';
 import { addDays, ukToday } from '../hero-range.js';
 import { adErrorCode } from '../ad-spend/model.js';
 import type { CreativeReader, StoredCatalogueAd } from './model.js';
-import { enforceMediaCap, readLiveCreativeData, reducedDetailCount, saveCatalogue, saveInsights } from './store.js';
+import { enforceMediaCap, readLiveCreativeData, reducedDetailCount, saveCatalogue } from './store.js';
 import { refreshCreativeFrequencies } from './frequency.js';
 import { recomputeMetaAttributes } from './attribute-store.js';
 import { runCreativeScans, type ScanOptions } from './scan.js';
@@ -74,41 +75,52 @@ export class CreativeWorker {
       if (count) console.info(`${count} creatives read at reduced detail`);
     }
   }
-  async runInsights(account:string,settings:Settings,now=new Date()):Promise<void>{
+  async runThruPlayRepair(account:string,settings:Settings,now=new Date(),options:{onlyDue?:boolean}={}):Promise<void>{
+    let filled=0;
+    try { filled=(await repairThruPlays(this.db,this.reader,account,now,settings.creativeDefaultWindow,options))?.filled??0; }
+    catch(error){ console.error(`Meta ThruPlay repair could not finish (${adErrorCode(error,'meta')} at backfill).`); }
+    if(filled)try { await recomputeCreativeLifts(this.db,account,{mode:'live'},settings,now); }
+    catch { console.error('Creative lifts could not be refreshed.'); }
+  }
+  async runInsights(account:string,settings:Settings,now=new Date(),includeThruPlayRepair=true):Promise<void>{
     const today=ukToday(now),yesterday=addDays(today,-1);
-    let step:'insights'|'backfill'='insights';
     await this.db.query('INSERT INTO pulse.creative_jobs(account_id) VALUES($1) ON CONFLICT DO NOTHING',[account]);
     const job=(await this.db.query<any>('SELECT *,backfill_next::text,nightly_day::text FROM pulse.creative_jobs WHERE account_id=$1',[account])).rows[0];
-    const readAndSave=async(from:string,to:string,next?:string)=>{
-      await this.db.query(`INSERT INTO pulse.creative_insight_days(account_id,day,fetched_at,completed) SELECT $1,day,$4,false FROM generate_series($2::date,$3::date,interval '1 day') day ON CONFLICT(account_id,day) DO UPDATE SET completed=false`,[account,from,to,now]);
-      await saveInsights(this.db,account,from,to,await this.reader.readInsights(account,from,to),now,next);
+    let failure:string|null=null;
+    const failed=(error:unknown,step:'insights'|'backfill')=>{
+      const code=`${adErrorCode(error,'meta')} at ${step}`;
+      failure??=code;
+      console.error(`Meta creatives read failed (${code}).`);
     };
     try{
-      await readAndSave(yesterday,today);
+      await readInsightChunk(this.db,this.reader,account,yesterday,today,now);
       await this.db.query('UPDATE pulse.creative_jobs SET last_success_at=$2 WHERE account_id=$1',[account,now]);
-      // One local-day refresh, including yesterday's attribution revisions and zero-spend days.
       if (job.nightly_day !== today) {
-        const from = addDays(today,-7);
-        await readAndSave(from,yesterday);
+        await readInsightChunk(this.db,this.reader,account,addDays(today,-7),yesterday,now);
         await this.db.query('UPDATE pulse.creative_jobs SET nightly_day=$2 WHERE account_id=$1',[account,today]);
       }
-      step = 'backfill';
-      let cursor = job.backfill_next;
-      for (let chunk=0; chunk<4 && !job.backfill_done && cursor<=yesterday; chunk++) {
+    }catch(error){failed(error,'insights');}
+    // An unrelated recent-read failure must not prevent historical progress.
+    try{
+      let cursor = job.backfill_next, chunks = 0;
+      for (; chunks<4 && !job.backfill_done && cursor<=yesterday; chunks++) {
         const end = [addDays(cursor,6),yesterday].sort()[0]!;
-        const next = addDays(end,1);
-        // The rows and cursor commit together. A refused later page/chunk cannot skip a day.
-        await readAndSave(cursor,end,next);
-        cursor=next;
+        await readInsightChunk(this.db,this.reader,account,cursor,end,now,{advance:true,markRefused:true});
+        cursor=addDays(end,1);
       }
-      await this.db.query('UPDATE pulse.creative_jobs SET backfill_done=backfill_done OR backfill_next>$3::date,last_success_at=$2,insights_error=NULL,error_code=catalogue_error WHERE account_id=$1',[account,now,yesterday]);
-    }catch(error){
-      const code=`${adErrorCode(error,'meta')} at ${step}`;
-      await this.db.query('UPDATE pulse.creative_jobs SET insights_error=$2,error_code=COALESCE(catalogue_error,$2) WHERE account_id=$1',[account,code]).catch(()=>{});
-      console.error(`Meta creatives read failed (${code}).`);
-    }
-    try { await repairThruPlays(this.db,this.reader,account,now,settings.creativeDefaultWindow); }
-    catch(error){ console.error(`Meta ThruPlay repair could not finish (${adErrorCode(error,'meta')} at backfill).`); }
+      // Refused days use any remaining slots after the initial forward pass.
+      const due=(await this.db.query<{day:string}>(`SELECT day::text FROM pulse.creative_insight_days
+        WHERE account_id=$1 AND NOT completed AND error_code IS NOT NULL AND retry_after<=$2
+        ORDER BY day LIMIT $3`,[account,now,4-chunks])).rows;
+      for(const {day} of due) await readInsightChunk(this.db,this.reader,account,day,day,now,{markRefused:true});
+    }catch(error){failed(error,'backfill');}
+    await this.db.query(`UPDATE pulse.creative_jobs SET backfill_done=backfill_done OR backfill_next>$2::date,
+      insights_error=CASE WHEN $3::text IS NOT NULL THEN $3
+        WHEN NOT backfill_done AND backfill_next<=$2::date AND insights_error LIKE '% at backfill' THEN insights_error END,
+      error_code=COALESCE(catalogue_error,$3,CASE
+        WHEN NOT backfill_done AND backfill_next<=$2::date AND insights_error LIKE '% at backfill' THEN insights_error END)
+      WHERE account_id=$1`,[account,yesterday,failure]);
+    if(includeThruPlayRepair) await this.runThruPlayRepair(account,settings,now);
     // Frequency is a separate exact-window read: failure cannot invalidate saved insights.
     if (this.reader.readFrequency) {
       try {

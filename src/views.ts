@@ -1,4 +1,4 @@
-import {mediaFactLine} from './creatives/media-facts.js';
+import {mediaFactLine,mediaFactPermissionLine} from './creatives/media-facts.js';
 import {thruPlayLine} from './creatives/thruplay-repair.js';
 import { formatNumber } from './money.js';
 import type { ShopifyStore } from './shopify/store.js';
@@ -88,8 +88,9 @@ export function creativeHealthDetails(health: CreativeHealth): string {
     : `Backfill: ${formatNumber(health.completedDays)} of ${formatNumber(health.totalDays)} days read${health.backfillNext ? ` · next ${escapeHtml(health.backfillNext)}` : ' · first read pending'}`;
   return `<section aria-label="Meta creative imports" data-creative-health><h2>Meta creatives · ${health.mode === 'sample' ? 'sample data' : 'live'}</h2>
     <p>Catalogue: ${formatNumber(health.catalogueCount)} ads · ${progress}</p>
+    ${health.refusedDays?`<p data-creative-refused>${formatNumber(health.refusedDays)} ${health.refusedDays===1?'day':'days'} refused (meta 1504044), retry next UK day</p>`:''}
     ${health.thruPlayRepair?.total?`<p data-thruplay-repair>${escapeHtml(thruPlayLine(health.thruPlayRepair))}</p>`:''}
-    ${health.mediaFacts?`<p data-media-facts>${escapeHtml(mediaFactLine(health.mediaFacts))}</p>`:''}
+    ${health.mediaFacts?`<p data-media-facts>${escapeHtml(mediaFactLine(health.mediaFacts))}</p>${mediaFactPermissionLine(health.mediaFacts)?`<p data-media-permission>${escapeHtml(mediaFactPermissionLine(health.mediaFacts)!)}</p>`:''}`:''}
     <p data-creative-reduced>${formatNumber(health.reducedCount)} creatives at reduced detail</p>
     ${health.scan ? `<p data-creative-scan>${escapeHtml(health.scan.line)}</p>${health.scan.message && !health.scan.line.includes(health.scan.message) ? `<p>${escapeHtml(health.scan.message)}</p>` : ''}` : ''}
     <p>Media store: ${mb(health.bytes)} MB of ${mb(health.capBytes)} MB · last successful read ${timestamp(health.lastSuccessAt)}</p>

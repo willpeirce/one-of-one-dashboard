@@ -158,3 +158,18 @@ The `fix-oct-16` follow-up adds migrations 027–030. The next spend poll repair
 The `fix-oct-16b` follow-up requires migrations 031–033. Judge.me reads all review pages without a published filter, showing unpublished/unhidden reviews with source and moderation chips. Media facts fall back to creative metadata, stored/downloaded image headers and the account video edge; incomplete groups retry daily up to three attempts. Sources counts scored parent groups with spend in the configured window. ThruPlay repair requests only video counts in at most three-day slices, saves per-day outcomes and resumes over later passes; failed days retry next UK day without replacing spend or action data. Judge.me Publish remains disabled and no new keys or Settings are required.
 
 The `fix-oct-16c` follow-up requires migrations 034–035. Media recovery now prioritises scored parents by spend in batches of 40 and stores a tried/filled/refused run report. Missing video counts stay null; migration 035 repairs ambiguous paid all-zero video rows while preserving zero-spend rows and positive video evidence. ThruPlay repair follows scored video spend days in the configured window, resumes saved days and reports outstanding/refused day counts. Successful responses that omit video counts remain pending for next-UK-day retry; the repair also supplies the matching daily hold denominator when Meta returns it. Hold remains n/a with a missing-play-day count until every spend day has plays. Completed-job errors clear without hiding independent failures. Judge.me email-flow sources read Email request; no new keys, Settings or source writes are added.
+
+
+The `fix-oct-16d` follow-up requires migrations 036–039: repair run reports, remaining zero-video cleanup, refused ad-level day retries, and resumable account-video metadata. Oversized insight chunks halve down to daily reads, then retry hourly paging at limit 250; terminal 1504044 days remain incomplete, retry next UK day and no longer trap the forward cursor. ThruPlay repair runs independently of long full imports and reports each pass. All-zero scored video groups show n/a. No Meta async insights POST is used.
+
+If `/sources` reports videos owned elsewhere, Will checks `pages_read_engagement` on the owning Facebook Page and assigns the Page to the system user in Business settings. After the grant/token update, Claude can reopen only the configured account's locally marked groups once, then check the next media-facts report. These are Pulse database writes, not source writes:
+
+```sql
+UPDATE pulse.media_groups
+SET video_owned_elsewhere=false,
+    size_unavailable=false, length_unavailable=false,
+    facts_attempts=0, facts_error=NULL, facts_retry_after=NULL
+WHERE mode='live'
+  AND account_id=(SELECT values->>'metaAdAccountId' FROM pulse.settings LIMIT 1)
+  AND kind='video' AND video_owned_elsewhere;
+```

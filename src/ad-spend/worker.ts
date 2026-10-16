@@ -1,7 +1,7 @@
 import { saveAdSets } from '../meta-adsets/catalogue.js';
 import type { Database } from '../db.js';
 import { addDays, ukToday } from '../hero-range.js';
-import { readSettings } from '../settings.js';
+import { readSettings, type Settings } from '../settings.js';
 import { getSourceStates } from '../sources.js';
 import { AdError, adErrorCode, accountFor, adSources, type AdSource } from './model.js';
 import { liveReader, MetaSpend, type SpendReader } from './clients.js';
@@ -28,6 +28,7 @@ export class SpendWorker {
   private creativeRunning = false;
   private creativePass?: Promise<void>;
   private creativeInsightPass?: Promise<void>;
+  private thruPlayPass?: Promise<void>;
   constructor(
     private readonly db: Database,
     private readonly env: NodeJS.ProcessEnv,
@@ -48,10 +49,26 @@ export class SpendWorker {
     await this.waitForCreatives();
   }
   waitForCreativeInsights(): Promise<void> {
-    return this.creativeInsightPass ?? Promise.resolve();
+    return Promise.all([this.creativeInsightPass,this.thruPlayPass]).then(()=>{});
+  }
+  waitForThruPlayRepair(): Promise<void> {
+    return this.thruPlayPass ?? Promise.resolve();
   }
   waitForCreatives(): Promise<void> {
-    return Promise.all([this.creativePass,this.creativeInsightPass]).then(()=>{});
+    return Promise.all([this.creativePass,this.creativeInsightPass,this.thruPlayPass]).then(()=>{});
+  }
+  private startThruPlayRepair(reader:SpendReader,scope:string,account:string,settings:Settings,now:Date,onlyDue=false):void {
+    if(this.thruPlayPass||!(reader instanceof MetaSpend||this.options.creativeReader))return;
+    const source=this.options.creativeReader??this.creativeReaders.get(scope)??new MetaCreativeClient(reader as MetaSpend,this.options);
+    this.creativeReaders.set(scope,source);
+    if(!source.readThruPlays)return;
+    this.thruPlayPass=(async()=>{
+      const last=(await this.db.query<{thruplay_last_run_at:Date|string|null}>(
+        'SELECT thruplay_last_run_at FROM pulse.creative_jobs WHERE account_id=$1',[account])).rows[0]?.thruplay_last_run_at;
+      if(!onlyDue&&last&&now.getTime()-new Date(last).getTime()<SPEND_POLL_INTERVAL_MS)return;
+      await new CreativeWorker(this.db,source,this.options.creativeScan).runThruPlayRepair(account,settings,now,{onlyDue});
+    })().catch(error=>console.error(`Meta ThruPlay repair could not finish (${adErrorCode(error,'meta')} at backfill).`))
+      .finally(()=>{this.thruPlayPass=undefined;});
   }
   tick(source: AdSource): Promise<void> {
     const current = this.runs.get(source);
@@ -92,16 +109,6 @@ export class SpendWorker {
     const job = (await readJobs(this.db)).find(
       (j) => j.source === source && j.account_id === account,
     )!;
-    if (job.last_poll_at && now.getTime() - new Date(job.last_poll_at).getTime() < SPEND_POLL_INTERVAL_MS)
-      return;
-    await this.db.query(
-      "UPDATE pulse.source_health SET mode='live',status=CASE WHEN last_success_at IS NULL THEN 'not_implemented' ELSE status END,last_attempt_at=$2 WHERE source=$1",
-      [source, now],
-    );
-    await this.db.query(
-      'UPDATE pulse.ad_spend_jobs SET last_poll_at=$3 WHERE source=$1 AND account_id=$2',
-      [source, account, now],
-    );
     const readerScope = JSON.stringify([source, account, settings.googleLoginCustomerId]);
     const reader =
       this.options.readers?.[source] ??
@@ -120,6 +127,19 @@ export class SpendWorker {
         },
       });
     this.readers.set(readerScope, reader);
+    if (job.last_poll_at && now.getTime() - new Date(job.last_poll_at).getTime() < SPEND_POLL_INTERVAL_MS) {
+      // A fresh migration can leave repair work due even when spend polled just before restart.
+      if(source==='meta')this.startThruPlayRepair(reader,readerScope,account,settings,now);
+      return;
+    }
+    await this.db.query(
+      "UPDATE pulse.source_health SET mode='live',status=CASE WHEN last_success_at IS NULL THEN 'not_implemented' ELSE status END,last_attempt_at=$2 WHERE source=$1",
+      [source, now],
+    );
+    await this.db.query(
+      'UPDATE pulse.ad_spend_jobs SET last_poll_at=$3 WHERE source=$1 AND account_id=$2',
+      [source, account, now],
+    );
     let spendFailure: { error: unknown } | undefined;
     try {
       // Re-read the last 14 full UK days once, including rows written before actions existed.
@@ -190,9 +210,18 @@ export class SpendWorker {
       catch (error) { console.error(`Meta ad sets read failed (${adErrorCode(error, 'meta')}).`); }
     }
     if (source === 'meta' && (reader instanceof MetaSpend || this.options.creativeReader)) {
+      this.startThruPlayRepair(reader,readerScope,account,settings,now);
       const insightReader=this.options.creativeReader??this.creativeReaders.get(readerScope)??new MetaCreativeClient(reader as MetaSpend,this.options);
       this.creativeReaders.set(readerScope,insightReader);
-      if(!this.creativeInsightPass)this.creativeInsightPass=new CreativeWorker(this.db,insightReader,this.options.creativeScan).runInsights(account,settings,now)
+      if(!this.creativeInsightPass)this.creativeInsightPass=(async()=>{
+        try { await new CreativeWorker(this.db,insightReader,this.options.creativeScan).runInsights(account,settings,now,false); }
+        finally {
+          // Full imports can introduce missing video fields after the earlier repair.
+          await this.thruPlayPass;
+          this.startThruPlayRepair(reader,readerScope,account,settings,now,true);
+          await this.thruPlayPass;
+        }
+      })()
         .catch(error=>console.error(`Meta creatives read failed (${adErrorCode(error,'meta')} at insights).`))
         .finally(()=>{this.creativeInsightPass=undefined;});
       if (this.creativeRunning) {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { test } from 'node:test';
 import type { Database } from '../src/db.js';
 import { MigrationError } from '../src/diagnostics.js';
@@ -90,7 +90,8 @@ test('all migrations leave public empty, repeat without losing rows and reject c
   await Promise.all([migrate(db), migrate(db)]);
   await assertPublicHasNoTables(db);
   assert.equal((await db.query('SELECT * FROM pulse.audit_log')).rows.length, 1);
-  assert.equal((await db.query('SELECT * FROM pulse_private.schema_migrations')).rows.length, 35);
+  assert.deepEqual((await db.query<{name:string}>('SELECT name FROM pulse_private.schema_migrations ORDER BY name')).rows.map(row=>row.name),
+    (await readdir(new URL('../migrations/',import.meta.url))).filter(name=>name.endsWith('.sql')).sort());
   await db.query("UPDATE pulse_private.schema_migrations SET checksum = 'changed'");
   await assert.rejects(migrate(db), (error: unknown) => {
     assert.ok(error instanceof MigrationError);

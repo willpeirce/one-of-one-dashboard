@@ -94,7 +94,7 @@ export async function saveInsights(db: Database, account: string, from: string, 
     }
     await tx.query(`UPDATE pulse.ads a SET first_spend_day=(SELECT min(day) FROM pulse.ad_insights_daily i WHERE i.mode=a.mode AND i.account_id=a.account_id AND i.ad_id=a.ad_id AND i.spend>0) WHERE a.mode=$1 AND a.account_id=$2`, [mode, account]);
     if (mode === 'live') {
-      await tx.query(`INSERT INTO pulse.creative_insight_days(account_id,day,fetched_at,completed) SELECT $1,day,$4,true FROM generate_series($2::date,$3::date,interval '1 day') day ON CONFLICT(account_id,day) DO UPDATE SET fetched_at=EXCLUDED.fetched_at,completed=true`, [account, from, to, now]);
+      await tx.query(`INSERT INTO pulse.creative_insight_days(account_id,day,fetched_at,completed) SELECT $1,day,$4,true FROM generate_series($2::date,$3::date,interval '1 day') day ON CONFLICT(account_id,day) DO UPDATE SET fetched_at=EXCLUDED.fetched_at,completed=true,error_code=NULL,retry_after=NULL`, [account, from, to, now]);
       if (next) await tx.query('UPDATE pulse.creative_jobs SET backfill_next=$2 WHERE account_id=$1', [account, next]);
     }
   });
@@ -234,7 +234,7 @@ export function reconciliationLine(gaps: { percent: number; day: string }[]): st
 export async function reducedDetailCount(db: Database, account: string, mode: SourceMode = 'live'): Promise<number> {
   return Number((await db.query<any>('SELECT count(*) FROM pulse.media_groups WHERE mode=$1 AND account_id=$2 AND detail_reduced_at IS NOT NULL', [mode, account])).rows[0]?.count ?? 0);
 }
-export interface CreativeHealth { catalogueCount: number; reducedCount: number; backfillNext: string | null; backfillDone: boolean; completedDays: number; totalDays: number; bytes: number; capBytes: number; lastSuccessAt: string | null; reconciliation: string | null; error: string | null; mode: SourceMode; scan?: ScanHealth; mediaFacts?: MediaFactHealth; thruPlayRepair?: ThruPlayHealth }
+export interface CreativeHealth { catalogueCount: number; reducedCount: number; backfillNext: string | null; backfillDone: boolean; completedDays: number; totalDays: number; refusedDays?: number; bytes: number; capBytes: number; lastSuccessAt: string | null; reconciliation: string | null; error: string | null; mode: SourceMode; scan?: ScanHealth; mediaFacts?: MediaFactHealth; thruPlayRepair?: ThruPlayHealth }
 export async function creativeHealth(db: Database, settings: Settings, env: NodeJS.ProcessEnv, now = new Date()): Promise<CreativeHealth> {
   const account = settings.metaAdAccountId, mode = env.META_ACCESS_TOKEN && account ? 'live' : 'sample';
   const scan = await readScanHealth(db,settings,{ accountId: mode === 'sample' ? 'sample-meta-account' : account, mode, now });
@@ -252,6 +252,7 @@ export async function creativeHealth(db: Database, settings: Settings, env: Node
     reducedDetailCount(db,account),
   ]);
   const incomplete=Number((await db.query<any>(`SELECT count(*) FROM pulse.ad_spend_days d LEFT JOIN pulse.creative_insight_days c ON c.account_id=d.account_id AND c.day=d.uk_day WHERE d.source='meta' AND d.account_id=$1 AND (c.completed IS DISTINCT FROM true)`,[account])).rows[0]?.count??0);
+  const refusedDays=Number((await db.query<any>(`SELECT count(*) FROM pulse.creative_insight_days WHERE account_id=$1 AND NOT completed AND error_code IS NOT NULL`,[account])).rows[0]?.count??0);
   const j = job.rows[0];
-  return {mode,scan,thruPlayRepair:await thruPlayHealth(db,account,now,settings.creativeDefaultWindow),mediaFacts:await mediaFactHealth(db,account,now,settings.creativeDefaultWindow),catalogueCount:Number(count.rows[0]?.count ?? 0),reducedCount,backfillNext:j?.backfill_next ?? null,backfillDone:j?.backfill_done ?? false,completedDays:Number(coverage.rows[0]?.count ?? 0),totalDays:Math.max(0,Math.round((Date.parse(ukToday(now))-Date.parse('2026-08-07'))/86400000)+1),bytes,capBytes:settings.creativeMediaCapMb*1024*1024,lastSuccessAt:j?.last_success_at ? iso(j.last_success_at) : null,reconciliation:[incomplete?`ad-level read incomplete on ${incomplete} ${incomplete===1?'day':'days'}`:null,reconciliationLine(gaps.rows.map(r => ({day:r.day,percent:Number(r.percent)})))].filter(Boolean).join(' · ')||null,error:j?.error_code ?? null};
+  return {mode,scan,refusedDays,thruPlayRepair:await thruPlayHealth(db,account,now,settings.creativeDefaultWindow),mediaFacts:await mediaFactHealth(db,account,now,settings.creativeDefaultWindow),catalogueCount:Number(count.rows[0]?.count ?? 0),reducedCount,backfillNext:j?.backfill_next ?? null,backfillDone:j?.backfill_done ?? false,completedDays:Number(coverage.rows[0]?.count ?? 0),totalDays:Math.max(0,Math.round((Date.parse(ukToday(now))-Date.parse('2026-08-07'))/86400000)+1),bytes,capBytes:settings.creativeMediaCapMb*1024*1024,lastSuccessAt:j?.last_success_at ? iso(j.last_success_at) : null,reconciliation:[incomplete?`ad-level read incomplete on ${incomplete} ${incomplete===1?'day':'days'}`:null,reconciliationLine(gaps.rows.map(r => ({day:r.day,percent:Number(r.percent)})))].filter(Boolean).join(' · ')||null,error:j?.error_code ?? null};
 }

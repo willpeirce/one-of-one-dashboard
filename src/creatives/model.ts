@@ -24,7 +24,7 @@ export interface AdInsight {
   threeSecondSource: 'video_view' | 'video_continuous_2_sec_watched_actions' | 'none';
   /** Daily denominator when video counts cannot be read hourly; absent for UK-day readers. */
   holdThreeSecondPlays?: number;
-  plays: number; thruPlays: number | null; plays25: number; plays50: number; plays75: number; plays100: number;
+  plays: number | null; thruPlays: number | null; plays25: number | null; plays50: number | null; plays75: number | null; plays100: number | null;
   averagePlayTime: number; addsToCart: number; purchases: number; purchaseValue: number;
 }
 export interface CreativeFrequencyRead { adIds: string[]; from: string; to: string; frequency: number | null }

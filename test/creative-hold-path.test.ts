@@ -16,15 +16,11 @@ import {creativeHealthDetails} from '../src/views.js';
 test('a later successful insight backfill clears its stored 1504044 attention error',async t=>{
  const db=await createTestDatabase();t.after(()=>db.close());const account='invented-recovered-backfill',now=new Date('2026-10-16T12:00:00Z');
  const settings={...defaultSettings(),metaAdAccountId:account},env={META_ACCESS_TOKEN:randomBytes(16).toString('hex')};
- await db.query("INSERT INTO pulse.creative_jobs(account_id,backfill_next,nightly_day) VALUES($1,'2026-10-15','2026-10-16')",[account]);
- let fail=true;t.mock.method(console,'error',()=>{});
- const reader:import('../src/creatives/model.js').CreativeReader={readCatalogue:async function*(){yield []},readInsights:async(_,from,to)=>{
-  if(from===to&&fail)throw new AdError('http',400,2,1504044);return [];
- },imageBytes:async()=>new Uint8Array(),videoSource:async()=>'',videoFrames:async()=>[]};
+ await db.query("INSERT INTO pulse.creative_jobs(account_id,backfill_next,nightly_day,insights_error,error_code) VALUES($1,'2026-10-15','2026-10-16',$2,$2)",[account,'http 400, meta 2/1504044 at backfill']);
+ const reader:import('../src/creatives/model.js').CreativeReader={readCatalogue:async function*(){yield []},readInsights:async()=>[],imageBytes:async()=>new Uint8Array(),videoSource:async()=>'',videoFrames:async()=>[]};
  const worker=new CreativeWorker(db,reader);
- await worker.runInsights(account,settings,now);
  assert.match(creativeHealthDetails(await creativeHealth(db,settings,env,now)),/Creative read needs attention \(http 400, meta 2\/1504044 at backfill\)/);
- fail=false;await worker.runInsights(account,settings,now);
+ await worker.runInsights(account,settings,now);
  assert.doesNotMatch(creativeHealthDetails(await creativeHealth(db,settings,env,now)),/Creative read needs attention/);
  assert.deepEqual((await db.query('SELECT error_code,insights_error FROM pulse.creative_jobs')).rows,[{error_code:null,insights_error:null}]);
 });

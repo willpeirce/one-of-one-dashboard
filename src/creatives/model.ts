@@ -53,7 +53,7 @@ export interface CreativeReader {
   rememberStoredAds?(ads: StoredCatalogueAd[]): void;
   rememberDetailRetries?(ads: StoredCatalogueAd[]): void;
   readCatalogue(account: string, settings: import('../settings.js').Settings, now: Date): AsyncIterable<CatalogueRead[]>;
-  readInsights(account: string, from: string, to: string): Promise<AdInsight[]>;
+  readInsights(account: string, from: string, to: string, options?: {hourlyLimit: 250}): Promise<AdInsight[]>;
   readThruPlays?(account:string,from:string,to:string):Promise<import('./thruplay-repair.js').ThruPlayRow[]>;
   readMediaFacts?(account:string,group:import('./media-facts.js').MediaFactGroup,need?:{size:boolean;length:boolean}):Promise<import('./media-facts.js').MediaFacts>;
   readFrequency?(account: string, adIds: string[], from: string, to: string): Promise<number | null>;

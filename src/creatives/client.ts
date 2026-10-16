@@ -300,7 +300,7 @@ export class MetaCreativeClient implements CreativeReader {
       yield entries;
     }
   }
-  async readInsights(account: string, from: string, to: string): Promise<AdInsight[]> {
+  async readInsights(account: string, from: string, to: string, options?: {hourlyLimit: 250}): Promise<AdInsight[]> {
     insightDay(from); insightDay(to);
     if (from > to) throw new AdError('invalid');
     const zone = await this.account(account), hourly = zone !== 'Europe/London';
@@ -323,7 +323,7 @@ export class MetaCreativeClient implements CreativeReader {
     const grouped = new Map(daily.map(row => [keyFor(row), row]));
     const hooks = new Map<string, { direct: number; fallback: number; hasDirect: boolean; hasFallback: boolean }>();
     const since = addDays(from, -1), until = addDays(to, 1);
-    const hours = await this.meta.readAllPages(path, { ...query, fields: HOURLY_FIELDS,
+    const hours = await this.meta.readAllPages(path, { ...query, limit: String(options?.hourlyLimit ?? 500), fields: HOURLY_FIELDS,
       time_range: JSON.stringify({ since, until }), breakdowns: 'hourly_stats_aggregated_by_advertiser_time_zone' }, 60_000);
     for (const row of hours) {
       const accountDay = insightDay(row.date_start);

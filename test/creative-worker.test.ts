@@ -410,7 +410,7 @@ test('daily, nightly and backfill failures retain the failed window and identify
       assert.deepEqual((await db.query('SELECT * FROM pulse.ad_insights_daily WHERE day=$1', [day])).rows, before);
       const job = (await db.query('SELECT error_code,backfill_next::text FROM pulse.creative_jobs')).rows[0]!;
       assert.equal(job.error_code, `http 400, meta 100/1815001 at ${step}`);
-      assert.equal(job.backfill_next, '2026-08-07');
+      assert.equal(job.backfill_next, step === 'backfill' ? '2026-08-07' : '2026-09-04', 'an unrelated recent failure does not block historical chunks');
       assert.deepEqual(logs, [`Meta creatives read failed (http 400, meta 100/1815001 at ${step}).`]);
     });
   }

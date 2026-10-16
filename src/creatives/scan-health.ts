@@ -4,12 +4,12 @@ import type { SourceMode, SourceStatus } from '../sources.js';
 import { ukToday } from '../hero-range.js';
 import { creativeFeatureFlags } from './config.js';
 
-export type ScanFailure = 'refused' | 'malformed' | 'timeout' | 'cap' | 'network' | 'prices';
+export type ScanFailure = 'refused' | 'malformed' | 'timeout' | 'cap' | 'network' | 'prices' | 'media too large' | 'unsupported type';
 export interface ScanScope { accountId: string; mode: SourceMode }
 export interface ScanHealth {
   enabled: boolean; line: string; message: string | null;
   scanned: number; failed: number; spentGbp: number; capGbp: number; model: string;
-  status: SourceStatus; reason: ScanFailure | null; httpStatus: number | null;
+  status: SourceStatus; reason: ScanFailure | null; httpStatus: number | null; providerCode?: string | null;
   lastAttemptAt: string | null; lastSuccessAt: string | null; consecutiveFailures: number;
 }
 export const scanPricesReady = (settings: Settings): boolean =>
@@ -30,7 +30,7 @@ export async function scanSpendToday(db: Database, scope: ScanScope, now: Date):
 export async function readScanHealth(db: Database, settings: Settings, scope: ScanScope & { now?: Date }): Promise<ScanHealth> {
   const now = scope.now ?? new Date(), enabled = scanEnabled(scope.mode);
   const [results, summary, last, control, spentGbp] = await Promise.all([
-    db.query<{ status: 'done' | 'failed' }>(`SELECT DISTINCT ON(s.media_group_id) s.status
+    db.query<{ status: 'done' | 'failed'; failure_reason: ScanFailure | null; http_status: number | null; provider_code: string | null }>(`SELECT DISTINCT ON(s.media_group_id) s.status,s.failure_reason,s.http_status,s.provider_code
       FROM pulse.creative_scans s JOIN pulse.media_groups g
         ON g.id=s.media_group_id AND g.mode=s.mode AND g.account_id=s.account_id
       WHERE s.mode=$1 AND s.account_id=$2 AND s.model_id=$3 AND g.merged_into_id IS NULL
@@ -41,7 +41,7 @@ export async function readScanHealth(db: Database, settings: Settings, scope: Sc
         FROM pulse.creative_scans WHERE mode=$1 AND account_id=$2 AND status='done'),0)) AS failures
       FROM pulse.creative_scans WHERE mode=$1 AND account_id=$2
         AND (failure_reason IS NULL OR failure_reason NOT IN ('cap','prices'))`, [scope.mode, scope.accountId]),
-    db.query<any>(`SELECT status,failure_reason,http_status FROM pulse.creative_scans
+    db.query<any>(`SELECT status,failure_reason,http_status,provider_code FROM pulse.creative_scans
       WHERE mode=$1 AND account_id=$2 AND (failure_reason IS NULL OR failure_reason NOT IN ('cap','prices'))
       ORDER BY sequence DESC LIMIT 1`, [scope.mode, scope.accountId]),
     db.query<any>(`SELECT 1 FROM pulse.creative_scans WHERE mode=$1 AND account_id=$2
@@ -51,17 +51,27 @@ export async function readScanHealth(db: Database, settings: Settings, scope: Sc
   const row = summary.rows[0], latest = last.rows[0];
   const scanned = results.rows.filter(result => result.status === 'done').length;
   const failed = results.rows.filter(result => result.status === 'failed').length;
+  const reasons = new Map<string,number>();
+  for (const failure of results.rows.filter(result => result.status === 'failed')) {
+    const reason = scanFailureLabel(failure.failure_reason, failure.http_status, failure.provider_code);
+    reasons.set(reason,(reasons.get(reason) ?? 0)+1);
+  }
+  const commonReason=[...reasons].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]))[0]?.[0];
   const message = !scanPricesReady(settings) ? 'Set the scan prices in Settings'
     : enabled && (spentGbp >= settings.creativeScanCapGbp || control.rows.length > 0)
       ? 'Daily scan cap reached; try again next UK day' : null;
   const line = enabled
-    ? `Scan: on · ${scanned} scanned · ${failed} failed · £${spentGbp.toFixed(2)} of £${settings.creativeScanCapGbp.toFixed(2)} today · ${settings.creativeScanModel}${message ? ` · ${message}` : ''}`
+    ? `Scan: on · ${scanned} scanned · ${failed} failed${commonReason ? ` · ${commonReason}` : ''} · £${spentGbp.toFixed(2)} of £${settings.creativeScanCapGbp.toFixed(2)} today · ${settings.creativeScanModel}${message ? ` · ${message}` : ''}`
     : 'Scan: off';
   return { enabled, line, message, scanned, failed, spentGbp, capGbp: settings.creativeScanCapGbp, model: settings.creativeScanModel,
     status: !process.env.ANTHROPIC_API_KEY?.trim() ? 'waiting_for_keys'
       : latest?.status === 'done' ? 'healthy' : latest?.status === 'failed' ? 'error' : 'not_implemented',
-    reason: latest?.failure_reason ?? null, httpStatus: latest?.http_status ?? null,
+    reason: latest?.failure_reason ?? null, httpStatus: latest?.http_status ?? null, providerCode: latest?.provider_code ?? null,
     lastAttemptAt: row?.attempted ? new Date(row.attempted).toISOString() : null,
     lastSuccessAt: row?.succeeded ? new Date(row.succeeded).toISOString() : null,
     consecutiveFailures: Number(row?.failures ?? 0) };
+}
+
+export function scanFailureLabel(reason: ScanFailure | null, status: number | null, code?: string | null): string {
+  return [status && status >= 400 ? `http ${status}` : reason ?? 'refused',code].filter(Boolean).join(', ');
 }

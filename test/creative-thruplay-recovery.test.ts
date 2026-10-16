@@ -47,17 +47,17 @@ test('a legacy completed empty report reopens and missing fields retry next UK d
   media:{...creativeGroup('invented-empty-video'),thumbnail:null,poster:null,frames:[]}}],now);
  await saveInsights(db,account,day,day,[creativeInsight('invented-empty-ad',{day,plays:null,thruPlays:null})],now);
  await db.query('INSERT INTO pulse.creative_thruplay_days(account_id,day,completed,fetched_at) VALUES($1,$2,true,$3)',[account,day,new Date(`${day}T12:01:00Z`)]);
- assert.deepEqual(await thruPlayHealth(db,account,now),{completed:0,total:1,failures:[]},'a later read marker cannot certify absent counts');
+ assert.deepEqual(await thruPlayHealth(db,account,now),{completed:0,total:1,failures:[],lastRunAt:null,lastRunReport:null},'a later read marker cannot certify absent counts');
  let attempts=0;
  const reader:CreativeReader={readCatalogue:async function*(){},readInsights:async()=>[],imageBytes:async()=>new Uint8Array(),videoFrames:async()=>[],videoSource:async()=>'',
   readThruPlays:async()=>{attempts++;return attempts===1?[]:[{adId:'invented-empty-ad',day,plays:160,thruPlays:32}];}};
  await repairThruPlays(db,reader,account,now);
  const pending=await thruPlayHealth(db,account,now);
- assert.deepEqual(pending,{completed:0,total:1,failures:[]});
+ assert.deepEqual(pending,{completed:0,total:1,failures:[],lastRunAt:now.toISOString(),lastRunReport:{tried:1,filled:0,refused:0,codes:[]}});
  assert.match(thruPlayLine(pending),/0 of 1 days complete, 1 day still to read/);
  assert.equal((await db.query('SELECT thruplays_backfilled_at FROM pulse.creative_jobs WHERE account_id=$1',[account])).rows[0]!.thruplays_backfilled_at,null);
  await repairThruPlays(db,reader,account,new Date(`${day}T12:30:00Z`));assert.equal(attempts,1);
  const nextDay=new Date(`${day}T23:01:00Z`);
  await repairThruPlays(db,reader,account,nextDay);assert.equal(attempts,2);
- assert.deepEqual(await thruPlayHealth(db,account,nextDay),{completed:1,total:1,failures:[]});
+ assert.deepEqual(await thruPlayHealth(db,account,nextDay),{completed:1,total:1,failures:[],lastRunAt:nextDay.toISOString(),lastRunReport:{tried:1,filled:1,refused:0,codes:[]}});
 });

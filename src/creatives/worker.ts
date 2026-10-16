@@ -75,7 +75,14 @@ export class CreativeWorker {
       if (count) console.info(`${count} creatives read at reduced detail`);
     }
   }
-  async runInsights(account:string,settings:Settings,now=new Date()):Promise<void>{
+  async runThruPlayRepair(account:string,settings:Settings,now=new Date(),options:{onlyDue?:boolean}={}):Promise<void>{
+    let filled=0;
+    try { filled=(await repairThruPlays(this.db,this.reader,account,now,settings.creativeDefaultWindow,options))?.filled??0; }
+    catch(error){ console.error(`Meta ThruPlay repair could not finish (${adErrorCode(error,'meta')} at backfill).`); }
+    if(filled)try { await recomputeCreativeLifts(this.db,account,{mode:'live'},settings,now); }
+    catch { console.error('Creative lifts could not be refreshed.'); }
+  }
+  async runInsights(account:string,settings:Settings,now=new Date(),includeThruPlayRepair=true):Promise<void>{
     const today=ukToday(now),yesterday=addDays(today,-1);
     await this.db.query('INSERT INTO pulse.creative_jobs(account_id) VALUES($1) ON CONFLICT DO NOTHING',[account]);
     const job=(await this.db.query<any>('SELECT *,backfill_next::text,nightly_day::text FROM pulse.creative_jobs WHERE account_id=$1',[account])).rows[0];
@@ -113,8 +120,7 @@ export class CreativeWorker {
       error_code=COALESCE(catalogue_error,$3,CASE
         WHEN NOT backfill_done AND backfill_next<=$2::date AND insights_error LIKE '% at backfill' THEN insights_error END)
       WHERE account_id=$1`,[account,yesterday,failure]);
-    try { await repairThruPlays(this.db,this.reader,account,now,settings.creativeDefaultWindow); }
-    catch(error){ console.error(`Meta ThruPlay repair could not finish (${adErrorCode(error,'meta')} at backfill).`); }
+    if(includeThruPlayRepair) await this.runThruPlayRepair(account,settings,now);
     // Frequency is a separate exact-window read: failure cannot invalidate saved insights.
     if (this.reader.readFrequency) {
       try {

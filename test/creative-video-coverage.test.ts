@@ -78,7 +78,7 @@ test('hold waits for every spend day and repair follows scored video windows, me
  assert.match(thruPlayLine(await thruPlayHealth(db,account,now,'lifetime')),/1 of 2 days complete, 1 day still to read/);
  await repairThruPlays(db,reader,account,now,'lifetime');assert.deepEqual(calls,[[day,day],[old,old]]);
  assert.equal((await group()).totals.holdRate,.3);assert.match(await html(),/30\.0%/);assert.doesNotMatch(await html(),/no play data/);
- assert.deepEqual(await thruPlayHealth(db,account,now,'lifetime'),{completed:2,total:2,failures:[]});
+ assert.deepEqual(await thruPlayHealth(db,account,now,'lifetime'),{completed:2,total:2,failures:[],lastRunAt:now.toISOString(),lastRunReport:{tried:1,filled:1,refused:0,codes:[]}});
  await repairThruPlays(db,reader,account,now,'lifetime');assert.equal(calls.length,2,'completed days resume without rereads');
  const later=new Date(now.getTime()+1800000);
  await saveInsights(db,account,day,day,rows.filter(r=>r.day===day),later);

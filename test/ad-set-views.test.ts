@@ -50,3 +50,19 @@ test('freelancer missing purchases have one short explanation instead of two unk
   assert.doesNotMatch(html,/3d under trigger|7d unknown|ours Unknown/);
  }
 });
+
+test('ad-set API day arrays are oldest first after out-of-order backfills',async t=>{
+ const Fastify=(await import('fastify')).default;
+ const {registerAdSets}=await import('../src/meta-adsets/routes.js');
+ const {saveAdSets,parseAdSet}=await import('../src/meta-adsets/catalogue.js');
+ const {saveSpend}=await import('../src/ad-spend/store.js');
+ const db=await createTestDatabase();t.after(()=>db.close());
+ const account='900000009201',set='900000009202',campaign='900000009203',now=new Date('2026-10-16T12:00:00Z');
+ const settings={...defaultSettings(),metaAdAccountId:account,metaOwners:[{campaignId:campaign,owner:'ours' as const}]};
+ await db.query('INSERT INTO pulse.settings(values) VALUES($1)',[JSON.stringify(settings)]);
+ await saveAdSets(db,account,[parseAdSet({id:set,campaign_id:campaign,name:'Invented UK Linden',status:'ACTIVE',effective_status:'ACTIVE',daily_budget:'2000',created_time:'2026-10-01T08:00:00Z',updated_time:'2026-10-01T08:00:00Z'},'GBP',settings)],settings,now);
+ for(const day of ['2026-10-14','2026-10-10','2026-10-12'])await saveSpend(db,'meta',account,day,day,[{source:'meta',accountId:account,campaignId:campaign,campaignName:'Invented UK',adSetId:set,adSetName:'Invented UK Linden',market:'uk',owner:'ours',day,amount:'20',currency:'GBP',purchases:2,addsToCart:4}],now);
+ const app=Fastify();t.after(()=>app.close());registerAdSets(app,db,{session:async()=> 'invented-credential'} as unknown as import('../src/auth.js').Auth,{META_ACCESS_TOKEN:randomBytes(16).toString('hex')},()=>now);
+ const response=await app.inject('/api/meta/adsets');assert.equal(response.statusCode,200);
+ assert.deepEqual(response.json().rows[0].days.map((d:{day:string})=>d.day),['2026-10-10','2026-10-12','2026-10-14']);
+});

@@ -364,6 +364,7 @@ td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
 .rvhead h2{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .rvhead .shm{display:block;margin-top:2px}
 .review-meta{display:block;color:var(--muted);font-size:12px;margin:4px 0}
+.review-chips{display:flex;flex-wrap:wrap;align-items:center;gap:5px}
 .review-body{white-space:pre-wrap;overflow-wrap:anywhere;font-size:15px;line-height:1.7}
 .review-links{display:flex;flex-wrap:wrap;gap:8px}
 .rv .rt{min-width:0;overflow-wrap:anywhere}

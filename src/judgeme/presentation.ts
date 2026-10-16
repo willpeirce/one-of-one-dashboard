@@ -21,7 +21,8 @@ function links(review: Review): string {
 function reviewChips(review: Review): string {
   const source=review.source?.replace(/[-_]/g,' ');
   const label=source==='email' ? 'Email request' : source ? source[0]!.toUpperCase()+source.slice(1) : null;
-  return `${review.flagged ? '<span class="chip warn">Flagged by Judge.me</span>' : ''}${label ? `<span class="chip info">${esc(label)}</span>` : ''}`;
+  const chips = `${review.flagged ? '<span class="chip warn">Flagged by Judge.me</span>' : ''}${label ? `<span class="chip info">${esc(label)}</span>` : ''}`;
+  return chips ? `<span class="review-chips">${chips}</span>` : '';
 }
 export function reviewsPanelHtml(panel: ReviewsPanel): string {
   const status = panel.mode === 'sample' ? 'Sample data · invented reviews · waiting for keys'

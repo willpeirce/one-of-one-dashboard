@@ -41,7 +41,8 @@ test('reduced groups retry daily, recover in place, preserve history and expose 
       ? json({ video_id: 'invented-video', thumbnail_url: 'https://media.fbcdn.net/invented-large.jpg', body: 'Invented expanded copy' })
       : json({ error: { code: 200 } }, 403);
     if (path === 'invented-video') return json({ title: 'Invented shared video', length: recovered ? 14 : 12, format: [{ width: recovered ? 600 : 64, height: recovered ? 800 : 80 }] });
-    if (path === 'thumbnails' || path === 'insights') return json({ data: [] });
+    if (path === 'thumbnails') return json({data:[{uri:'https://media.fbcdn.net/invented-frame.jpg',width:recovered?600:64,height:recovered?800:80}]});
+    if (path === 'insights') return json({ data: [] });
     if (url.hostname === 'media.fbcdn.net') return new Response(path === 'invented-large.jpg' ? large : small, { headers: { 'content-type': 'image/jpeg' } });
     throw new Error('Unexpected invented read');
   }) as typeof fetch };

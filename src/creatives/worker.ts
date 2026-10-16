@@ -31,17 +31,22 @@ export class CreativeWorker {
     try {
       await this.db.query('INSERT INTO pulse.creative_jobs(account_id) VALUES($1) ON CONFLICT DO NOTHING',[account]);
       const job = (await this.db.query<any>('SELECT *,backfill_next::text,nightly_day::text FROM pulse.creative_jobs WHERE account_id=$1',[account])).rows[0];
-      const due = 'g.detail_reduced_at<=$2::timestamptz-interval \'24 hours\' AND (g.detail_retry_after IS NULL OR g.detail_retry_after<=$2)';
+      const retryGroups = await this.db.query<{id:string}>(`SELECT g.id FROM pulse.media_groups g WHERE mode='live' AND account_id=$1
+        AND ((g.detail_reduced_at<=$2::timestamptz-interval '24 hours') OR (g.kind='image' AND (g.width IS NULL OR g.height IS NULL)) OR (g.kind='video' AND g.length_seconds IS NULL))
+        AND (g.detail_retry_after IS NULL OR g.detail_retry_after<=$2)
+        AND EXISTS(SELECT 1 FROM pulse.ads a WHERE a.mode=g.mode AND a.account_id=g.account_id AND a.media_group_id=g.id)
+        ORDER BY g.fetched_at,g.id LIMIT 20`,[account,now]);
+      const retryIds=retryGroups.rows.map(r=>r.id), due='g.id=ANY($2::text[])';
       if (this.reader.rememberStoredAds) {
-        const known = await this.db.query<StoredCatalogueAd>(`SELECT a.ad_id AS id,a.creative_id AS "creativeId",a.media_group_id AS "mediaGroupId" FROM pulse.ads a JOIN pulse.media_groups g ON g.id=a.media_group_id AND g.mode=a.mode AND g.account_id=a.account_id WHERE a.mode='live' AND a.account_id=$1 AND NOT COALESCE((${due}),false)`,[account,now]);
+        const known = await this.db.query<StoredCatalogueAd>(`SELECT a.ad_id AS id,a.creative_id AS "creativeId",a.media_group_id AS "mediaGroupId" FROM pulse.ads a JOIN pulse.media_groups g ON g.id=a.media_group_id AND g.mode=a.mode AND g.account_id=a.account_id WHERE a.mode='live' AND a.account_id=$1 AND NOT COALESCE((${due}),false)`,[account,retryIds]);
         this.reader.rememberStoredAds(known.rows);
       }
       if (this.reader.rememberDetailRetries) {
-        const retries = await this.db.query<StoredCatalogueAd>(`SELECT a.ad_id AS id,a.creative_id AS "creativeId",a.media_group_id AS "mediaGroupId" FROM pulse.ads a JOIN pulse.media_groups g ON g.id=a.media_group_id AND g.mode=a.mode AND g.account_id=a.account_id WHERE a.mode='live' AND a.account_id=$1 AND (${due})`,[account,now]);
+        const retries = await this.db.query<StoredCatalogueAd>(`SELECT a.ad_id AS id,a.creative_id AS "creativeId",a.media_group_id AS "mediaGroupId" FROM pulse.ads a JOIN pulse.media_groups g ON g.id=a.media_group_id AND g.mode=a.mode AND g.account_id=a.account_id WHERE a.mode='live' AND a.account_id=$1 AND (${due})`,[account,retryIds]);
         this.reader.rememberDetailRetries(retries.rows);
       }
       if (this.reader.rememberStoredMedia) {
-        const known = await this.db.query<{ kind: string; media_key: string }>(`SELECT kind,media_key FROM pulse.media_groups g WHERE mode='live' AND account_id=$1 AND NOT COALESCE((${due}),false)`,[account,now]);
+        const known = await this.db.query<{ kind: string; media_key: string }>(`SELECT kind,media_key FROM pulse.media_groups g WHERE mode='live' AND account_id=$1 AND NOT COALESCE((${due}),false)`,[account,retryIds]);
         this.reader.rememberStoredMedia(known.rows.map(row => `${row.kind}:${row.media_key}`));
       }
       for await (const page of this.reader.readCatalogue(account,settings,now)) {

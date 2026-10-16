@@ -81,6 +81,8 @@ export class MetaCreativeClient implements CreativeReader {
   private readonly accounts = new Map<string, string>();
   private readonly knownMedia = new Set<string>();
   private readonly storedAds = new Map<string, StoredCatalogueAd>();
+  private readonly images = new Map<string, Promise<any>>();
+  private readonly videoSizes = new Map<string, {width:number;height:number}>();
   private readonly detailRetries = new Map<string, StoredCatalogueAd>();
   constructor(private readonly meta: MetaSpend, private readonly options: AdTransportOptions = {}) {
     this.fetcher = options.fetch ?? fetch;
@@ -184,6 +186,7 @@ export class MetaCreativeClient implements CreativeReader {
   }
   async *readCatalogue(account: string, settings: Settings, now: Date): AsyncIterable<CatalogueRead[]> {
     await this.account(account);
+    this.images.clear();this.videoSizes.clear();
     const creativeCache = new Map<string, any>(), mediaCache = new Map<string, CatalogueMedia>(), postCache = new Map<string, any>();
     const reduced = new Set<string>(), expanded = new Set<string>();
     const retryResults = new Map<string, CatalogueMedia | null>();
@@ -256,17 +259,19 @@ export class MetaCreativeClient implements CreativeReader {
         let media = retryGroupId ? retryResults.get(retryGroupId) : mediaCache.get(key);
         if (!media) {
           const actualVideoId = primary.kind === 'video' && !primary.key.includes(':') ? primary.key : null;
-          const metadata = actualVideoId ? await this.optional(`video-info:${actualVideoId}`, () => this.meta.readGraph(id(actualVideoId), { fields: 'title,length,format,picture' })) : null;
-          const format = metadata?.format?.[0];
+          const metadata = actualVideoId ? await this.optional(`video-info:${actualVideoId}`, () => this.meta.readGraph(id(actualVideoId), { fields: 'length,title,picture' })) : null;
+          const image = primary.kind === 'image' && !primary.key.includes(':') && (!this.knownMedia.has(key) || retryGroupId)
+            ? await this.optional(`image-info:${key}`, () => this.imageInfo(account, primary.key)) : null;
           const thumbnailUrl = creative.thumbnail_url ?? creative.image_url ?? attachment?.media?.image?.src ?? metadata?.picture;
           const stored = !retryGroupId && this.knownMedia.has(key);
           let thumbnail = !stored && thumbnailUrl ? await this.optional(`thumbnail:${key}`, () => this.bytes(thumbnailUrl)) : null;
           if (!stored && !thumbnail && primary.kind === 'image') thumbnail = await this.optional(`image:${key}`, () => this.imageBytes(account, primary.key));
           const frames = !stored && actualVideoId ? await this.optional(`frames:${key}`, () => this.videoFrames(actualVideoId)) ?? [] : [];
+          const size = actualVideoId ? this.videoSizes.get(actualVideoId) : image;
           media = { kind: primary.kind, key: primary.key, title: text(metadata?.title) || text(creative.title) || text(row.name, 300),
             lengthSeconds: metadata?.length == null ? null : numeric(metadata.length),
-            width: format?.width == null ? attachment?.media?.image?.width ?? null : numeric(format.width),
-            height: format?.height == null ? attachment?.media?.image?.height ?? null : numeric(format.height),
+            width: size?.width == null ? attachment?.media?.image?.width ?? null : numeric(size.width),
+            height: size?.height == null ? attachment?.media?.image?.height ?? null : numeric(size.height),
             firstSeen: now.toISOString(), detailReducedAt: reduced.has(creativeId) ? now.toISOString() : expanded.has(creativeId) ? null : undefined, thumbnail, poster: primary.kind === 'video' ? thumbnail : null, frames,
             alternates: alternatives.filter(item => item.kind !== primary.kind || item.key !== primary.key) };
           mediaCache.set(key, media);
@@ -365,6 +370,11 @@ export class MetaCreativeClient implements CreativeReader {
     const fallback = await this.meta.readGraph(id(videoId), { fields: 'download_hd_url' });
     return this.mediaUrl(fallback.download_hd_url);
   }
+  private imageInfo(account: string, key: string): Promise<any> {
+    const cacheKey=`${account}:${key}`;
+    if(!this.images.has(cacheKey))this.images.set(cacheKey,this.meta.readAllPages(`act_${id(account)}/adimages`,{hashes:JSON.stringify([id(key)]),fields:'hash,url,width,height',limit:'100'}).then(images=>images.find(image=>image.hash===key)??null));
+    return this.images.get(cacheKey)!;
+  }
   async imageBytes(account: string, key: string, full = false): Promise<Uint8Array> {
     let url: unknown;
     if (key.startsWith('post:')) {
@@ -374,14 +384,15 @@ export class MetaCreativeClient implements CreativeReader {
       const creative = await this.creative(id(key.slice(9)));
       url = full ? creative.image_url ?? creative.thumbnail_url : creative.thumbnail_url ?? creative.image_url;
     } else {
-      const images = await this.meta.readAllPages(`act_${id(account)}/adimages`, { hashes: JSON.stringify([id(key)]), fields: 'hash,url,width,height', limit: '100' });
-      url = images.find(image => image.hash === key)?.url;
+      url = (await this.imageInfo(account,key))?.url;
     }
     return this.bytes(url);
   }
   async videoFrames(videoId: string): Promise<Uint8Array[]> {
     if (videoId.includes(':')) return [];
     const thumbnails = await this.meta.readAllPages(`${id(videoId)}/thumbnails`, { fields: 'uri,is_preferred,width,height', limit: '10' });
+    const first=thumbnails[0];
+    if(first?.width && first?.height)this.videoSizes.set(videoId,{width:numeric(first.width),height:numeric(first.height)});
     const output: Uint8Array[] = [];
     for (const thumbnail of thumbnails.slice(0, 10)) output.push(await this.bytes(thumbnail.uri, false));
     return output;

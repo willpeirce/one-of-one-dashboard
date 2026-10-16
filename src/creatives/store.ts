@@ -26,7 +26,7 @@ export async function saveCatalogue(db: Database, account: string, entries: Cata
         [mode, account, ad.id, ad.name, ad.status, ad.effectiveStatus, ad.lastSeen, now,
           ad.adSetId, ad.adSetName, ad.campaignId, ad.campaignName, ad.owner, ad.market]);
         if (entry.retryGroupId) await tx.query(`UPDATE pulse.media_groups SET detail_retry_after=$4
-          WHERE mode=$1 AND account_id=$2 AND id=$3 AND detail_reduced_at IS NOT NULL`,
+          WHERE mode=$1 AND account_id=$2 AND id=$3`,
         [mode, account, entry.retryGroupId, new Date(now.getTime() + 86_400_000)]);
         continue;
       }
@@ -41,7 +41,7 @@ export async function saveCatalogue(db: Database, account: string, entries: Cata
           length_seconds=COALESCE($5,length_seconds),width=COALESCE($6,width),height=COALESCE($7,height),
           thumbnail=COALESCE($8,thumbnail),poster=COALESCE($9,poster),
           frames=CASE WHEN cardinality($10::bytea[])>0 THEN $10::bytea[] ELSE frames END,
-          alternates=$11,fetched_at=$12,detail_reduced_at=NULL,detail_retry_after=NULL,
+          alternates=$11,fetched_at=$12,detail_reduced_at=NULL,detail_retry_after=CASE WHEN ($13='video' AND COALESCE($5,length_seconds) IS NULL) OR ($13='image' AND (COALESCE($6,width) IS NULL OR COALESCE($7,height) IS NULL)) THEN $12::timestamptz+interval '24 hours' ELSE NULL END,
           kind=CASE WHEN $15 THEN $13 ELSE kind END,media_key=CASE WHEN $15 THEN $14 ELSE media_key END,
           source_id=CASE WHEN $15 THEN $14 ELSE source_id END
           WHERE mode=$1 AND account_id=$2 AND id=$3`,

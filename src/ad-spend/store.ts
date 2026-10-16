@@ -110,11 +110,12 @@ export interface SpendJob {
   last_poll_at: Date | null;
   last_success_at: Date | null;
   failures: number;
+  actions_backfilled_at: Date | null;
 }
 export async function readJobs(db: Database): Promise<SpendJob[]> {
   return (
     await db.query<SpendJob & Record<string, unknown>>(
-      'SELECT source,account_id,backfill_next::text,backfill_done,last_poll_at,last_success_at,failures FROM pulse.ad_spend_jobs',
+      'SELECT source,account_id,backfill_next::text,backfill_done,last_poll_at,last_success_at,failures,actions_backfilled_at FROM pulse.ad_spend_jobs',
     )
   ).rows;
 }
@@ -160,8 +161,8 @@ export async function saveSpend(
         ],
       );
     await tx.query(
-      `INSERT INTO pulse.ad_spend_days(source,account_id,uk_day,fetched_at) SELECT $1,$2,day,$5 FROM generate_series($3::date,$4::date,interval '1 day') AS day
-      ON CONFLICT (source,account_id,uk_day) DO UPDATE SET fetched_at=EXCLUDED.fetched_at`,
+      `INSERT INTO pulse.ad_spend_days(source,account_id,uk_day,fetched_at,actions_complete) SELECT $1,$2,day,$5,$1='meta' FROM generate_series($3::date,$4::date,interval '1 day') AS day
+      ON CONFLICT (source,account_id,uk_day) DO UPDATE SET fetched_at=EXCLUDED.fetched_at,actions_complete=EXCLUDED.actions_complete`,
       [source, account, from, to, now],
     );
     if (next)

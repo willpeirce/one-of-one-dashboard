@@ -29,7 +29,10 @@ const dates=(from:string,to:string)=>{const days:string[]=[];for(let d=from;d<=t
 export function judgeAdSet(set: StoredAdSet, days: SetDay[], settings: Settings, today: string, context: RuleContext = {}): SetVerdict | null {
   if(set.owner!=='ours'||set.effectiveStatus!=='ACTIVE')return null;
   const born=ukToday(new Date(set.createdTime)),yesterday=addDays(today,-1),from=[born,addDays(today,-7)].sort().at(-1)!;
-  const windowDates=dates(from,yesterday),window=days.filter(d=>d.day>=from&&d.day<=yesterday),totals=totalDays(window);
+  const windowDates=dates(from,yesterday),window=days.filter(d=>d.day>=from&&d.day<=yesterday&&d.purchases!==null&&d.addsToCart!==null),totals=totalDays(window);
+  const missing=windowDates.filter(day=>!window.some(row=>row.day===day));
+  const gap=missing.length?`no action data for ${missing.length} of ${windowDates.length} days (${missing.join(', ')})`:'';
+  const enough=window.length>=2;
   const complete=windowDates.length>0&&windowDates.every(d=>window.some(r=>r.day===d));
   const market=set.market==='unknown'?null:set.market,be=market?breakEven(settings,market,today):null;
   const reasons:RuleReason[]=[];
@@ -40,15 +43,15 @@ export function judgeAdSet(set: StoredAdSet, days: SetDay[], settings: Settings,
   const beText=be?`${formatPounds(be.value)}${be.note?` · ${be.note}`:''}`:'Unknown market';
   if(market&&be) {
     const rules=settings.adRules[market],bar=be.value*rules.killBar;
-    if(complete&&totals.spend>=settings.adRules.killFloorGbp && totals.purchases!==null && (totals.purchases===0||cpp!>bar))
+    if(enough&&totals.spend>=settings.adRules.killFloorGbp && totals.purchases!==null && (totals.purchases===0||cpp!>bar))
       add('purchase-cost','Kill',`${formatPounds(totals.spend)} on ${formatNumber(totals.purchases)} purchases, ${cost(totals.spend,totals.purchases)}${totals.purchases?' each':''} against ${formatPounds(bar)}${be.note?` · ${be.note}`:''}`,`${formatPounds(totals.spend)} spend`,`${cost(totals.spend,totals.purchases)} per purchase`);
-    if(complete&&windowDates.length>=2&&totals.spend>=settings.adRules.killFloorGbp&&totals.addsToCart!==null&&(totals.addsToCart===0||cpatc!>rules.atcBarGbp))
+    if(enough&&totals.spend>=settings.adRules.killFloorGbp&&totals.addsToCart!==null&&(totals.addsToCart===0||cpatc!>rules.atcBarGbp))
       add('atc-cost','Kill',`${formatPounds(totals.spend)} on ${totals.addsToCart} adds to cart against ${formatPounds(rules.atcBarGbp)} each`,`${formatPounds(totals.spend)} spend`,totals.addsToCart?`${formatPounds(cpatc!)} an add to cart`:'0 adds to cart');
-    if(last&&yesterday>born&&budget!==null&&budget>0&&last.spend>=budget/2&&last.addsToCart===0)
+    if(enough&&last&&yesterday>born&&budget!==null&&budget>0&&last.spend>=budget/2&&last.addsToCart===0)
       add('zero-day','Kill',`${formatPounds(last.spend)} yesterday, no adds to cart, against ${formatPounds(budget/2)} half-budget`,`${formatPounds(last.spend)} yesterday`,'0 adds to cart');
-    const threeDates=dates(addDays(today,-3),yesterday),three=days.filter(d=>threeDates.includes(d.day)),t=totalDays(three);
-    if(threeDates.every(d=>three.some(r=>r.day===d))&&t.spend>=settings.adRules.slippingFloorGbp&&t.purchases!==null&&(t.purchases===0||t.spend/t.purchases>be.value*rules.slippingBar))
-      add('slipping','Slipping',`${formatPounds(t.spend)} on ${t.purchases} purchases over 3 days, ${cost(t.spend,t.purchases)} against ${formatPounds(be.value*rules.slippingBar)}${be.note?` · ${be.note}`:''}`,`${formatPounds(t.spend)} in 3 days`,`${cost(t.spend,t.purchases)} per purchase`);
+    const threeDates=dates(addDays(today,-3),yesterday),three=days.filter(d=>threeDates.includes(d.day)&&d.purchases!==null&&d.addsToCart!==null),t=totalDays(three);
+    if(three.length>=2&&t.spend>=settings.adRules.slippingFloorGbp&&t.purchases!==null&&(t.purchases===0||t.spend/t.purchases>be.value*rules.slippingBar))
+      add('slipping','Slipping',`${formatPounds(t.spend)} on ${t.purchases} purchases over ${three.length} of 3 days, ${cost(t.spend,t.purchases)} against ${formatPounds(be.value*rules.slippingBar)}${be.note?` · ${be.note}`:''}`,`${formatPounds(t.spend)} in ${three.length} of 3 days`,`${cost(t.spend,t.purchases)} per purchase`);
     const changes=[set.updatedTime,set.lastSignificantEdit,...(context.changes??[])].filter((v):v is string=>!!v).map(v=>ukToday(new Date(v)));
     const clean=(day:string)=>{
       const row=days.find(d=>d.day===day);
@@ -83,5 +86,5 @@ export function judgeAdSet(set: StoredAdSet, days: SetDay[], settings: Settings,
     add('test-share','Test share',`${formatPounds(last.spend)} is ${formatNumber(last.spend/context.ourMarketSpendYesterday*100,1)}% of our market spend, above ${settings.adRules.testShareCapPercent}%`,`${formatPounds(last.spend)} test spend`,`${settings.adRules.testShareCapPercent}% cap`);
   reasons.sort((a,b)=>verdictOrder.indexOf(a.verdict)-verdictOrder.indexOf(b.verdict));
   const first=reasons[0];
-  return {verdict:first?.verdict??'Clear',reason:first?.text??(!market?'Market unknown; assign a UK or US name':!complete||totals.purchases===null||totals.addsToCart===null?'Waiting for complete day rows':'Inside its rules'),reasons,figures:first?.figures??[`${formatPounds(totals.spend)} spend`,`${cost(totals.spend,totals.purchases)} per purchase`],...totals,cpp,cpatc,windowFrom:from,windowTo:yesterday,includesSpikeDays:!!market&&windowDates.some(d=>isSpikeDay(market,d)),breakEven:be?.value??null,breakEvenNote:be?.note??'',proposedBase,proposedWeekday,stepPercent};
+  return {verdict:first?.verdict??'Clear',reason:[first?.text??(!market?'Market unknown; assign a UK or US name':enough?'Inside its rules':'Need at least 2 complete action days'),gap].filter(Boolean).join(' · '),reasons,figures:first?.figures??[`${formatPounds(totals.spend)} spend`,`${cost(totals.spend,totals.purchases)} per purchase`],...totals,cpp,cpatc,windowFrom:from,windowTo:yesterday,includesSpikeDays:!!market&&windowDates.some(d=>isSpikeDay(market,d)),breakEven:be?.value??null,breakEvenNote:be?.note??'',proposedBase,proposedWeekday,stepPercent};
 }

@@ -37,7 +37,7 @@ export async function readAdSetsView(db:Database,settings:Settings,env:NodeJS.Pr
  const [sets,sync,stored,coverage,ads,changes,actions]=await Promise.all([
   readAdSets(db,account,settings),db.query<any>('SELECT last_read FROM pulse.meta_ad_set_sync WHERE account_id=$1',[account]),
   db.query<any>("SELECT ad_set_id,uk_day::text AS day,spend_amount,purchases,adds_to_cart FROM pulse.ad_spend WHERE mode='live' AND source='meta' AND account_id=$1 AND uk_day<$2",[account,today]),
-  db.query<{day:string}>("SELECT uk_day::text AS day FROM pulse.ad_spend_days WHERE source='meta' AND account_id=$1 AND uk_day<$2",[account,today]),
+  db.query<{day:string}>("SELECT uk_day::text AS day FROM pulse.ad_spend_days WHERE source='meta' AND account_id=$1 AND uk_day<$2 AND actions_complete",[account,today]),
   db.query<any>("SELECT ad_set_id,effective_status,status_since FROM pulse.ads WHERE mode='live' AND account_id=$1",[account]),
   db.query<any>('SELECT * FROM pulse.meta_ad_set_changes WHERE account_id=$1 ORDER BY observed_at DESC',[account]),
   db.query<any>("SELECT ad_set_id,time FROM pulse.meta_actions WHERE account_id=$1 AND result='success' AND time>=$2",[account,addDays(today,-7)]),

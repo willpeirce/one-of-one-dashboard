@@ -15,7 +15,7 @@ test('purchase-cost kill needs its inclusive floor and a cost over the bar; unkn
  assert.equal(fires('purchase-cost',days({spend:5,purchases:0})),false);
  assert.equal(fires('purchase-cost',days({spend:75/7,purchases:0})),true);
  assert.equal(fires('purchase-cost',days({spend:30,purchases:null})),false);
- assert.equal(fires('purchase-cost',days({spend:30}).slice(1)),false);
+ assert.equal(fires('purchase-cost',days({spend:30}).slice(1)),true);
 });
 test('ATC kill has a two-full-day minimum, spend floor and strict cost bar',()=>{
  assert.equal(fires('atc-cost',days({spend:20,addsToCart:1})),true);
@@ -82,12 +82,20 @@ test('clean verdict, all firing reasons ordered, freelancer/unassigned/inactive 
 });
 
 test('short rule windows do not wait for older missing history',()=>{
- const recent=days({spend:40}).slice(-3);assert.equal(fires('slipping',recent),true);assert.equal(fires('purchase-cost',recent),false);
+ const recent=days({spend:40}).slice(-3);assert.equal(fires('slipping',recent),true);assert.equal(fires('purchase-cost',recent),true);
  const clean=days({spend:16}).slice(-2);const v=judge(clean);assert.equal(v.verdict,'Step');assert.equal(v.stepPercent,20);
- const yesterday=days({spend:20,addsToCart:0}).slice(-1);assert.equal(fires('zero-day',yesterday),true);
+ const yesterday=days({spend:20,addsToCart:0}).slice(-1);assert.equal(fires('zero-day',yesterday),false);
 });
 
 test('Step takes precedence over Delivery when both fire, independently of Home card ordering',()=>{
  const v=judge(days({spend:16}),{dailyBudget:10000});
  assert.equal(v.verdict,'Step');assert.deepEqual(v.reasons.map(r=>r.verdict),['Step','Delivery']);
+});
+
+test('partial action windows judge matching spend after two complete days and name missing dates',()=>{
+ const data=days({spend:40,purchases:null,addsToCart:null});
+ for(const i of [0,1,3,4])data[i]={...data[i]!,purchases:1,addsToCart:3};
+ const v=judge(data);assert.equal(v.verdict,'Kill');assert.equal(v.spend,160);assert.equal(v.cpp,40);
+ assert.match(v.reason,/no action data for 3 of 7 days \(2026-10-11, 2026-10-14, 2026-10-15\)/);
+ assert.equal(fires('purchase-cost',[data[0]!]),false);
 });

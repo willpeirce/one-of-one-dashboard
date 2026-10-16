@@ -18,6 +18,11 @@ function links(review: Review): string {
   const href = esc(reviewLink());
   return `${review.rating <= 3 ? `<a class="act primary" data-review-link href="${href}" target="_blank" rel="noopener noreferrer">Read in Judge.me</a>` : ''}<a class="act" data-review-link href="${href}" target="_blank" rel="noopener noreferrer">Open in Judge.me</a>`;
 }
+function reviewChips(review: Review): string {
+  const source=review.source?.replace(/[-_]/g,' ');
+  const label=source==='email' ? 'Email request' : source ? source[0]!.toUpperCase()+source.slice(1) : null;
+  return `${review.flagged ? '<span class="chip warn">Flagged by Judge.me</span>' : ''}${label ? `<span class="chip info">${esc(label)}</span>` : ''}`;
+}
 export function reviewsPanelHtml(panel: ReviewsPanel): string {
   const status = panel.mode === 'sample' ? 'Sample data · invented reviews · waiting for keys'
     : panel.status === 'pending' ? 'Judge.me · first sync pending'
@@ -31,9 +36,9 @@ export function reviewsPanelHtml(panel: ReviewsPanel): string {
       <div class="rvr"><span class="rvs"><span class="stars" role="img" aria-label="${row.rating} out of 5 stars" data-stars="${row.rating}">${[1, 2, 3, 4, 5].map(star => `<svg class="${star <= row.rating ? 'on' : 'off'}" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-star"/></svg>`).join('')}</span><span class="chip ${row.rating <= 3 ? 'warn' : 'decide'}">${row.rating <= 3 ? 'Read first' : 'New'}</span></span>
       <button class="rt" type="button" data-review-open="${esc(row.id)}"><h3>${esc(row.productTitle)} · ${esc(row.market ?? 'Market unknown')}</h3>
       <span class="review-meta">${row.verifiedBuyer ? 'Verified buyer' : ''}${row.photoCount ? `${row.verifiedBuyer ? ' · ' : ''}${count(row.photoCount)} ${row.photoCount === 1 ? 'photo' : 'photos'}` : ''}${panel.mode === 'sample' ? ' · Sample data' : ''}</span>
-      <span class="rec">${esc(row.body)}</span></button><div class="rvm"><span class="age">${reviewAge(row.createdAt, panel.asOf)}</span><div class="acts">${links(row)}</div></div></div></article>`).join('') : ''}</div>`;
+      ${reviewChips(row)}<span class="rec">${esc(row.body)}</span></button><div class="rvm"><span class="age">${reviewAge(row.createdAt, panel.asOf)}</span><div class="acts">${links(row)}</div></div></div></article>`).join('') : ''}</div>`;
 }
 export function reviewSheetHtml(review: Review, panel: ReviewsPanel): string {
   const posted = new Date(review.createdAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/London' });
-  return `<p class="review-body">${esc(review.body)}</p><dl class="xdl"><dt>Product</dt><dd>${esc(review.productTitle)}</dd><dt>Market</dt><dd>${esc(review.market ?? 'Unknown: not supplied by the review API')}</dd><dt>Posted</dt><dd>${esc(posted)} UK</dd><dt>Review</dt><dd>${esc(review.id)}</dd>${review.verifiedBuyer ? '<dt>Verified buyer</dt><dd>Yes</dd>' : ''}<dt>Photos</dt><dd>${count(review.photoCount)}</dd></dl><div class="acts review-links">${links(review)}</div><p class="note">${panel.mode === 'sample' ? 'Sample data · invented review. ' : ''}Publishing from Pulse is disabled. Manage this review in Judge.me.</p>`;
+  return `${reviewChips(review)}<p class="review-body">${esc(review.body)}</p><dl class="xdl"><dt>Product</dt><dd>${esc(review.productTitle)}</dd><dt>Market</dt><dd>${esc(review.market ?? 'Unknown: not supplied by the review API')}</dd><dt>Posted</dt><dd>${esc(posted)} UK</dd><dt>Review</dt><dd>${esc(review.id)}</dd>${review.verifiedBuyer ? '<dt>Verified buyer</dt><dd>Yes</dd>' : ''}<dt>Photos</dt><dd>${count(review.photoCount)}</dd></dl><div class="acts review-links">${links(review)}</div><p class="note">${panel.mode === 'sample' ? 'Sample data · invented review. ' : ''}Publishing from Pulse is disabled. Manage this review in Judge.me.</p>`;
 }

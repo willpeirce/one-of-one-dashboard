@@ -97,7 +97,7 @@ export function creativeHealthDetails(health: CreativeHealth): string {
     <p>Ad-level comparisons use days read by both imports. The hero keeps the ad-set spend figure.</p></section>`;
 }
 
-export function sourceHealthPage(rows: readonly SourceHealth[], shopify?: Awaited<ReturnType<ShopifyStore['summary']>>, costs?: Awaited<ReturnType<ShopifyStore['costSummary']>>, ads?:Awaited<ReturnType<typeof import('./ad-spend/store.js').spendHealth>>, status?: { summary: string; shopify: ShopifyDashboard; checkedAt: string; campaigns?: CampaignSyncState; creatives?: CreativeHealth; adSets?: import('./meta-adsets/presentation.js').AdSetsView }): string {
+export function sourceHealthPage(rows: readonly SourceHealth[], shopify?: Awaited<ReturnType<ShopifyStore['summary']>>, costs?: Awaited<ReturnType<ShopifyStore['costSummary']>>, ads?:Awaited<ReturnType<typeof import('./ad-spend/store.js').spendHealth>>, status?: { reviewHealth?: import('./judgeme/store.js').ReviewHealth; summary: string; shopify: ShopifyDashboard; checkedAt: string; campaigns?: CampaignSyncState; creatives?: CreativeHealth; adSets?: import('./meta-adsets/presentation.js').AdSetsView }): string {
   const gross = shopify?.mode === 'live' ? shopify.jobs.find(job => job.name === 'gross_history')?.state : undefined;
   const days = typeof gross?.first === 'string' && typeof gross?.last === 'string' ? dayCount(gross.first, gross.last) : 0;
   const weeks = Number.isFinite(days) ? Math.max(0, Math.ceil(days / 7)) : 0;
@@ -110,6 +110,7 @@ export function sourceHealthPage(rows: readonly SourceHealth[], shopify?: Awaite
     ${ads?`<section aria-label="Ad spend imports"><h2>Ad spend</h2>${ads.map(a=>`<p>${escapeHtml(a.source==='meta'?'Meta':a.source==='google-ads'?'Google':'TikTok')} · ${escapeHtml(a.status)}${a.fetchedAt?` · last fetched ${timestamp(a.fetchedAt)} UK`:''}${a.failures?` · ${formatNumber(a.failures)} consecutive failure${a.failures === 1 ? '' : 's'}`:''}${a.source==='google-ads'?' · Google can lag about 3 hours · hours re-aligned to UK time':a.source==='tiktok'?' · hours re-aligned to UK time':''}</p>`).join('')}<p>Account IDs belong in Settings &gt; Ad spend. Each source connects independently. Meta actions require the separate opt-in flag and a confirmed signed-in tap.</p></section>`:''}
     ${status?.adSets ? `<p data-adsets-health>Ad sets: ${formatNumber(status.adSets.count)} read, last ${timestamp(status.adSets.lastRead)}${status.adSets.mode==='sample'?' · sample data':status.adSets.stale?' · stale after 2 hours':''}</p>` : ''}
     ${status?.creatives ? creativeHealthDetails(status.creatives) : ''}
+    ${status?.reviewHealth ? `<p data-reviews-health>Reviews: ${formatNumber(status.reviewHealth.read)} read, ${formatNumber(status.reviewHealth.waiting)} waiting, ${formatNumber(status.reviewHealth.flagged)} flagged, last ${timestamp(status.reviewHealth.last)}${status.reviewHealth.mode==='sample'?' · sample data':''}</p>` : ''}
     <p>Shopify imports when its keys are present. Ad spend also needs its account ID in Settings. Other source clients arrive in their stages.</p>
     <div class="table-scroll" role="region" aria-label="Source health table, scroll horizontally if needed" tabindex="0">
       <table id="source-health">

@@ -323,7 +323,9 @@ async function checkReviews(context: BrowserContext): Promise<void> {
     assert.ok(sample.rows[0]!.rating <= 3, 'Low-star reviews come before newer high-star reviews');
     assert.ok(sample.rows.slice(1).every(review => review.rating > 3));
     assert.ok(sample.rows.every(review => !review.published && !review.hidden));
-    assert.doesNotMatch(JSON.stringify(sample.rows), /reviewer|email|ip_address/i);
+    assert.doesNotMatch(JSON.stringify(sample.rows), /"reviewer"|"email"\s*:|"ip_address"|"name"\s*:/i);
+    assert.equal(sample.rows.at(-1)!.flagged,true);
+    assert.equal(sample.rows.at(-1)!.source,'email');
     await page.route('**/api/dashboard', route => route.fulfill({ status: 200, json: withAllMarketFixture(fixture) }));
     await page.route('**/api/events', route => route.fulfill({ status: 200, contentType: 'text/event-stream',
       body: `retry: 60000\nevent: dashboard\ndata: ${JSON.stringify(withAllMarketFixture(fixture))}\n\n` }));
@@ -341,6 +343,9 @@ async function checkReviews(context: BrowserContext): Promise<void> {
       assert.match(await page.locator('#counts button[data-rv]').innerText(), /3.*sample.*reviews/is);
       assert.equal((await page.locator('#subrv').innerText()).trim(), '3 sample reviews, 1 needs reading first.');
       assert.match(await page.locator('#reviews').innerText(), /sample/i);
+      assert.match(await rows.last().innerText(), /Flagged by Judge.me/);
+      assert.match(await rows.last().innerText(), /Email request/);
+      assert.doesNotMatch(await rows.first().innerText(), /Flagged by Judge.me/);
       const health = await page.locator('#counts > span').allTextContents();
       const radar = await page.locator('#radar').getAttribute('aria-label');
       await page.locator('#counts button[data-rv]').click();

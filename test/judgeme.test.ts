@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { JudgeMeClient, JudgeMeReadError } from '../src/judgeme/client.js';
 import { cleanReview, waitingReviews } from '../src/judgeme/model.js';
-import { readReviews, saveReviews } from '../src/judgeme/store.js';
+import { readReviews, saveReviews, readReviewHealth } from '../src/judgeme/store.js';
 import { ReviewsWorker, REVIEW_POLL_MS } from '../src/judgeme/worker.js';
 import { reviewLink, reviewsGreeting, reviewsPanelHtml, reviewSheetHtml } from '../src/judgeme/presentation.js';
 import { sampleReviews } from '../src/judgeme/sample.js';
@@ -27,7 +27,7 @@ const token = () => randomBytes(24).toString('hex');
 
 test('v1 review projection excludes identity and IP, filters moderation state, and puts low stars before newest', () => {
   const clean = fixture.reviews.map(cleanReview);
-  assert.deepEqual(waitingReviews(clean).map(r => r.id), ['900101', '900102', '900103', '900107']);
+  assert.deepEqual(waitingReviews(clean).map(r => r.id), ['900101', '900102', '900103', '900107', '900106']);
   const serialized = JSON.stringify(clean);
   for (const privateValue of ['Invented Reviewer', 'reviewer@example.test', '203.0.113.8', 'phone', 'reviewer', 'ip_address']) assert.ok(!serialized.includes(privateValue));
   assert.equal(clean[0].market, null);
@@ -35,7 +35,7 @@ test('v1 review projection excludes identity and IP, filters moderation state, a
   assert.equal(clean[0].photoCount, 1);
   assert.equal(clean[3].published, true);
   assert.equal(clean[4].hidden, true);
-  assert.equal(clean[5].hidden, true, 'curated spam is hidden even if the separate flag is false');
+  assert.equal(clean[5].hidden, false); assert.equal(clean[5].flagged, true);
 });
 
 test('GET-only client sends documented pagination/auth fields, walks all pages and drops raw fields', async () => {
@@ -47,7 +47,7 @@ test('GET-only client sends documented pagination/auth fields, walks all pages a
     assert.equal(url.searchParams.get('api_token'), credential);
     assert.equal(url.searchParams.get('shop_domain'), appConfig.shopify.storeDomain);
     assert.equal(url.searchParams.get('per_page'), '100');
-    assert.equal(url.searchParams.get('published'), 'false');
+    assert.equal(url.searchParams.has('published'), false);
     return Response.json({ current_page: calls.length, per_page: 100, reviews: calls.length === 1
       ? Array.from({ length: 100 }, (_, i) => ({ ...fixture.reviews[0], id: 901000 + i })) : [fixture.reviews[1]] });
   } });
@@ -59,7 +59,7 @@ test('GET-only client sends documented pagination/auth fields, walks all pages a
   assert.doesNotMatch(JSON.stringify(rows), /Invented Reviewer|reviewer@example.test|203\.0\.113\.8/);
 });
 
-test('published is authoritative when present, with curated fallback only when absent', () => {
+test('published and hidden use only their own explicit fields', () => {
   const waiting = cleanReview(fixture.reviews.find((r: any) => r.id === 900107))!;
   assert.equal(waiting.curated, 'ok'); assert.equal(waiting.published, false);
   assert.deepEqual(waitingReviews([waiting]).map(r => r.id), ['900107']);
@@ -131,12 +131,12 @@ test('complete polls upsert panel-only fields, remove published/hidden/deleted r
   const db = await createTestDatabase(); t.after(() => db.close());
   await syncSourceHealth(db, { JUDGEME_API_TOKEN: token() });
   await saveReviews(db, fixture.reviews.map(cleanReview), now);
-  assert.deepEqual((await readReviews(db, now)).rows.map(r => r.id), ['900101', '900102', '900103', '900107']);
+  assert.deepEqual((await readReviews(db, now)).rows.map(r => r.id), ['900101', '900102', '900103', '900107', '900106']);
   const stored = JSON.stringify((await db.query('SELECT * FROM pulse.judgeme_reviews')).rows);
   assert.doesNotMatch(stored, /Invented Reviewer|reviewer@example.test|203\.0\.113\.8|reviewer|ip_address/);
-  const next = fixture.reviews.map((r: any) => ({ ...r, ...(r.id === 900101 ? { curated: 'ok' } : r.id === 900102 ? { hidden: true } : {}) }));
+  const next = fixture.reviews.map((r: any) => ({ ...r, ...(r.id === 900101 ? { published: true } : r.id === 900102 ? { hidden: true } : {}) }));
   await saveReviews(db, next.map(cleanReview), new Date(now.getTime() + REVIEW_POLL_MS));
-  assert.deepEqual((await readReviews(db, now)).rows.map(r => r.id), ['900103', '900107']);
+  assert.deepEqual((await readReviews(db, now)).rows.map(r => r.id), ['900103', '900107', '900106']);
   await saveReviews(db, [], now);
   assert.equal((await db.query('SELECT * FROM pulse.judgeme_reviews')).rows.length, 0);
   assert.equal(reviewsGreeting(await readReviews(db, now)), 'All caught up');
@@ -153,9 +153,9 @@ test('live worker polls once per five minutes, shares in-flight runs and recover
   t.after(() => worker.stop());
   const first = worker.tick(); assert.equal(worker.tick(), first); await first;
   await worker.tick(); assert.equal(count, 1);
-  let panel = await readReviews(db, clock); assert.equal(panel.status, 'live'); assert.equal(panel.rows.length, 4);
+  let panel = await readReviews(db, clock); assert.equal(panel.status, 'live'); assert.equal(panel.rows.length, 5);
   clock = new Date(now.getTime() + REVIEW_POLL_MS); fail = true; await worker.tick();
-  panel = await readReviews(db, clock); assert.equal(panel.status, 'unavailable'); assert.equal(panel.rows.length, 4);
+  panel = await readReviews(db, clock); assert.equal(panel.status, 'unavailable'); assert.equal(panel.rows.length, 5);
   assert.deepEqual(logs, ['Judge.me poll failed (status: 403, code: http).']);
   clock = new Date(clock.getTime() + REVIEW_POLL_MS); await worker.tick();
   const failedHealth = await readSourceHealth(db);
@@ -277,4 +277,27 @@ test('empty reviews use only the title chip and preserve pending, unavailable an
     assert.doesNotMatch(html, /<p class="note">All caught up<\/p>/);
     assert.equal((html.match(/data-review-notice/g) ?? []).length, unreadCount ? 1 : 0);
   }
+});
+
+
+test('waiting reviews retain email flags last, use only explicit hidden/published fields and report source counts', async t => {
+  const db=await createTestDatabase();t.after(()=>db.close());await syncSourceHealth(db,{JUDGEME_API_TOKEN:token()});
+  const raw=[
+    {...fixture.reviews[0],id:903001,published:true,curated:'ok'},
+    {...fixture.reviews[0],id:903002,published:false,curated:'ok',rating:5,source:'web'},
+    {...fixture.reviews[0],id:903003,published:false,curated:'spam',rating:1,source:'email'},
+    {...fixture.reviews[0],id:903004,published:false,curated:'spam',hidden:true},
+  ];
+  const cleaned=raw.map(cleanReview).filter(r=>r!==null);assert.equal(cleaned.length,4);
+  assert.deepEqual(waitingReviews(cleaned).map(r=>[r.id,r.flagged,r.source]),[['903002',false,'web'],['903003',true,'email']]);
+  await saveReviews(db,cleaned,now);
+  const panel=await readReviews(db,now);
+  assert.deepEqual(panel.rows,waitingReviews(cleaned));
+  const html=reviewsPanelHtml(panel);assert.match(html,/Flagged by Judge.me/);assert.match(html,/Email request/);assert.match(html,/>Web</);
+  assert.equal((html.match(/Flagged by Judge.me/g)??[]).length,1);assert.doesNotMatch(html,/903001|903004|Invented Reviewer|reviewer@example.test|203\.0\.113\.8/);
+  const health=await readReviewHealth(db);assert.deepEqual(health,{read:4,waiting:2,flagged:1,last:now.toISOString(),mode:'live'});
+  const snapshot=getSampleDashboard();
+  const shopify={...snapshot.shopify,checks:[] } as NonNullable<Parameters<typeof sourceHealthPage>[4]>['shopify'];
+  assert.match(sourceHealthPage([],undefined,undefined,undefined,{summary:'Invented sources',shopify,checkedAt:now.toISOString(),reviewHealth:health}),/Reviews: 4 read, 2 waiting, 1 flagged, last/);
+  const {published,...missing}=raw[0]!;assert.equal(cleanReview(missing),null);
 });

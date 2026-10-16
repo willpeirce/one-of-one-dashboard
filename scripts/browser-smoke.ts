@@ -1063,7 +1063,7 @@ async function assertSampleTextStyles(page: Page): Promise<void> {
 
 async function assertUnbuiltActions(page: Page): Promise<void> {
   const buttons = page.locator('button[data-unbuilt]');
-  assert.equal(await page.locator('#table button[data-unbuilt]').count(), 12);
+  assert.equal(await page.locator('#table button[data-unbuilt]').count(), 10);
   assert.equal(await page.locator('#tests button[data-unbuilt]').count(), 1);
   assert.equal(await page.locator('#review-publish').isDisabled(), true);
   for (const button of await buttons.all()) {
@@ -1740,7 +1740,7 @@ async function run(): Promise<void> {
     await page.locator('#livesets').click();
     await assertSampleTextStyles(page);
     await assertUnbuiltActions(page);
-    assert.equal(await page.locator('#sheet [data-unbuilt]').count(), 2);
+    assert.equal(await page.locator('#sheet [data-unbuilt]').count(), 0);
     await page.locator('#sh-x').click();
 
     step = 'check Series 1 sell-out pace card, signed daily facts and editable target sheets';

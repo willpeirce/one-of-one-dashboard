@@ -20,6 +20,11 @@ export interface SpendRow {
   day: string;
   amount: string;
   currency: string;
+  impressions?: number | null;
+  linkClicks?: number | null;
+  addsToCart?: number | null;
+  purchases?: number | null;
+  purchaseValue?: number | null;
 }
 export interface MetaCampaign {
   id: string;
@@ -128,8 +133,14 @@ export function aggregateHours(rows: SpendRow[], from: string, to: string): Spen
     const current = groups.get(key);
     if (current && (current.row.currency !== row.currency || current.row.market !== row.market))
       throw new AdError('invalid');
-    if (current) current.micros += decimalMicros(row.amount);
-    else groups.set(key, { row, micros: decimalMicros(row.amount) });
+    if (current) {
+      current.micros += decimalMicros(row.amount);
+      for (const field of ['impressions', 'linkClicks', 'addsToCart', 'purchases', 'purchaseValue'] as const) {
+        if (field in current.row || field in row)
+          current.row[field] = current.row[field] == null || row[field] == null ? null : current.row[field]! + row[field]!;
+      }
+    }
+    else groups.set(key, { row: { ...row }, micros: decimalMicros(row.amount) });
   }
   return [...groups.values()].map(({ row, micros }) => ({ ...row, amount: microsDecimal(micros) }));
 }

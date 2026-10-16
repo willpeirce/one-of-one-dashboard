@@ -13,6 +13,7 @@ import {
   type AdSource,
   type MetaCampaign,
 } from './model.js';
+import { metaAction, META_PURCHASE, META_ADD_TO_CART } from './meta-actions.js';
 import { spendMarket } from './placement.js';
 export interface SpendReader {
   read(account: string, from: string, to: string, settings: Settings): Promise<SpendRow[]>;
@@ -63,6 +64,11 @@ export function parseMeta(
       owner = ownerFor('meta', campaignId, settings);
     return {
       source: 'meta',
+      impressions: r.impressions == null ? null : Number(microsDecimal(decimalMicros(String(r.impressions)))),
+      linkClicks: r.inline_link_clicks == null ? (r.actions == null ? null : metaAction(r.actions, 'link_click')) : Number(microsDecimal(decimalMicros(String(r.inline_link_clicks)))),
+      addsToCart: r.actions == null ? null : metaAction(r.actions, META_ADD_TO_CART),
+      purchases: r.actions == null ? null : metaAction(r.actions, META_PURCHASE),
+      purchaseValue: r.actions == null || r.action_values == null ? null : metaAction(r.action_values, META_PURCHASE) || metaAction(r.action_values, 'omni_purchase_values'),
       accountId: account,
       campaignId,
       campaignName,
@@ -246,7 +252,7 @@ export class MetaSpend implements SpendReader {
     let after: string | undefined;
     do {
       const body = await this.readGraph(`act_${account}/insights`, {
-        fields: 'spend,campaign_id,campaign_name,adset_id,adset_name,date_start',
+        fields: 'spend,campaign_id,campaign_name,adset_id,adset_name,date_start,impressions,inline_link_clicks,actions,action_values',
         level: 'adset',
         time_increment: '1',
         time_range: JSON.stringify({

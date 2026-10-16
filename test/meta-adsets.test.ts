@@ -25,3 +25,26 @@ test('ad-set catalogue reads cursor pages without a deleted/status filter, parse
   assert.ok((await readAdSets(db,'invented-account',defaultSettings())).every(r=>r.owner==='unassigned'));
   assert.equal((await db.query("SELECT column_name FROM information_schema.columns WHERE table_schema='pulse' AND table_name='meta_ad_sets' AND column_name='owner'")).rowCount,0);
 });
+
+test('extended ad-set spend aligns actions into UK days and stores absent actions as null', async t => {
+  const { saveSpend }=await import('../src/ad-spend/store.js');
+  const db=await createTestDatabase();t.after(()=>db.close());
+  const rows=[
+    {date_start:'2026-10-24',hourly_stats_aggregated_by_advertiser_time_zone:'23:00:00 - 23:59:59',actions:[{action_type:'omni_purchase',value:'2'},{action_type:'omni_add_to_cart',value:'4'}],action_values:[{action_type:'omni_purchase',value:'80'}]},
+    {date_start:'2026-10-25',hourly_stats_aggregated_by_advertiser_time_zone:'02:00:00 - 02:59:59',actions:[{action_type:'omni_purchase',value:'1'},{action_type:'omni_add_to_cart',value:'3'}],action_values:[{action_type:'omni_purchase_values',value:'40'}]},
+    {date_start:'2026-10-26',hourly_stats_aggregated_by_advertiser_time_zone:'12:00:00 - 12:59:59'},
+  ].map(r=>({...r,campaign_id:'invented-campaign',campaign_name:'Invented UK',adset_id:'invented-set',adset_name:'Invented UK Cedar',spend:'10',impressions:'100',inline_link_clicks:'8'}));
+  const meta=new MetaSpend(randomBytes(16).toString('hex'),{sleep:async()=>{},fetch:async url=>{
+    const u=new URL(String(url));
+    if(!u.pathname.endsWith('/insights'))return Response.json({currency:'GBP',timezone_name:'GMT'});
+    assert.equal(u.searchParams.get('level'),'adset');assert.equal(u.searchParams.get('breakdowns'),'hourly_stats_aggregated_by_advertiser_time_zone');
+    assert.match(u.searchParams.get('fields')!,/actions,action_values/);
+    return Response.json({data:rows});
+  }});
+  const read=await meta.read('invented-account','2026-10-25','2026-10-26',defaultSettings());
+  assert.equal(read.length,2);assert.equal(read[0]!.purchases,3);assert.equal(read[0]!.addsToCart,7);assert.equal(read[0]!.purchaseValue,120);
+  assert.equal(read[1]!.purchases,null);assert.equal(read[1]!.addsToCart,null);assert.equal(read[1]!.purchaseValue,null);
+  await saveSpend(db,'meta','invented-account','2026-10-25','2026-10-26',read,new Date());
+  const stored=await db.query<any>('SELECT purchases,adds_to_cart,purchase_value FROM pulse.ad_spend ORDER BY uk_day');
+  assert.equal(Number(stored.rows[0].purchases),3);assert.equal(stored.rows[1].purchases,null);
+});

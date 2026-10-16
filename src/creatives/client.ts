@@ -1,3 +1,4 @@
+import { metaAction as action, META_PURCHASE, META_ADD_TO_CART } from '../ad-spend/meta-actions.js';
 import { MetaSpend } from '../ad-spend/clients.js';
 import { AdError, hourDay } from '../ad-spend/model.js';
 import { addDays } from '../hero-range.js';
@@ -29,11 +30,6 @@ const numeric = (value: unknown): number => {
 const rows = (value: unknown): any[] => {
   if (!Array.isArray(value)) throw new AdError('invalid');
   return value;
-};
-const action = (value: unknown, name?: string): number => {
-  if (value == null) return 0;
-  const list = rows(value);
-  return list.filter(row => !name || row.action_type === name).reduce((sum, row) => sum + numeric(row.value), 0);
 };
 const instant = (value: unknown, fallback: Date): string => {
   const date = value ? new Date(text(value)) : fallback;
@@ -73,7 +69,7 @@ function parseInsight(row: any, day: string): AdInsight {
     linkClicks: row.inline_link_clicks == null ? action(row.actions, 'link_click') : numeric(row.inline_link_clicks),
     threeSecondPlays: direct ? action(row.actions, 'video_view') : action(row.video_continuous_2_sec_watched_actions), threeSecondSource: direct ? 'video_view' : fallback ? 'video_continuous_2_sec_watched_actions' : 'none',
     plays: action(row.video_play_actions), thruPlays: action(row.video_thruplay_watched_actions), plays25: action(row.video_p25_watched_actions), plays50: action(row.video_p50_watched_actions), plays75: action(row.video_p75_watched_actions), plays100: action(row.video_p100_watched_actions), averagePlayTime: action(row.video_avg_time_watched_actions),
-    addsToCart: action(row.actions, 'omni_add_to_cart'), purchases: action(row.actions, 'omni_purchase'), purchaseValue: action(row.action_values, 'omni_purchase') || action(row.action_values, 'omni_purchase_values') };
+    addsToCart: action(row.actions, META_ADD_TO_CART), purchases: action(row.actions, META_PURCHASE), purchaseValue: action(row.action_values, META_PURCHASE) || action(row.action_values, 'omni_purchase_values') };
 }
 
 /** Fixed Graph GET reads share the spend adapter's version, transport and safe diagnostics. */

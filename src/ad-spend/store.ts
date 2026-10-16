@@ -135,10 +135,10 @@ export async function saveSpend(
     );
     if (rows.length)
       await tx.query(
-        `INSERT INTO pulse.ad_spend(mode,source,account_id,campaign_id,campaign_name,ad_set_id,ad_set_name,market,owner,uk_day,spend_amount,spend_gbp,currency,fetched_at)
-      SELECT 'live',$1,$2,r.campaign_id,r.campaign_name,r.ad_set_id,r.ad_set_name,r.market,r.owner,r.day,r.amount,CASE WHEN r.currency='GBP' THEN r.amount ELSE NULL END,r.currency,$4
-      FROM jsonb_to_recordset($3::jsonb) AS r(campaign_id text,campaign_name text,ad_set_id text,ad_set_name text,market text,owner text,day date,amount numeric,currency text)
-      ON CONFLICT (mode,source,campaign_id,ad_set_id,uk_day) DO UPDATE SET account_id=EXCLUDED.account_id,campaign_name=EXCLUDED.campaign_name,ad_set_name=EXCLUDED.ad_set_name,market=EXCLUDED.market,owner=EXCLUDED.owner,spend_amount=EXCLUDED.spend_amount,spend_gbp=EXCLUDED.spend_gbp,currency=EXCLUDED.currency,fetched_at=EXCLUDED.fetched_at`,
+        `INSERT INTO pulse.ad_spend(mode,source,account_id,campaign_id,campaign_name,ad_set_id,ad_set_name,market,owner,uk_day,spend_amount,spend_gbp,currency,fetched_at,impressions,link_clicks,adds_to_cart,purchases,purchase_value)
+      SELECT 'live',$1,$2,r.campaign_id,r.campaign_name,r.ad_set_id,r.ad_set_name,r.market,r.owner,r.day,r.amount,CASE WHEN r.currency='GBP' THEN r.amount ELSE NULL END,r.currency,$4,r.impressions,r.link_clicks,r.adds_to_cart,r.purchases,r.purchase_value
+      FROM jsonb_to_recordset($3::jsonb) AS r(campaign_id text,campaign_name text,ad_set_id text,ad_set_name text,market text,owner text,day date,amount numeric,currency text,impressions numeric,link_clicks numeric,adds_to_cart numeric,purchases numeric,purchase_value numeric)
+      ON CONFLICT (mode,source,campaign_id,ad_set_id,uk_day) DO UPDATE SET account_id=EXCLUDED.account_id,campaign_name=EXCLUDED.campaign_name,ad_set_name=EXCLUDED.ad_set_name,market=EXCLUDED.market,owner=EXCLUDED.owner,spend_amount=EXCLUDED.spend_amount,spend_gbp=EXCLUDED.spend_gbp,currency=EXCLUDED.currency,fetched_at=EXCLUDED.fetched_at,impressions=EXCLUDED.impressions,link_clicks=EXCLUDED.link_clicks,adds_to_cart=EXCLUDED.adds_to_cart,purchases=EXCLUDED.purchases,purchase_value=EXCLUDED.purchase_value`,
         [
           source,
           account,
@@ -153,6 +153,7 @@ export async function saveSpend(
               day: r.day,
               amount: r.amount,
               currency: r.currency,
+              impressions:r.impressions ?? null,link_clicks:r.linkClicks ?? null,adds_to_cart:r.addsToCart ?? null,purchases:r.purchases ?? null,purchase_value:r.purchaseValue ?? null,
             })),
           ),
           now,

@@ -17,14 +17,18 @@ const sums = ['spend', 'impressions', 'reach', 'linkClicks', 'threeSecondPlays',
   'plays25', 'plays50', 'plays75', 'plays100', 'addsToCart', 'purchases', 'purchaseValue'] as const;
 
 /** Rates are ratios of totals, never averages of the individual ad/day rates. */
-export function creativeTotals(rows: readonly AdInsight[]) {
+export function creativeTotals(rows: readonly AdInsight[], kind?: MediaGroup['kind']) {
   const totals = Object.fromEntries(sums.map(key => [key, 0])) as Record<typeof sums[number], number>;
-  let weightedPlayTime = 0, holdThreeSecondPlays = 0, holdDataRows = 0;
+  let weightedPlayTime = 0, holdThreeSecondPlays = 0, holdDataRows = 0, allSpendPlaysZero = true;
   const spendDays=new Set<string>(),missingPlayDays=new Set<string>();
   const hookSources = new Set<AdInsight['threeSecondSource']>();
   for (const row of rows) {
     for (const key of sums) totals[key] += row[key] ?? 0;
-    if(row.spend>0){spendDays.add(row.day);if(row.plays==null)missingPlayDays.add(row.day);}
+    if(row.spend>0){
+      spendDays.add(row.day);
+      if(row.plays==null)missingPlayDays.add(row.day);
+      if(row.plays!==0||row.thruPlays!==0)allSpendPlaysZero=false;
+    }
     if (row.thruPlays != null) {
       holdThreeSecondPlays += row.holdThreeSecondPlays ?? row.threeSecondPlays;
       holdDataRows++;
@@ -32,6 +36,8 @@ export function creativeTotals(rows: readonly AdInsight[]) {
     weightedPlayTime += row.averagePlayTime * (row.plays??0);
     if (row.threeSecondSource !== 'none') hookSources.add(row.threeSecondSource);
   }
+  // A served video with only zero play pairs has no usable play reading.
+  if(kind==='video'&&allSpendPlaysZero)for(const day of spendDays)missingPlayDays.add(day);
   return {
     ...totals, holdThreeSecondPlays, holdDataRows,holdSpendDays:spendDays.size,holdMissingPlayDays:missingPlayDays.size,
     roas: ratio(totals.purchaseValue, totals.spend),
@@ -121,7 +127,7 @@ export function aggregateCreativeGroups(data: CreativeData, filter: CreativeRang
     const firstDays = [...allAds.flatMap(ad => ad.firstSpendDay && (!filter.to || ad.firstSpendDay <= filter.to) ? [ad.firstSpendDay] : []),
       ...historical.filter(row => row.spend > 0).map(row => row.day)].sort();
     const selectedSpendDays = [...new Set(selected.filter(row => row.spend > 0).map(row => row.day))].sort();
-    return [{ group, ads, totals: creativeTotals(selected), firstSpendDay: firstDays[0] ?? null,
+    return [{ group, ads, totals: creativeTotals(selected,group.kind), firstSpendDay: firstDays[0] ?? null,
       lastSpendDay: selectedSpendDays.at(-1) ?? null, spendDays: selectedSpendDays.length,
       markets: [...new Set(ads.map(ad => ad.market))].sort(), owners: [...new Set(ads.map(ad => ad.owner))].sort() }];
   });

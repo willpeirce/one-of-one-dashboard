@@ -1,3 +1,4 @@
+import { fetchAdSets, type AdSet } from '../meta-adsets/catalogue.js';
 import { addDays } from '../hero-range.js';
 import type { Settings } from '../settings.js';
 import { AdTransport, type AdTransportOptions } from './http.js';
@@ -16,6 +17,7 @@ import { spendMarket } from './placement.js';
 export interface SpendReader {
   read(account: string, from: string, to: string, settings: Settings): Promise<SpendRow[]>;
   readCampaigns?(account: string): Promise<MetaCampaign[]>;
+  readAdSets?(account: string, settings: Settings): Promise<AdSet[]>;
 }
 const label = (value: unknown): string => {
   if (typeof value !== 'string' || !value.trim() || value.length > 300)
@@ -199,6 +201,9 @@ export class MetaSpend implements SpendReader {
     const rows: any[] = [];
     for await (const page of this.readPages(path, params, timeoutMs)) rows.push(...page);
     return rows;
+  }
+  readAdSets(account: string, settings: Settings): Promise<AdSet[]> {
+    return fetchAdSets(this, account, settings);
   }
   async readCampaigns(account: string): Promise<MetaCampaign[]> {
     const rows: MetaCampaign[] = [], cursors = new Set<string>();

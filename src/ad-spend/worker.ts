@@ -1,3 +1,4 @@
+import { saveAdSets } from '../meta-adsets/catalogue.js';
 import type { Database } from '../db.js';
 import { addDays, ukToday } from '../hero-range.js';
 import { readSettings } from '../settings.js';
@@ -177,6 +178,10 @@ export class SpendWorker {
         await recordCampaignSync(this.db, account, { state: 'error', at: now.toISOString(), code }).catch(() => {});
         console.error(`Meta campaigns read failed (${code}).`);
       }
+    }
+    if (source === 'meta' && reader.readAdSets) {
+      try { await saveAdSets(this.db, account, await reader.readAdSets(account, settings), settings, now); }
+      catch (error) { console.error(`Meta ad sets read failed (${adErrorCode(error, 'meta')}).`); }
     }
     if (source === 'meta' && (reader instanceof MetaSpend || this.options.creativeReader)) {
       if (this.creativeRunning) {

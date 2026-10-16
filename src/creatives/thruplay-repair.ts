@@ -9,6 +9,13 @@ export async function thruPlayHealth(db:Database,account:string):Promise<ThruPla
  const rows=(await db.query<{day:string;completed:boolean;error_code:string|null}>('SELECT day::text,completed,error_code FROM pulse.creative_thruplay_days WHERE account_id=$1 ORDER BY day',[account])).rows;
  return {completed:rows.filter(r=>r.completed).length,total:rows.length,failures:rows.filter(r=>r.error_code).map(r=>({day:r.day,code:r.error_code!}))};
 }
+export function thruPlayLine(health:ThruPlayHealth):string {
+ const reasons=[...new Set(health.failures.map(f=>{
+  const meta=/meta (\d+)(?:\/(\d+))?/.exec(f.code);
+  return meta?`meta ${meta[2]??meta[1]}`:f.code.replace(/ at backfill$/,'');
+ }))].sort();
+ return `ThruPlay backfill: ${health.completed} of ${health.total} days complete${health.failures.length?`, ${health.failures.length} ${health.failures.length===1?'day':'days'} refused (${reasons.join('; ')}), retry next UK day`:''}`;
+}
 /** Only repair video measures; never replace spend/actions or certify full insight coverage. */
 export async function repairThruPlays(db:Database,reader:CreativeReader,account:string,now:Date):Promise<void>{
  if(!reader.readThruPlays)return;
@@ -51,4 +58,10 @@ export async function repairThruPlays(db:Database,reader:CreativeReader,account:
  }
  const health=await thruPlayHealth(db,account);
  if(health.total>0&&health.completed===health.total)await db.query('UPDATE pulse.creative_jobs SET thruplays_backfilled_at=COALESCE(thruplays_backfilled_at,$2) WHERE account_id=$1',[account,now]);
+ // Before the separate repair job, its error shared the full insight backfill's slot.
+ // Completed main backfill proves that slot is stale; live catalogue/insight failures stay.
+ await db.query(`UPDATE pulse.creative_jobs SET
+  insights_error=CASE WHEN insights_error LIKE '% at backfill' THEN NULL ELSE insights_error END,
+  error_code=COALESCE(catalogue_error,CASE WHEN insights_error LIKE '% at backfill' THEN NULL ELSE insights_error END)
+  WHERE account_id=$1 AND backfill_done AND (insights_error LIKE '% at backfill' OR error_code LIKE '% at backfill')`,[account]);
 }

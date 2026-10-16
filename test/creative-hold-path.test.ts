@@ -9,6 +9,25 @@ import {computeCreativeLifts} from '../src/creatives/lifts.js';
 import {defaultSettings} from '../src/settings.js';
 import {creativeAd,creativeGroup} from './helpers/creatives.js';
 import {createTestDatabase} from './helpers/database.js';
+import {CreativeWorker} from '../src/creatives/worker.js';
+import {AdError} from '../src/ad-spend/model.js';
+import {creativeHealth} from '../src/creatives/store.js';
+import {creativeHealthDetails} from '../src/views.js';
+test('a later successful insight backfill clears its stored 1504044 attention error',async t=>{
+ const db=await createTestDatabase();t.after(()=>db.close());const account='invented-recovered-backfill',now=new Date('2026-10-16T12:00:00Z');
+ const settings={...defaultSettings(),metaAdAccountId:account},env={META_ACCESS_TOKEN:randomBytes(16).toString('hex')};
+ await db.query("INSERT INTO pulse.creative_jobs(account_id,backfill_next,nightly_day) VALUES($1,'2026-10-15','2026-10-16')",[account]);
+ let fail=true;t.mock.method(console,'error',()=>{});
+ const reader:import('../src/creatives/model.js').CreativeReader={readCatalogue:async function*(){yield []},readInsights:async(_,from,to)=>{
+  if(from===to&&fail)throw new AdError('http',400,2,1504044);return [];
+ },imageBytes:async()=>new Uint8Array(),videoSource:async()=>'',videoFrames:async()=>[]};
+ const worker=new CreativeWorker(db,reader);
+ await worker.runInsights(account,settings,now);
+ assert.match(creativeHealthDetails(await creativeHealth(db,settings,env,now)),/Creative read needs attention \(http 400, meta 2\/1504044 at backfill\)/);
+ fail=false;await worker.runInsights(account,settings,now);
+ assert.doesNotMatch(creativeHealthDetails(await creativeHealth(db,settings,env,now)),/Creative read needs attention/);
+ assert.deepEqual((await db.query('SELECT error_code,insights_error FROM pulse.creative_jobs')).rows,[{error_code:null,insights_error:null}]);
+});
 test('fixture ThruPlays traverse daily Meta response, parser, database, group totals and lift totals',async t=>{
  const db=await createTestDatabase();t.after(()=>db.close());const account='invented-hold-path',day='2026-10-16',settings={...defaultSettings(),metaAdAccountId:account,creativeLiftMinimumSpendGbp:1};
  const ids=Array.from({length:6},(_,i)=>`invented-hold-${i}`);
@@ -80,7 +99,7 @@ test('ThruPlay day progress survives restart, skips a failed day and retries it 
  const {creativeHealth}=await import('../src/creatives/store.js');
  const {creativeHealthDetails}=await import('../src/views.js');
  const db=await createTestDatabase();t.after(()=>db.close());const account='invented-thruplay-resume',now=new Date('2026-10-16T12:00:00Z');
- await db.query('INSERT INTO pulse.creative_jobs(account_id) VALUES($1)',[account]);
+ await db.query("INSERT INTO pulse.creative_jobs(account_id,backfill_done,insights_error,error_code) VALUES($1,true,$2,$2)",[account,'http 400, meta 2/1504044 at backfill']);
  const calls:string[][]=[],logs:string[]=[];t.mock.method(console,'error',(line:string)=>logs.push(line));let fail=true;
  const reader:import('../src/creatives/model.js').CreativeReader={readCatalogue:async function*(){yield []},readInsights:async()=>[],imageBytes:async()=>new Uint8Array(),videoSource:async()=>'',videoFrames:async()=>[],readThruPlays:async(_,from,to)=>{
   calls.push([from,to]);if(fail&&from<='2026-10-03'&&to>='2026-10-03')throw new AdError('http',400,2,1504044);return [];
@@ -89,11 +108,18 @@ test('ThruPlay day progress survives restart, skips a failed day and retries it 
  assert.deepEqual(await thruPlayHealth(db,account),{completed:11,total:14,failures:[{day:'2026-10-03',code:'http 400, meta 2/1504044 at backfill'}]});
  assert.deepEqual(logs,['Meta ThruPlay backfill 2026-10-03 failed (http 400, meta 2/1504044 at backfill).']);
  const health=await creativeHealth(db,{...defaultSettings(),metaAdAccountId:account},{META_ACCESS_TOKEN:randomBytes(16).toString('hex')},now);
- assert.match(creativeHealthDetails(health),/ThruPlay backfill: 11 of 14 days complete.*2026-10-03: http 400, meta 2\/1504044 at backfill/);
+ assert.match(creativeHealthDetails(health),/ThruPlay backfill: 11 of 14 days complete, 1 day refused \(meta 1504044\), retry next UK day/);
+ assert.doesNotMatch(creativeHealthDetails(health),/Creative read needs attention/);
+ assert.deepEqual((await db.query('SELECT error_code,insights_error FROM pulse.creative_jobs')).rows,[{error_code:null,insights_error:null}]);
  calls.length=0;await repairThruPlays(db,{...reader},account,new Date('2026-10-16T12:30:00Z'));
  assert.deepEqual(calls,[['2026-10-14','2026-10-15']]);assert.equal((await thruPlayHealth(db,account)).completed,13);
  calls.length=0;fail=false;await repairThruPlays(db,{...reader},account,new Date('2026-10-16T23:01:00Z'));
  assert.deepEqual(calls,[['2026-10-03','2026-10-03']]);assert.equal((await thruPlayHealth(db,account)).completed,14);
  assert.ok((await db.query<any>('SELECT thruplays_backfilled_at FROM pulse.creative_jobs')).rows[0].thruplays_backfilled_at);
+ const recovered=await creativeHealth(db,{...defaultSettings(),metaAdAccountId:account},{META_ACCESS_TOKEN:randomBytes(16).toString('hex')},now);
+ assert.doesNotMatch(creativeHealthDetails(recovered),/Creative read needs attention|days? refused/);
  calls.length=0;await repairThruPlays(db,reader,account,new Date('2026-10-18T12:00:00Z'));assert.deepEqual(calls,[]);
+ await db.query("UPDATE pulse.creative_jobs SET catalogue_error='timeout at catalogue after 0 ads',insights_error='timeout at insights',error_code='timeout at catalogue after 0 ads'");
+ await repairThruPlays(db,reader,account,new Date('2026-10-18T12:00:00Z'));
+ assert.deepEqual((await db.query('SELECT error_code,insights_error FROM pulse.creative_jobs')).rows,[{error_code:'timeout at catalogue after 0 ads',insights_error:'timeout at insights'}]);
 });

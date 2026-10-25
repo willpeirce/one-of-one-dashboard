@@ -359,7 +359,7 @@ export class MetaCreativeClient implements CreativeReader {
     return report.map(row=>{
       const day=insightDay(row.date_start);if(day<from||day>to)throw new AdError('invalid');
       const direct=Array.isArray(row.actions)&&row.actions.some((item:any)=>item.action_type==='video_view');
-      return {adId:id(row.ad_id),day,plays:row.video_play_actions==null?null:action(row.video_play_actions),thruPlays:row.video_thruplay_watched_actions==null?null:action(row.video_thruplay_watched_actions),
+      return {adId:id(row.ad_id),day,plays:action(row.video_play_actions),thruPlays:action(row.video_thruplay_watched_actions),
         holdThreeSecondPlays:row.actions==null&&row.video_continuous_2_sec_watched_actions==null?undefined
           :direct?action(row.actions,'video_view'):action(row.video_continuous_2_sec_watched_actions)};
     });

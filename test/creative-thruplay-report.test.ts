@@ -36,16 +36,16 @@ test('ThruPlay report counts distinct tried days across splitting and persists t
   return success.readThruPlays!(account,from,to);
  }}),account,now,'3d');
  const health=await thruPlayHealth(db,account,now,'3d');
- assert.deepEqual(health.lastRunReport,{tried:3,filled:2,refused:1,codes:[{code:'http 400, meta 2/1504044 at backfill',count:1}]});
+ assert.deepEqual(health.lastRunReport,{tried:3,filled:2,refused:1,waiting:1,codes:[{code:'http 400, meta 2/1504044 at backfill',count:1}]});
  assert.equal(health.lastRunAt,now.toISOString());
- assert.match(thruPlayLine(health),/2 of 3 days complete, 1 day still to read, last run 2026-10-16T12:00:00.000Z: 3 days read, 2 filled, 1 refused \(meta 1504044\)/);
+ assert.match(thruPlayLine(health),/2 of 3 days complete; 1 day wait until 00:00 UK \(meta 1504044\).*3 days read, 2 filled, 1 refused, 1 waiting/);
  const saved=(await db.query('SELECT thruplay_run_report FROM pulse.creative_jobs WHERE account_id=$1',[account])).rows[0]!.thruplay_run_report;
  assert.deepEqual(saved,health.lastRunReport);
  assert.equal(await repairThruPlays(db,success,account,new Date('2026-10-16T12:05:00Z'),'3d',{onlyDue:true}),null);
  assert.deepEqual((await thruPlayHealth(db,account,now,'3d')).lastRunReport,saved,'a no-op tail preserves the report and honors the refused-day cooldown');
  await repairThruPlays(db,success,account,new Date('2026-10-16T12:10:00Z'),'3d');
  const idle=await thruPlayHealth(db,account,now,'3d');
- assert.deepEqual(idle.lastRunReport,{tried:0,filled:0,refused:0,codes:[]});
+ assert.deepEqual(idle.lastRunReport,{tried:0,filled:0,refused:0,waiting:1,codes:[]});
  assert.equal(idle.failures.length,1,'no due reads must not erase the outstanding refused day');
 });
 
@@ -60,7 +60,7 @@ test('first startup tick runs reset video repair even when the persisted spend p
  })});t.after(()=>worker.stop());
  await worker.tick('meta');await worker.waitForThruPlayRepair();
  assert.equal(money,0);assert.equal(insights,0);assert.equal(repairs,1);
- assert.deepEqual((await thruPlayHealth(db,account,now,'3d')).lastRunReport,{tried:3,filled:3,refused:0,codes:[]});
+ assert.deepEqual((await thruPlayHealth(db,account,now,'3d')).lastRunReport,{tried:3,filled:3,refused:0,waiting:0,codes:[]});
  clock=new Date(now.getTime()+30_000);await worker.tick('meta');await worker.waitForThruPlayRepair();
  assert.equal(repairs,1,'repair keeps its own thirty-minute cadence');
 });
@@ -76,9 +76,9 @@ test('video repair completes while the full insight step waits and retains its r
   started.resolve();await release.promise;throw new AdError('timeout');
  }})});
  await worker.tick('meta');await started.promise;await worker.waitForThruPlayRepair();
- assert.deepEqual((await thruPlayHealth(db,account,now,'3d')).lastRunReport,{tried:3,filled:3,refused:0,codes:[]});
+ assert.deepEqual((await thruPlayHealth(db,account,now,'3d')).lastRunReport,{tried:3,filled:3,refused:0,waiting:0,codes:[]});
  release.resolve();await worker.waitForCreatives();
- assert.deepEqual((await thruPlayHealth(db,account,now,'3d')).lastRunReport,{tried:3,filled:3,refused:0,codes:[]},'the full-read tail must not run a duplicate repair');
+ assert.deepEqual((await thruPlayHealth(db,account,now,'3d')).lastRunReport,{tried:3,filled:3,refused:0,waiting:0,codes:[]},'the full-read tail must not run a duplicate repair');
  assert.equal((await db.query('SELECT insights_error FROM pulse.creative_jobs WHERE account_id=$1',[account])).rows[0]!.insights_error,'timeout at insights');
 });
 
@@ -98,7 +98,7 @@ test('a slower full import with missing video counts receives a due-only repair 
  release.resolve();await worker.waitForCreatives();
  assert.deepEqual(repairs,[[days[0],days[2]],[days[1],days[2]]]);
  const health=await thruPlayHealth(db,account,now,'3d');
- assert.equal(health.completed,3);assert.deepEqual(health.lastRunReport,{tried:2,filled:2,refused:0,codes:[]});
+ assert.equal(health.completed,3);assert.deepEqual(health.lastRunReport,{tried:2,filled:2,refused:0,waiting:0,codes:[]});
 });
 
 test('video repair preserves an unmarked retry failure after the forward backfill already finished',async t=>{

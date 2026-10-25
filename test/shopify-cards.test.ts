@@ -279,3 +279,37 @@ test('self-check stays quiet about prior scan failures when no groups are waitin
  source.scanWaiting=1;
  assert.equal(evaluateWatchdogs(facts([]),now,settings,blankObservation(),[],[source]).find(row=>row.id==='self')!.status,'tripped');
 });
+
+test('Orders flowing checks paid times only inside compared windows and names each missing condition',async()=>{
+ const clock=new Date('2026-10-25T08:04:00Z'),base=await order();
+ const old={...base,createdAt:'2026-10-04T07:00:00Z',day:'2026-10-04',financialStatus:'REFUNDED',paidAt:null};
+ const prior={...base,createdAt:'2026-10-18T06:00:00Z',day:'2026-10-18',paidAt:'2026-10-18T06:00:00Z'};
+ const stored=facts([old,prior]);stored.jobs.forEach(job=>{job.last_success_at=clock;});
+ const check=()=>evaluateWatchdogs(stored,clock,settings,blankObservation(),[],[]).find(row=>row.id==='orders')!;
+ assert.equal(check().status,'tripped','an old refunded order cannot block the silence verdict');
+ stored.records.push({kind:'order',data:{...old,createdAt:'2026-10-25T07:00:00Z',day:'2026-10-25'},fetched_at:clock});
+ assert.equal(check().status,'unknown');assert.match(check().why,/1 paid order in the compared hours has no paid time/);
+ stored.records.push({kind:'order',data:{...old,createdAt:'2026-10-18T06:00:00Z',day:'2026-10-18'},fetched_at:clock});
+ assert.match(check().why,/2 paid orders in the compared hours have no paid time/);
+ stored.jobs.find(job=>job.name==='poll')!.last_success_at=new Date('2026-10-25T07:40:00Z');
+ assert.equal(check().why,'Last order poll 25 Oct 07:40 UK; no silence verdict');
+ stored.jobs.find(job=>job.name==='poll')!.last_success_at=clock;
+ stored.jobs[0]!.state.from='2026-10-20';assert.equal(check().why,'Order history starts 20 Oct; no silence verdict');
+ stored.jobs[0]!.state.ordersDone=false;assert.match(check().why,/history backfill incomplete/);
+});
+
+test('channel reconciliation counts pending, authorised and later-cancelled orders on the report rule',async t=>{
+ const db=await createTestDatabase();t.after(()=>db.close());
+ const raw=(await fixture('order')).data.order;
+ const envelope=(await fixture('orders-null-channel')).data.orders;
+ const rows=['PENDING','AUTHORIZED','PAID'].map((status,index)=>({...raw,id:`gid://shopify/Order/${990800+index}`,name:undefined,createdAt:'2026-09-29T09:00:00Z',updatedAt:'2026-09-29T10:00:00Z',displayFinancialStatus:status,cancelledAt:index===2?'2026-09-29T10:00:00Z':null,channelInformation:{channelDefinition:{channelName:'Invented channel'}},test:false}));
+ class Reader extends SampleShopify{
+  override async orders(){return {...envelope,nodes:rows};}
+  override async report(query:string){return query.includes('sales_channel')?{columns:[{name:'day'},{name:'sales_channel'},{name:'orders'}],rows:[['2026-09-29','Invented channel',3]]}:super.report(query);}
+  override async subscribe(){}
+ }
+ const worker=new ShopifyWorker(db,{SHOPIFY_CLIENT_ID:randomUUID(),SHOPIFY_CLIENT_SECRET:randomUUID()},'https://pulse.example.test',{reader:new Reader(),clock:()=>now});
+ await worker.initialize();await worker.tick();
+ assert.equal((await worker.store.facts()).noticeDetails.filter(row=>row.kind==='channel_short').length,0);
+ assert.deepEqual(await new ShopifyStore(db,'sample').channelExclusions(),[]);
+});

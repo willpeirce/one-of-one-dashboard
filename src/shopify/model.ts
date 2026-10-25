@@ -150,6 +150,8 @@ export type Order = Omit<ReturnType<typeof cleanOrder>, 'lines' | 'refunds' | 'f
   refunds: { id: string; createdAt: string; itemsPence: number; taxPence: number; totalPence?: number; shippingNetPence?: number; shippingTaxPence?: number }[];
   fulfillments: { id: string; status: string; createdAt: string; updatedAt: string; locationId: string | null; lines: { lineId: string; quantity: number }[] | null }[];
 };
+/** ShopifyQL's orders measure includes unpaid and later-cancelled orders; test orders are excluded. */
+export const channelOrder = (order: Order): boolean => !order.test;
 export const paidOrder = (o: Order): boolean => !o.test && !o.cancelledAt && ['PAID', 'PARTIALLY_REFUNDED', 'REFUNDED'].includes(o.financialStatus);
 export const orderTotalPence = (order: Order): number => order.totalPence ?? order.itemsAfterDiscountsPence + order.shippingPence + (order.taxesIncluded ? order.itemTaxPence : order.taxPence);
 export function isFreeOrder(order: Order): boolean {

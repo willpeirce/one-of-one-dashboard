@@ -173,3 +173,5 @@ WHERE mode='live'
   AND account_id=(SELECT values->>'metaAdAccountId' FROM pulse.settings LIMIT 1)
   AND kind='video' AND video_owned_elsewhere;
 ```
+
+The `change-oct-25` follow-up requires migration 040. Home replaces the radar with a drop line and a UK-time hourly Orders comparison. ThruPlay repair settles omitted zero fields, retries open days at most three times and explains waiting/given-up days. Account-video pages halve on transient errors and unfinished lists still allow direct recovery. Spend gaps name their day; insights include deleted/archived statuses. Creative scans use structured output and safe failure shapes at the existing 1500-token cap. Source diagnostics use UK time. Orders flowing scopes payment-time coverage to its comparison windows; channel reconciliation counts non-test orders regardless of payment/cancellation state. No new keys, Settings or source writes are required.

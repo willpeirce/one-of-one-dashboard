@@ -10,6 +10,7 @@ Updated in every pull request.
 | 2 fix | Adaptive account-video pages and unscored recovery | built on `change-oct-25`; existing cursor/report storage | no new keys | same-run 100/50/25 retry, direct fallback on unfinished lists, separate unscored count |
 | 2 fix | Dated ad-level spend gap and inclusive insights statuses | built on `change-oct-25` | no new keys | day/totals/set count; ignore gaps below £1; incomplete days stay out |
 | 2 fix | Structured creative scans, failure shapes and UK times | built on `change-oct-25`; no migration; 1500 output tokens retained | existing scan flag/key/prices | inspect safe failure shape, eligible scan recovery and no idle self-check warning |
+| 1 fix | Orders flowing reasons and channel count agreement | built on `change-oct-25`; no migration | no new keys | compared-hour paid coverage, stale poll in UK time, non-test order rule and live-only exclusion diagnostics |
 | 0a | Service, database, passkeys, audit, source registry, CI | merged 2 Oct 2026; deployed 2 Oct | `DASHBOARD_SETUP_CODE`: configured | Will's phone enrollment and sign-in confirmed 4 Oct |
 | 0b | Real screen on sample data, live updates, Settings, home-screen app | merged 4 Oct 2026; logo/date follow-up merged and published 5 Oct; home-screen icon follow-up merged 5 Oct | no source keys needed | Will saw the published dark look and white logo and added the app to his home screen, 5 Oct |
 | 1a | Shopify token manager, backfill, webhooks and polls | PR #7 merged and published 5 Oct; sessions fix PR #8 merged | configured for the 5 Oct live check | sessions column and sales query checked; full report agreement awaits 1b |
@@ -54,11 +55,11 @@ Updated in every pull request.
 
 ## Next step
 
-Review `fix-oct-16d` from main with migration 035 (merged PR #35). Claude merges, runs the Shell merge, `npm run migrate`, and Republish. Migration 036 stores the ThruPlay last run/report; 037 nulls the remaining paid all-zero video signature and reopens its days; 038 adds refused ad-level day retries; 039 adds the account-video cache/cursor and durable ownership state. All four are required; older migrations are unchanged. No builder merge, deploy or live-source access.
+Review `change-oct-25`, based on latest main after PR #36 and migration 039. All seven requested items are included in order. Needs from Will after merge: **nothing**. Claude merges the PR, runs the Shell merge, `npm run migrate` (040), and Republish; the builder does not merge or deploy.
 
-Check `/sources` over two passes: the backfill cursor moves, then attention clears when the forward pass ends without an unmarked failure or lists refused days for next UK day; media-facts lengths rise or the run/permission lines count owned-elsewhere videos; ThruPlay shows a last-run time and tried/filled/refused counts; all-zero scored video groups show n/a with missing-day counts. Hero spend keeps its separate worker cadence.
+Check Home at 390px and 1280px: no radar, one drop line under the pills, an orders-by-hour chart around 140px high with today solid then dotted and yesterday dashed, hover/keyboard/tap inspection, All/UK/US, period/date controls leaving the chart on today, and hourly total matching Orders. The chart remains during partial ad spend.
 
-Will may need to grant `pages_read_engagement` for the owning Facebook Page and add that Page to the token's system user in Business settings → Users → System users → Add assets → Pages. The Page permission is distinct from ad-account access; token scope changes require generating an appropriately scoped token. Exact live asset access has not been inspected, and the Meta permission-reference pages could not be retrieved in the build environment, so this remains a permission check rather than a verified live diagnosis. After the grant, Claude reopens the affected local ownership flags once using the SQL in README; the next pass tries the creative fallback and then the newly readable video. Existing marked groups otherwise stay out of repeated permission-refused reads. No new Pulse Settings are needed; Judge.me Publish remains off.
+Check /sources: ThruPlay days complete or explain their wait/given-up state; unscored media facts count separately; the spend gap names its day/totals/sets; scans show a safe failure shape or recover; timestamps use UK time; Orders flowing passes/trips or names its blocking condition; channels count all non-test orders. Sources stay read-only, Judge.me Publish stays behind its off flag, no Meta async insights POST, no new keys or Settings, and no live-source agreement claimed. `docs/spec/` remains untouched for Claude's HQ refresh.
 
 **Video recovery follow-up (superseded 25 Oct):** the old rule kept successful reports with omitted video fields pending. Migration 040 and the narrow-report zero rule above replace that behaviour; an absent ad-day row still waits, up to three reads. The narrow repair supplies the matching daily hold denominator for hourly-only rows while preserving known values when that field is omitted. Existing migrations 034–035 are unchanged.
 
@@ -199,7 +200,9 @@ The 11 Oct batch resolves the repeated-snapshot issue: the 15-second heartbeat r
 
 ## Open questions for Will
 
-### Needs from Will after merge
+### Earlier-stage setup notes (historical)
+
+These notes record earlier stages, not requirements for `change-oct-25`. This change needs nothing from Will after merge; Claude owns the acceptance checks above.
 
 - Judge.me: after Publish, check Open/Read reaches the reviews dashboard. The exact-review template item is closed; no URL or new Setting is needed.
 - Replit keys: keep the existing `SHOPIFY_CLIENT_ID` and `SHOPIFY_CLIENT_SECRET`; if absent, add them before publishing. `JUDGEME_API_TOKEN` now enables the GET-only New reviews connection in part 1c. Only if Level 2 is refused, the read-only routine fallback needs `GITHUB_HQ_TOKEN` and the real dated HQ files/routine; no fallback routine is created here. Never send key values to the builder.

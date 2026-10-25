@@ -100,6 +100,13 @@ export class ShopifyStore {
     if (detail) noticeDetails.push({ kind: 'geo_unreliable', source_id: GEO_NOTICE_ID, detail, fetched_at: now });
     return { ...summary, records: records.rows, noticeDetails };
   }
+  /** Live-only diagnostics for /sources; never put order numbers into dashboard snapshots. */
+  async channelExclusions(): Promise<{ channel: string; orderNumbers: string[] }[]> {
+    if (this.mode !== 'live') return [];
+    const notices = await this.db.query<{detail:{channel:string;excludedOrderNumbers?:string[]}}>(
+      "SELECT detail FROM pulse.shopify_notices WHERE mode='live' AND kind='channel_short'");
+    return notices.rows.flatMap(({detail}) => detail.excludedOrderNumbers?.length ? [{channel:detail.channel,orderNumbers:detail.excludedOrderNumbers}] : []);
+  }
   async summary(now = this.mode === 'sample' ? new Date(appConfig.shopify.sampleNow) : new Date()) {
     const counts = await this.db.query<{ kind: string; count: string }>('SELECT kind, count(*)::text AS count FROM pulse.shopify_records WHERE mode = $1 GROUP BY kind', [this.mode]);
     const jobs = await this.db.query<{ name: string; state: any; last_success_at: Date | null; failures: number }>('SELECT name, state, last_success_at, failures FROM pulse.shopify_jobs WHERE mode = $1 ORDER BY name', [this.mode]);

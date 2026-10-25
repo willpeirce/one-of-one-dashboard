@@ -67,7 +67,6 @@ export function evaluateWatchdogs(facts: Facts, now: Date, settings: Settings, o
   const hours = usDaytime(now) ? 2 : 3;
   const paidTimes = data.orders.filter(o => o.paidAt).map(o => Date.parse(o.paidAt!));
   const threshold = now.getTime() - hours * 3_600_000;
-  const baselineStart = threshold - 7 * 86_400_000;
   // Compare the same local UK time last week across DST, rather than subtracting 168 UTC hours.
   const wallNow = zonedParts(now, 'Europe/London');
   const weekAgoDay = addDays(wallNow.day, -7);
@@ -77,11 +76,19 @@ export function evaluateWatchdogs(facts: Facts, now: Date, settings: Settings, o
     return n;
   };
   const wallBaselineEnd = localEpoch(weekAgoDay, wallNow.time);
-  const sameHourLastWeek = paidTimes.filter(t => t >= wallBaselineEnd - hours * 3_600_000 && t <= wallBaselineEnd).length;
-  const silence = paidTimes.every(time => time < threshold);
-  const paidCoverage = data.ready && data.from <= ukToday(new Date(baselineStart)) && data.orders.every(o => o.paidAt);
-  add('orders', 'Orders flowing', !freshOrders || !paidCoverage ? 'unknown' : silence && sameHourLastWeek > 0 ? 'tripped' : 'pass',
-    !freshOrders || !paidCoverage ? 'Paid times or complete fresh history unavailable; no silence verdict.' : `No paid order in ${hours} hours: ${silence ? 'yes' : 'no'}; same UK hours last week ${formatNumber(sameHourLastWeek)} paid orders.`);
+  const baselineStart = wallBaselineEnd - hours * 3_600_000;
+  const sameHourLastWeek = paidTimes.filter(t => t >= baselineStart && t <= wallBaselineEnd).length;
+  const silence = !paidTimes.some(time => time >= threshold && time <= now.getTime());
+  const missingPaidTimes = data.orders.filter(order => {
+    const created = Date.parse(order.createdAt);
+    return !order.paidAt && (created >= threshold && created <= now.getTime() || created >= baselineStart && created <= wallBaselineEnd);
+  }).length;
+  const unavailable = !freshOrders ? `${lastGood ? `Last order poll ${formatUkTime(lastGood)}` : 'No successful order poll'}; no silence verdict`
+    : !data.ready ? 'Order history backfill incomplete; no silence verdict'
+    : data.from > ukToday(new Date(baselineStart)) ? `Order history starts ${new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', day: 'numeric', month: 'short' }).format(new Date(`${data.from}T12:00:00Z`))}; no silence verdict`
+    : missingPaidTimes ? `${formatNumber(missingPaidTimes)} paid ${missingPaidTimes === 1 ? 'order in the compared hours has' : 'orders in the compared hours have'} no paid time; no silence verdict` : null;
+  add('orders', 'Orders flowing', unavailable ? 'unknown' : silence && sameHourLastWeek > 0 ? 'tripped' : 'pass',
+    unavailable ?? `No paid order in ${hours} hours: ${silence ? 'yes' : 'no'}; same UK hours last week ${formatNumber(sameHourLastWeek)} paid orders.`);
   const cartLimit = usDaytime(now) ? 40 : 75;
   add('us_cart', 'US add to cart', !freshSessions || typeof s?.usCarts !== 'number' || !s?.marketReliable || !observation.lastObserved || !observation.initialized ? 'unknown' : observation.cartless >= cartLimit ? 'tripped' : 'pass',
     `Monitoring changes between clean report snapshots: ${formatNumber(observation.cartless)} US sessions without a cart; bar ${cartLimit}. A poll with carts resets the streak; exact visitor order is unavailable in ShopifyQL.`, '/analytics');

@@ -1,3 +1,4 @@
+import { scoredMediaCte } from './scored-media.js';
 import type { Database } from '../db.js';
 import type { Settings } from '../settings.js';
 import type { SourceMode, SourceStatus } from '../sources.js';
@@ -8,7 +9,7 @@ export type ScanFailure = 'refused' | 'malformed' | 'timeout' | 'cap' | 'network
 export interface ScanScope { accountId: string; mode: SourceMode }
 export interface ScanHealth {
   enabled: boolean; line: string; message: string | null;
-  scanned: number; failed: number; spentGbp: number; capGbp: number; model: string;
+  waiting: number; scanned: number; failed: number; spentGbp: number; capGbp: number; model: string;
   status: SourceStatus; reason: ScanFailure | null; httpStatus: number | null; providerCode?: string | null;
   lastAttemptAt: string | null; lastSuccessAt: string | null; consecutiveFailures: number;
 }
@@ -29,8 +30,8 @@ export async function scanSpendToday(db: Database, scope: ScanScope, now: Date):
 /** Current-model parent results count once; cap/prices stops never replace provider health. */
 export async function readScanHealth(db: Database, settings: Settings, scope: ScanScope & { now?: Date }): Promise<ScanHealth> {
   const now = scope.now ?? new Date(), enabled = scanEnabled(scope.mode);
-  const [results, summary, last, control, spentGbp] = await Promise.all([
-    db.query<{ status: 'done' | 'failed'; failure_reason: ScanFailure | null; http_status: number | null; provider_code: string | null }>(`SELECT DISTINCT ON(s.media_group_id) s.status,s.failure_reason,s.http_status,s.provider_code
+  const [results, summary, last, control, spentGbp, eligible] = await Promise.all([
+    db.query<{ media_group_id: string; status: 'done' | 'failed'; failure_reason: ScanFailure | null; http_status: number | null; provider_code: string | null }>(`SELECT DISTINCT ON(s.media_group_id) s.media_group_id,s.status,s.failure_reason,s.http_status,s.provider_code
       FROM pulse.creative_scans s JOIN pulse.media_groups g
         ON g.id=s.media_group_id AND g.mode=s.mode AND g.account_id=s.account_id
       WHERE s.mode=$1 AND s.account_id=$2 AND s.model_id=$3 AND g.merged_into_id IS NULL
@@ -47,7 +48,10 @@ export async function readScanHealth(db: Database, settings: Settings, scope: Sc
     db.query<any>(`SELECT 1 FROM pulse.creative_scans WHERE mode=$1 AND account_id=$2
       AND failure_reason='cap' AND retry_after>$3 LIMIT 1`, [scope.mode, scope.accountId, now]),
     scanSpendToday(db, scope, now),
+    scope.mode === 'live' ? db.query<{parent:string}>(`${scoredMediaCte} SELECT parent FROM scored WHERE spend>$4`, [scope.accountId, '0000-01-01', ukToday(now), settings.creativeSpendFloorGbp]) : Promise.resolve({rows:[]}),
   ]);
+  const done = new Set(results.rows.filter(result => result.status === 'done').map(result => result.media_group_id));
+  const waiting = eligible.rows.filter(row => !done.has(row.parent)).length;
   const row = summary.rows[0], latest = last.rows[0];
   const scanned = results.rows.filter(result => result.status === 'done').length;
   const failed = results.rows.filter(result => result.status === 'failed').length;
@@ -63,7 +67,7 @@ export async function readScanHealth(db: Database, settings: Settings, scope: Sc
   const line = enabled
     ? `Scan: on · ${scanned} scanned · ${failed} failed${commonReason ? ` · ${commonReason}` : ''} · £${spentGbp.toFixed(2)} of £${settings.creativeScanCapGbp.toFixed(2)} today · ${settings.creativeScanModel}${message ? ` · ${message}` : ''}`
     : 'Scan: off';
-  return { enabled, line, message, scanned, failed, spentGbp, capGbp: settings.creativeScanCapGbp, model: settings.creativeScanModel,
+  return { enabled, line, message, waiting, scanned, failed, spentGbp, capGbp: settings.creativeScanCapGbp, model: settings.creativeScanModel,
     status: !process.env.ANTHROPIC_API_KEY?.trim() ? 'waiting_for_keys'
       : latest?.status === 'done' ? 'healthy' : latest?.status === 'failed' ? 'error' : 'not_implemented',
     reason: latest?.failure_reason ?? null, httpStatus: latest?.http_status ?? null, providerCode: latest?.provider_code ?? null,
@@ -73,5 +77,6 @@ export async function readScanHealth(db: Database, settings: Settings, scope: Sc
 }
 
 export function scanFailureLabel(reason: ScanFailure | null, status: number | null, code?: string | null): string {
-  return [status && status >= 400 ? `http ${status}` : reason ?? 'refused',code].filter(Boolean).join(', ');
+  const shape = [status ? `http ${status}` : null, code].filter(Boolean).join(', ');
+  return `${reason ?? 'refused'}${shape ? ` (${shape})` : ''}`;
 }

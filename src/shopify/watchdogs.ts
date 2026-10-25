@@ -1,3 +1,4 @@
+import { formatUkTime } from '../uk-time.js';
 import { formatNumber } from '../money.js';
 import { appConfig } from '../config.js';
 import type { Database } from '../db.js';
@@ -85,7 +86,7 @@ export function evaluateWatchdogs(facts: Facts, now: Date, settings: Settings, o
   add('us_cart', 'US add to cart', !freshSessions || typeof s?.usCarts !== 'number' || !s?.marketReliable || !observation.lastObserved || !observation.initialized ? 'unknown' : observation.cartless >= cartLimit ? 'tripped' : 'pass',
     `Monitoring changes between clean report snapshots: ${formatNumber(observation.cartless)} US sessions without a cart; bar ${cartLimit}. A poll with carts resets the streak; exact visitor order is unavailable in ShopifyQL.`, '/analytics');
   add('checkout', 'Checkout', !freshSessions || !observation.lastObserved || !observation.initialized ? 'unknown' : observation.checkoutSince && now.getTime() - Date.parse(observation.checkoutSince) >= 90 * 60_000 ? 'tripped' : 'pass',
-    observation.checkoutSince ? `Checkouts started without a completion since ${observation.checkoutSince}; bar 90 minutes.` : 'No outstanding checkout silence observed between report snapshots.', '/analytics');
+    observation.checkoutSince ? `Checkouts started without a completion since ${formatUkTime(observation.checkoutSince)}; bar 90 minutes.` : 'No outstanding checkout silence observed between report snapshots.', '/analytics');
   const dispatch = data.orders.map(o => dispatchLate(o, now, settings, holidays));
   const late = dispatch.filter(x => x === true).length;
   add('dispatch', 'Dispatch', !freshOrders || !data.ready ? 'unknown' : late ? 'tripped' : dispatch.some(x => x === null) ? 'unknown' : 'pass',
@@ -106,10 +107,10 @@ export function evaluateWatchdogs(facts: Facts, now: Date, settings: Settings, o
   const intervals: Record<string, number> = { poll: 300_000, inventory: 300_000, sessions: 300_000, reconcile: 86_400_000, subscriptions: 3_600_000 };
   const failed = facts.jobs.filter(j => j.name !== 'shipping_refunds' && (j.failures >= 2 || j.name in intervals && j.last_success_at && now.getTime() - new Date(j.last_success_at).getTime() > 3 * (j.name === 'sessions' && j.state.cadence === 'daily' ? 86_400_000 : intervals[j.name]!)));
   // Reviews remain a reading decision; their connection status never changes business health.
-  const otherFailures = health.filter(h => h.source !== 'judgeme' && h.mode === 'live' && h.status === 'error' && h.consecutiveFailures >= 2);
+  const otherFailures = health.filter(h => h.source !== 'judgeme' && (h.source !== 'anthropic' || h.scanWaiting !== 0) && h.mode === 'live' && h.status === 'error' && h.consecutiveFailures >= 2);
   const expiry = settings.keyExpiryDates.filter(k => k.expiresOn <= addDays(day, 14));
   add('self', 'Self-check', failed.length || otherFailures.length || expiry.length ? 'tripped' : facts.jobs.some(j => j.name in intervals && !j.last_success_at && !(facts.mode === 'sample' && j.name === 'subscriptions')) ? 'unknown' : 'pass',
-    [...failed.map(j => `${j.name}: failed ${formatNumber(j.failures)} times; last worked at ${j.last_success_at ? new Date(j.last_success_at).toISOString() : 'never'}`), ...otherFailures.map(h => `${h.name}: last worked at ${h.lastSuccessAt ?? 'never'}`), ...expiry.map(k => `${k.keyName}: expires ${k.expiresOn}`)].join(' · ') || 'No repeated failures, stale feeds or keys within 14 days of expiry.', '');
+    [...failed.map(j => `${j.name}: failed ${formatNumber(j.failures)} times; last worked at ${j.last_success_at ? formatUkTime(j.last_success_at) : 'never'}`), ...otherFailures.map(h => `${h.name}: last worked at ${h.lastSuccessAt ? formatUkTime(h.lastSuccessAt) : 'never'}`), ...expiry.map(k => `${k.keyName}: expires ${k.expiresOn}`)].join(' · ') || 'No repeated failures, stale feeds or keys within 14 days of expiry.', '');
   for (const notice of facts.noticeDetails) if (notice.kind === 'channel_short') add(notice.source_id, 'Orders by channel', 'tripped', `${notice.detail.channel}: stored ${formatNumber(notice.detail.stored)}, ShopifyQL ${formatNumber(notice.detail.reported)}, ${notice.detail.from}–${notice.detail.to}. Check app access in Shopify Dev Dashboard; marketplace scope is decided by the live check.`);
   return checks;
 }

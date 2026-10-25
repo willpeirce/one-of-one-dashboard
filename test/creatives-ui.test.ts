@@ -336,7 +336,7 @@ test('manual scan is signed in, scoped and flag guarded, then returns safe resol
   process.env.CREATIVE_SCAN_ENABLED = 'false'; process.env.ANTHROPIC_API_KEY = inventedCredential;
   let calls = 0;
   const h = await harness(t, true, { fetch: async () => { calls++; return new Response(JSON.stringify({
-    content: [{ type: 'text', text: JSON.stringify({ attributes: { hookType: { value: 'reveal', confidence: 0.9, reason: 'Invented reveal.' } } }) }],
+    stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ attributes: { hookType: { value: 'reveal', confidence: 0.9, reason: 'Invented reveal.' } } }) }],
     usage: { input_tokens: 100, output_tokens: 50 },
   }), { status: 200 }); } });
   const group = creativeGroup('invented-scan-parent');

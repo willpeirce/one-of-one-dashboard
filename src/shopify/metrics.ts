@@ -1,3 +1,4 @@
+import { formatUkTime } from '../uk-time.js';
 import { applySpend, placedSpendRows, usableSpendSources, type AdHeroInputs } from '../ad-spend/metrics.js';
 import { sampleSpend } from '../ad-spend/store.js';
 import { appConfig } from '../config.js';
@@ -118,7 +119,7 @@ function marketHero(facts: Facts, today: string, from: string, to: string, setti
   const breakdown = `UK ${formatNumber(count('UK'))} · US ${formatNumber(count('US'))} · EU ${formatNumber(count('EU'))} · unknown ${formatNumber(count('unknown'))} · TikTok ${formatNumber(orders.filter(isTikTok).length)} (included)`;
   hero.orders.ss = `${breakdown} · ${formatNumber(Math.round(hero.orders.n / days * 10) / 10)}/day`;
   const lastWorked = facts.jobs.find(j => j.name === 'poll')?.last_success_at;
-  const lastLabel = lastWorked ? `Last order poll ${new Date(lastWorked).toISOString()}` : 'First sync pending';
+  const lastLabel = lastWorked ? `Last order poll ${formatUkTime(lastWorked)}` : 'First sync pending';
   for (const metric of [hero.net, hero.orders, hero.cr]) metric.d.src += ` · ${lastLabel}`;
   const kitOrders = orders.filter(isKit);
   hero.orders.d.extra = [...(hero.orders.d.extra ?? []), ['Orders by market', breakdown], ['Average order', ratio(hero.net.n, hero.orders.n) === null ? 'No paid orders' : formatPounds(hero.net.n / hero.orders.n)], ['Upgrade rate', kitOrders.length ? `${formatNumber(100 * orders.filter(isUpgrade).length / kitOrders.length, 1)}% · tiers from ordered products` : 'No kit orders'], ['Markets', 'EU and other orders, including unknown and TikTok, show under All only; UK plus US does not add up to All.'], ['Free orders', `${formatNumber(freeCount)} in this period. Free orders (replacements and marketing send-outs at £0) are left out.${marketOrders.some(o => o.tags === undefined) ? ' Some earlier replacement tags are still being refreshed; £0 orders are excluded immediately.' : ''}`], ['Coverage', `Order details from ${data.from}. Earlier sales are store-wide ShopifyQL only; no invented market split.`]];

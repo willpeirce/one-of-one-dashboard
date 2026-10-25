@@ -11,8 +11,8 @@ import type { ShopifyDashboard } from '../src/shopify/dashboard.js';
 test('Settings distinguishes pending, successful-empty and failed campaign reads in UK time', () => {
   const cases: [CampaignSyncState, string][] = [
     [{ state: 'pending', at: null }, 'Campaigns will appear after the next Meta ad spend sync.'],
-    [{ state: 'success', at: '2026-10-10T11:00:00Z' }, 'Campaigns updated 10 Oct 2026, 12:00 UK'],
-    [{ state: 'error', at: '2026-10-10T11:00:00Z', code: 'http 400, meta 100/42' }, 'Campaigns could not be read at 10 Oct 2026, 12:00 UK (http 400, meta 100/42). Spend is unaffected.'],
+    [{ state: 'success', at: '2026-10-10T11:00:00Z' }, 'Campaigns updated 10 Oct 12:00 UK'],
+    [{ state: 'error', at: '2026-10-10T11:00:00Z', code: 'http 400, meta 100/42' }, 'Campaigns could not be read at 10 Oct 12:00 UK (http 400, meta 100/42). Spend is unaffected.'],
   ];
   for (const [state, message] of cases) {
     assert.equal(campaignSyncText(state), message);
@@ -22,7 +22,7 @@ test('Settings distinguishes pending, successful-empty and failed campaign reads
     assert.equal(html.includes('Campaigns will appear after the next Meta ad spend sync.'), state.state === 'pending');
     assert.ok(html.indexOf('data-campaign-sync') < html.indexOf('class="setting-campaigns"'));
   }
-  assert.equal(campaignSyncText({ state: 'success', at: '2026-12-10T11:00:00Z' }), 'Campaigns updated 10 Dec 2026, 11:00 UK');
+  assert.equal(campaignSyncText({ state: 'success', at: '2026-12-10T11:00:00Z' }), 'Campaigns updated 10 Dec 11:00 UK');
 });
 
 test('a campaign failure is a secondary line on the same healthy Meta source row', () => {

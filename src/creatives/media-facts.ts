@@ -1,3 +1,4 @@
+import { formatUkTime } from '../uk-time.js';
 import type {Database} from '../db.js';
 import type {CreativeReader,MediaGroup} from './model.js';
 import {AdError,adErrorCode} from '../ad-spend/model.js';
@@ -71,7 +72,7 @@ export async function mediaFactHealth(db:Database,account:string,now=new Date(),
 export function mediaFactLine(health:MediaFactHealth):string {
  const run=health.run,unscored=health.unscored,list=run?.accountVideo;
  const extra=unscored?.total?`; ${unscored.filled} of ${unscored.total} unscored groups filled${unscored.waitingVideos&&list&&!list.complete?`; ${unscored.waitingVideos} unscored video${unscored.waitingVideos===1?'':'s'} waiting on the account video list (${list.failure??'more pages'} at page ${list.page}, next run at ${list.nextLimit} a page)`:''}`:'';
- return `Media facts: ${health.filled} of ${health.total} scored groups filled (${health.from}–${health.to}, whole account), last run ${health.lastRun??'not yet'}${run?`: ${run.tried} tried, ${run.filled} filled, ${run.refused} refused${run.ownedElsewhere?`, ${run.ownedElsewhere} owned elsewhere`:''}${run.reasons.length?` (${run.reasons.map(r=>`${r.reason} on ${r.count}`).join('; ')})`:''}`:': run report pending'}${extra}`;
+ return `Media facts: ${health.filled} of ${health.total} scored groups filled (${health.from}–${health.to}, whole account), last run ${health.lastRun?formatUkTime(health.lastRun):'not yet'}${run?`: ${run.tried} tried, ${run.filled} filled, ${run.refused} refused${run.ownedElsewhere?`, ${run.ownedElsewhere} owned elsewhere`:''}${run.reasons.length?` (${run.reasons.map(r=>`${r.reason} on ${r.count}`).join('; ')})`:''}`:': run report pending'}${extra}`;
 }
 export function mediaFactPermissionLine(health:MediaFactHealth):string|null {
  return health.ownedElsewhere?`${health.ownedElsewhere} videos are not readable with the current token: grant pages_read_engagement on the owning Facebook Page and assign that Page to the system user`:null;

@@ -1,3 +1,4 @@
+import { formatUkTime } from '../uk-time.js';
 import type {Database} from '../db.js';
 import type {CreativeReader} from './model.js';
 import {AdError,adErrorCode} from '../ad-spend/model.js';
@@ -47,7 +48,7 @@ export function thruPlayLine(health:ThruPlayHealth):string {
  return `ThruPlay backfill: ${health.completed} of ${health.total} days complete`
   +[...waits].map(([reason,count])=>`; ${count} ${count===1?'day':'days'} ${reason}`).join('')
   +(health.givenUp?`; ${health.givenUp} ${health.givenUp===1?'day':'days'} given up after 3 reads`:'')
-  +`, last run ${health.lastRunAt??'not yet'}${run?`: ${run.tried} days read, ${run.filled} filled, ${run.refused} refused, ${run.waiting??0} waiting`:''}`;
+  +`, last run ${health.lastRunAt?formatUkTime(health.lastRunAt):'not yet'}${run?`: ${run.tried} days read, ${run.filled} filled, ${run.refused} refused, ${run.waiting??0} waiting`:''}`;
 }
 /** Only repair video measures; never replace spend/actions or certify full insight coverage. */
 export async function repairThruPlays(db:Database,reader:CreativeReader,account:string,now:Date,window:CreativeWindow='7d',options:{onlyDue?:boolean}={}):Promise<ThruPlayRunReport|null>{

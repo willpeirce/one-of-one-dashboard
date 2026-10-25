@@ -54,10 +54,19 @@ Use only these attributes and allowed values; do not invent attributes or infer 
 ${schema}
 Return JSON only: {"attributes":{"<key>":{"value":"<allowed value>","confidence":0.0,"reason":"one line"}}}. Confidence must be a number from 0 to 1.`;
 }
+export function scanOutputSchema(kind: CreativeKind) {
+  const properties = Object.fromEntries(attributesForKind(kind).filter(attribute => attribute.sources.includes('model')).map(attribute => [attribute.key, {
+    type: 'object', properties: {
+      value: { type: 'string', enum: attribute.values.map(value => value.value) },
+      confidence: { type: 'number' }, reason: { type: 'string', description: 'One short line describing the visible evidence.' },
+    }, required: ['value', 'confidence', 'reason'], additionalProperties: false,
+  }]));
+  return { type: 'object', properties: { attributes: { type: 'object', properties, additionalProperties: false } }, required: ['attributes'], additionalProperties: false };
+}
 /** Text bytes overestimate text tokens; 4096/image exceeds the resized image token budget.
  * Reserve 1024 further input tokens and the entire 1500-token output allowance. */
-export function scanRequestReserve(settings: Settings, system: string, copy: string, images: number): number {
-  const input = Buffer.byteLength(system + copy, 'utf8') + images * 4096 + 1024;
+export function scanRequestReserve(settings: Settings, system: string, copy: string, images: number, kind?: CreativeKind): number {
+  const input = Buffer.byteLength(system + copy + (kind ? JSON.stringify(scanOutputSchema(kind)) : ''), 'utf8') + images * 4096 + 1024;
   return (input * settings.creativeScanInputPrice + MAX_OUTPUT * settings.creativeScanOutputPrice) / 1_000_000;
 }
 /** A failed group is eligible again at the next UK midnight, including clock changes. */
@@ -74,14 +83,14 @@ function redact(text: string, key: string): string {
   return text;
 }
 /** Scrub decoded envelopes and nested JSON text before any success/error branch.
- * Malformed text still loses literal, URL-encoded and Unicode-escaped echoes. */
+ * Successful evidence also loses literal, URL-encoded and Unicode-escaped echoes. */
 function scrubProviderText(text: string, key: string, depth = 0): string {
   const literal = redact(text, key);
   const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const unicode = new RegExp(key.split('').map(char => `(?:${escape(char)}|\\\\u${char.charCodeAt(0).toString(16).padStart(4, '0')})`).join(''), 'gi');
   if (depth < 12) {
     try {
-      const parsed = JSON.parse(literal.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''));
+      const parsed = JSON.parse(literal);
       const scrub = (value: any): any => {
         if (typeof value === 'string') return scrubProviderText(value, key, depth + 1);
         if (Array.isArray(value)) return value.map(scrub);
@@ -91,7 +100,7 @@ function scrubProviderText(text: string, key: string, depth = 0): string {
       };
       const safe = scrub(parsed);
       if (JSON.stringify(safe) !== JSON.stringify(parsed)) return JSON.stringify(safe);
-    } catch { /* Not all model text is valid JSON, but it must still be safe to retain. */ }
+    } catch { /* Malformed replies are discarded; scrub before decoding any successful evidence. */ }
   }
   return literal.replace(unicode, '[redacted]');
 }
@@ -132,6 +141,8 @@ async function request(settings: Settings, options: ScanOptions, kind: CreativeK
       method: 'POST', redirect: 'error', signal: controller.signal,
       headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({ model: settings.creativeScanModel, max_tokens: MAX_OUTPUT, system,
+        output_config: { format: { type: 'json_schema', schema: scanOutputSchema(kind) },
+          ...(/^claude-[a-z]+-5(?:-|$)/.test(settings.creativeScanModel) ? { effort: 'low' } : {}) },
         messages: [{ role: 'user', content: [...images, { type: 'text', text: copy }] }] }),
     });
     httpStatus = response.status;
@@ -140,23 +151,31 @@ async function request(settings: Settings, options: ScanOptions, kind: CreativeK
     try { envelope = JSON.parse(text); } catch { envelope = null; }
     const input = envelope?.usage?.input_tokens, output = envelope?.usage?.output_tokens;
     const validUsage = Number.isSafeInteger(input) && input >= 0 && Number.isSafeInteger(output) && output >= 0;
-    const raw = scrubProviderText(Array.isArray(envelope?.content)
-      ? envelope.content.filter((part: any) => part?.type === 'text' && typeof part.text === 'string').map((part: any) => part.text).join('\n') : text, key);
     const result: Attempt = { ...emptyAttempt(response.ok ? 'malformed' : 'refused'), httpStatus,
-      input: validUsage ? input : 0, output: validUsage ? output : 0, raw: cappedText(redact(raw, key)),
+      input: validUsage ? input : 0, output: validUsage ? output : 0,
       providerCode: ['invalid_request_error','authentication_error','permission_error','not_found_error','request_too_large','rate_limit_error','api_error','overloaded_error'].includes(envelope?.error?.type)
         ? envelope.error.type : null };
-    if (!response.ok || !validUsage) return result;
+    if (!response.ok) return result;
+    if (envelope?.stop_reason === 'refusal') {
+      result.failure = 'refused';
+      const category = envelope.stop_details?.category;
+      result.providerCode = 'refusal' + (typeof category === 'string' && /^[a-z_]{1,80}$/.test(category) ? ` ${category}` : '');
+      return result;
+    }
+    if (envelope?.stop_reason === 'max_tokens') { result.providerCode = 'max_tokens'; return result; }
+    const blocks = Array.isArray(envelope?.content) ? envelope.content.filter((part: any) => part?.type === 'text' && typeof part.text === 'string') : [];
+    if (!blocks.length) { result.providerCode = 'no text'; return result; }
+    if (envelope?.stop_reason !== 'end_turn' || !validUsage) return result;
+    const raw = blocks.map((part: any) => part.text).join('\n');
     try {
-      const parsed = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''));
-      // Decode escaped JSON strings before the second scrub: a provider can echo
-      // a credential as Unicode escapes rather than literal text.
+      const parsed = JSON.parse(raw);
       const safeParsed = JSON.parse(redact(JSON.stringify(parsed), key));
-      if (JSON.stringify(parsed) !== JSON.stringify(safeParsed)) result.raw = cappedText(JSON.stringify(safeParsed));
       const checked = validateAttributeValues(kind, 'model', safeParsed?.attributes);
       result.values = checked.values; result.dropped = checked.dropped;
-      if (Object.keys(checked.values).length) result.failure = null;
-    } catch { /* A malformed provider response is recorded without its error text. */ }
+      if (Object.keys(checked.values).length) {
+        result.failure = null; result.raw = cappedText(JSON.stringify(safeParsed));
+      } else result.providerCode = 'all dropped';
+    } catch { /* Failure shape only: never retain malformed or refused reply text. */ }
     return result;
   } catch (error) {
     const timeout = controller.signal.aborted || error instanceof Error && ['AbortError', 'TimeoutError'].includes(error.name);
@@ -277,7 +296,7 @@ export async function runCreativeScans(db: Database, settings: Settings, options
       {
         if (result.attempts >= MAX_CALLS) return result;
         const now = clock(), spent = await scanSpendToday(db, options, now);
-        if (spent + scanRequestReserve(settings, system, input.copy, input.images.length) > settings.creativeScanCapGbp + 1e-12) {
+        if (spent + scanRequestReserve(settings, system, input.copy, input.images.length, group.kind) > settings.creativeScanCapGbp + 1e-12) {
           await saveAttempt(db, settings, options, group, emptyAttempt('cap'), now, clock(), input.posterOnly);
           return { ...result, state: 'cap', message: 'Daily scan cap reached; try again next UK day' };
         }

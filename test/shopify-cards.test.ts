@@ -271,3 +271,11 @@ test('integrated live dashboard has no example Shopify values; mode changes cann
   snap.shopify!.needs=[{id:'unsafe',state:'warn',title:'<script>alert(1)</script>',why:'<img src=x onerror=alert(1)>',link:'https://admin.shopify.com/store/example'}];
   assert.ok(!needsHtml(snap.shopify!).includes('<script>'));assert.match(needsHtml(snap.shopify!),/&lt;img/);
 });
+
+test('self-check stays quiet about prior scan failures when no groups are waiting',()=>{
+ const source:import('../src/sources.js').SourceHealth={source:'anthropic',name:'Anthropic',stage:6,requiredKeys:[],mode:'live',status:'error',lastSuccessAt:now,lastAttemptAt:now,consecutiveFailures:3,updatedAt:now,scanWaiting:0};
+ const check=evaluateWatchdogs(facts([]),now,settings,blankObservation(),[],[source]).find(row=>row.id==='self')!;
+ assert.equal(check.status,'pass');assert.doesNotMatch(check.why,/Anthropic/);
+ source.scanWaiting=1;
+ assert.equal(evaluateWatchdogs(facts([]),now,settings,blankObservation(),[],[source]).find(row=>row.id==='self')!.status,'tripped');
+});

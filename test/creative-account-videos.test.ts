@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import {randomBytes} from 'node:crypto';
 import test from 'node:test';
+import {AdError} from '../src/ad-spend/model.js';
+import type {CreativeReader} from '../src/creatives/model.js';
 import {MetaSpend} from '../src/ad-spend/clients.js';
 import {MetaCreativeClient} from '../src/creatives/client.js';
 import {mediaFactHealth,mediaFactLine,mediaFactPermissionLine,refreshMediaFacts} from '../src/creatives/media-facts.js';
@@ -62,7 +64,7 @@ test('video listing persists its cursor and waits for every page before deciding
   media:{...creativeGroup('invented-last-group',{kind:'video',key:'invented-last-video',width:null,height:null,lengthSeconds:null}),thumbnail:null,poster:null,frames:[]}}],now);
  const cursors:(string|null)[]=[];
  const options={sleep:async()=>{},fetch:(async input=>{
-  const url=new URL(String(input));assert.ok(url.pathname.endsWith('/advideos'));assert.equal(url.searchParams.has('ids'),false);
+  const url=new URL(String(input));if(!url.pathname.endsWith('/advideos'))return Response.json({error:{code:10}},{status:400});assert.equal(url.searchParams.has('ids'),false);
   const cursor=url.searchParams.get('after');cursors.push(cursor);
   const page=cursor?Number(cursor.slice('invented-cursor-'.length)):0;
   return Response.json({data:page===4?[{id:'invented-last-video',length:26,thumbnails:{data:[{width:800,height:1000}]}}]:[],
@@ -131,4 +133,42 @@ test('a deliberate local reset after a Page permission grant recovers facts and 
  const group=(await db.query<any>('SELECT width,height,length_seconds,video_owned_elsewhere,facts_error FROM pulse.media_groups')).rows[0];
  assert.deepEqual([group.width,group.height,Number(group.length_seconds),group.video_owned_elsewhere,group.facts_error],[720,960,24,false,null]);
  assert.deepEqual(calls.slice(before),['advideos','invented-granted-creative','invented-granted-video','thumbnails']);
+});
+
+
+test('account list retries 100 at 50 in the same run and preserves a failed 25-page cursor as retry',async t=>{
+ const db=await createTestDatabase();t.after(()=>db.close());
+ for(const failAt25 of [false,true]){
+  const account=failAt25?'invented-retry-list':'invented-halved-list',key=`${account}-video`;
+  await db.query('INSERT INTO pulse.creative_jobs(account_id) VALUES($1)',[account]);
+  await saveCatalogue(db,account,[{ad:creativeAd(`${account}-ad`,`${account}-group`,{accountId:account}),
+   media:{...creativeGroup(`${account}-group`,{kind:'video',key,width:null,height:null,lengthSeconds:null}),thumbnail:null,poster:null,frames:[]}}],now);
+  const pages:{after:string|null;limit:number}[]=[];let direct=0;
+  const reader:CreativeReader={readCatalogue:async function*(){},readInsights:async()=>[],imageBytes:async()=>new Uint8Array(),videoSource:async()=>'',videoFrames:async()=>[],
+   readAccountVideoPage:async(_,after=null,limit=100)=>{
+    pages.push({after,limit});
+    if(failAt25&&!after)return {videos:[],after:'invented-page-two'};
+    if(failAt25||limit===100)throw new AdError('http',500,1);
+    return {videos:[{id:key,width:640,height:960,lengthSeconds:19}],after:null};
+   },readMediaFacts:async(_,group)=>{direct++;return group.accountVideo??{width:null,height:null,lengthSeconds:null};}};
+  await refreshMediaFacts(db,reader,account,now);
+  const job=(await db.query('SELECT account_video_after,account_video_list_complete FROM pulse.creative_jobs WHERE account_id=$1',[account])).rows[0]!;
+  const health=await mediaFactHealth(db,account,now);
+  assert.equal(direct,1,'unscored video is tried even when the list is unfinished');
+  if(failAt25){
+   assert.deepEqual(pages.map(p=>p.limit),[100,100,50,25]);assert.equal(job.account_video_after,'invented-page-two');assert.equal(job.account_video_list_complete,false);
+   assert.equal(health.run!.refused,0);assert.equal(health.run!.accountVideo!.retry,true);
+   assert.match(mediaFactLine(health),/0 of 0 scored groups filled.*1 unscored video waiting on the account video list \(advideos http 500, retry next run at page 2, next run at 25 a page\)/);
+   const group=(await db.query('SELECT facts_retry_after,size_unavailable,video_owned_elsewhere FROM pulse.media_groups WHERE account_id=$1',[account])).rows[0]!;
+   assert.equal(group.facts_retry_after,null);assert.equal(group.size_unavailable,false);assert.equal(group.video_owned_elsewhere,false);
+  }else{assert.deepEqual(pages.map(p=>p.limit),[100,50]);assert.equal(job.account_video_list_complete,true);assert.equal(health.unscored!.filled,1);}
+ }
+});
+
+test('unfinished list misses still receive direct reads without declaring ownership',async()=>{
+ const calls:string[]=[];
+ const options={sleep:async()=>{},fetch:(async input=>{calls.push(new URL(String(input)).pathname.split('/').at(-1)!);return Response.json({error:{code:10}},{status:400});}) as typeof fetch};
+ const reader=new MetaCreativeClient(new MetaSpend(randomBytes(16).toString('hex'),options),options);
+ const facts=await reader.readMediaFacts('invented-open-list',{kind:'video',key:'invented-open-video',creativeId:'invented-open-creative',width:null,height:null,lengthSeconds:null,accountVideosComplete:false,accountVideo:null});
+ assert.ok(calls.includes('invented-open-creative'));assert.ok(calls.includes('invented-open-video'));assert.ok(calls.includes('thumbnails'));assert.equal(facts.ownedElsewhere,undefined);
 });

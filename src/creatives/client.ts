@@ -387,13 +387,13 @@ export class MetaCreativeClient implements CreativeReader {
     const fallback = await this.meta.readGraph(id(videoId), { fields: 'download_hd_url' });
     return this.mediaUrl(fallback.download_hd_url);
   }
-  async readAccountVideoPage(account:string,after:string|null=null):Promise<AccountVideoPage> {
+  async readAccountVideoPage(account:string,after:string|null=null,limit=100):Promise<AccountVideoPage> {
     const cursor=(value:unknown):string=>{
       if(typeof value!=='string'||!/^[A-Za-z0-9_+=/-]{1,1024}$/.test(value))throw new AdError('invalid');
       return value;
     };
     const response=await this.meta.readGraph(`act_${id(account)}/advideos`,{
-      fields:'id,length,thumbnails{uri,width,height,is_preferred}',limit:'100',...(after?{after:cursor(after)}:{}),
+      fields:'id,length,thumbnails{uri,width,height,is_preferred}',limit:String(limit),...(after?{after:cursor(after)}:{}),
     },10_000,true);
     const positive=(value:unknown):number|null=>Number.isFinite(Number(value))&&Number(value)>0?Number(value):null;
     const videos=rows(response.data).map(row=>{
@@ -469,7 +469,7 @@ export class MetaCreativeClient implements CreativeReader {
         const thumbnails=await attempt('thumbnails',()=>this.meta.readAllPages(`${id(directVideoId)}/thumbnails`,{fields:'width,height,is_preferred',limit:'10'},10_000,true));
         takeSize(thumbnails?.find(row=>row.is_preferred)??thumbnails?.[0]);
       }
-      ownedElsewhere=missing();
+      ownedElsewhere=group.accountVideosComplete===true&&missing();
     }
     if(ownedElsewhere)failures.push('video owned elsewhere');
     return {width,height,lengthSeconds,...(failures.length?{failures}: {}),...(ownedElsewhere?{ownedElsewhere:true}:{})};

@@ -1,3 +1,4 @@
+import { checkHourly } from './browser-hourly.js';
 import {checkAdSets} from './browser-adsets.js';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -731,6 +732,7 @@ async function checkPartialAdSpend(context: BrowserContext): Promise<void> {
       await page.goto('/');
       await page.locator('html[data-dashboard-ready="true"]').waitFor();
       await page.locator('#hero [data-k="spend"][data-state="warn"]').waitFor();
+      assert.equal(await page.locator('#hourly-orders').isVisible(), true);
       await page.evaluate(() => window.scrollTo(0, 0));
       if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({
         path: `${process.env.PULSE_SCREENSHOT_DIR}/ad-spend-partial-${viewport.width}.png`,
@@ -1752,6 +1754,7 @@ async function run(): Promise<void> {
 
     step = 'check measured health, drop line and weakest-gauge actions at phone and desktop widths';
     await checkDrops(context);
+    await checkHourly(context);
 
     step = 'check creative pictures, playing media, windows and gallery filters at phone and desktop widths';
     await checkCreatives(context);

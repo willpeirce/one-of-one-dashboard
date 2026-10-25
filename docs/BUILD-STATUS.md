@@ -5,6 +5,7 @@ Updated in every pull request.
 | Stage | What | Code | Keys in Replit | Live check ("Done when") |
 |---|---|---|---|---|
 | Change | Home drop line; radar removed 25 Oct | built on `change-oct-25`; health maths retained | no new keys | check weakest-gauge targeting and one-line layout at 390px and 1280px |
+| Change | Orders by hour, today against yesterday | built on `change-oct-25`; shared Orders rule and UK poll clock | no new keys | check All/UK/US, period independence, hover/keyboard/tap and tile total agreement |
 | 0a | Service, database, passkeys, audit, source registry, CI | merged 2 Oct 2026; deployed 2 Oct | `DASHBOARD_SETUP_CODE`: configured | Will's phone enrollment and sign-in confirmed 4 Oct |
 | 0b | Real screen on sample data, live updates, Settings, home-screen app | merged 4 Oct 2026; logo/date follow-up merged and published 5 Oct; home-screen icon follow-up merged 5 Oct | no source keys needed | Will saw the published dark look and white logo and added the app to his home screen, 5 Oct |
 | 1a | Shopify token manager, backfill, webhooks and polls | PR #7 merged and published 5 Oct; sessions fix PR #8 merged | configured for the 5 Oct live check | sessions column and sales query checked; full report agreement awaits 1b |

@@ -79,11 +79,11 @@ test('server-rendered hero has independent market control, eight ordered cards a
   assert.deepEqual([...grid.matchAll(/data-k="([a-z]+)"/g)].map(match => match[1]), ['net', 'orders', 'aov', 'cac', 'cr', 'spend', 'roas', 'margin']);
   assert.doesNotMatch(grid, /class="per"/); assert.match(html, /class="profit-line" data-k="profit"/); assert.ok(html.indexOf('id="p-ads"') < html.indexOf('data-k="ukcpo"'));
 });
-test('the market switch follows the greeting directly before the hero tiles while periods stay above it', () => {
+test('the market switch follows the hourly chart directly before the hero tiles while periods stay above it', () => {
   const html = dashboardPage(getSampleDashboard());
-  const period = html.indexOf('id="period"'), radar = html.indexOf('id="drops"');
+  const period = html.indexOf('id="period"'), chart = html.indexOf('id="hourly-orders"');
   const market = html.indexOf('id="market"'), grid = html.indexOf('<div class="four hero-grid">');
-  assert.ok(period >= 0 && period < radar && radar < market && market < grid);
+  assert.ok(period >= 0 && period < chart && chart < market && market < grid);
   assert.match(html.slice(market, grid), /data-market="us">US<\/button><\/div>\s*$/);
   assert.equal((html.match(/id="market"/g) ?? []).length, 1);
 });
@@ -133,4 +133,17 @@ test('empty market Contribution remains clear even when no ad spend source is us
     assert.equal(hero.markets![market].contribution.ss,`No ${market.toUpperCase()} orders in this period`);
     assert.equal(hero.markets![market].contribution.unavailable,false);
   }
+});
+
+test('hourly orders share the tile rule for All, UK and US, leaving free and test orders out', async () => {
+  const list = (await orders()).map(order => ({ ...order, day: today, createdAt: `${today}T09:00:00Z` }));
+  list.push({ ...list[0]!, totalPence: 0, itemsAfterDiscountsPence: 0 }, { ...list[0]!, test: true });
+  const hero = shopifyHero(facts(list), today, today, today, settings);
+  for (const view of [hero, ...Object.values(hero.markets!)]) {
+    assert.equal(view.hourly!.today.reduce<number>((n, value) => n + (value ?? 0), 0), view.orders.n);
+    assert.equal(view.hourly!.nowHour, 11);
+    assert.deepEqual(view.hourly!.today.slice(12), Array(12).fill(null));
+    assert.equal(view.hourly!.ready, true);
+  }
+  assert.equal(hero.orders.n, 4); assert.equal(hero.markets!.uk.orders.n, 1); assert.equal(hero.markets!.us.orders.n, 1);
 });

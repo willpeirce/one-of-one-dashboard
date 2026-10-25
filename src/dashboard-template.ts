@@ -57,6 +57,7 @@ export const dashboardTemplate = `
         <div class="counts" id="counts"></div>
         <div class="drops" id="drops" aria-live="polite"></div>
       </div>
+      <div class="hourly" id="hourly-orders"></div>
     </div>
 
     <div class="seg" role="tablist" id="market" aria-label="Market"><button role="tab" type="button" aria-selected="true" data-market="all">All</button><button role="tab" type="button" aria-selected="false" data-market="uk">UK</button><button role="tab" type="button" aria-selected="false" data-market="us">US</button></div>

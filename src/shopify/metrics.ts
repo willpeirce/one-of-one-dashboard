@@ -3,7 +3,7 @@ import { sampleSpend } from '../ad-spend/store.js';
 import { appConfig } from '../config.js';
 import { formatNumber, formatPounds } from '../money.js';
 import { addDays, buildHeroRange, dayCount, HeroRangeError, rangeLabel, ukToday, weekdayDate, type DailyMetrics } from '../hero-range.js';
-import type { HeroMarket, HeroPeriod } from '../dashboard-types.js';
+import type { HeroMarket, HeroPeriod, HourlyOrders } from '../dashboard-types.js';
 import type { Order, Inventory, Sessions } from './model.js';
 import type { Settings } from '../settings.js';
 import type { ShopifyStore } from './store.js';
@@ -42,6 +42,23 @@ export function orderNet(o: Order, from: string, to: string): number {
   return (o.day >= from && o.day <= to ? o.itemsAfterDiscountsPence : 0)
     - o.refunds.filter(r => { const day = ukToday(new Date(r.createdAt)); return day >= from && day <= to; }).reduce((n, r) => n + r.itemsPence, 0);
 }
+/** The Orders tile, comparison and hourly plot count the same paid, non-free market orders. */
+export const countedOrder = (order: Order, market: HeroMarket): boolean => paidOrder(order) && orderInMarket(order, market) && !isFreeOrder(order);
+const ukClock = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+export function hourlyOrders(facts: Facts, today: string, market: HeroMarket = 'all'): HourlyOrders {
+  const data = dataset(facts, today), yesterdayDay = addDays(today, -1);
+  const poll = facts.jobs.find(job => job.name === 'poll')?.last_success_at ?? `${today}T00:00:00Z`;
+  const nowHour = Number(ukClock.format(new Date(poll)).slice(0, 2));
+  const hours: HourlyOrders = { today: Array.from({ length: 24 }, (_, hour) => hour <= nowHour ? 0 : null),
+    yesterday: Array<number>(24).fill(0), todayDay: today, yesterdayDay, nowHour, ready: data.ready && data.from <= yesterdayDay };
+  for (const order of data.orders.filter(order => countedOrder(order, market))) {
+    const hour = Number(ukClock.format(new Date(order.createdAt)).slice(0, 2));
+    if (order.day === today && hour <= nowHour) hours.today[hour] = (hours.today[hour] ?? 0) + 1;
+    if (order.day === yesterdayDay) hours.yesterday[hour]!++;
+  }
+  return hours;
+}
+
 export function dailyRows(facts: Facts, today: string, market: HeroMarket = 'all'): DailyMetrics[] {
   const data = dataset(facts, today);
   const byDay = new Map<string, DailyMetrics>();
@@ -55,7 +72,7 @@ export function dailyRows(facts: Facts, today: string, market: HeroMarket = 'all
   }
   for (const order of data.orders.filter(order => orderInMarket(order, market))) {
     const row = byDay.get(order.day);
-    if (row) { row.net += order.itemsAfterDiscountsPence; row.gross = (row.gross ?? 0) + orderTotalPence(order); if (!isFreeOrder(order)) { row.o++; if (order.market === 'UK' && !isTikTok(order)) row.uk++; if (order.market === 'US' && !isTikTok(order)) row.us++; } }
+    if (row) { row.net += order.itemsAfterDiscountsPence; row.gross = (row.gross ?? 0) + orderTotalPence(order); if (countedOrder(order, market)) { row.o++; if (order.market === 'UK' && !isTikTok(order)) row.uk++; if (order.market === 'US' && !isTikTok(order)) row.us++; } }
     for (const refund of order.refunds) { const day = ukToday(new Date(refund.createdAt)), row = byDay.get(day); if (row) { row.net -= refund.itemsPence; const grossRefund = refund.totalPence ?? (refund.shippingNetPence === undefined ? null : refund.itemsPence + refund.taxPence + refund.shippingNetPence + (refund.shippingTaxPence ?? 0)); if (grossRefund === null) row.grossKnown = false; else row.gross = (row.gross ?? 0) - grossRefund; } }
   }
   // Accumulate only integer pence, convert once at the display boundary.
@@ -84,7 +101,7 @@ function marketHero(facts: Facts, today: string, from: string, to: string, setti
   if (!data.ready) hero.grossUnavailable = true;
   hero.net.d.extra = [...(hero.net.d.extra ?? []), ['Total sales (incl. shipping and tax)', hero.grossUnavailable ? 'Unavailable; older total-sales or refund detail is being refreshed' : formatPounds(hero.gross)]];
   const marketOrders = data.orders.filter(o => orderInMarket(o, market));
-  const orders = marketOrders.filter(o => o.day >= from && o.day <= to && !isFreeOrder(o));
+  const orders = marketOrders.filter(o => o.day >= from && o.day <= to && countedOrder(o, market));
   const freeCount = marketOrders.filter(o => o.day >= from && o.day <= to && isFreeOrder(o)).length;
   const days = dayCount(from, to);
   const sessions = data.sessions.filter(s => s.day >= from && s.day <= to);
@@ -108,9 +125,10 @@ function marketHero(facts: Facts, today: string, from: string, to: string, setti
   const orderLabel = `${formatNumber(hero.orders.n)} ${hero.orders.n === 1 ? 'order' : 'orders'}`;
   hero.sub1 = `${orderLabel}${to === today ? ' so far' : ''}.`;
   if (from === today && to === today) {
-    const currentTime = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(facts.jobs.find(j => j.name === 'poll')?.last_success_at ?? `${today}T00:00:00Z`));
+    hero.hourly = hourlyOrders(facts, today, market);
+    const currentTime = ukClock.format(new Date(facts.jobs.find(j => j.name === 'poll')?.last_success_at ?? `${today}T00:00:00Z`));
     const yesterday = addDays(today, -1);
-    const byNow = marketOrders.filter(o => !isFreeOrder(o) && o.day === yesterday && new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(o.createdAt)) <= currentTime).length;
+    const byNow = marketOrders.filter(o => countedOrder(o, market) && o.day === yesterday && ukClock.format(new Date(o.createdAt)) <= currentTime).length;
     hero.orders.ss = data.ready && data.from <= yesterday ? `vs ${formatNumber(byNow)} by this time yesterday` : 'Yesterday comparison unavailable';
     hero.sub1 += data.ready && data.from <= yesterday ? ` ${formatNumber(byNow)} by ${currentTime} UK yesterday (last order poll).` : ' Yesterday comparison unavailable.';
   }

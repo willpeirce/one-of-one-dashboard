@@ -4507,6 +4507,14 @@ export function getSampleHero(from: string, to: string, settings?: Settings, mar
     blendedMetaTripwireGbp: settings?.blendedMetaTripwireGbp,
   });
   if (from === SAMPLE_TODAY && to === SAMPLE_TODAY) {
+    const buckets = (count: number, last: number): number[] => {
+      const values = Array<number>(24).fill(0);
+      for (let i = 0; i < count; i++) values[(i * 5 + 7) % (last + 1)]!++;
+      return values;
+    };
+    hero.hourly = { today: buckets(hero.orders.n, 14).map((value, hour) => hour > 14 ? null : value),
+      yesterday: buckets(rows.find(row => row.date === addDays(SAMPLE_TODAY, -1))?.o ?? 0, 23),
+      todayDay: SAMPLE_TODAY, yesterdayDay: addDays(SAMPLE_TODAY, -1), nowHour: 14, ready: true };
     // The intraday comparison is a supplied sample observation, not a fabricated
     // daily-rate extrapolation: four orders at this time yesterday.
     hero.sub1 = `${formatNumber(hero.orders.n)} orders so far, 4 by this time yesterday.`;

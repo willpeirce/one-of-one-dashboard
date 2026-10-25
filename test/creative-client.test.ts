@@ -204,7 +204,7 @@ test('group frequency reads one deduplicated Meta account aggregate across the e
   assert.equal(request.url.searchParams.has('time_increment'), false);
   assert.equal(request.url.searchParams.has('access_token'), false);
   assert.deepEqual(JSON.parse(request.url.searchParams.get('time_range')!), { since: '2026-10-07', until: '2026-10-13' });
-  assert.deepEqual(JSON.parse(request.url.searchParams.get('filtering')!), [{ field: 'ad.id', operator: 'IN', value: ['invented-a', 'invented-b'] }]);
+  assert.deepEqual(JSON.parse(request.url.searchParams.get('filtering')!).slice(0,1), [{ field: 'ad.id', operator: 'IN', value: ['invented-a', 'invented-b'] }]);
   assert.ok(!JSON.stringify([frequency, mock.logs, mock.requests.map(row => row.url.toString())]).includes(mock.token));
 });
 
@@ -431,4 +431,17 @@ test('reduced-detail markers travel with each yielded page even if a later list 
       assert.equal(logs.length, 0);
     } finally { info.mock.restore(); }
   }
+});
+
+test('ad-level daily and hourly insights explicitly include deleted and archived statuses',async()=>{
+ const filters:unknown[]=[];
+ const options={fetch:(async input=>{
+  const url=new URL(String(input));
+  if(!url.pathname.endsWith('/insights'))return Response.json({currency:'GBP',timezone_name:'GMT'});
+  filters.push(JSON.parse(url.searchParams.get('filtering')!));return Response.json({data:[]});
+ }) as typeof fetch};
+ const client=new MetaCreativeClient(new MetaSpend(randomBytes(16).toString('hex'),options),options);
+ await client.readInsights('invented-all-statuses','2026-10-21','2026-10-22');
+ assert.equal(filters.length,2);
+ for(const filter of filters)assert.deepEqual(filter,[{field:'ad.effective_status',operator:'IN',value:['ACTIVE','PAUSED','DELETED','ARCHIVED','CAMPAIGN_PAUSED','ADSET_PAUSED','PENDING_REVIEW','DISAPPROVED','PREAPPROVED','PENDING_BILLING_INFO','IN_PROCESS','WITH_ISSUES']}]);
 });

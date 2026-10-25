@@ -67,10 +67,10 @@ export async function checkMarketHero(page: Page, snapshot: DashboardSnapshot, w
       const columns = await page.locator('.hero-grid').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length);
       assert.equal(columns, width < 761 ? 2 : 4);
       const periodBox = await page.locator('#period').boundingBox(), marketBox = await page.locator('#market').boundingBox();
-      const radarBox = await page.locator('#radar').boundingBox(), heroBox = await page.locator('.hero-grid').boundingBox();
-      assert.ok(periodBox && marketBox && radarBox && heroBox);
-      assert.ok(periodBox.y < radarBox.y, 'Period tabs stay above the radar');
-      assert.ok(marketBox.y >= radarBox.y + radarBox.height, 'The market switch sits below the radar');
+      const greetingBox = await page.locator('.greet').boundingBox(), heroBox = await page.locator('.hero-grid').boundingBox();
+      assert.ok(periodBox && marketBox && greetingBox && heroBox);
+      assert.ok(periodBox.y >= greetingBox.y, 'Period tabs stay in the greeting');
+      assert.ok(marketBox.y >= greetingBox.y + greetingBox.height, 'The market switch sits below the greeting');
       assert.ok(heroBox.y >= marketBox.y + marketBox.height && heroBox.y - marketBox.y - marketBox.height < 32,
         'The market switch sits directly above the hero tiles');
       assert.equal(await page.locator('#market').evaluate(element => element.nextElementSibling?.classList.contains('hero-grid')), true);

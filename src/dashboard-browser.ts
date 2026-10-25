@@ -1,6 +1,6 @@
 import {updateAdSets} from './meta-adsets/browser.js';
 import { metricSign } from './metric-sign.js';
-import { radarChartHtml, radarMeasure, radarSummary, weakestRadarGauge, type RadarArea } from './radar.js';
+import { dropsHtml, radarMeasure, radarSummary, weakestRadarGauge, type DropArea } from './radar.js';
 import { glance } from './fulfilment/view.js';
 import { updateCreativeSnapshot } from './creatives/browser.js';
 import { liveHtml, needsHtml, storePanelsHtml } from './shopify/presentation.js';
@@ -335,16 +335,16 @@ function renderHealth(): void {
     byGroup[group] ??= emptyTally();
     byGroup[group][state as keyof Tally] += 1;
   });
-  const areas: RadarArea[] = groups.map(([key, name]) => {
+  const areas: DropArea[] = groups.map(([key, name]) => {
     const candidates = gauges[key] ?? [], live = candidates.filter(element => element.dataset.mode === 'live');
     const weakest = weakestRadarGauge(live, element => element.dataset.state ?? '')
       ?? weakestRadarGauge(candidates, element => element.dataset.state ?? '') ?? live[0] ?? candidates[0];
     const measure = radarMeasure(key, byGroup[key] ? { ...byGroup[key], reason: weakest ? details.get(weakest)?.detail.why : undefined } : undefined, snapshot.adSources);
-    if (measure.score !== null && weakest) {
+    if (weakest) {
       weakest.id ||= `radar-gauge-${key}-${weakest.dataset.modelId ?? weakest.dataset.k ?? candidates.indexOf(weakest)}`;
       radarTargets.set(key, weakest);
     }
-    return { key, name, measure, ...(measure.score !== null && weakest ? { target: weakest.id } : {}) };
+    return { key, name, measure, alarms: byGroup[key]?.alarm ?? 0, title: weakest ? details.get(weakest)?.title ?? measure.label : measure.label, ...(weakest ? { target: weakest.id } : {}) };
   });
   const { health } = radarSummary(areas), healthLabel = health === null ? 'Not enough data' : `${formatNumber(health)} health`;
   const rows = snapshot.shopify ? all('#shopify-needs .dcard[data-state],#creative-cards .dcard[data-mode=live]') : all('.dcard[data-state]'), alarmCount = rows.filter((row) => row.dataset.state === 'alarm').length, decisions = rows.filter((row) => row.dataset.state === 'decide').length;
@@ -352,8 +352,8 @@ function renderHealth(): void {
   get('#counts').innerHTML = `<span class="pk health">${health === null ? healthLabel : `<b>${formatNumber(health)}</b> health`}</span>` + ([['alarm', alarmCount, alarmCount === 1 ? 'alarm' : 'alarms'], ['decide', decisions, decisions === 1 ? 'decision' : 'decisions'], ['warn', total.warn, 'to watch'], ['good', total.good, 'good']] as const).map(([state, count, label]) => `<span class="pk" style="--c:${colour[state]}"><i>${states[state][1]}</i><b>${formatNumber(count)}</b> ${label}</span>`).join('') + `<button class="pk" type="button" data-rv style="--c:var(--decide)"><i>★</i>${reviewCount ? `<b>${formatNumber(reviewCount)}</b> ${snapshot.reviews?.mode === 'sample' ? 'sample ' : 'new '}${reviewCount === 1 ? 'review' : 'reviews'}` : esc(snapshot.reviews ? reviewsGreeting(snapshot.reviews) : 'All caught up')}</button>`;
   get('#subrv').textContent = snapshot.reviews ? ` ${reviewsGreeting(snapshot.reviews)}.` : '';
   get('#deckcount').textContent = `${formatNumber(alarmCount)} ${alarmCount === 1 ? 'alarm' : 'alarms'} · ${formatNumber(decisions)} ${decisions === 1 ? 'decision' : 'decisions'}`;
-  get('#radar').innerHTML = radarChartHtml(areas);
-  get('#radar').setAttribute('aria-label', `${healthLabel}. ${areas.map(area => `${area.name}: ${area.measure.label}. ${area.measure.reason}`).join(', ')}.`);
+  const html = dropsHtml(areas), drops = get('#drops');
+  if (drops.dataset.content !== html) { drops.innerHTML = html; drops.dataset.content = html; }
 }
 
 function miniChart(detail: Detail, dial?: SheetDetail['dial']): string {
@@ -601,10 +601,19 @@ function boot(): void {
   document.addEventListener('click', (event) => {
     const target = event.target instanceof Element ? event.target : undefined;
     if (!target) return;
-    const radarLink = target.closest('[data-radar-key]');
-    if (radarLink) {
-      const gauge = radarTargets.get(radarLink.getAttribute('data-radar-key') ?? '');
-      if (gauge) { event.preventDefault(); showDetail(gauge); }
+    const drop = target.closest('[data-drop-key]');
+    if (drop) {
+      const gauge = radarTargets.get(drop.getAttribute('data-drop-key') ?? '');
+      if (gauge) {
+        get<HTMLInputElement>('#q').value = '';
+        const panel = gauge.closest<HTMLElement>('[data-panel]')?.dataset.panel;
+        if (panel) selectDeck(panel);
+        filterDials();
+        scrollTo(gauge); gauge.focus({ preventScroll: true });
+        all('.drop-highlight').forEach(element => element.classList.remove('drop-highlight'));
+        gauge.classList.add('drop-highlight');
+        setTimeout(() => gauge.classList.remove('drop-highlight'), 3000);
+      } else location.href = '/sources';
       return;
     }
     const review = target.closest<HTMLElement>('[data-review-open]');

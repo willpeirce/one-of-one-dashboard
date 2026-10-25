@@ -55,8 +55,8 @@ export const dashboardTemplate = `
         <h1><span id="greeting" data-sample-text="t0033">{{sample:t0033}}</span></h1>
         <p class="sub" id="sub"><span id="sub1"><span data-sample-text="t0034">{{sample:t0034}}</span></span><span id="subrv"></span></p>
         <div class="counts" id="counts"></div>
+        <div class="drops" id="drops" aria-live="polite"></div>
       </div>
-      <div class="radar" id="radar" role="group"></div>
     </div>
 
     <div class="seg" role="tablist" id="market" aria-label="Market"><button role="tab" type="button" aria-selected="true" data-market="all">All</button><button role="tab" type="button" aria-selected="false" data-market="uk">UK</button><button role="tab" type="button" aria-selected="false" data-market="us">US</button></div>

@@ -1,3 +1,4 @@
+import { formatUkTime } from '../uk-time.js';
 import type { Database } from '../db.js';
 import { addDays } from '../hero-range.js';
 import { readSettings, type Settings } from '../settings.js';
@@ -309,9 +310,7 @@ function sourceFacts(source: AdSource, live: boolean, job: SpendJob | undefined,
         : !fetchedAt
           ? 'first sync pending'
           : stale
-            ? `stale · last fetched ${new Intl.DateTimeFormat('en-GB', {
-              timeZone: 'Europe/London', dateStyle: 'medium', timeStyle: 'short',
-            }).format(new Date(fetchedAt))} UK`
+            ? `stale · last fetched ${formatUkTime(fetchedAt)}`
             : !job!.backfill_done
               ? `backfill running · next ${job!.backfill_next}`
               : 'live',

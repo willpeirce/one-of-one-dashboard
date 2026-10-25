@@ -1,5 +1,5 @@
 import type { Database } from './db.js';
-import type { ScanHealth } from './creatives/scan-health.js';
+import { scanFailureLabel, type ScanHealth } from './creatives/scan-health.js';
 
 export const sourceDefinitions = [
   { id: 'shopify', name: 'Shopify', stage: 1, requiredKeys: ['SHOPIFY_CLIENT_ID', 'SHOPIFY_CLIENT_SECRET'] },
@@ -41,6 +41,7 @@ export interface SourceHealth {
   consecutiveFailures: number;
   updatedAt: Date;
   statusText?: string;
+  scanWaiting?: number;
 }
 
 // Read presence only. Neither the returned metadata nor the health table contains values.
@@ -106,9 +107,9 @@ export async function readSourceHealth(db: Database, scanHealth?: ScanHealth): P
       lastAttemptAt: scan ? scan.lastAttemptAt ? new Date(scan.lastAttemptAt) : null : row.last_attempt_at,
       consecutiveFailures: scan?.consecutiveFailures ?? row.consecutive_failures,
       updatedAt: row.updated_at,
-      ...(scan ? { statusText: scan.status === 'waiting_for_keys' ? 'Waiting for keys'
+      ...(scan ? { scanWaiting: scan.enabled ? scan.waiting : 0, statusText: scan.status === 'waiting_for_keys' ? 'Waiting for keys'
         : scan.status === 'healthy' ? 'Healthy'
-        : scan.status === 'error' ? `Scan failed: ${scan.reason ?? 'network'}${scan.httpStatus ? ` (http ${scan.httpStatus})` : ''}`
+        : scan.status === 'error' ? `Scan failed: ${scanFailureLabel(scan.reason, scan.httpStatus, scan.providerCode)}`
         : scan.enabled ? scan.message ?? 'First scan pending' : 'Scan: off' } : {}),
     }];
   });

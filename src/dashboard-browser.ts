@@ -1,6 +1,7 @@
+import { hourLabel, hourlyTop, monotoneSegments } from './hourly-orders.js';
 import {updateAdSets} from './meta-adsets/browser.js';
 import { metricSign } from './metric-sign.js';
-import { radarChartHtml, radarMeasure, radarSummary, weakestRadarGauge, type RadarArea } from './radar.js';
+import { dropsHtml, radarMeasure, radarSummary, weakestRadarGauge, type DropArea } from './radar.js';
 import { glance } from './fulfilment/view.js';
 import { updateCreativeSnapshot } from './creatives/browser.js';
 import { liveHtml, needsHtml, storePanelsHtml } from './shopify/presentation.js';
@@ -218,6 +219,66 @@ function setPeriod(period: Period, animate = true): void {
   pickedHero = undefined;
   renderHero(snapshot.hero[period], animate);
 }
+function renderHourlyOrders(): void {
+  const hero = snapshot.hero.today.markets?.[selectedMarket] ?? snapshot.hero.today;
+  const data = hero.hourly, host = get('#hourly-orders');
+  if (!data?.ready) { host.innerHTML = '<p class="hourly-unavailable">Hourly orders unavailable</p>'; return; }
+  const width = Math.max(260, host.clientWidth), left = 24, right = width - 8;
+  const x = (hour: number): number => left + hour * (right - left) / 23;
+  const top = hourlyTop([...data.today.map(n => n ?? 0), ...data.yesterday]);
+  const y = (count: number): number => 100 - 96 * count / top;
+  const today = data.today.slice(0, data.nowHour + 1).map(n => n ?? 0);
+  const segments = monotoneSegments(today, x, y), previous = monotoneSegments(data.yesterday, x, y);
+  const sum = (values: readonly number[]): number => values.reduce((n, value) => n + value, 0);
+  const date = (day: string): string => new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(`${day}T12:00:00Z`)).replace(',', '');
+  const summary = `Orders by hour, UK time. Today ${sum(today)} so far to ${hourLabel(data.nowHour)}. Yesterday ${sum(data.yesterday.slice(0, data.nowHour + 1))} by ${hourLabel(data.nowHour)}, ${sum(data.yesterday)} all day.`;
+  const stroke = 'fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
+  const key = (yesterday: boolean): string => `<svg aria-hidden="true" viewBox="0 0 20 8"><path d="M1 4H19" ${stroke} stroke="var(--${yesterday ? 'muted' : 'accent'})"${yesterday ? ' stroke-dasharray="6 4"' : ''}/></svg>`;
+  const drawing = document.createElement('div');
+  drawing.innerHTML = `<p class="hourly-heading">Orders by hour <span>UK time${hero.orders.mode === 'sample' ? ' · Sample data' : ''}</span></p>
+    <div class="hourly-plot" tabindex="0" role="img" aria-label="${esc(summary)}">
+    <svg viewBox="0 0 ${width} 112" aria-hidden="true">
+      ${[0, top / 2, top].map(tick => `<line x1="${left}" y1="${y(tick)}" x2="${right}" y2="${y(tick)}" stroke="var(--line)" stroke-width="1"/><text x="${left - 6}" y="${y(tick) + 3}" text-anchor="end" fill="var(--muted)" font-size="10">${tick}</text>`).join('')}
+      ${[0, 6, 12, 18].map(hour => `<text x="${x(hour)}" y="112" text-anchor="middle" fill="var(--muted)" font-size="10">${hourLabel(hour)}</text>`).join('')}
+      <path data-hourly-yesterday d="M${x(0)} ${y(data.yesterday[0]!)}${previous.join('')}" ${stroke} stroke="var(--muted)" stroke-dasharray="6 4"/>
+      <path data-hourly-today d="M${x(0)} ${y(today[0]!)}${segments.slice(0, -1).join('')}" ${stroke} stroke="var(--accent)"/>
+      ${data.nowHour > 0 ? `<path data-hourly-partial d="M${x(data.nowHour - 1)} ${y(today[data.nowHour - 1]!)}${segments.at(-1)}" ${stroke} stroke="var(--accent)" stroke-dasharray="2 4"/>` : ''}
+      <circle cx="${x(data.nowHour)}" cy="${y(today.at(-1)!)}" r="4" fill="var(--accent)" stroke="var(--glass)" stroke-width="2"/>
+      <g data-hourly-hover visibility="hidden"><line y1="4" y2="100" stroke="var(--muted)" stroke-width="1"/><circle data-today-dot r="3" fill="var(--accent)"/><circle data-yesterday-dot r="3" fill="var(--muted)"/></g>
+    </svg><div class="hourly-tooltip" hidden></div></div>
+    <div class="hourly-legend"><span>${key(false)}Today, ${esc(date(data.todayDay))}</span><span>${key(true)}Yesterday, ${esc(date(data.yesterdayDay))}</span></div>
+    <table class="visually-hidden"><caption>Hourly orders, UK time</caption><thead><tr><th>Hour</th><th>Today</th><th>Yesterday</th></tr></thead><tbody>${data.today.map((value, hour) => `<tr><th>${hourLabel(hour)}</th><td>${value === null ? 'Not yet' : value}</td><td>${data.yesterday[hour]}</td></tr>`).join('')}</tbody></table>`;
+  const plot = get('.hourly-plot', drawing), hover = get('[data-hourly-hover]', drawing), tooltip = get('.hourly-tooltip', drawing);
+  let selected = data.nowHour;
+  const hide = (): void => { hover.setAttribute('visibility', 'hidden'); tooltip.hidden = true; };
+  const show = (hour: number): void => {
+    selected = clamp(hour, 0, 23);
+    hover.setAttribute('visibility', 'visible'); tooltip.hidden = false;
+    const line = get('line', hover); line.setAttribute('x1', String(x(selected))); line.setAttribute('x2', String(x(selected)));
+    for (const [selector, value] of [['[data-today-dot]', data.today[selected]], ['[data-yesterday-dot]', data.yesterday[selected]]] as const) {
+      const dot = get(selector, hover); dot.setAttribute('visibility', value == null ? 'hidden' : 'visible');
+      dot.setAttribute('cx', String(x(selected))); dot.setAttribute('cy', String(y(value ?? 0)));
+    }
+    tooltip.replaceChildren();
+    for (const [text, strong] of [[`${hourLabel(selected)} · Today `, false], [data.today[selected] === null ? '—' : String(data.today[selected]), true], [' · Yesterday ', false], [String(data.yesterday[selected]), true]] as const) {
+      const part = document.createElement(strong ? 'strong' : 'span'); part.textContent = text; tooltip.append(part);
+    }
+  };
+  const pointHour = (event: PointerEvent): void => {
+    const bounds = plot.getBoundingClientRect();
+    show(Math.round(((event.clientX - bounds.left) * width / bounds.width - left) * 23 / (right - left)));
+  };
+  plot.addEventListener('pointermove', pointHour); plot.addEventListener('pointerdown', pointHour);
+  plot.addEventListener('pointerleave', event => { if (event.pointerType !== 'touch') hide(); }); plot.addEventListener('blur', hide);
+  plot.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { hide(); return; }
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); show(selected + (event.key === 'ArrowRight' ? 1 : -1)); }
+  });
+  const focused = host.contains(document.activeElement);
+  host.replaceChildren(...Array.from(drawing.childNodes));
+  if (focused) plot.focus({ preventScroll: true });
+}
+
 function renderHero(hero: HeroPeriod, animate = false): void {
   hero = selectedMarket === 'all' ? hero : hero.markets?.[selectedMarket] ?? hero;
   all('#market [data-market]').forEach(element => element.setAttribute('aria-selected', String(element.dataset.market === selectedMarket)));
@@ -264,6 +325,7 @@ function renderHero(hero: HeroPeriod, animate = false): void {
     if (element) details.set(element, { state: 'info', title: kind === 'email' ? 'Email · Shopify' : 'Refill Pack', detail: model.detail, mode: hero.net.mode });
   }
   renderHealth();
+  renderHourlyOrders();
 }
 
 async function applyPickedRange(from: string, to: string): Promise<boolean> {
@@ -335,16 +397,16 @@ function renderHealth(): void {
     byGroup[group] ??= emptyTally();
     byGroup[group][state as keyof Tally] += 1;
   });
-  const areas: RadarArea[] = groups.map(([key, name]) => {
+  const areas: DropArea[] = groups.map(([key, name]) => {
     const candidates = gauges[key] ?? [], live = candidates.filter(element => element.dataset.mode === 'live');
     const weakest = weakestRadarGauge(live, element => element.dataset.state ?? '')
       ?? weakestRadarGauge(candidates, element => element.dataset.state ?? '') ?? live[0] ?? candidates[0];
     const measure = radarMeasure(key, byGroup[key] ? { ...byGroup[key], reason: weakest ? details.get(weakest)?.detail.why : undefined } : undefined, snapshot.adSources);
-    if (measure.score !== null && weakest) {
+    if (weakest) {
       weakest.id ||= `radar-gauge-${key}-${weakest.dataset.modelId ?? weakest.dataset.k ?? candidates.indexOf(weakest)}`;
       radarTargets.set(key, weakest);
     }
-    return { key, name, measure, ...(measure.score !== null && weakest ? { target: weakest.id } : {}) };
+    return { key, name, measure, alarms: byGroup[key]?.alarm ?? 0, title: weakest ? details.get(weakest)?.title ?? measure.label : measure.label, ...(weakest ? { target: weakest.id } : {}) };
   });
   const { health } = radarSummary(areas), healthLabel = health === null ? 'Not enough data' : `${formatNumber(health)} health`;
   const rows = snapshot.shopify ? all('#shopify-needs .dcard[data-state],#creative-cards .dcard[data-mode=live]') : all('.dcard[data-state]'), alarmCount = rows.filter((row) => row.dataset.state === 'alarm').length, decisions = rows.filter((row) => row.dataset.state === 'decide').length;
@@ -352,8 +414,8 @@ function renderHealth(): void {
   get('#counts').innerHTML = `<span class="pk health">${health === null ? healthLabel : `<b>${formatNumber(health)}</b> health`}</span>` + ([['alarm', alarmCount, alarmCount === 1 ? 'alarm' : 'alarms'], ['decide', decisions, decisions === 1 ? 'decision' : 'decisions'], ['warn', total.warn, 'to watch'], ['good', total.good, 'good']] as const).map(([state, count, label]) => `<span class="pk" style="--c:${colour[state]}"><i>${states[state][1]}</i><b>${formatNumber(count)}</b> ${label}</span>`).join('') + `<button class="pk" type="button" data-rv style="--c:var(--decide)"><i>★</i>${reviewCount ? `<b>${formatNumber(reviewCount)}</b> ${snapshot.reviews?.mode === 'sample' ? 'sample ' : 'new '}${reviewCount === 1 ? 'review' : 'reviews'}` : esc(snapshot.reviews ? reviewsGreeting(snapshot.reviews) : 'All caught up')}</button>`;
   get('#subrv').textContent = snapshot.reviews ? ` ${reviewsGreeting(snapshot.reviews)}.` : '';
   get('#deckcount').textContent = `${formatNumber(alarmCount)} ${alarmCount === 1 ? 'alarm' : 'alarms'} · ${formatNumber(decisions)} ${decisions === 1 ? 'decision' : 'decisions'}`;
-  get('#radar').innerHTML = radarChartHtml(areas);
-  get('#radar').setAttribute('aria-label', `${healthLabel}. ${areas.map(area => `${area.name}: ${area.measure.label}. ${area.measure.reason}`).join(', ')}.`);
+  const html = dropsHtml(areas), drops = get('#drops');
+  if (drops.dataset.content !== html) { drops.innerHTML = html; drops.dataset.content = html; }
 }
 
 function miniChart(detail: Detail, dial?: SheetDetail['dial']): string {
@@ -601,10 +663,19 @@ function boot(): void {
   document.addEventListener('click', (event) => {
     const target = event.target instanceof Element ? event.target : undefined;
     if (!target) return;
-    const radarLink = target.closest('[data-radar-key]');
-    if (radarLink) {
-      const gauge = radarTargets.get(radarLink.getAttribute('data-radar-key') ?? '');
-      if (gauge) { event.preventDefault(); showDetail(gauge); }
+    const drop = target.closest('[data-drop-key]');
+    if (drop) {
+      const gauge = radarTargets.get(drop.getAttribute('data-drop-key') ?? '');
+      if (gauge) {
+        get<HTMLInputElement>('#q').value = '';
+        const panel = gauge.closest<HTMLElement>('[data-panel]')?.dataset.panel;
+        if (panel) selectDeck(panel);
+        filterDials();
+        scrollTo(gauge); gauge.focus({ preventScroll: true });
+        all('.drop-highlight').forEach(element => element.classList.remove('drop-highlight'));
+        gauge.classList.add('drop-highlight');
+        setTimeout(() => gauge.classList.remove('drop-highlight'), 3000);
+      } else location.href = '/sources';
       return;
     }
     const review = target.closest<HTMLElement>('[data-review-open]');
@@ -662,6 +733,7 @@ function boot(): void {
   sheet.addEventListener('click', (event) => { if (event.target === sheet) sheet.close(); });
   connectUpdates();
   installPullToRefresh({ refresh: refreshDashboard, status: get('#update-status') });
+  window.addEventListener('resize', renderHourlyOrders);
   window.addEventListener('pagehide', () => stream?.close(), { once: true });
   window.addEventListener('pageshow', (event) => { if (event.persisted) window.location.reload(); });
   document.documentElement.dataset.dashboardReady = 'true';

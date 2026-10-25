@@ -51,7 +51,7 @@ test('media facts try forty groups, scored parents first by spend, and persist t
  const report=await mediaFactHealth(db,account,now);
  assert.deepEqual(report.run,{tried:40,filled:39,refused:2,reasons:[{reason:'http 400, meta 10 at adimages',count:2}]});
  assert.equal(report.filled,2);assert.equal(report.total,3);
- assert.match(mediaFactLine(report),/last run 2026-10-16T12:00:00.000Z: 40 tried, 39 filled, 2 refused \(http 400, meta 10 at adimages on 2\)/);
+ assert.match(mediaFactLine(report),/last run 16 Oct 13:00 UK: 40 tried, 39 filled, 2 refused \(http 400, meta 10 at adimages on 2\)/);
  assert.deepEqual(logs,[mediaFactLine(report)]);
  assert.equal((await mediaFactHealth(db,account,now,'lifetime')).total,3);
 });

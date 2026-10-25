@@ -42,7 +42,7 @@ test('ad freshness uses three missed polls, shares Source health status and give
     assert.equal(source.stale, minutes > 90);
     assert.equal(source.ready, true);
     assert.equal(source.fetchedAt, success.toISOString());
-    assert.equal(source.status, minutes > 90 ? 'stale · last fetched 10 Oct 2026, 11:29 UK' : 'live');
+    assert.equal(source.status, minutes > 90 ? 'stale · last fetched 10 Oct 11:29 UK' : 'live');
     assert.equal(health.status, source.status);
     assert.equal(health.fetchedAt, source.fetchedAt);
   }

@@ -19,7 +19,7 @@ const settings = () => ({ ...defaultSettings(), creativeScanInputPrice: 1, creat
 const options = (changes: Partial<ScanOptions> = {}): ScanOptions => ({ mode: 'live', accountId: account, clock: () => now, ...changes });
 const attributes = { childInShot: { value: 'yes', confidence: 0.8, reason: 'Invented visible child drawing a card' } };
 const answer = (text = JSON.stringify({ attributes }), input = 100, output = 50) => new Response(JSON.stringify({
-  content: [{ type: 'text', text }], usage: { input_tokens: input, output_tokens: output },
+  stop_reason: 'end_turn', content: [{ type: 'text', text }], usage: { input_tokens: input, output_tokens: output },
 }), { headers: { 'content-type': 'application/json' } });
 let db: Database;
 const originalFlag = process.env.CREATIVE_SCAN_ENABLED, originalKey = process.env.ANTHROPIC_API_KEY;
@@ -88,12 +88,12 @@ test('video sends poster plus six ordered frames and newest merged copy; validat
     VALUES('invented-will-row','live',$1,'video','childInShot','{"value":"no"}','will',$2)`, [account, now]);
   const logs: unknown[] = [], requests: any[] = [];
   t.mock.method(console, 'error', (...args: unknown[]) => logs.push(args));
-  const raw = '```json\n' + JSON.stringify({ attributes: {
+  const raw = JSON.stringify({ attributes: {
     ...attributes, childInShot: { value: 'yes', confidence: 0.8, reason: 'invented-scan-key-1 visible caption' },
     slabEarly: { value: 'yes', confidence: 0.4, reason: 'Invented uncertain frame' },
     hookType: { value: 'forbidden', confidence: 0.9 }, voiceOver: { value: 'yes', confidence: 1 },
     unknownField: { value: 'yes', confidence: 1 }, captions: { value: 'yes', confidence: 2 },
-  }, padding: '£'.repeat(12_000) }) + '\n```';
+  }, padding: '£'.repeat(12_000) });
   const result = await runCreativeScans(db, settings(), options({ fetch: async (url, init) => {
     assert.equal(String(url), 'https://api.anthropic.com/v1/messages');
     assert.equal(init?.method, 'POST'); assert.equal(init?.redirect, 'error');
@@ -169,7 +169,7 @@ test('malformed answers wait until next UK day; repeated failure also waits one 
   assert.equal(health.scanned, 1, 'manual rescan does not inflate distinct-parent counts');
   assert.equal(scanRetryAt(new Date('2026-03-28T22:00:00Z')).toISOString(), '2026-03-29T00:00:00.000Z');
   assert.equal(scanRetryAt(new Date('2026-03-29T12:00:00Z')).toISOString(), '2026-03-29T23:00:00.000Z');
-  assert.deepEqual(logs, ['Creative scan failed (malformed)', 'Creative scan failed (malformed)']);
+  assert.deepEqual(logs, ['Creative scan failed (malformed (http 200))', 'Creative scan failed (malformed (http 200))']);
 });
 
 test('429 stores its safe provider code, stops without retrying and recovers next UK day', async t => {
@@ -182,10 +182,10 @@ test('429 stores its safe provider code, stops without retrying and recovers nex
   assert.equal((await runCreativeScans(db,settings(),opts)).failed,1);
   assert.equal(calls,1);assert.deepEqual(waits,[]);
   const saved=await rows();assert.equal(saved[0].http_status,429);assert.equal(saved[0].provider_code,'rate_limit_error');
-  assert.match((await readScanHealth(db,settings(),options())).line,/1 failed · http 429, rate_limit_error/);
+  assert.match((await readScanHealth(db,settings(),options())).line,/1 failed · refused \(http 429, rate_limit_error\)/);
   assert.equal((await runCreativeScans(db,settings(),opts)).state,'cooldown');assert.equal(calls,1);
   instant=scanRetryAt(now);assert.equal((await runCreativeScans(db,settings(),opts)).done,1);assert.equal(calls,2);
-  assert.deepEqual(logs,['Creative scan failed (http 429, rate_limit_error)']);
+  assert.deepEqual(logs,['Creative scan failed (refused (http 429, rate_limit_error))']);
   assert.ok(!JSON.stringify([saved,logs]).includes(process.env.ANTHROPIC_API_KEY!));
   assert.equal((await readScanHealth(db,settings(),options())).failed,0);
 });
@@ -204,7 +204,7 @@ test('5xx stops the pass and repeated failures remain eligible each next UK day'
 test('preflight cap stops before an unaffordable request, charges actual usage and resumes next UK day', async () => {
   await seed([entry('cap-first'), entry('cap-next', false, new Date('2026-10-13T12:00:00Z'))]);
   const config = settings(), copy = 'Ad body: Invented drawing kit cap-first\nAd title: Invented headline\nCall to action: SHOP_NOW';
-  config.creativeScanCapGbp = scanRequestReserve(config, scanSystemText('image'), copy, 1) + 0.0001;
+  config.creativeScanCapGbp = scanRequestReserve(config, scanSystemText('image'), copy, 1, 'image') + 0.0001;
   let calls = 0;
   const opts = options({ fetch: async () => { calls++; return answer(); } });
   assert.equal((await runCreativeScans(db, config, opts)).state, 'cap'); assert.equal(calls, 1);
@@ -299,7 +299,7 @@ test('refused and missing-usage envelopes scrub Unicode key echoes before their 
   const encoded = [...key].map(char => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`).join('');
   const nested = `{"attributes":{"childInShot":{"value":"yes","confidence":1,"reason":"${encoded}"}}}`;
   const replies = [new Response(`{"error":{"message":"${encoded}"}}`, { status: 403 }),
-    new Response(JSON.stringify({ content: [{ type: 'text', text: nested }] })),
+    new Response(JSON.stringify({ stop_reason: 'end_turn', content: [{ type: 'text', text: nested }] })),
     answer(`not JSON: ${encoded}`)];
   for (const groupId of ['encoded-error', 'encoded-usage', 'encoded-malformed']) await runCreativeScans(db, settings(), options({ groupId,
     fetch: async () => replies.shift()! }));
@@ -307,7 +307,7 @@ test('refused and missing-usage envelopes scrub Unicode key echoes before their 
   assert.deepEqual(saved.map(row => row.failure_reason), ['refused', 'malformed', 'malformed']);
   for (const row of saved) {
     assert.ok(!row.raw_response.includes(key)); assert.ok(!row.raw_response.includes(encoded));
-    assert.match(row.raw_response, /redacted/);
+    assert.equal(row.raw_response, '');
   }
   assert.deepEqual(await readAttributeRows(db, 'live', account), []);
 });
@@ -350,4 +350,46 @@ test('oversized media stores a reason without a model call and the common failur
   assert.deepEqual((await rows()).map(r=>r.failure_reason).sort(),['media too large','media too large','unsupported type']);
   assert.match((await readScanHealth(db,settings(),opts)).line,/3 failed · media too large/);
   assert.equal((await runCreativeScans(db,settings(),opts)).state,'cooldown');
+});
+
+test('structured output schemas stay within 24 optional keys and prohibit extra properties',async()=>{
+ const {scanOutputSchema}=await import('../src/creatives/scan.js');
+ for(const kind of ['image','video'] as const){
+  const schema=scanOutputSchema(kind),attributes=schema.properties.attributes;
+  assert.ok(Object.keys(attributes.properties).length<=24,`${kind} exceeds the API optional-property limit`);
+  assert.deepEqual(schema.required,['attributes']);assert.equal(schema.additionalProperties,false);assert.equal(attributes.additionalProperties,false);
+  for(const property of Object.values(attributes.properties)){
+   assert.equal(property.additionalProperties,false);assert.deepEqual(property.required,['value','confidence','reason']);
+   assert.deepEqual(property.properties.confidence,{type:'number'});assert.ok(property.properties.value.enum.length);
+  }
+ }
+});
+
+test('thinking precedes valid text; requests use structured format and Claude 5 low effort only',async()=>{
+ await seed([entry('structured')]);
+ for(const model of ['claude-haiku-5-5','claude-opus-5-5','claude-sonnet-4-5']){
+  const result=await runCreativeScans(db,{...settings(),creativeScanModel:model},options({groupId:'structured',fetch:async(_,init)=>{
+   const body=JSON.parse(String(init?.body));assert.equal(body.output_config.format.type,'json_schema');
+   assert.equal(body.output_config.effort,model.includes('-5-5')?'low':undefined);
+   for(const key of ['tool_choice','temperature','top_p','top_k'])assert.equal(key in body,false);
+   assert.equal(body.max_tokens,1500);
+   return Response.json({stop_reason:'end_turn',content:[{type:'thinking',thinking:'Invented ignored thought'},{type:'text',text:JSON.stringify({attributes})}],usage:{input_tokens:100,output_tokens:50}});
+  }}));assert.equal(result.done,1);
+ }
+});
+
+test('truncation, refusal category, absent text and dropped attributes persist shape without reply text',async t=>{
+ t.mock.method(console,'error',()=>{});
+ for(const [id,reply,code,reason,dropped] of [
+  ['truncated',{stop_reason:'max_tokens',content:[{type:'text',text:'invented partial reply'}]},'max_tokens','malformed',0],
+  ['refusal',{stop_reason:'refusal',stop_details:{category:'reasoning_extraction'},content:[{type:'text',text:'invented refusal'}]},'refusal reasoning_extraction','refused',0],
+  ['no-text',{stop_reason:'end_turn',content:[{type:'thinking',thinking:'invented thought'}]},'no text','malformed',0],
+  ['dropped',{stop_reason:'end_turn',content:[{type:'text',text:JSON.stringify({attributes:{childInShot:{value:'invented-invalid',confidence:1,reason:'Invented evidence'}}})}]},'all dropped','malformed',1],
+ ] as const){
+  await db.query('TRUNCATE pulse.media_groups CASCADE');
+  await seed([entry(id)]);
+  await runCreativeScans(db,settings(),options({groupId:id,fetch:async()=>Response.json({...reply,usage:{input_tokens:20,output_tokens:1500}})}));
+  const row=(await rows()).at(-1);assert.equal(row.failure_reason,reason);assert.equal(row.provider_code,code);assert.equal(row.raw_response,'');assert.equal(row.dropped_count,dropped);
+  assert.match((await readScanHealth(db,settings(),options())).line,new RegExp(`${reason} \\(http 200, ${code}\\)`));
+ }
 });

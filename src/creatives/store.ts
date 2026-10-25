@@ -1,3 +1,4 @@
+import { formatPounds } from '../money.js';
 import {thruPlayHealth,type ThruPlayHealth} from './thruplay-repair.js';
 import {mediaFactHealth,type MediaFactHealth} from './media-facts.js';
 import { randomUUID } from 'node:crypto';
@@ -225,11 +226,20 @@ export async function ensureGroupMedia(client: CreativeReader, db: Database, acc
   return result;
 }
 
-export function reconciliationLine(gaps: { percent: number; day: string }[]): string | null {
-  const significant = gaps.filter(r => r.percent > 1);
-  if (!significant.length) return null;
-  const days = new Set(significant.map(r => r.day)).size;
-  return `Meta ad-level spend differs from ad set spend by ${Math.max(...significant.map(r => r.percent)).toFixed(1)}% on ${days} ${days === 1 ? 'day' : 'days'}`;
+export function reconciliationLine(gaps: { adSpend: number; setSpend: number; day: string }[]): string | null {
+  const days = new Map<string, { adSpend: number; setSpend: number; sets: number; gap: number }>();
+  for (const row of gaps) {
+    const day = days.get(row.day) ?? { adSpend: 0, setSpend: 0, sets: 0, gap: 0 };
+    day.adSpend += row.adSpend; day.setSpend += row.setSpend;
+    const gap = Math.abs(row.adSpend - row.setSpend);
+    if (gap >= 1 && (row.setSpend === 0 || gap / row.setSpend > 0.01)) { day.sets++; day.gap += gap; }
+    days.set(row.day, day);
+  }
+  const worst = [...days].filter(([, row]) => row.sets > 0).sort((a, b) => b[1].gap - a[1].gap || b[0].localeCompare(a[0]))[0];
+  if (!worst) return null;
+  const [day, totals] = worst;
+  const label = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', day: 'numeric', month: 'short' }).format(new Date(`${day}T12:00:00Z`));
+  return `Meta ad-level spend differs from ad set spend on ${label}: ${formatPounds(totals.adSpend, n => n.toFixed(2))} against ${formatPounds(totals.setSpend, n => n.toFixed(2))} (${totals.sets} ${totals.sets === 1 ? 'set' : 'sets'})`;
 }
 export async function reducedDetailCount(db: Database, account: string, mode: SourceMode = 'live'): Promise<number> {
   return Number((await db.query<any>('SELECT count(*) FROM pulse.media_groups WHERE mode=$1 AND account_id=$2 AND detail_reduced_at IS NOT NULL', [mode, account])).rows[0]?.count ?? 0);
@@ -244,7 +254,7 @@ export async function creativeHealth(db: Database, settings: Settings, env: Node
     db.query<any>("SELECT count(*) FROM pulse.ads WHERE mode='live' AND account_id=$1",[account]),
     db.query<any>('SELECT count(*) FROM pulse.creative_insight_days WHERE account_id=$1 AND completed',[account]),
     db.query<any>(`WITH ads AS (SELECT day,ad_set_id,sum(spend) AS spend FROM pulse.ad_insights_daily WHERE mode='live' AND account_id=$1 GROUP BY day,ad_set_id), sets AS (SELECT uk_day AS day,ad_set_id,sum(spend_amount) AS spend FROM pulse.ad_spend WHERE mode='live' AND source='meta' AND account_id=$1 GROUP BY uk_day,ad_set_id)
-      SELECT COALESCE(a.day,s.day)::text AS day,CASE WHEN COALESCE(s.spend,0)=0 THEN CASE WHEN COALESCE(a.spend,0)=0 THEN 0 ELSE 100 END ELSE abs(COALESCE(a.spend,0)-s.spend)/s.spend*100 END AS percent
+      SELECT COALESCE(a.day,s.day)::text AS day,COALESCE(a.spend,0) AS ad_spend,COALESCE(s.spend,0) AS set_spend
       FROM ads a FULL JOIN sets s ON a.day=s.day AND a.ad_set_id=s.ad_set_id
       JOIN pulse.creative_insight_days c ON c.account_id=$1 AND c.day=COALESCE(a.day,s.day) AND c.completed
       JOIN pulse.ad_spend_days d ON d.source='meta' AND d.account_id=$1 AND d.uk_day=COALESCE(a.day,s.day)`,[account]),
@@ -254,5 +264,5 @@ export async function creativeHealth(db: Database, settings: Settings, env: Node
   const incomplete=Number((await db.query<any>(`SELECT count(*) FROM pulse.ad_spend_days d LEFT JOIN pulse.creative_insight_days c ON c.account_id=d.account_id AND c.day=d.uk_day WHERE d.source='meta' AND d.account_id=$1 AND (c.completed IS DISTINCT FROM true)`,[account])).rows[0]?.count??0);
   const refusedDays=Number((await db.query<any>(`SELECT count(*) FROM pulse.creative_insight_days WHERE account_id=$1 AND NOT completed AND error_code IS NOT NULL`,[account])).rows[0]?.count??0);
   const j = job.rows[0];
-  return {mode,scan,refusedDays,thruPlayRepair:await thruPlayHealth(db,account,now,settings.creativeDefaultWindow),mediaFacts:await mediaFactHealth(db,account,now,settings.creativeDefaultWindow),catalogueCount:Number(count.rows[0]?.count ?? 0),reducedCount,backfillNext:j?.backfill_next ?? null,backfillDone:j?.backfill_done ?? false,completedDays:Number(coverage.rows[0]?.count ?? 0),totalDays:Math.max(0,Math.round((Date.parse(ukToday(now))-Date.parse('2026-08-07'))/86400000)+1),bytes,capBytes:settings.creativeMediaCapMb*1024*1024,lastSuccessAt:j?.last_success_at ? iso(j.last_success_at) : null,reconciliation:[incomplete?`ad-level read incomplete on ${incomplete} ${incomplete===1?'day':'days'}`:null,reconciliationLine(gaps.rows.map(r => ({day:r.day,percent:Number(r.percent)})))].filter(Boolean).join(' · ')||null,error:j?.error_code ?? null};
+  return {mode,scan,refusedDays,thruPlayRepair:await thruPlayHealth(db,account,now,settings.creativeDefaultWindow),mediaFacts:await mediaFactHealth(db,account,now,settings.creativeDefaultWindow),catalogueCount:Number(count.rows[0]?.count ?? 0),reducedCount,backfillNext:j?.backfill_next ?? null,backfillDone:j?.backfill_done ?? false,completedDays:Number(coverage.rows[0]?.count ?? 0),totalDays:Math.max(0,Math.round((Date.parse(ukToday(now))-Date.parse('2026-08-07'))/86400000)+1),bytes,capBytes:settings.creativeMediaCapMb*1024*1024,lastSuccessAt:j?.last_success_at ? iso(j.last_success_at) : null,reconciliation:[incomplete?`ad-level read incomplete on ${incomplete} ${incomplete===1?'day':'days'}`:null,reconciliationLine(gaps.rows.map(r => ({day:r.day,adSpend:Number(r.ad_spend),setSpend:Number(r.set_spend)})))].filter(Boolean).join(' · ')||null,error:j?.error_code ?? null};
 }

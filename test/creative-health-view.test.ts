@@ -20,9 +20,9 @@ test('creative health shows catalogue, durable progress, storage and last read',
 });
 
 test('only material reconciled gaps appear, and health diagnostics are escaped', () => {
-  assert.doesNotMatch(creativeHealthDetails({ ...health, reconciliation: reconciliationLine([{ percent: 0.5, day: '2026-10-12' }]) }), /data-creative-reconciliation/);
-  const html = creativeHealthDetails({ ...health, reconciliation: reconciliationLine([{ percent: 1.5, day: '2026-10-12' }]), error: '<invalid>' });
-  assert.match(html, /differs from ad set spend by 1.5% on 1 day/);
+  assert.doesNotMatch(creativeHealthDetails({ ...health, reconciliation: reconciliationLine([{ adSpend: 2.4, setSpend: 2, day: '2026-10-12' }]) }), /data-creative-reconciliation/);
+  const html = creativeHealthDetails({ ...health, reconciliation: reconciliationLine([{ adSpend: 41.4, setSpend: 46.4, day: '2026-10-12' }]), error: '<invalid>' });
+  assert.match(html, /differs from ad set spend on 12 Oct: £41.40 against £46.40 \(1 set\)/);
   assert.match(html, /&lt;invalid&gt;/);
   assert.doesNotMatch(html, /<invalid>/);
 });
@@ -48,4 +48,13 @@ test('creative health supports other account timezones and reserves unsupported-
       assert.match(html, /Reach, frequency and average play time keep Meta account days/);
     }
   }
+});
+
+test('spend gap ignores pennies and names the worst day, both day totals and affected set count', () => {
+ assert.equal(reconciliationLine([{day:'2026-10-22',adSpend:1.6,setSpend:2}]),null);
+ assert.equal(reconciliationLine([
+  {day:'2026-10-21',adSpend:3,setSpend:5},
+  {day:'2026-10-22',adSpend:20,setSpend:25},
+  {day:'2026-10-22',adSpend:21.2,setSpend:26.2},
+ ]),'Meta ad-level spend differs from ad set spend on 22 Oct: £41.20 against £51.20 (2 sets)');
 });

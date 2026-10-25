@@ -1,3 +1,4 @@
+import { checkHourly } from './browser-hourly.js';
 import {checkAdSets} from './browser-adsets.js';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -12,7 +13,7 @@ import { defaultSettings, type SettingsSnapshot } from '../src/settings.js';
 import { calculateSeriesPace, paceDate, paceNumber } from '../src/series-pace/model.js';
 import type { SeriesPaceMarketView } from '../src/series-pace/presentation.js';
 import { checkHomeChapters, checkFulfilmentChapter } from './chapter-browser-check.js';
-import { checkRadar } from './browser-radar.js';
+import { checkDrops } from './browser-drops.js';
 import { checkMarketHero, installMarketUpdateHook } from './browser-market.js';
 import { checkGrossHistoryProgress } from './browser-gross-history.js';
 import { metricSign } from '../src/metric-sign.js';
@@ -289,18 +290,11 @@ async function checkGroupedDisplay(context: BrowserContext): Promise<void> {
           return text.left >= box.left && text.right <= box.right && text.bottom <= box.bottom;
         });
         assert.equal(fits, true, 'The full grouped decimal figure must fit inside the phone tile');
-        const radar = page.locator('#radar');
-        assert.equal(await radar.isVisible(), true);
-        for (const [name, label] of [['Meta', sample.labels[0]], ['Google', sample.labels[1]]] as const) {
-          assert.equal(await radar.locator('svg text').filter({ hasText: new RegExp(`^${name}`) }).locator('tspan').textContent(), label);
-          assert.ok((await radar.getAttribute('aria-label'))?.includes(`${name}: ${label}`));
-        }
-        assert.doesNotMatch(await radar.innerText(), /Unknown/);
-        assert.match(await radar.getAttribute('aria-label') ?? '', /Growth: Not built/);
-        assert.match(await radar.getAttribute('aria-label') ?? '', /Email: Not built/);
-        assert.equal(await radar.locator('.radar-weakest').count(), 1);
-        assert.match(await radar.innerText(), /Not enough data/);
-        if (index === 2) assert.match(await radar.locator('[data-radar-key="meta"] title').first().textContent() ?? '', /The first ad spend sync is pending\./);
+        assert.equal(await page.locator('#radar').count(), 0);
+        const drops = await page.locator('#drops').innerText();
+        if (index === 0) assert.match(drops, /Google/);
+        if (index === 1) assert.match(drops, /Meta/);
+        if (index === 2) assert.doesNotMatch(drops, /Meta|Google/);
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
         if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/grouped-money-radar-${viewport.width}-${index}.png` });
       }
@@ -347,7 +341,7 @@ async function checkReviews(context: BrowserContext): Promise<void> {
       assert.match(await rows.last().innerText(), /Email request/);
       assert.doesNotMatch(await rows.first().innerText(), /Flagged by Judge.me/);
       const health = await page.locator('#counts > span').allTextContents();
-      const radar = await page.locator('#radar').getAttribute('aria-label');
+      const drops = await page.locator('#drops').innerText();
       await page.locator('#counts button[data-rv]').click();
       await page.locator('#reviews').scrollIntoViewIfNeeded();
       assert.equal(await rows.first().isVisible(), true);
@@ -389,7 +383,7 @@ async function checkReviews(context: BrowserContext): Promise<void> {
       assert.equal(await notice.innerText(), '1 reviews could not be read');
       assert.equal(await rows.count(), sample.rows.length, 'Readable reviews remain visible');
       assert.deepEqual(await page.locator('#counts > span').allTextContents(), health);
-      assert.equal(await page.locator('#radar').getAttribute('aria-label'), radar);
+      assert.equal(await page.locator('#drops').innerText(), drops);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
       fixture.reviews.rows = [];
       await page.reload();
@@ -406,7 +400,7 @@ async function checkReviews(context: BrowserContext): Promise<void> {
       assert.match(await page.locator('#subrv').innerText(), /All caught up/);
       assert.match(await page.locator('#rvcount').innerText(), /All caught up/);
       assert.deepEqual(await page.locator('#counts > span').allTextContents(), health);
-      assert.equal(await page.locator('#radar').getAttribute('aria-label'), radar);
+      assert.equal(await page.locator('#drops').innerText(), drops);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     }
   } finally { await page.close(); }
@@ -738,6 +732,7 @@ async function checkPartialAdSpend(context: BrowserContext): Promise<void> {
       await page.goto('/');
       await page.locator('html[data-dashboard-ready="true"]').waitFor();
       await page.locator('#hero [data-k="spend"][data-state="warn"]').waitFor();
+      assert.equal(await page.locator('#hourly-orders').isVisible(), true);
       await page.evaluate(() => window.scrollTo(0, 0));
       if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({
         path: `${process.env.PULSE_SCREENSHOT_DIR}/ad-spend-partial-${viewport.width}.png`,
@@ -1757,8 +1752,9 @@ async function run(): Promise<void> {
     step = 'check sample reviews, low-star sheets, greeting and recovered empty state';
     await checkReviews(context);
 
-    step = 'check measured-only radar, weakest area and spoke actions at phone and desktop widths';
-    await checkRadar(context);
+    step = 'check measured health, drop line and weakest-gauge actions at phone and desktop widths';
+    await checkDrops(context);
+    await checkHourly(context);
 
     step = 'check creative pictures, playing media, windows and gallery filters at phone and desktop widths';
     await checkCreatives(context);

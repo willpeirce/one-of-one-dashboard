@@ -35,7 +35,7 @@ const insights: AdInsight[] = Array.from({ length: 7 }, (_, index) => ({ adId: e
   linkClicks: 10, threeSecondPlays: 0, threeSecondSource: 'none', plays: 0, thruPlays: 0, plays25: 0, plays50: 0,
   plays75: 0, plays100: 0, averagePlayTime: 0, addsToCart: 2, purchases: 1, purchaseValue: 30 }));
 const answer = (text = JSON.stringify({ attributes: { format: { value: 'gift-guide', confidence: 0.9, reason: 'Invented guide layout' } } }), input = 100, output = 50) =>
-  new Response(JSON.stringify({ content: [{ type: 'text', text }], usage: { input_tokens: input, output_tokens: output } }),
+  new Response(JSON.stringify({ stop_reason: 'end_turn', content: [{ type: 'text', text }], usage: { input_tokens: input, output_tokens: output } }),
     { headers: { 'content-type': 'application/json' } });
 let db: Database;
 const originalFlag = process.env.CREATIVE_SCAN_ENABLED, originalKey = process.env.ANTHROPIC_API_KEY;
@@ -125,7 +125,7 @@ for (const failure of ['malformed', 'network'] as const) {
   assert.deepEqual(events.slice(2), ['frequency', 'scan']);
     assert.deepEqual(await scanRows(), [{ status: 'failed', failure_reason: failure }]);
     assert.equal((await job()).error_code, null); assert.ok((await job()).last_success_at);
-    assert.deepEqual(logs, [`Creative scan failed (${failure})`]);
+    assert.deepEqual(logs, [`Creative scan failed (${failure}${failure === 'malformed' ? ' (http 200)' : ''})`]);
     assert.ok(!JSON.stringify(logs).includes(process.env.ANTHROPIC_API_KEY!));
   });
 }
@@ -158,7 +158,7 @@ test('Source health maps scan success and refusal to Anthropic with safe reason 
   assert.equal(failed.anthropic.status, 'error'); assert.equal(failed.anthropic.consecutiveFailures, 1);
   assert.equal(failed.anthropic.statusText, 'Scan failed: refused (http 400)');
   assert.match(failed.html, /Scan failed: refused \(http 400\)/);
-  assert.match(failed.html, /Scan: on · 0 scanned · 1 failed · http 400 · £0.42 of £1.00 today/);
+  assert.match(failed.html, /Scan: on · 0 scanned · 1 failed · refused \(http 400\) · £0.42 of £1.00 today/);
   assert.ok(!failed.html.includes(process.env.ANTHROPIC_API_KEY!));
 });
 
@@ -177,4 +177,14 @@ test('zero prices show the exact Settings notice and missing credentials keep An
   assert.equal(missing.anthropic.status, 'waiting_for_keys'); assert.equal(missing.anthropic.mode, 'sample');
   assert.equal(missing.anthropic.statusText, 'Waiting for keys');
   assert.match(missing.html, /data-creative-scan>Scan: off<\/p>/);
+});
+
+test('scan health reports no waiting work once spend eligibility is gone',async()=>{
+ await seed();
+ await runCreativeScans(db,settings(),{mode:'live',accountId:account,clock:()=>now,fetch:async()=>answer('invented invalid response')});
+ assert.equal((await readScanHealth(db,settings(),{mode:'live',accountId:account,now})).waiting,1);
+ await db.query('UPDATE pulse.ad_insights_daily SET spend=0 WHERE account_id=$1',[account]);
+ const scan=await readScanHealth(db,settings(),{mode:'live',accountId:account,now});assert.equal(scan.waiting,0);
+ await syncSourceHealth(db,{ANTHROPIC_API_KEY:process.env.ANTHROPIC_API_KEY});
+ assert.equal((await readSourceHealth(db,scan)).find(row=>row.source==='anthropic')!.scanWaiting,0);
 });

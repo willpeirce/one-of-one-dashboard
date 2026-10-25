@@ -1,3 +1,4 @@
+import { formatUkTime } from './uk-time.js';
 import {mediaFactLine,mediaFactPermissionLine} from './creatives/media-facts.js';
 import {thruPlayLine} from './creatives/thruplay-repair.js';
 import { formatNumber } from './money.js';
@@ -15,14 +16,10 @@ function escapeHtml(value: string): string {
   })[character]!);
 }
 
-const dateFormat = new Intl.DateTimeFormat('en-GB', {
-  dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/London',
-});
-
 function timestamp(value: Date | string | null): string {
   if (value === null) return 'Never';
   const date = new Date(value);
-  return `<time datetime="${date.toISOString()}">${escapeHtml(dateFormat.format(date))}</time>`;
+  return `<time datetime="${date.toISOString()}">${escapeHtml(formatUkTime(date))}</time>`;
 }
 
 function page(title: string, content: string, signedIn: boolean): string {
@@ -100,17 +97,18 @@ export function creativeHealthDetails(health: CreativeHealth): string {
     <p>Ad-level comparisons use days read by both imports. The hero keeps the ad-set spend figure.</p></section>`;
 }
 
-export function sourceHealthPage(rows: readonly SourceHealth[], shopify?: Awaited<ReturnType<ShopifyStore['summary']>>, costs?: Awaited<ReturnType<ShopifyStore['costSummary']>>, ads?:Awaited<ReturnType<typeof import('./ad-spend/store.js').spendHealth>>, status?: { reviewHealth?: import('./judgeme/store.js').ReviewHealth; summary: string; shopify: ShopifyDashboard; checkedAt: string; campaigns?: CampaignSyncState; creatives?: CreativeHealth; adSets?: import('./meta-adsets/presentation.js').AdSetsView }): string {
+export function sourceHealthPage(rows: readonly SourceHealth[], shopify?: Awaited<ReturnType<ShopifyStore['summary']>>, costs?: Awaited<ReturnType<ShopifyStore['costSummary']>>, ads?:Awaited<ReturnType<typeof import('./ad-spend/store.js').spendHealth>>, status?: { channelExclusions?: {channel:string;orderNumbers:string[]}[]; reviewHealth?: import('./judgeme/store.js').ReviewHealth; summary: string; shopify: ShopifyDashboard; checkedAt: string; campaigns?: CampaignSyncState; creatives?: CreativeHealth; adSets?: import('./meta-adsets/presentation.js').AdSetsView }): string {
   const gross = shopify?.mode === 'live' ? shopify.jobs.find(job => job.name === 'gross_history')?.state : undefined;
   const days = typeof gross?.first === 'string' && typeof gross?.last === 'string' ? dayCount(gross.first, gross.last) : 0;
   const weeks = Number.isFinite(days) ? Math.max(0, Math.ceil(days / 7)) : 0;
   const grossHistory = gross ? `Total sales history: ${formatNumber(Array.isArray(gross.filled) ? gross.filled.length : 0)} of ${formatNumber(weeks)} weeks filled, ${formatNumber(Array.isArray(gross.skipped) ? gross.skipped.length : 0)} skipped` : '';
   return page('Source health', `<h1>Source health</h1>
     <section id="source-summary" aria-label="Sources and modes"><h2>Sources and modes</h2><p class="sample-banner">${status ? escapeHtml(status.summary) : `<strong>sample data</strong> · ${shopify ? 'Shopify cards use ingested data; ad spend uses its own source connections; deferred examples remain labelled samples.' : 'No source data has been imported.'}`}</p></section>
-    ${status ? `<section id="shopify-watchdogs" aria-label="Shopify watchdogs"><h2>Shopify watchdogs</h2><p>${formatNumber(status.shopify.checks.filter(check => check.status === 'pass').length)}/${formatNumber(status.shopify.checks.length)} checks passing · Shopify ${status.shopify.mode === 'live' ? 'live' : 'sample data'} · checked ${timestamp(status.checkedAt)} UK</p><ul>${status.shopify.checks.map(check => `<li><strong>${check.status === 'pass' ? '✓ Good' : check.status === 'tripped' ? '△ Watch' : '○ Unknown'} · ${escapeHtml(check.name)}</strong><p>${escapeHtml(check.why)}</p></li>`).join('')}</ul></section>` : ''}
+    ${status ? `<section id="shopify-watchdogs" aria-label="Shopify watchdogs"><h2>Shopify watchdogs</h2><p>${formatNumber(status.shopify.checks.filter(check => check.status === 'pass').length)}/${formatNumber(status.shopify.checks.length)} checks passing · Shopify ${status.shopify.mode === 'live' ? 'live' : 'sample data'} · checked ${timestamp(status.checkedAt)}</p><ul>${status.shopify.checks.map(check => `<li><strong>${check.status === 'pass' ? '✓ Good' : check.status === 'tripped' ? '△ Watch' : '○ Unknown'} · ${escapeHtml(check.name)}</strong><p>${escapeHtml(check.why)}</p></li>`).join('')}</ul></section>` : ''}
     ${shopify ? `<section aria-label="Shopify imports"><h2>Shopify imports · ${shopify.sample ? 'sample data' : 'live'}</h2><p>${formatNumber(shopify.counts.order ?? 0)} orders · ${formatNumber(shopify.counts.inventory ?? 0)} inventory rows · ${formatNumber(shopify.counts.sessions ?? 0)} session days · ${formatNumber(shopify.counts.sales ?? 0)} older sales days · ${formatNumber(shopify.pendingWebhooks)} webhooks pending.</p><p>Shopify cards are on Home. Import counts include older records retained for replay; window-based cards exclude them.</p>${shopify.notices.length ? `<p>Needs attention: ${shopify.notices.map(n => escapeHtml(n === 'geo_unreliable' ? shopify.geoNotice! : n.replaceAll('_', ' '))).join(' · ')}</p>` : ''}</section>` : ''}
+    ${status?.shopify.mode === 'live' ? (status.channelExclusions ?? []).map(row => `<p>Orders by channel · ${escapeHtml(row.channel)}: stored test orders excluded from the shared count: ${row.orderNumbers.map(number => escapeHtml(`#${number}`)).join(', ')}.</p>`).join('') : ''}
     ${costs ? `<p>Shopify unit costs: ${formatNumber(costs.known)} stock variants with a cost · ${formatNumber(costs.missing)} without · last cost change ${costs.changed ? timestamp(costs.changed) : 'none observed'}. ${shopify?.sample ? 'Sample data.' : 'Live.'}</p>` : ''}
-    ${ads?`<section aria-label="Ad spend imports"><h2>Ad spend</h2>${ads.map(a=>`<p>${escapeHtml(a.source==='meta'?'Meta':a.source==='google-ads'?'Google':'TikTok')} · ${escapeHtml(a.status)}${a.fetchedAt?` · last fetched ${timestamp(a.fetchedAt)} UK`:''}${a.failures?` · ${formatNumber(a.failures)} consecutive failure${a.failures === 1 ? '' : 's'}`:''}${a.source==='google-ads'?' · Google can lag about 3 hours · hours re-aligned to UK time':a.source==='tiktok'?' · hours re-aligned to UK time':''}</p>`).join('')}<p>Account IDs belong in Settings &gt; Ad spend. Each source connects independently. Meta actions require the separate opt-in flag and a confirmed signed-in tap.</p></section>`:''}
+    ${ads?`<section aria-label="Ad spend imports"><h2>Ad spend</h2>${ads.map(a=>`<p>${escapeHtml(a.source==='meta'?'Meta':a.source==='google-ads'?'Google':'TikTok')} · ${escapeHtml(a.status)}${a.fetchedAt?` · last fetched ${timestamp(a.fetchedAt)}`:''}${a.failures?` · ${formatNumber(a.failures)} consecutive failure${a.failures === 1 ? '' : 's'}`:''}${a.source==='google-ads'?' · Google can lag about 3 hours · hours re-aligned to UK time':a.source==='tiktok'?' · hours re-aligned to UK time':''}</p>`).join('')}<p>Account IDs belong in Settings &gt; Ad spend. Each source connects independently. Meta actions require the separate opt-in flag and a confirmed signed-in tap.</p></section>`:''}
     ${status?.adSets ? `<p data-adsets-health>Ad sets: ${formatNumber(status.adSets.count)} read, last ${timestamp(status.adSets.lastRead)}${status.adSets.mode==='sample'?' · sample data':status.adSets.stale?' · stale after 2 hours':''}</p>` : ''}
     ${status?.creatives ? creativeHealthDetails(status.creatives) : ''}
     ${status?.reviewHealth ? `<p data-reviews-health>Reviews: ${formatNumber(status.reviewHealth.read)} read, ${formatNumber(status.reviewHealth.waiting)} waiting, ${formatNumber(status.reviewHealth.flagged)} flagged, last ${timestamp(status.reviewHealth.last)}${status.reviewHealth.mode==='sample'?' · sample data':''}</p>` : ''}

@@ -9,6 +9,9 @@ import { spendMarket } from '../ad-spend/placement.js';
 import type { Settings } from '../settings.js';
 import type { AdInsight, CatalogueEntry, CatalogueMedia, CatalogueRead, CatalogueRefresh, CreativeReader, StoredCatalogueAd } from './model.js';
 
+// Insights need an explicit inclusive filter; the Graph ads edge omits deleted ads.
+const INSIGHT_STATUSES = ['ACTIVE', 'PAUSED', 'DELETED', 'ARCHIVED', 'CAMPAIGN_PAUSED', 'ADSET_PAUSED', 'PENDING_REVIEW', 'DISAPPROVED', 'PREAPPROVED', 'PENDING_BILLING_INFO', 'IN_PROCESS', 'WITH_ISSUES'];
+const INSIGHT_FILTER = JSON.stringify([{ field: 'ad.effective_status', operator: 'IN', value: INSIGHT_STATUSES }]);
 const CREATIVE_FIELDS = 'id,object_type,thumbnail_url,image_hash,image_url,video_id,object_story_spec,asset_feed_spec,effective_object_story_id,effective_instagram_media_id,body,title,call_to_action_type,link_url,url_tags,status';
 const INSIGHT_FIELDS = 'ad_id,adset_id,date_start,spend,impressions,reach,frequency,inline_link_clicks,actions,action_values,video_continuous_2_sec_watched_actions,video_play_actions,video_thruplay_watched_actions,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions,video_avg_time_watched_actions';
 const VIDEO_FIELDS = INSIGHT_FIELDS.split(',').filter(field => field.startsWith('video_'));
@@ -305,7 +308,7 @@ export class MetaCreativeClient implements CreativeReader {
     if (from > to) throw new AdError('invalid');
     const zone = await this.account(account), hourly = zone !== 'Europe/London';
     const path = `act_${id(account)}/insights`;
-    const query = { level: 'ad', time_increment: '1', limit: '500' };
+    const query = { level: 'ad', time_increment: '1', limit: '500', filtering: INSIGHT_FILTER };
     const daily = (await this.meta.readAllPages(path, { ...query, fields: hourly ? ACCOUNT_DAY_FIELDS : INSIGHT_FIELDS,
       time_range: JSON.stringify({ since: from, until: to }) }, 60_000)).map(row => {
       const day = insightDay(row.date_start);
@@ -353,13 +356,13 @@ export class MetaCreativeClient implements CreativeReader {
   async readThruPlays(account:string,from:string,to:string):Promise<import('./thruplay-repair.js').ThruPlayRow[]> {
     insightDay(from);insightDay(to);if(from>to)throw new AdError('invalid');
     const report=await this.meta.readAllPages(`act_${id(account)}/insights`,{
-      fields:'ad_id,date_start,video_play_actions,video_thruplay_watched_actions,actions,video_continuous_2_sec_watched_actions',level:'ad',time_increment:'1',limit:'500',
+      filtering:INSIGHT_FILTER,fields:'ad_id,date_start,video_play_actions,video_thruplay_watched_actions,actions,video_continuous_2_sec_watched_actions',level:'ad',time_increment:'1',limit:'500',
       time_range:JSON.stringify({since:from,until:to}),
     },60_000,true);
     return report.map(row=>{
       const day=insightDay(row.date_start);if(day<from||day>to)throw new AdError('invalid');
       const direct=Array.isArray(row.actions)&&row.actions.some((item:any)=>item.action_type==='video_view');
-      return {adId:id(row.ad_id),day,plays:row.video_play_actions==null?null:action(row.video_play_actions),thruPlays:row.video_thruplay_watched_actions==null?null:action(row.video_thruplay_watched_actions),
+      return {adId:id(row.ad_id),day,plays:action(row.video_play_actions),thruPlays:action(row.video_thruplay_watched_actions),
         holdThreeSecondPlays:row.actions==null&&row.video_continuous_2_sec_watched_actions==null?undefined
           :direct?action(row.actions,'video_view'):action(row.video_continuous_2_sec_watched_actions)};
     });
@@ -374,7 +377,7 @@ export class MetaCreativeClient implements CreativeReader {
     const result = await this.meta.readAllPages(`act_${id(account)}/insights`, {
       fields: 'impressions,reach,frequency', level: 'account',
       time_range: JSON.stringify({ since: from, until: to }),
-      filtering: JSON.stringify([{ field: 'ad.id', operator: 'IN', value: ids }]),
+      filtering: JSON.stringify([{ field: 'ad.id', operator: 'IN', value: ids }, { field: 'ad.effective_status', operator: 'IN', value: INSIGHT_STATUSES }]),
     }, 60_000);
     if (!result.length) return null;
     if (result.length !== 1 || !['number', 'string'].includes(typeof result[0]?.frequency) || result[0].frequency === '') throw new AdError('invalid');
@@ -387,13 +390,13 @@ export class MetaCreativeClient implements CreativeReader {
     const fallback = await this.meta.readGraph(id(videoId), { fields: 'download_hd_url' });
     return this.mediaUrl(fallback.download_hd_url);
   }
-  async readAccountVideoPage(account:string,after:string|null=null):Promise<AccountVideoPage> {
+  async readAccountVideoPage(account:string,after:string|null=null,limit=100):Promise<AccountVideoPage> {
     const cursor=(value:unknown):string=>{
       if(typeof value!=='string'||!/^[A-Za-z0-9_+=/-]{1,1024}$/.test(value))throw new AdError('invalid');
       return value;
     };
     const response=await this.meta.readGraph(`act_${id(account)}/advideos`,{
-      fields:'id,length,thumbnails{uri,width,height,is_preferred}',limit:'100',...(after?{after:cursor(after)}:{}),
+      fields:'id,length,thumbnails{uri,width,height,is_preferred}',limit:String(limit),...(after?{after:cursor(after)}:{}),
     },10_000,true);
     const positive=(value:unknown):number|null=>Number.isFinite(Number(value))&&Number(value)>0?Number(value):null;
     const videos=rows(response.data).map(row=>{
@@ -469,7 +472,7 @@ export class MetaCreativeClient implements CreativeReader {
         const thumbnails=await attempt('thumbnails',()=>this.meta.readAllPages(`${id(directVideoId)}/thumbnails`,{fields:'width,height,is_preferred',limit:'10'},10_000,true));
         takeSize(thumbnails?.find(row=>row.is_preferred)??thumbnails?.[0]);
       }
-      ownedElsewhere=missing();
+      ownedElsewhere=group.accountVideosComplete===true&&missing();
     }
     if(ownedElsewhere)failures.push('video owned elsewhere');
     return {width,height,lengthSeconds,...(failures.length?{failures}: {}),...(ownedElsewhere?{ownedElsewhere:true}:{})};

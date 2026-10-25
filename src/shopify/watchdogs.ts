@@ -1,3 +1,4 @@
+import { formatUkTime } from '../uk-time.js';
 import { formatNumber } from '../money.js';
 import { appConfig } from '../config.js';
 import type { Database } from '../db.js';
@@ -66,7 +67,6 @@ export function evaluateWatchdogs(facts: Facts, now: Date, settings: Settings, o
   const hours = usDaytime(now) ? 2 : 3;
   const paidTimes = data.orders.filter(o => o.paidAt).map(o => Date.parse(o.paidAt!));
   const threshold = now.getTime() - hours * 3_600_000;
-  const baselineStart = threshold - 7 * 86_400_000;
   // Compare the same local UK time last week across DST, rather than subtracting 168 UTC hours.
   const wallNow = zonedParts(now, 'Europe/London');
   const weekAgoDay = addDays(wallNow.day, -7);
@@ -76,16 +76,24 @@ export function evaluateWatchdogs(facts: Facts, now: Date, settings: Settings, o
     return n;
   };
   const wallBaselineEnd = localEpoch(weekAgoDay, wallNow.time);
-  const sameHourLastWeek = paidTimes.filter(t => t >= wallBaselineEnd - hours * 3_600_000 && t <= wallBaselineEnd).length;
-  const silence = paidTimes.every(time => time < threshold);
-  const paidCoverage = data.ready && data.from <= ukToday(new Date(baselineStart)) && data.orders.every(o => o.paidAt);
-  add('orders', 'Orders flowing', !freshOrders || !paidCoverage ? 'unknown' : silence && sameHourLastWeek > 0 ? 'tripped' : 'pass',
-    !freshOrders || !paidCoverage ? 'Paid times or complete fresh history unavailable; no silence verdict.' : `No paid order in ${hours} hours: ${silence ? 'yes' : 'no'}; same UK hours last week ${formatNumber(sameHourLastWeek)} paid orders.`);
+  const baselineStart = wallBaselineEnd - hours * 3_600_000;
+  const sameHourLastWeek = paidTimes.filter(t => t >= baselineStart && t <= wallBaselineEnd).length;
+  const silence = !paidTimes.some(time => time >= threshold && time <= now.getTime());
+  const missingPaidTimes = data.orders.filter(order => {
+    const created = Date.parse(order.createdAt);
+    return !order.paidAt && (created >= threshold && created <= now.getTime() || created >= baselineStart && created <= wallBaselineEnd);
+  }).length;
+  const unavailable = !freshOrders ? `${lastGood ? `Last order poll ${formatUkTime(lastGood)}` : 'No successful order poll'}; no silence verdict`
+    : !data.ready ? 'Order history backfill incomplete; no silence verdict'
+    : data.from > ukToday(new Date(baselineStart)) ? `Order history starts ${new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', day: 'numeric', month: 'short' }).format(new Date(`${data.from}T12:00:00Z`))}; no silence verdict`
+    : missingPaidTimes ? `${formatNumber(missingPaidTimes)} paid ${missingPaidTimes === 1 ? 'order in the compared hours has' : 'orders in the compared hours have'} no paid time; no silence verdict` : null;
+  add('orders', 'Orders flowing', unavailable ? 'unknown' : silence && sameHourLastWeek > 0 ? 'tripped' : 'pass',
+    unavailable ?? `No paid order in ${hours} hours: ${silence ? 'yes' : 'no'}; same UK hours last week ${formatNumber(sameHourLastWeek)} paid orders.`);
   const cartLimit = usDaytime(now) ? 40 : 75;
   add('us_cart', 'US add to cart', !freshSessions || typeof s?.usCarts !== 'number' || !s?.marketReliable || !observation.lastObserved || !observation.initialized ? 'unknown' : observation.cartless >= cartLimit ? 'tripped' : 'pass',
     `Monitoring changes between clean report snapshots: ${formatNumber(observation.cartless)} US sessions without a cart; bar ${cartLimit}. A poll with carts resets the streak; exact visitor order is unavailable in ShopifyQL.`, '/analytics');
   add('checkout', 'Checkout', !freshSessions || !observation.lastObserved || !observation.initialized ? 'unknown' : observation.checkoutSince && now.getTime() - Date.parse(observation.checkoutSince) >= 90 * 60_000 ? 'tripped' : 'pass',
-    observation.checkoutSince ? `Checkouts started without a completion since ${observation.checkoutSince}; bar 90 minutes.` : 'No outstanding checkout silence observed between report snapshots.', '/analytics');
+    observation.checkoutSince ? `Checkouts started without a completion since ${formatUkTime(observation.checkoutSince)}; bar 90 minutes.` : 'No outstanding checkout silence observed between report snapshots.', '/analytics');
   const dispatch = data.orders.map(o => dispatchLate(o, now, settings, holidays));
   const late = dispatch.filter(x => x === true).length;
   add('dispatch', 'Dispatch', !freshOrders || !data.ready ? 'unknown' : late ? 'tripped' : dispatch.some(x => x === null) ? 'unknown' : 'pass',
@@ -106,10 +114,10 @@ export function evaluateWatchdogs(facts: Facts, now: Date, settings: Settings, o
   const intervals: Record<string, number> = { poll: 300_000, inventory: 300_000, sessions: 300_000, reconcile: 86_400_000, subscriptions: 3_600_000 };
   const failed = facts.jobs.filter(j => j.name !== 'shipping_refunds' && (j.failures >= 2 || j.name in intervals && j.last_success_at && now.getTime() - new Date(j.last_success_at).getTime() > 3 * (j.name === 'sessions' && j.state.cadence === 'daily' ? 86_400_000 : intervals[j.name]!)));
   // Reviews remain a reading decision; their connection status never changes business health.
-  const otherFailures = health.filter(h => h.source !== 'judgeme' && h.mode === 'live' && h.status === 'error' && h.consecutiveFailures >= 2);
+  const otherFailures = health.filter(h => h.source !== 'judgeme' && (h.source !== 'anthropic' || h.scanWaiting !== 0) && h.mode === 'live' && h.status === 'error' && h.consecutiveFailures >= 2);
   const expiry = settings.keyExpiryDates.filter(k => k.expiresOn <= addDays(day, 14));
   add('self', 'Self-check', failed.length || otherFailures.length || expiry.length ? 'tripped' : facts.jobs.some(j => j.name in intervals && !j.last_success_at && !(facts.mode === 'sample' && j.name === 'subscriptions')) ? 'unknown' : 'pass',
-    [...failed.map(j => `${j.name}: failed ${formatNumber(j.failures)} times; last worked at ${j.last_success_at ? new Date(j.last_success_at).toISOString() : 'never'}`), ...otherFailures.map(h => `${h.name}: last worked at ${h.lastSuccessAt ?? 'never'}`), ...expiry.map(k => `${k.keyName}: expires ${k.expiresOn}`)].join(' · ') || 'No repeated failures, stale feeds or keys within 14 days of expiry.', '');
+    [...failed.map(j => `${j.name}: failed ${formatNumber(j.failures)} times; last worked at ${j.last_success_at ? formatUkTime(j.last_success_at) : 'never'}`), ...otherFailures.map(h => `${h.name}: last worked at ${h.lastSuccessAt ? formatUkTime(h.lastSuccessAt) : 'never'}`), ...expiry.map(k => `${k.keyName}: expires ${k.expiresOn}`)].join(' · ') || 'No repeated failures, stale feeds or keys within 14 days of expiry.', '');
   for (const notice of facts.noticeDetails) if (notice.kind === 'channel_short') add(notice.source_id, 'Orders by channel', 'tripped', `${notice.detail.channel}: stored ${formatNumber(notice.detail.stored)}, ShopifyQL ${formatNumber(notice.detail.reported)}, ${notice.detail.from}–${notice.detail.to}. Check app access in Shopify Dev Dashboard; marketplace scope is decided by the live check.`);
   return checks;
 }

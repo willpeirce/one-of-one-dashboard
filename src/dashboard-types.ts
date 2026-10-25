@@ -92,7 +92,17 @@ export interface HeroMetric extends SampleProvenance {
   dp?: number;
 }
 
+export interface HourlyOrders {
+  today: (number | null)[];
+  yesterday: number[];
+  todayDay: string;
+  yesterdayDay: string;
+  nowHour: number;
+  ready: boolean;
+}
+
 export interface HeroPeriod {
+  hourly?: HourlyOrders;
   market?: HeroMarket;
   /** All three independent market views travel with each period; children have no markets map. */
   markets?: Record<HeroMarket, HeroPeriod>;

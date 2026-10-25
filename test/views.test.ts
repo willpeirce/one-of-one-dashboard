@@ -38,8 +38,8 @@ test('audit times follow the UK clock change on 25 October 2026', () => {
     { event: 'sign_in', occurred_at: '2026-10-24T12:00:00Z' },
     { event: 'sign_out', occurred_at: '2026-10-25T12:00:00Z' },
   ]);
-  assert.match(html, /24 Oct 2026, 13:00/);
-  assert.match(html, /25 Oct 2026, 12:00/);
+  assert.match(html, /24 Oct 13:00 UK/);
+  assert.match(html, /25 Oct 12:00 UK/);
   assert.match(html, /datetime="2026-10-24T12:00:00.000Z"/);
   assert.match(html, /datetime="2026-10-25T12:00:00.000Z"/);
 });
@@ -101,7 +101,7 @@ test('Source health starts with sources and modes, then the watchdog count, UK t
   assert.match(html, /<section id="source-summary"/);
   assert.match(html, /Shopify sample data\. Ad spend uses separately labelled source connections\./);
   assert.match(html, /1\/3 checks passing · Shopify sample data · checked/);
-  assert.match(html, /datetime="2026-10-09T12:00:00\.000Z">9 Oct 2026, 13:00<\/time> UK/);
+  assert.match(html, /datetime="2026-10-09T12:00:00\.000Z">9 Oct 13:00 UK<\/time>/);
   assert.match(html, /✓ Good · Example passing check/);
   assert.match(html, /△ Watch · &lt;script&gt;example&lt;\/script&gt;/);
   assert.match(html, /○ Unknown · Example unknown check/);

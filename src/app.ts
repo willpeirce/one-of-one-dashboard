@@ -213,6 +213,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     if (!await auth.session(request)) return reply.redirect('/login');
     const [dashboard, imports, costs, settings] = await Promise.all([snapshot(), shopify.store.summary(sourceNow()), shopify.store.costSummary(), readSettings(db)]);
     return reply.type('text/html; charset=utf-8').send(sourceHealthPage(dashboard.sourceHealth ?? [], imports, costs, await spendHealth(db, sourceEnv, settings.values, sourceNow()), {
+      channelExclusions: await shopify.store.channelExclusions(),
       reviewHealth: reviews.mode === 'live' ? await readReviewHealth(db) : {read:dashboard.reviews!.rows.length,waiting:dashboard.reviews!.rows.length,flagged:dashboard.reviews!.rows.filter(r=>r.flagged).length,last:null,mode:'sample'},
       summary: dashboard.banner ?? '', shopify: dashboard.shopify!, checkedAt: sourceNow().toISOString(), adSets: dashboard.adSets, campaigns: await readCampaignSync(db, settings.values, sourceEnv), creatives: await creativeHealth(db, settings.values, sourceEnv, creativeNow()),
     }));

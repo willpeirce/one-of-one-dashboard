@@ -45,7 +45,7 @@ test('worker recomputes lifts after scans, and keeps recomputing stored evidence
     calls++;
     const image = JSON.parse(String(init?.body)).messages[0].content[0].source.data;
     const index = Buffer.from(image, 'base64').at(-1)!;
-    return new Response(JSON.stringify({ content: [{ type: 'text', text: JSON.stringify({ attributes: {
+    return new Response(JSON.stringify({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ attributes: {
       format: { value: index < 3 ? 'unboxing-flat-lay' : 'gift-guide', confidence: 1, reason: 'Invented picture' },
     } }) }], usage: { input_tokens: 100, output_tokens: 50 } }));
   } });

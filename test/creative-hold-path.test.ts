@@ -106,10 +106,10 @@ test('ThruPlay day progress survives restart, skips a failed day and retries it 
   calls.push([from,to]);if(fail&&from<='2026-10-03'&&to>='2026-10-03')throw new AdError('http',400,2,1504044);return Array.from({length:14},(_,i)=>({adId:'invented-resume-ad',day:addDays('2026-10-02',i),plays:150,thruPlays:30})).filter(row=>row.day>=from&&row.day<=to);
  }};
  await repairThruPlays(db,reader,account,now,'lifetime');
- assert.deepEqual(await thruPlayHealth(db,account,now,'lifetime'),{completed:11,total:14,failures:[{day:'2026-10-03',code:'http 400, meta 2/1504044 at backfill'}],lastRunAt:now.toISOString(),lastRunReport:{tried:12,filled:11,refused:1,codes:[{code:'http 400, meta 2/1504044 at backfill',count:1}]}});
+ assert.deepEqual(await thruPlayHealth(db,account,now,'lifetime'),{completed:11,total:14,givenUp:0,waiting:[{day:'2026-10-03',reason:'http 400, meta 2/1504044 at backfill',retryAt:'2026-10-16T23:00:00.000Z'},{day:'2026-10-14',reason:'1 ad with spend has no video row',retryAt:null},{day:'2026-10-15',reason:'1 ad with spend has no video row',retryAt:null}],failures:[{day:'2026-10-03',code:'http 400, meta 2/1504044 at backfill'}],lastRunAt:now.toISOString(),lastRunReport:{tried:12,filled:11,refused:1,waiting:3,codes:[{code:'http 400, meta 2/1504044 at backfill',count:1}]}});
  assert.deepEqual(logs,['Meta ThruPlay backfill 2026-10-03 failed (http 400, meta 2/1504044 at backfill).']);
  const health={...await creativeHealth(db,{...defaultSettings(),metaAdAccountId:account},{META_ACCESS_TOKEN:randomBytes(16).toString('hex')},now),thruPlayRepair:await thruPlayHealth(db,account,now,'lifetime')};
- assert.match(creativeHealthDetails(health),/ThruPlay backfill: 11 of 14 days complete, 3 days still to read.*1 day refused \(meta 1504044\), retry next UK day/);
+ assert.match(creativeHealthDetails(health),/ThruPlay backfill: 11 of 14 days complete; 1 day wait until 00:00 UK \(meta 1504044\); 2 days wait for the next run/);
  assert.match(creativeHealthDetails(health),/Creative read needs attention/);
  assert.deepEqual((await db.query('SELECT error_code,insights_error FROM pulse.creative_jobs')).rows,[{error_code:'http 400, meta 2/1504044 at backfill',insights_error:'http 400, meta 2/1504044 at backfill'}],'the separate repair cannot clear a full-import failure');
  calls.length=0;await repairThruPlays(db,{...reader},account,new Date('2026-10-16T12:30:00Z'),'lifetime');

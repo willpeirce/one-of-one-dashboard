@@ -55,7 +55,7 @@ test('ad insight chunks replace atomically, preserve first-spend day and compare
     const spendRow={source:'meta' as const,accountId:account,campaignId:'invented-campaign',campaignName:'Invented campaign',adSetId:'invented-set',adSetName:'Invented UK set',market:'uk' as const,owner:'ours' as const,day:'2026-10-12',amount:'100',currency:'GBP'};
     await saveSpend(db,'meta',account,'2026-10-12','2026-10-12',[spendRow],now);
     let health=await creativeHealth(db,settings(),env,now);
-    assert.equal(health.reconciliation,'Meta ad-level spend differs from ad set spend by 1.5% on 1 day');
+    assert.equal(health.reconciliation,'Meta ad-level spend differs from ad set spend on 12 Oct: £101.50 against £100.00 (1 set)');
     await saveInsights(db,account,'2026-10-12','2026-10-12',[insight('ad-invented-video','2026-10-12',100.5)],now);
     health=await creativeHealth(db,settings(),env,now); assert.equal(health.reconciliation,null);
     await saveSpend(db,'meta',account,'2026-10-11','2026-10-11',[{...spendRow,day:'2026-10-11'}],now);
@@ -65,8 +65,8 @@ test('ad insight chunks replace atomically, preserve first-spend day and compare
     assert.equal(data.ads[0]!.firstSpendDay,'2026-10-12');
     await assert.rejects(saveInsights(db,account,'2026-10-12','2026-10-12',[insight('ad-invented-video','2026-10-10',99)],now));
     assert.equal((await readCreativeData(db,settings(),env,now)).insights[0]!.spend,100.5);
-    assert.equal(reconciliationLine([{day:'2026-10-11',percent:0.5}]),null);
-    assert.match(reconciliationLine([{day:'2026-10-11',percent:1.5}])!,/1.5%/);
+    assert.equal(reconciliationLine([{day:'2026-10-11',adSpend:2.4,setSpend:2}]),null);
+    assert.match(reconciliationLine([{day:'2026-10-11',adSpend:41.4,setSpend:46.4}])!,/11 Oct: £41.40 against £46.40 \(1 set\)/);
   } finally {await db.close();}
 });
 

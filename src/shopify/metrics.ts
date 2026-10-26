@@ -46,13 +46,18 @@ export function orderNet(o: Order, from: string, to: string): number {
 /** The Orders tile, comparison and hourly plot count the same paid, non-free market orders. */
 export const countedOrder = (order: Order, market: HeroMarket): boolean => paidOrder(order) && orderInMarket(order, market) && !isFreeOrder(order);
 const ukClock = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
-export function hourlyOrders(facts: Facts, today: string, market: HeroMarket = 'all'): HourlyOrders {
+export function hourlyOrders(facts: Facts, today: string, market: HeroMarket = 'all', now = new Date()): HourlyOrders {
   const data = dataset(facts, today), yesterdayDay = addDays(today, -1);
   const poll = facts.jobs.find(job => job.name === 'poll')?.last_success_at ?? `${today}T00:00:00Z`;
-  const nowHour = Number(ukClock.format(new Date(poll)).slice(0, 2));
+  const baseHour = Number(ukClock.format(new Date(poll)).slice(0, 2));
+  const orders = data.orders.filter(order => countedOrder(order, market));
+  const newestHour = orders.filter(order => order.day === today)
+    .reduce((latest, order) => Math.max(latest, Number(ukClock.format(new Date(order.createdAt)).slice(0, 2))), 0);
+  const currentHour = Number(ukClock.format(now).slice(0, 2));
+  const nowHour = Math.min(currentHour, Math.max(baseHour, newestHour));
   const hours: HourlyOrders = { today: Array.from({ length: 24 }, (_, hour) => hour <= nowHour ? 0 : null),
     yesterday: Array<number>(24).fill(0), todayDay: today, yesterdayDay, nowHour, ready: data.ready && data.from <= yesterdayDay };
-  for (const order of data.orders.filter(order => countedOrder(order, market))) {
+  for (const order of orders) {
     const hour = Number(ukClock.format(new Date(order.createdAt)).slice(0, 2));
     if (order.day === today && hour <= nowHour) hours.today[hour] = (hours.today[hour] ?? 0) + 1;
     if (order.day === yesterdayDay) hours.yesterday[hour]!++;
@@ -126,7 +131,7 @@ function marketHero(facts: Facts, today: string, from: string, to: string, setti
   const orderLabel = `${formatNumber(hero.orders.n)} ${hero.orders.n === 1 ? 'order' : 'orders'}`;
   hero.sub1 = `${orderLabel}${to === today ? ' so far' : ''}.`;
   if (from === today && to === today) {
-    hero.hourly = hourlyOrders(facts, today, market);
+    hero.hourly = hourlyOrders(facts, today, market, now);
     const currentTime = ukClock.format(new Date(facts.jobs.find(j => j.name === 'poll')?.last_success_at ?? `${today}T00:00:00Z`));
     const yesterday = addDays(today, -1);
     const byNow = marketOrders.filter(o => countedOrder(o, market) && o.day === yesterday && ukClock.format(new Date(o.createdAt)) <= currentTime).length;

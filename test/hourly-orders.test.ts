@@ -15,11 +15,11 @@ test('UK autumn repeated hours combine, spring missing hour is zero, and readine
       jobs: [{ name: 'backfill', state: { from: '2026-01-01', ordersDone: true }, last_success_at: null, failures: 0 },
         { name: 'poll', state: {}, last_success_at: new Date(`${day}T12:00:00Z`), failures: 0 }],
       records: times.map(time => ({ kind: 'order', data: { ...base, day, createdAt: `${day}T${time}:00Z`, tags: [] }, fetched_at: new Date() })) };
-    assert.deepEqual(hourlyOrders(facts, day).today.slice(0, 4), expected);
+    assert.deepEqual(hourlyOrders(facts, day, 'all', new Date(`${day}T12:00:00Z`)).today.slice(0, 4), expected);
     facts.jobs[0]!.state.ordersDone = false;
-    assert.equal(hourlyOrders(facts, day).ready, false);
+    assert.equal(hourlyOrders(facts, day, 'all', new Date(`${day}T12:00:00Z`)).ready, false);
     facts.jobs[0]!.state = { from: day, ordersDone: true };
-    assert.equal(hourlyOrders(facts, day).ready, false);
+    assert.equal(hourlyOrders(facts, day, 'all', new Date(`${day}T12:00:00Z`)).ready, false);
   }
 });
 
@@ -36,4 +36,22 @@ test('hourly scale has integer ticks and monotone interpolation cannot overshoot
       }
     });
   }
+});
+
+test('a counted webhook order after the poll extends the chart and keeps its sum equal to the tile', async () => {
+  const { shopifyHero } = await import('../src/shopify/metrics.js');
+  const { defaultSettings } = await import('../src/settings.js');
+  const base = cleanOrder((await fixture('order')).data.order);
+  const day = '2026-10-26', now = new Date(`${day}T13:10:00Z`);
+  const facts: Facts = { mode: 'live', sample: false, counts: {}, pendingWebhooks: 0, geoNotice: null, notices: [], noticeDetails: [],
+    jobs: [{ name: 'backfill', state: { from: '2026-10-01', ordersDone: true }, last_success_at: null, failures: 0 },
+      { name: 'poll', state: {}, last_success_at: new Date(`${day}T11:50:00Z`), failures: 0 }],
+    records: ['UK', 'US'].map(market => ({ kind: 'order', data: { ...base, market, day, createdAt: `${day}T13:05:00Z`, tags: [] }, fetched_at: now })) };
+  const hero = shopifyHero(facts, day, day, day, defaultSettings(), undefined, undefined, undefined, now);
+  for (const view of Object.values(hero.markets!)) {
+    assert.equal(view.hourly!.nowHour, 13);
+    assert.equal(view.hourly!.today.reduce<number>((sum, n) => sum + (n ?? 0), 0), view.orders.n);
+  }
+  facts.jobs[1]!.last_success_at = new Date(`${day}T23:00:00Z`);
+  assert.equal(hourlyOrders(facts, day, 'all', now).nowHour, 13, 'never later than the current UK hour');
 });

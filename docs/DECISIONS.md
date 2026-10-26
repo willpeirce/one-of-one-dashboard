@@ -607,3 +607,7 @@ Count failed Meta history runs at the persisted cursor, separately from live-sou
 ## 2026-10-26, part B item 16: elapsed-minute spend comparison
 
 Yesterday's earlier UK hours count in full; its poll hour counts by poll minute divided by 60. This supersedes part A's inclusive whole-hour comparison and applies to All, UK and US. Integer micros retain precision before the final display rounding.
+
+## 2026-10-26, part B item 17: initial history progress
+
+Before the first saved chunk, Sources says starting from the first day, with remaining days and next UK run time. Only a committed chunk permits read from/to wording. No migration is needed.

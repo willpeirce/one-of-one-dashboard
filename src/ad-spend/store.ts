@@ -355,5 +355,7 @@ export function metaBackfillLine(job: SpendJob, now: Date): string {
     job.backfill_next_run_at ? new Date(job.backfill_next_run_at).getTime() : now.getTime(),
     job.last_poll_at ? new Date(job.last_poll_at).getTime() + SPEND_POLL_INTERVAL_MS : 0,
   ));
-  return `Meta spend backfill: read from ${job.backfill_first} to ${last}, ${left} days left, next run ${formatUkTime(next)}${job.backfill_error ? ` · ${job.backfill_error}` : ''}`;
+  const progress = job.backfill_next === job.backfill_first
+    ? `starting from ${job.backfill_first}` : `read from ${job.backfill_first} to ${last}`;
+  return `Meta spend backfill: ${progress}, ${left} days left, next run ${formatUkTime(next)}${job.backfill_error ? ` · ${job.backfill_error}` : ''}`;
 }

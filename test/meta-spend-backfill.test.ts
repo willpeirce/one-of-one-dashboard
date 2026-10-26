@@ -42,6 +42,7 @@ test('041 resets only Meta spend to 400 UK days ago and leaves other jobs untouc
 test('backfill halves to one day, keeps its cursor on failure and resumes after restart',async t=>{
   const db=await createTestDatabase();t.after(()=>db.close());
   await db.query("INSERT INTO pulse.ad_spend_jobs(source,account_id,backfill_first,backfill_next) VALUES('meta',$1,$2,$2)",[account,row.day]);
+  assert.match((await spendHealth(db,env,settings,now))[0]!.backfill!,/Meta spend backfill: starting from 2026-09-01, 54 days left, next run 26 Oct 12:00 UK/);
   const spans:number[]=[],starts:string[]=[];let refusing=true;
   const reader:SpendReader={read:async(_,from,to)=>{spans.push(dayCount(from,to));starts.push(from);if(refusing)throw new AdError('http',400,1);return [{...row,day:from}];}};
   t.mock.method(console,'error',()=>{});

@@ -4,6 +4,21 @@ Updated in every pull request.
 
 | Stage | What | Code | Keys in Replit | Live check ("Done when") |
 |---|---|---|---|---|
+| 2 part A · 1 | Meta spend by UK hour, today and yesterday; same poll-hour comparison for All/UK/US | built on `stage-2-meta`; migration 042 | no new keys | check comparison and three days to the penny against Ads Manager |
+| 2 part A · 2 | 400-day Meta spend backfill, shrinking retries, durable cursor, GMT-day disclosure and Sources progress | built on `stage-2-meta`; migration 041 | no new keys | check cursor/progress and uninterrupted 30-minute live spend |
+| 2 part B · 3 | Budget/status activity history and Our actors | deferred as a complete feature | no new key or scope planned; actor IDs entered in live Settings only | activity parsing, pagination, deduplication, `/ads` stat and named refusal line remain |
+| 2 part B · 4 | Meta risk cards and target-country fallback through spend ingestion | deferred with activity history | no new keys; read-only rules | shared hero CPO, unassigned spend, external budget changes and country placement remain |
+| 2 part B · 5 | Live 14-complete-day Meta-to-Shopify ratio and Meta sources Setting | deferred | no new keys; defaults to settle from live detail | All/UK/US, owner matches/estimates and zone edges remain; sample unchanged |
+| 2 part B · 6 | First-order CAC and resumable order-flag re-read | deferred; current CAC still counts all counted orders | verify customerOrderIndex on Shopify 2026-10 with existing scopes before building | privacy-limited flag, waiting count, market split and first-order CAC remain |
+| Review fix · 7 | Webhook orders after the poll extend today's chart, capped at current UK hour | built on `stage-2-meta` | none | chart sum equals Orders tile in All/UK/US |
+| Review fix · 8 | Before first poll after midnight, use current UK hour | built on `stage-2-meta` | none | 00:10 chart stops at 12 AM after yesterday's 23:50 poll |
+| Review fix · 9 | Keep greeting h1 and summary visible while partial spend stays first | built on `stage-2-meta` | none | phone/desktop greeting and warning order |
+| Review fix · 10 | Compare channel reports per UK day and name days with missing stored orders | built on `stage-2-meta` | none | short-day Sources line; equal days silent |
+| Review fix · 11 | Double clean account-video pages back up to 100, halve again on failure | built on `stage-2-meta` | none | recovery no longer stays at 25 per page |
+| Review fix · 12 | Singular given-up reason for one missing video row | built on `stage-2-meta` | none | one ad versus two ads |
+| Review fix · 13 | Future-hour tooltip and hidden table both say Not yet | built on `stage-2-meta` | none | keyboard, hover and tap |
+| Review fix · 14 | Hourly chart redraws at most once per animation frame on resize | built on `stage-2-meta`; browser regression included | none | resizing retains the chart width and interactions |
+
 | Change | Home drop line; radar removed 25 Oct | built on `change-oct-25`; health maths retained | no new keys | check weakest-gauge targeting and one-line layout at 390px and 1280px |
 | Change | Orders by hour, today against yesterday | built on `change-oct-25`; shared Orders rule and UK poll clock | no new keys | check All/UK/US, period independence, hover/keyboard/tap and tile total agreement |
 | 2 fix | Bounded ThruPlay repair and explicit waiting reasons | built on `change-oct-25`; migration 040 | no new keys | returned omitted fields settle zero; absent rows wait, then give up after three reads |
@@ -55,11 +70,15 @@ Updated in every pull request.
 
 ## Next step
 
-Review `change-oct-25`, based on latest main after PR #36 and migration 039. All seven requested items are included in order. Needs from Will after merge: **nothing**. Claude merges the PR, runs the Shell merge, `npm run migrate` (040), and Republish; the builder does not merge or deploy.
+Review **stage 2 part A** on `stage-2-meta`, based on latest main `3cdc57b` (merged PR #37 and migration 040). Separate item commits follow the permitted split order: 7–14, then 1–2. Migrations 041 and 042 are both required. Needs from Will after merge: **nothing**. Claude merges, runs the Shell merge, `npm run migrate`, and Republish; the builder does not merge or deploy.
 
-Check Home at 390px and 1280px: no radar, one drop line under the pills, an orders-by-hour chart around 140px high with today solid then dotted and yesterday dashed, hover/keyboard/tap inspection, All/UK/US, period/date controls leaving the chart on today, and hourly total matching Orders. The chart remains during partial ad spend.
+**Local verification:** typecheck, build, all 666 tests (no skips), the complete phone/desktop browser suite, and secret-scanner self-tests plus working-tree/full-history scans passed. Fixture tests use PGlite; GitHub runs the database suite against PostgreSQL. Browser tests exercise the resize guard, future-hour wording and the visible greeting/first spend tile. Source agreement still requires the live checks below.
 
-Check /sources: ThruPlay days complete or explain their wait/given-up state; unscored media facts count separately; the spend gap names its day/totals/sets; scans show a safe failure shape or recover; timestamps use UK time; Orders flowing passes/trips or names its blocking condition; channels count all non-test orders. Sources stay read-only, Judge.me Publish stays behind its off flag, no Meta async insights POST, no new keys or Settings, and no live-source agreement claimed. `docs/spec/` remains untouched for Claude's HQ refresh.
+**Part B holds items 3–6 in order.** Activity ingestion/Settings/audit presentation, risk rules with targeting through current and historical spend reads, the live attribution ratio with owner estimates, and first-order CAC with its API/scope check and resumable projection repair are each substantial end-to-end changes. They are deferred together to keep this PR reviewable; no partial Setting or live dial claims those features exist. Our actors and Meta sources are not added in part A, and the current all-order CAC is not relabelled first-order CAC.
+
+Claude checks Home and `/ads` at 390px and 1280px; chart equals tile including after a webhook order and before the first new-day poll; greeting stays visible while spend is partial; Meta by-this-time-yesterday follows All/UK/US; `/sources` shows Meta spend backfill progress and then its history start; old GMT-day periods explain their boundary. Compare three complete days against Ads Manager to the penny and verify ours plus freelancer plus unassigned equals the account. Source agreement is a live check, not claimed by fixture tests. Part B adds the remaining acceptance checks: enter Our actors on the live app, activity/refusal lines, risk cards, 14-day ratio with Meta sources settled from detail, and first-order CAC.
+
+Sources stay read-only except for the existing off-by-default, explicitly confirmed Meta ad-set action path. Judge.me Publish stays behind its off flag. No Meta async insights POST, new key, scope or dependency. `docs/spec/` and `replit.md` remain untouched.
 
 **Video recovery follow-up (superseded 25 Oct):** the old rule kept successful reports with omitted video fields pending. Migration 040 and the narrow-report zero rule above replace that behaviour; an absent ad-day row still waits, up to three reads. The narrow repair supplies the matching daily hold denominator for hourly-only rows while preserving known values when that field is omitted. Existing migrations 034–035 are unchanged.
 
@@ -202,7 +221,7 @@ The 11 Oct batch resolves the repeated-snapshot issue: the 15-second heartbeat r
 
 ### Earlier-stage setup notes (historical)
 
-These notes record earlier stages, not requirements for `change-oct-25`. This change needs nothing from Will after merge; Claude owns the acceptance checks above.
+These notes record earlier stages, not requirements for `stage-2-meta` part A. This change needs nothing from Will after merge; Claude owns the acceptance checks above.
 
 - Judge.me: after Publish, check Open/Read reaches the reviews dashboard. The exact-review template item is closed; no URL or new Setting is needed.
 - Replit keys: keep the existing `SHOPIFY_CLIENT_ID` and `SHOPIFY_CLIENT_SECRET`; if absent, add them before publishing. `JUDGEME_API_TOKEN` now enables the GET-only New reviews connection in part 1c. Only if Level 2 is refused, the read-only routine fallback needs `GITHUB_HQ_TOKEN` and the real dated HQ files/routine; no fallback routine is created here. Never send key values to the builder.

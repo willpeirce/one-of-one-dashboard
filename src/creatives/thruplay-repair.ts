@@ -97,7 +97,7 @@ export async function repairThruPlays(db:Database,reader:CreativeReader,account:
    }
    const completed=await tx.query<{day:string;completed:boolean}>(`${videoDaysCte} UPDATE pulse.creative_thruplay_days d SET
     completed=NOT v.missing_video,error_code=NULL,
-    given_up_reason=CASE WHEN v.missing_video AND d.read_count>=3 THEN v.missing_ads||' ads with spend have no video row' ELSE NULL END,
+    given_up_reason=CASE WHEN v.missing_video AND d.read_count>=3 THEN v.missing_ads||CASE WHEN v.missing_ads=1 THEN ' ad with spend has no video row' ELSE ' ads with spend have no video row' END ELSE NULL END,
     retry_after=CASE WHEN v.missing_video AND d.read_count<3 THEN $5::timestamptz ELSE NULL END,fetched_at=$6
     FROM video_days v WHERE d.account_id=$1 AND d.day=v.day AND d.day=ANY($4::date[]) RETURNING d.day::text,d.completed`,[account,from,to,days,scanRetryAt(now),now]);
    return completed.rows.filter(day=>day.completed).map(day=>day.day);

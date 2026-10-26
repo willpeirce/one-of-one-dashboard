@@ -1,5 +1,5 @@
 import { fetchAdSets, type AdSet } from '../meta-adsets/catalogue.js';
-import { addDays } from '../hero-range.js';
+import { addDays, ukToday } from '../hero-range.js';
 import type { Settings } from '../settings.js';
 import { AdTransport, type AdTransportOptions } from './http.js';
 import {
@@ -7,7 +7,8 @@ import {
   aggregateHours,
   decimalMicros,
   microsDecimal,
-  hourDay,
+  hourDay, ukHourBucket, aggregateSpendHours,
+  type SpendRead, type SpendHourRow,
   ownerFor,
   type SpendRow,
   type AdSource,
@@ -16,7 +17,7 @@ import {
 import { metaAction, META_PURCHASE, META_ADD_TO_CART } from './meta-actions.js';
 import { spendMarket } from './placement.js';
 export interface SpendReader {
-  read(account: string, from: string, to: string, settings: Settings): Promise<SpendRow[]>;
+  read(account: string, from: string, to: string, settings: Settings, now?: Date): Promise<SpendRead>;
   readCampaigns?(account: string): Promise<MetaCampaign[]>;
   readAdSets?(account: string, settings: Settings): Promise<AdSet[]>;
 }
@@ -56,12 +57,17 @@ export function parseMeta(
   curr: string,
   zone: string,
   settings: Settings,
-): SpendRow[] {
+  hourly = zone !== 'Europe/London',
+  retainHoursFrom?: string,
+): (SpendRow & { hour?: number })[] {
   return list(body.data).map((r) => {
     const campaignId = identifier(r.campaign_id),
       campaignName = label(r.campaign_name),
       adSetName = label(r.adset_name),
-      owner = ownerFor('meta', campaignId, settings);
+      owner = ownerFor('meta', campaignId, settings),
+      sourceDay = label(r.date_start),
+      sourceHour = hourly ? Number(/^([0-2]\d):/.exec(r.hourly_stats_aggregated_by_advertiser_time_zone ?? '')?.[1]) : 0,
+      day = hourly ? hourDay(sourceDay, sourceHour, zone) : sourceDay;
     return {
       source: 'meta',
       impressions: r.impressions == null ? null : Number(microsDecimal(decimalMicros(String(r.impressions)))),
@@ -74,16 +80,8 @@ export function parseMeta(
       campaignName,
       adSetId: identifier(r.adset_id),
       adSetName,
-      day:
-        zone === 'Europe/London'
-          ? label(r.date_start)
-          : hourDay(
-              label(r.date_start),
-              Number(
-                /^([0-2]\d):/.exec(r.hourly_stats_aggregated_by_advertiser_time_zone ?? '')?.[1],
-              ),
-              zone,
-            ),
+      ...(hourly && retainHoursFrom && day >= retainHoursFrom ? ukHourBucket(sourceDay, sourceHour, zone) : {}),
+      day,
       amount: microsDecimal(decimalMicros(r.spend)),
       currency: currency(curr),
       owner,
@@ -252,39 +250,40 @@ export class MetaSpend implements SpendReader {
     if (skipped) console.info(`Meta campaigns skipped ${skipped} invalid rows.`);
     return rows;
   }
-  async read(account: string, from: string, to: string, settings: Settings): Promise<SpendRow[]> {
+  async read(account: string, from: string, to: string, settings: Settings, now = new Date(this.options.now?.() ?? Date.now())): Promise<SpendRead> {
     const metadata = await this.readGraph(`act_${account}`, { fields: 'currency,timezone_name' }),
-      zone = label(metadata.timezone_name),
-      curr = currency(metadata.currency);
-    const rows: SpendRow[] = [];
-    let after: string | undefined;
-    do {
-      const body = await this.readGraph(`act_${account}/insights`, {
+      zone = label(metadata.timezone_name), curr = currency(metadata.currency), today = ukToday(now), yesterday = addDays(today, -1);
+    const rows: SpendRow[] = [], hours: SpendHourRow[] = [];
+    const readWindow = async (start: string, end: string, hourly: boolean): Promise<void> => {
+      if (start > end) return;
+      for await (const page of this.readPages(`act_${account}/insights`, {
         fields: 'spend,campaign_id,campaign_name,adset_id,adset_name,date_start,impressions,inline_link_clicks,actions,action_values',
-        level: 'adset',
-        time_increment: '1',
-        time_range: JSON.stringify({
-          since: zone === 'Europe/London' ? from : addDays(from, -1),
-          until: zone === 'Europe/London' ? to : addDays(to, 1),
-        }),
-        limit: '500',
-        ...(zone === 'Europe/London'
-          ? {}
-          : { breakdowns: 'hourly_stats_aggregated_by_advertiser_time_zone' }),
-        ...(after ? { after } : {}),
-      });
-      // Requested action arrays are sparse: Meta omits them on zero-action hours.
-      // Normalize only this successful, explicitly requested report; legacy stored
-      // nulls remain unknown until refreshed. One empty hour must not erase the day.
-      rows.push(...parseMeta({data:list(body.data).map(row=>({...row,
-        actions:row.actions??[],action_values:row.action_values??[],
-      }))}, account, curr, zone, settings));
-      const next = body.paging?.next;
-      const cursor = body.paging?.cursors?.after;
-      if (next && (!cursor || cursor === after)) throw new AdError('invalid');
-      after = next ? label(cursor) : undefined;
-    } while (after);
-    return aggregateHours(rows, from, to);
+        level: 'adset', time_increment: '1', limit: '500',
+        time_range: JSON.stringify({ since: !hourly || zone === 'Europe/London' ? start : addDays(start, -1), until: !hourly || zone === 'Europe/London' ? end : addDays(end, 1) }),
+        ...(hourly ? { breakdowns: 'hourly_stats_aggregated_by_advertiser_time_zone' } : {}),
+      })) {
+        // The requested action arrays are sparse on zero-action hours.
+        const parsed = parseMeta({ data: page.map(row => ({ ...row, actions: row.actions ?? [], action_values: row.action_values ?? [] })) }, account, curr, zone, settings, hourly, yesterday)
+          .filter(row => row.day >= start && row.day <= end);
+        rows.push(...parsed.map(row => !hourly && zone !== 'Europe/London' ? { ...row, dayBasis: 'gmt' as const } : row));
+        if (hourly) hours.push(...parsed.filter(row => row.day >= yesterday && row.day <= today) as SpendHourRow[]);
+      }
+    };
+    if (zone === 'Europe/London') {
+      await readWindow(from, [to, addDays(today, -2)].sort()[0]!, false);
+      await readWindow([from, yesterday].sort().at(-1)!, to, true);
+    } else {
+      try { await readWindow(from, to, true); }
+      catch (error) {
+        if (!(error instanceof AdError) || error.code !== 'hourly_unavailable' || to >= yesterday
+          || !['GMT', 'UTC', 'Etc/GMT', 'Etc/UTC'].includes(zone)) throw error;
+        rows.length = 0; hours.length = 0;
+        await readWindow(from, to, false);
+      }
+    }
+    const result: SpendRead = aggregateHours(rows.map(({ ...row }) => { delete (row as SpendRow & { hour?: number }).hour; return row; }), from, to);
+    if (from <= today && to >= yesterday) result.hourly = aggregateSpendHours(hours, yesterday, today);
+    return result;
   }
 }
 export class GoogleSpend implements SpendReader {

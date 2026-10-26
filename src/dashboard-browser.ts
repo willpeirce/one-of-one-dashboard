@@ -260,7 +260,7 @@ function renderHourlyOrders(): void {
       dot.setAttribute('cx', String(x(selected))); dot.setAttribute('cy', String(y(value ?? 0)));
     }
     tooltip.replaceChildren();
-    for (const [text, strong] of [[`${hourLabel(selected)} · Today `, false], [data.today[selected] === null ? '—' : String(data.today[selected]), true], [' · Yesterday ', false], [String(data.yesterday[selected]), true]] as const) {
+    for (const [text, strong] of [[`${hourLabel(selected)} · Today `, false], [data.today[selected] === null ? 'Not yet' : String(data.today[selected]), true], [' · Yesterday ', false], [String(data.yesterday[selected]), true]] as const) {
       const part = document.createElement(strong ? 'strong' : 'span'); part.textContent = text; tooltip.append(part);
     }
   };
@@ -733,7 +733,12 @@ function boot(): void {
   sheet.addEventListener('click', (event) => { if (event.target === sheet) sheet.close(); });
   connectUpdates();
   installPullToRefresh({ refresh: refreshDashboard, status: get('#update-status') });
-  window.addEventListener('resize', renderHourlyOrders);
+  let hourlyResizePending = false;
+  window.addEventListener('resize', () => {
+    if (hourlyResizePending) return;
+    hourlyResizePending = true;
+    requestAnimationFrame(() => { hourlyResizePending = false; renderHourlyOrders(); });
+  });
   window.addEventListener('pagehide', () => stream?.close(), { once: true });
   window.addEventListener('pageshow', (event) => { if (event.persisted) window.location.reload(); });
   document.documentElement.dataset.dashboardReady = 'true';

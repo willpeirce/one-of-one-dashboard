@@ -94,7 +94,7 @@ test('guarded comparison/chart days never supply market conversion and aggregate
   assert.equal(uk.cr.unavailable, false); assert.deepEqual(uk.cr.d.hist, []); assert.equal(uk.cr.state, 'info');
   const historic = facts([]); historic.jobs[0]!.state = { from: date, olderFrom: '2026-09-01', allOrders: false, ordersDone: true, historyDone: true };
   historic.records.push({ kind: 'sales', data: { day: '2026-10-01', netSalesPence: 10000, orders: 5 }, fetched_at: now });
-  const older = shopifyHero(historic, today, '2026-10-01', '2026-10-01', settings, undefined, undefined, { spend: spend(), costs: [], estimates: [], now });
+  const older = shopifyHero(historic, today, '2026-10-01', '2026-10-01', settings, undefined, undefined, { spend: spend(), costs: [], estimates: [], now }, now);
   assert.equal(older.orders.unavailable, true); assert.deepEqual(older.orders.d.hist, []); assert.equal(older.business!.orderDays[0]!.total, 0);
   assert.match(older.margin.ss, /older order cost detail/); assert.match(older.profit.ss, /older order cost detail/);
   assert.equal(older.aov.unavailableLabel, 'Unknown');
@@ -138,7 +138,7 @@ test('empty market Contribution remains clear even when no ad spend source is us
 test('hourly orders share the tile rule for All, UK and US, leaving free and test orders out', async () => {
   const list = (await orders()).map(order => ({ ...order, day: today, createdAt: `${today}T09:00:00Z` }));
   list.push({ ...list[0]!, totalPence: 0, itemsAfterDiscountsPence: 0 }, { ...list[0]!, test: true });
-  const hero = shopifyHero(facts(list), today, today, today, settings);
+  const hero = shopifyHero(facts(list), today, today, today, settings, undefined, undefined, { spend: spend(), costs: [], estimates: [], now }, now);
   for (const view of [hero, ...Object.values(hero.markets!)]) {
     assert.equal(view.hourly!.today.reduce<number>((n, value) => n + (value ?? 0), 0), view.orders.n);
     assert.equal(view.hourly!.nowHour, 11);

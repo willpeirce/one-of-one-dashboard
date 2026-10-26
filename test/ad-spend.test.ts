@@ -398,6 +398,7 @@ test('poll and bounded backfill resume from the committed chunk after failure, w
     e = env();
   await syncSourceHealth(db, e);
   await db.query('INSERT INTO pulse.settings(values) VALUES($1)', [JSON.stringify(s)]);
+  await db.query("INSERT INTO pulse.ad_spend_jobs(source,account_id,backfill_first,backfill_next) VALUES('meta',$1,'2026-08-07','2026-08-07')", [s.metaAdAccountId]);
   const ranges: string[] = [],
     logs: string[] = [];
   let fail = true;
@@ -414,17 +415,17 @@ test('poll and bounded backfill resume from the committed chunk after failure, w
   t.after(() => worker.stop());
   const first = worker.tick('meta');
   assert.equal(worker.tick('meta'), first);
-  await first;
+  await first; await worker.waitForSpendBackfill();
   assert.equal((await readJobs(db))[0]!.backfill_next, '2026-08-21');
-  assert.equal((await readJobs(db))[0]!.failures, 1);
+  assert.equal((await readJobs(db))[0]!.backfill_error, 'http');
   assert.ok(logs.length);
   fail = false;
   clock = new Date(now.getTime() + 30 * 60_000);
-  await worker.tick('meta');
+  await worker.tick('meta'); await worker.waitForSpendBackfill();
   assert.equal(ranges.filter((r) => r.startsWith('2026-08-07:')).length, 1);
   assert.equal((await readJobs(db))[0]!.backfill_done, true);
   const calls = ranges.length;
-  await worker.tick('meta');
+  await worker.tick('meta'); await worker.waitForSpendBackfill();
   assert.equal(ranges.length, calls);
 });
 

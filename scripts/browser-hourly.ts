@@ -16,6 +16,20 @@ export async function checkHourly(context: BrowserContext): Promise<void> {
       await page.waitForFunction(() => { const host = document.querySelector('#hourly-orders')!; return Number(host.querySelector('.hourly-plot svg')?.getAttribute('viewBox')?.split(' ')[2]) === host.clientWidth; });
       await page.setViewportSize({ width, height: 960 });
       await page.waitForFunction(() => { const host = document.querySelector('#hourly-orders')!; return Number(host.querySelector('.hourly-plot svg')?.getAttribute('viewBox')?.split(' ')[2]) === host.clientWidth; });
+      const draws = await page.evaluate(async () => {
+        const host = document.querySelector('#hourly-orders')!;
+        const replace = host.replaceChildren.bind(host); let calls = 0;
+        host.replaceChildren = (...nodes) => { calls++; replace(...nodes); };
+        for (let i = 0; i < 30; i++) window.dispatchEvent(new Event('resize'));
+        const before = calls;
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+        const first = calls;
+        window.dispatchEvent(new Event('resize'));
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+        host.replaceChildren = replace;
+        return [before, first, calls];
+      });
+      assert.deepEqual(draws, [0, 1, 2], 'resize events draw at most once per frame');
       assert.equal(await chart.locator('tbody tr').count(), 24);
       assert.equal(await chart.locator('.hourly-legend svg').count(), 2);
       assert.equal(await chart.locator('[data-hourly-partial]').getAttribute('stroke-dasharray'), '2 4');
@@ -35,6 +49,9 @@ export async function checkHourly(context: BrowserContext): Promise<void> {
       const plot = chart.locator('.hourly-plot');
       await plot.focus(); await plot.press('ArrowLeft');
       assert.match(await chart.locator('.hourly-tooltip').innerText(), new RegExp(`${hourLabel(Math.max(0, fixture.hero.today.markets!.us.hourly!.nowHour - 1))} · Today \\d+ · Yesterday \\d+`));
+      for (let hour = 0; hour < 24; hour++) await plot.press('ArrowRight');
+      assert.match(await chart.locator('.hourly-tooltip').innerText(), /11 PM · Today Not yet · Yesterday/);
+      assert.equal(await chart.locator('tbody tr').last().locator('td').first().innerText(), 'Not yet');
       await plot.press('Escape'); assert.equal(await chart.locator('.hourly-tooltip').isVisible(), false);
       await plot.hover({ position: { x: 100, y: 40 } });
       assert.equal(await chart.locator('.hourly-tooltip').isVisible(), true);

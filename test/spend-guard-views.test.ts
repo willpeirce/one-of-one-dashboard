@@ -31,7 +31,7 @@ test('ad Source health uses current-account freshness and failures without leaki
     consecutiveFailures: 0, updatedAt: oldTime };
   const fetchedAt = '2026-10-10T10:29:00.000Z';
   const render = (status: string, failures: number, fetched: string | null = fetchedAt) => {
-    const html = sourceHealthPage([meta], undefined, undefined, [{ source: 'meta', live: true,
+    const html = sourceHealthPage([meta], undefined, undefined, [{ source: 'meta', live: true, backfill: null,
       ready: fetched !== null, status, fetchedAt: fetched, failures,
       stale: status.startsWith('stale'), lastAttemptAt: fetched }]);
     return html.match(/<tr>\s*<th scope="row">Meta Ads<\/th>[\s\S]*?<\/tr>/)![0];

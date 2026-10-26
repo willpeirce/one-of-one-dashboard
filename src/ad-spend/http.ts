@@ -122,6 +122,11 @@ export class AdTransport {
           throw new AdError('rate_limit', response.status, providerCode, providerSubcode);
         }
         if (!response.ok || body?.error || (typeof body?.code === 'number' && body.code !== 0)) {
+          // Classify only an explicit hourly-breakdown refusal; never retain provider prose.
+          if (this.source === 'meta' && providerCode === 100 && response.status === 400
+            && /hourly|hour.breakdown/i.test(String(body?.error?.message ?? ''))
+            && /not (?:available|supported)|older|past|range|unavailable/i.test(String(body?.error?.message ?? '')))
+            throw new AdError('hourly_unavailable', response.status, providerCode, providerSubcode);
           const developer = JSON.stringify(body?.error?.details ?? []).includes('DEVELOPER_TOKEN');
           throw new AdError(
             developer
@@ -143,7 +148,8 @@ export class AdTransport {
           safe.code === 'unauthorized' ||
           safe.code === 'developer_token_required' ||
           (safe.code === 'rate_limit' && safe.status === 0) ||
-          (safe.code !== 'rate_limit' && safe.status >= 400 && safe.status < 500 && safe.status !== 429)
+          (safe.code !== 'rate_limit' && safe.status >= 400 && safe.status < 500 && safe.status !== 429
+            && !(this.source === 'meta' && safe.providerCode === 1))
         )
           throw safe;
         await this.sleep(250 * 2 ** attempt);

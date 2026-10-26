@@ -172,3 +172,21 @@ test('unfinished list misses still receive direct reads without declaring owners
  const facts=await reader.readMediaFacts('invented-open-list',{kind:'video',key:'invented-open-video',creativeId:'invented-open-creative',width:null,height:null,lengthSeconds:null,accountVideosComplete:false,accountVideo:null});
  assert.ok(calls.includes('invented-open-creative'));assert.ok(calls.includes('invented-open-video'));assert.ok(calls.includes('thumbnails'));assert.equal(facts.ownedElsewhere,undefined);
 });
+
+test('clean account video pages step from 25 to 50 to 100 and a later failure halves again', async t => {
+ const db=await createTestDatabase();t.after(()=>db.close());
+ const account='invented-step-up';
+ await db.query('INSERT INTO pulse.creative_jobs(account_id) VALUES($1)',[account]);
+ await saveCatalogue(db,account,[{ad:creativeAd('invented-step-ad','invented-step-video',{accountId:account}),media:{...creativeGroup('invented-step-video',{kind:'video',width:null,height:null,lengthSeconds:null}),thumbnail:null,poster:null,frames:[]}}],now);
+ const limits:number[]=[];let page=0,failedAgain=false;
+ const reader:CreativeReader={readCatalogue:async function*(){},readInsights:async()=>[],imageBytes:async()=>new Uint8Array(),videoSource:async()=>'',videoFrames:async()=>[],
+  readAccountVideoPage:async(_,_after,limit=100)=>{
+   limits.push(limit);
+   if(page===0&&limit>25)throw new AdError('http',500,1);
+   if(page===2&&!failedAgain){failedAgain=true;throw new AdError('http',500,1);}
+   page++;return {videos:[],after:page<4?`invented-page-${page}`:null};
+  },readMediaFacts:async()=>({width:null,height:null,lengthSeconds:null})};
+ await refreshMediaFacts(db,reader,account,now);
+ assert.deepEqual(limits,[100,50,25,50,100,50,100]);
+ assert.equal((await mediaFactHealth(db,account,now)).run!.accountVideo!.nextLimit,100);
+});

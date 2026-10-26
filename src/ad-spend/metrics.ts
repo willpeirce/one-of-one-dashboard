@@ -122,8 +122,16 @@ export function applySpend(
     ...issues,
     ...gaps.map((gap) => gap.dependent),
   ].join('; ');
+  const hourly = spend.metaHourly;
+  const pollHour = hourly ? Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', hourCycle: 'h23' }).format(new Date(hourly.polledAt))) : -1;
+  // Successful reports cover quiet hours too. Both days use the poll's UK-hour cutoff.
+  const byYesterday = hourly && hourly.today === today && from === today && to === today && usable.some(source => source.source === 'meta')
+    ? pounds(hourly.rows.filter(row => row.day === addDays(today, -1) && row.hour <= pollHour && row.currency === 'GBP'
+      && (!inputs.market || inputs.market === 'all' || spendMarket(row) === inputs.market))
+      .reduce((sum, row) => sum + decimalMicros(row.amount), 0n)) : null;
+  const comparison = byYesterday === null ? '' : `\nMeta ${formatPounds(byYesterday)} by this time yesterday`;
   const soFar = to === today ? ' · so far' : '',
-    spendSubtitle = gaps.length ? gapLines(gaps, 'spend') + soFar : label + soFar,
+    spendSubtitle = (gaps.length ? gapLines(gaps, 'spend') + soFar : label + soFar) + comparison,
     dependentSubtitle = gaps.length ? gapLines(gaps, 'dependent') + soFar : label + soFar;
   const sum = (filter: (r: (typeof rows)[number]) => boolean = () => true) =>
     rows.filter(filter).reduce((s, r) => s + decimalMicros(r.amount), 0n);
@@ -139,6 +147,7 @@ export function applySpend(
       ['TikTok', pounds(sum((r) => r.source === 'tiktok'))],
     ] as [string, number][]
   ).map(([name, value]) => [name, formatPounds(value)]);
+  if (rows.some(row => row.source === 'meta' && row.dayBasis === 'gmt')) split.push(['Meta history day boundaries', 'This period includes Meta daily rows reported as GMT days; hourly breakdown was unavailable, so those days are not re-aligned to UK time.']);
   split.push(['Unknown market', `${formatPounds(unknown)} not split into UK or US`]);
   for (const source of spend.sources)
     split.push([
@@ -376,7 +385,7 @@ export function spendNeeds(facts: SpendFacts, settings: Settings, today: string,
         `Last fetched ${source.fetchedAt ? fetchedTime(source.fetchedAt) : 'never'}. Totals that include ad spend leave it out until it recovers. Check Source health.`,
         '/sources');
   }
-  for (const row of facts.rows) {
+  for (const row of facts.rows.filter(row => row.day >= addDays(today, -13) && row.day <= today)) {
     if (row.market === 'unknown')
       add(
         `ad-market:${row.source}:${row.campaignId}`,

@@ -73,12 +73,12 @@ export function dailyRows(facts: Facts, today: string, market: HeroMarket = 'all
   for (let date = data.min; date <= today; date = addDays(date, 1)) {
     const sessions = sessionMap.get(date);
     const older = market === 'all' && date < data.from ? history.get(date) : null;
-    byDay.set(date, { date, net: older ? older.netSalesPence : 0, gross: older?.grossSalesPence ?? 0, grossKnown: date >= data.from || market === 'all' && older?.grossSalesPence !== undefined, o: 0, netKnown: market === 'all' || date >= data.from, countsKnown: date >= data.from, sessionsKnown: !!sessions && (market === 'all' || sessions.marketReliable), uk: 0, us: 0,
+    byDay.set(date, { date, net: older ? older.netSalesPence : 0, gross: older?.grossSalesPence ?? 0, firstOrders:0,flaggedOrders:0, grossKnown: date >= data.from || market === 'all' && older?.grossSalesPence !== undefined, o: 0, netKnown: market === 'all' || date >= data.from, countsKnown: date >= data.from, sessionsKnown: !!sessions && (market === 'all' || sessions.marketReliable), uk: 0, us: 0,
       sess: (market === 'uk' ? sessions?.uk : market === 'us' ? sessions?.us : sessions?.sessions) ?? 0, ukS: market === 'us' ? 0 : sessions?.uk ?? 0, usS: market === 'uk' ? 0 : sessions?.us ?? 0, ukM: 0, usM: 0, g: 0, ours: 0 });
   }
   for (const order of data.orders.filter(order => orderInMarket(order, market))) {
     const row = byDay.get(order.day);
-    if (row) { row.net += order.itemsAfterDiscountsPence; row.gross = (row.gross ?? 0) + orderTotalPence(order); if (countedOrder(order, market)) { row.o++; if (order.market === 'UK' && !isTikTok(order)) row.uk++; if (order.market === 'US' && !isTikTok(order)) row.us++; } }
+    if (row) { row.net += order.itemsAfterDiscountsPence; row.gross = (row.gross ?? 0) + orderTotalPence(order); if (countedOrder(order, market)) { row.o++; if(order.firstOrder==='first')row.firstOrders!++; if(order.firstOrder==='first'||order.firstOrder==='repeat')row.flaggedOrders!++; if (order.market === 'UK' && !isTikTok(order)) row.uk++; if (order.market === 'US' && !isTikTok(order)) row.us++; } }
     for (const refund of order.refunds) { const day = ukToday(new Date(refund.createdAt)), row = byDay.get(day); if (row) { row.net -= refund.itemsPence; const grossRefund = refund.totalPence ?? (refund.shippingNetPence === undefined ? null : refund.itemsPence + refund.taxPence + refund.shippingNetPence + (refund.shippingTaxPence ?? 0)); if (grossRefund === null) row.grossKnown = false; else row.gross = (row.gross ?? 0) - grossRefund; } }
   }
   // Accumulate only integer pence, convert once at the display boundary.

@@ -1,3 +1,4 @@
+import { backfillFirstOrders } from './first-order.js';
 import { missingSeriesPaceWindow, saveSeriesPaceSales, seriesPaceQuery, takeStockSnapshot } from '../series-pace/store.js';
 import { RoutineSessions, type DailySessionFallback } from './fallback.js';
 import { appConfig } from '../config.js';
@@ -58,6 +59,14 @@ export class ShopifyWorker {
   readonly store: ShopifyStore;
   readonly client: ShopifyReader;
   readonly mode: SourceMode;
+  private firstOrders?: Promise<void>;
+  waitForFirstOrders(): Promise<void> { return this.firstOrders ?? Promise.resolve(); }
+  private startFirstOrders(): void {
+    if(this.mode!=='live'||this.closing||this.firstOrders)return;
+    this.firstOrders=backfillFirstOrders(this.db,this.client,this.clock,()=>this.closing)
+      .catch(()=>console.error('Shopify first-order repair could not finish.'))
+      .finally(()=>{this.firstOrders=undefined;});
+  }
   private running?: Promise<void>;
   private inboxRunning?: Promise<void>;
   private timer?: NodeJS.Timeout;
@@ -87,11 +96,11 @@ export class ShopifyWorker {
     this.timer = setInterval(() => { this.trigger(); this.triggerInbox(); }, 1000); this.timer.unref();
   }
   trigger(): void { if (!this.closing) void this.tick().catch(() => {}); }
-  async stop(): Promise<void> { this.closing = true; if (this.timer) clearInterval(this.timer); await Promise.all([this.running, this.inboxRunning]); }
+  async stop(): Promise<void> { this.closing = true; if (this.timer) clearInterval(this.timer); await Promise.all([this.running, this.inboxRunning]); await this.waitForFirstOrders(); }
   async tick(): Promise<void> {
     if (this.running) return this.running;
     this.running = this.run();
-    try { await this.running; } finally { this.running = undefined; }
+    try { await this.running; } finally { this.running = undefined; this.startFirstOrders(); }
   }
   private async notice(kind: string, id: string): Promise<void> { await this.store.notice(kind, id, this.clock()); }
   private async orderPage(query: string, after: string | null, address: boolean) {

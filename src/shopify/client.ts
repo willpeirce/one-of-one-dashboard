@@ -1,3 +1,4 @@
+import { firstOrderFlag, type FirstOrder } from './first-order.js';
 import { appConfig } from '../config.js';
 import { ShopifyError, Transport } from './http.js';
 import { TokenManager } from './token.js';
@@ -14,16 +15,16 @@ export const orderFields = (address: boolean) => `
   subtotalPriceSet { ${money} }
   totalPriceSet { ${money} }
   totalTaxSet { ${money} } totalShippingPriceSet { ${money} }
-  customer { id }
   ${address ? 'shippingAddress { countryCodeV2 provinceCode zip }' : ''}
   customAttributes { key value }
   lineItems(first: 100) { nodes { ${lineFields} } ${page} }
   refunds { id createdAt totalRefundedSet { ${money} } refundLineItems(first: 100) { nodes { quantity subtotalSet { ${money} } totalTaxSet { ${money} } } ${page} } refundShippingLines(first: 100) { nodes { ${refundShippingFields} } ${page} } }
   fulfillments(first: 250) { id status createdAt updatedAt location { id } fulfillmentLineItems(first: 100) { nodes { quantity lineItem { id } } ${page} } }
-  customerJourneySummary { firstVisit { landingPage utmParameters { source medium campaign } } lastVisit { landingPage utmParameters { source medium campaign } } }
+  customerJourneySummary { customerOrderIndex firstVisit { landingPage utmParameters { source medium campaign } } lastVisit { landingPage utmParameters { source medium campaign } } }
 `;
 export interface Page<T = any> { nodes: T[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } }
 export interface ShopifyReader {
+  firstOrderFlags?(ids:string[]): Promise<{id:string;firstOrder:FirstOrder}[]>;
   scopes(): Promise<string[]>;
   orders(query: string, after: string | null, address: boolean): Promise<Page>;
   order(id: string, address: boolean): Promise<any>;
@@ -52,6 +53,10 @@ export class ShopifyClient implements ShopifyReader {
       }
     }
     throw new ShopifyError('unauthorized');
+  }
+  async firstOrderFlags(ids:string[]): Promise<{id:string;firstOrder:FirstOrder}[]> {
+    const data=await this.#graphql(`query PulseFirstOrders($ids:[ID!]!) { nodes(ids:$ids) { ... on Order { id customerJourneySummary { customerOrderIndex } } } }`,{ids});
+    return data.nodes.filter((row:any)=>row&&ids.includes(row.id)).map((row:any)=>({id:row.id,firstOrder:firstOrderFlag(row.customerJourneySummary?.customerOrderIndex)}));
   }
   async scopes(): Promise<string[]> {
     const data = await this.#graphql('query PulseScopes { currentAppInstallation { accessScopes { handle } } }');

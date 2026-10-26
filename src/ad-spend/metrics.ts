@@ -1,5 +1,5 @@
 import type { HeroMarket, HeroPeriod } from '../dashboard-types.js';
-import { addDays, dayCount, ukToday } from '../hero-range.js';
+import { addDays, dayCount, ukToday, metaCostPerOrder } from '../hero-range.js';
 import type { Settings } from '../settings.js';
 import { costOrder, type ShopifyCost } from '../shopify/costs.js';
 import { isFreeOrder, paidOrder, type Order } from '../shopify/model.js';
@@ -196,10 +196,17 @@ export function applySpend(
   };
   const eligibleOrders = orders.filter(paidOrder);
   const countedOrders = eligibleOrders.filter(o => !isFreeOrder(o));
-  hero.cac = { ...hero.cac, n: hero.orders.n ? total / hero.orders.n : 0, dp: 2, mode: spend.mode, source: ['shopify', ...sourceIds],
-    unavailable: !available || hero.orders.unavailable, state: gaps.length ? 'warn' : hero.cac.state,
-    ss: gaps.length ? dependentSubtitle : hero.cac.ss,
-    d: { ...hero.cac.d, why: `${formatPounds(total)} all placed ad spend ÷ ${formatNumber(hero.orders.n)} counted orders = ${formatPounds(hero.orders.n ? total / hero.orders.n : 0)}.`, src: label } };
+  const periodCounted = countedOrders.filter(o=>o.day>=from&&o.day<=to);
+  const known = periodCounted.filter(o=>o.firstOrder==='first'||o.firstOrder==='repeat');
+  const waitingFirst = Math.max(0,hero.orders.n-known.length);
+  const firstCount = known.filter(o=>o.firstOrder==='first').length;
+  const cacCount = waitingFirst ? hero.orders.n : firstCount;
+  const cacBasis = waitingFirst ? `all orders · ${formatNumber(waitingFirst)} waiting for first-order flags` : 'first orders';
+  hero.cac = { ...hero.cac, n: cacCount ? total / cacCount : 0, dp: 2, mode: spend.mode, source: ['shopify', ...sourceIds],
+    unavailable: !available || hero.orders.unavailable || !cacCount, state: gaps.length ? 'warn' : hero.cac.state,
+    ss: `${cacBasis} · ${gaps.length ? dependentSubtitle : hero.cac.ss}`,
+    d: { ...hero.cac.d, why: `${formatPounds(total)} all placed ad spend ÷ ${formatNumber(cacCount)} ${waitingFirst?'counted orders':'counted first orders'} = ${formatPounds(cacCount ? total / cacCount : 0)}. ${cacBasis}.`,
+      rule:'First-order CAC once every counted order in the period is flagged. Until then use all counted orders and show the waiting count.',src:label } };
   const periodOrders = eligibleOrders.filter(
     (o) => o.day >= from && o.day <= to,
   );
@@ -347,7 +354,7 @@ export function applySpend(
       cost = pounds(sum((r) => r.market === market && r.source === 'meta')),
       value =
         count && periodOrders.length >= hero.orders.n && !hero.orders.unavailable
-          ? cost / count
+          ? metaCostPerOrder(cost,count)
           : null;
     hero[key] = {
       ...hero[key],
@@ -361,7 +368,7 @@ export function applySpend(
       cap: metaGaps.length ? 'warn' : !metaAvailable ? 'info' : to === today ? 'sofar' : 'info',
       d: {
         why: `${market.toUpperCase()} spend ${formatPounds(cost)} ÷ ${formatNumber(count)} Shopify orders. ${formatPounds(metaUnknown)} unknown-market Meta spend is not split.${periodOrders.length < hero.orders.n ? ' Older order market detail is unavailable; no denominator is guessed.' : ''}`,
-        rule: 'Meta spend placed in this market ÷ counted Shopify orders in this market. Free orders and TikTok orders are excluded. CAC remains all placed ad spend per order until first orders can be told apart.',
+        rule: 'Meta spend placed in this market ÷ counted Shopify orders in this market. Free orders and TikTok orders are excluded. CAC uses first orders once every counted order in its period is flagged; otherwise its all-orders label shows the waiting count.',
         src: metaLabel,
         extra: metaSplit,
       },

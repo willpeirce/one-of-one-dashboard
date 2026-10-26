@@ -211,7 +211,7 @@ test('daily channels check reports shortage and recovery over the same UK dates;
   }
   const reader=new Reader();const worker=new ShopifyWorker(db,{SHOPIFY_CLIENT_ID:randomUUID(),SHOPIFY_CLIENT_SECRET:randomUUID()},'https://pulse.example.test',{reader,clock:()=>now});
   await worker.initialize();await worker.tick();
-  let notices=(await worker.store.facts()).noticeDetails.filter(n=>n.kind==='channel_short');assert.equal(notices.length,1);assert.deepEqual(notices[0]!.detail,{channel:'tiktok',stored:0,reported:2,from:'2026-09-23',to:'2026-09-29'});
+  let notices=(await worker.store.facts()).noticeDetails.filter(n=>n.kind==='channel_short');assert.equal(notices.length,1);assert.deepEqual(notices[0]!.detail,{channel:'tiktok',label:'TikTok',day:'2026-09-29',stored:0,reported:2,from:'2026-09-23',to:'2026-09-29'});
   reader.bad=true;await db.query("UPDATE pulse.shopify_jobs SET next_run_at=$1 WHERE name='reconcile'",[now]);await worker.tick();assert.equal((await worker.store.facts()).noticeDetails.filter(n=>n.kind==='channel_short').length,1);
   reader.bad=false;reader.short=false;await db.query("UPDATE pulse.shopify_jobs SET next_run_at=$1 WHERE name='reconcile'",[now]);await worker.tick();assert.equal((await worker.store.facts()).noticeDetails.filter(n=>n.kind==='channel_short').length,0);
 });
@@ -244,7 +244,7 @@ test('null channels map known source names and pool Unknown orders against unmat
   // A pooled shortage is one card; the two Unknown orders are not credited to each channel separately.
   table.rows[2][2] = 2; await reconcile();
   assert.equal((await notices()).length, 1);
-  assert.equal((await notices())[0]!.source_id, 'channel:unknown');
+  assert.equal((await notices())[0]!.source_id, 'channel:2026-09-29:unknown');
   assert.equal((await notices())[0]!.detail.stored, 2);
   assert.equal((await notices())[0]!.detail.reported, 3);
   table.rows[2][2] = 1; table.rows[0][2] = 2; await reconcile();
@@ -312,4 +312,31 @@ test('channel reconciliation counts pending, authorised and later-cancelled orde
  await worker.initialize();await worker.tick();
  assert.equal((await worker.store.facts()).noticeDetails.filter(row=>row.kind==='channel_short').length,0);
  assert.deepEqual(await new ShopifyStore(db,'sample').channelExclusions(),[]);
+});
+
+test('channel shortages name one day of seven even when another day offsets the window total', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const raw = (await fixture('order')).data.order;
+  const envelope = (await fixture('orders-null-channel')).data.orders;
+  class Reader extends SampleShopify {
+    equal = false;
+    override async orders() { return { ...envelope, nodes: [{ ...raw, name: undefined, test: false,
+      createdAt: '2026-09-28T09:00:00Z', updatedAt: '2026-09-28T10:00:00Z',
+      channelInformation: { channelDefinition: { channelName: 'Online Store' } } }] }; }
+    override async report(query: string) { return query.includes('sales_channel') ? {
+      columns: [{ name: 'day' }, { name: 'sales_channel' }, { name: 'orders' }],
+      rows: Array.from({ length: 7 }, (_, i) => [addDays('2026-09-23', i), 'Online Store', i === (this.equal ? 5 : 6) ? 1 : 0]),
+    } : super.report(query); }
+    override async subscribe() {}
+  }
+  const reader = new Reader();
+  const worker = new ShopifyWorker(db, { SHOPIFY_CLIENT_ID: randomUUID(), SHOPIFY_CLIENT_SECRET: randomUUID() }, 'https://pulse.example.test', { reader, clock: () => now });
+  await worker.initialize(); await worker.tick();
+  const stored = await worker.store.facts();
+  const shorts = evaluateWatchdogs(stored, now, settings, blankObservation(), [], []).filter(c => c.name === 'Orders by channel');
+  assert.equal(shorts.length, 1);
+  assert.equal(shorts[0]!.why, 'Online Store short by 1 on 29 Sept: orders missing from the stored data');
+  reader.equal = true;
+  await db.query("UPDATE pulse.shopify_jobs SET next_run_at=$1 WHERE name='reconcile'", [now]); await worker.tick();
+  assert.equal((await worker.store.facts()).noticeDetails.filter(n => n.kind === 'channel_short').length, 0);
 });

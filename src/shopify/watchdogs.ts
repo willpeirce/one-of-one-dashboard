@@ -118,7 +118,11 @@ export function evaluateWatchdogs(facts: Facts, now: Date, settings: Settings, o
   const expiry = settings.keyExpiryDates.filter(k => k.expiresOn <= addDays(day, 14));
   add('self', 'Self-check', failed.length || otherFailures.length || expiry.length ? 'tripped' : facts.jobs.some(j => j.name in intervals && !j.last_success_at && !(facts.mode === 'sample' && j.name === 'subscriptions')) ? 'unknown' : 'pass',
     [...failed.map(j => `${j.name}: failed ${formatNumber(j.failures)} times; last worked at ${j.last_success_at ? formatUkTime(j.last_success_at) : 'never'}`), ...otherFailures.map(h => `${h.name}: last worked at ${h.lastSuccessAt ? formatUkTime(h.lastSuccessAt) : 'never'}`), ...expiry.map(k => `${k.keyName}: expires ${k.expiresOn}`)].join(' · ') || 'No repeated failures, stale feeds or keys within 14 days of expiry.', '');
-  for (const notice of facts.noticeDetails) if (notice.kind === 'channel_short') add(notice.source_id, 'Orders by channel', 'tripped', `${notice.detail.channel}: stored ${formatNumber(notice.detail.stored)}, ShopifyQL ${formatNumber(notice.detail.reported)}, ${notice.detail.from}–${notice.detail.to}. Check app access in Shopify Dev Dashboard; marketplace scope is decided by the live check.`);
+  for (const notice of facts.noticeDetails) if (notice.kind === 'channel_short') {
+    const d = notice.detail;
+    const day = d.day ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(`${d.day}T12:00:00Z`)) : `${d.from}–${d.to}`;
+    add(notice.source_id, 'Orders by channel', 'tripped', `${d.label ?? d.channel} short by ${formatNumber(d.reported - d.stored)} on ${day}: orders missing from the stored data`);
+  }
   return checks;
 }
 export async function updateObservation(db: Database, mode: SourceMode, facts: Facts, now: Date): Promise<Observation> {

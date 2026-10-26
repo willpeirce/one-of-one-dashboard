@@ -179,41 +179,47 @@ export class ShopifyWorker {
 
   private async reconcileChannels(from: string, to: string, now: Date): Promise<void> {
     const table = await this.client.report(channelQuery(from, to));
-    const expected = new Map<string, number>();
+    const expectedDays = new Map<string, Map<string, number>>();
+    const labels = new Map<string, string>();
     for (const row of reportRows(table)) {
       if (typeof row.day !== 'string' || row.day < from || row.day > to || typeof row.sales_channel !== 'string' || !Number.isInteger(Number(row.orders)) || Number(row.orders) < 0) throw new ShopifyError('invalid');
-      const channel = channelKey(row.sales_channel);
+      const channel = channelKey(row.sales_channel), expected = expectedDays.get(row.day) ?? new Map<string, number>();
       expected.set(channel, (expected.get(channel) ?? 0) + Number(row.orders));
+      expectedDays.set(row.day, expected); labels.set(channel, row.sales_channel);
     }
     const { records } = await this.store.facts();
-    const counts = new Map<string, number>();
-    for (const { kind, data } of records) if (kind === 'order' && channelOrder(data) && data.day >= from && data.day <= to) {
-      const channel = channelKey(data.channel ?? 'Unknown');
-      counts.set(channel, (counts.get(channel) ?? 0) + 1);
-    }
-    const exclusions = (channels: string[]) => {
-      if (this.mode !== 'live') return {};
-      const excludedOrderNumbers = records.filter(({kind,data}) => kind === 'order' && !channelOrder(data) && data.day >= from && data.day <= to && channels.includes(channelKey(data.channel ?? 'Unknown')))
-        .map(({data}) => data.orderNumber).filter((number): number is string => typeof number === 'string' && /^[0-9]{1,20}$/.test(number));
-      return excludedOrderNumbers.length ? { excludedOrderNumbers } : {};
-    };
-    // Replace only after the complete report parses. A failed report retains the last good check.
+    // Replace only after the complete report parses. Never offset a short day with another day's surplus.
     await this.db.transaction(async tx => {
       const store = new ShopifyStore(tx, this.mode);
       await tx.query("DELETE FROM pulse.shopify_notices WHERE mode = $1 AND kind = 'channel_short'", [this.mode]);
-      const unknown = counts.get('unknown') ?? 0;
-      const unmatched = [...expected].filter(([channel]) => channel === 'unknown' || !counts.has(channel));
-      for (const [channel, reported] of expected) {
-        if (unknown > 0 && unmatched.some(([name]) => name === channel)) continue;
-        const stored = counts.get(channel) ?? 0;
-        if (stored < reported) await store.notice('channel_short', `channel:${channel}`, now, { channel, stored, reported, from, to, ...exclusions([channel]) });
+      for (const [day, expected] of expectedDays) {
+        const counts = new Map<string, number>();
+        for (const { kind, data } of records) if (kind === 'order' && channelOrder(data) && data.day === day) {
+          const channel = channelKey(data.channel ?? 'Unknown');
+          counts.set(channel, (counts.get(channel) ?? 0) + 1);
+        }
+        const exclusions = (channels: string[]) => {
+          if (this.mode !== 'live') return {};
+          const excludedOrderNumbers = records.filter(({kind,data}) => kind === 'order' && !channelOrder(data) && data.day === day && channels.includes(channelKey(data.channel ?? 'Unknown')))
+            .map(({data}) => data.orderNumber).filter((number): number is string => typeof number === 'string' && /^[0-9]{1,20}$/.test(number));
+          return excludedOrderNumbers.length ? { excludedOrderNumbers } : {};
+        };
+        const unknown = counts.get('unknown') ?? 0;
+        const unmatched = [...expected].filter(([channel]) => channel === 'unknown' || !counts.has(channel));
+        for (const [channel, reported] of expected) {
+          if (unknown > 0 && unmatched.some(([name]) => name === channel)) continue;
+          const stored = counts.get(channel) ?? 0;
+          if (stored < reported) await store.notice('channel_short', `channel:${day}:${channel}`, now,
+            { channel, label: labels.get(channel), day, stored, reported, from, to, ...exclusions([channel]) });
+        }
+        // Pool unknown orders only within this day, without guessing their channels.
+        const reported = unmatched.reduce((n, [, count]) => n + count, 0);
+        if (unknown > 0 && unknown < reported) await store.notice('channel_short', `channel:${day}:unknown`, now,
+          { channel: `Unknown / unmatched (${unmatched.map(([channel]) => channel).join(', ')})`, day, stored: unknown, reported, from, to, ...exclusions(['unknown', ...unmatched.map(([channel]) => channel)]) });
       }
-      // Unknown source orders can account for report-only channels, without guessing which.
-      const reported = unmatched.reduce((n, [, count]) => n + count, 0);
-      if (unknown > 0 && unknown < reported) await store.notice('channel_short', 'channel:unknown', now,
-        { channel: `Unknown / unmatched (${unmatched.map(([channel]) => channel).join(', ')})`, stored: unknown, reported, from, to, ...exclusions(['unknown', ...unmatched.map(([channel]) => channel)]) });
     });
   }
+
   private async grossHistory(state: any, checkpoint: any, now: Date): Promise<GrossHistoryState | { idle: true; outcome: 'idle' }> {
     const olderFrom = checkpoint.olderFrom, olderTo = checkpoint.olderTo;
     if (!grossDay(olderFrom) || !grossDay(olderTo)) return { idle: true, outcome: 'idle' };

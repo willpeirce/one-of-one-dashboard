@@ -109,7 +109,7 @@ export async function readSourceHealth(db: Database, scanHealth?: ScanHealth): P
       updatedAt: row.updated_at,
       ...(scan ? { scanWaiting: scan.enabled ? scan.waiting : 0, statusText: scan.status === 'waiting_for_keys' ? 'Waiting for keys'
         : scan.status === 'healthy' ? 'Healthy'
-        : scan.status === 'error' ? `Scan failed: ${scanFailureLabel(scan.reason, scan.httpStatus, scan.providerCode)}`
+        : scan.status === 'error' ? `Scan failed: ${scanFailureLabel(scan.reason, scan.httpStatus, scan.providerCode, scan.providerMessage)}`
         : scan.enabled ? scan.message ?? 'First scan pending' : 'Scan: off' } : {}),
     }];
   });

@@ -25,11 +25,12 @@ export interface ScanResult {
 type ImageMime = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
 type ImageBlock = { type: 'image'; source: { type: 'base64'; media_type: ImageMime; data: string } };
 interface Group { id: string; kind: CreativeKind; media_key: string; first_seen: Date | string; merged_into_id: string | null }
+type Omitted = 'effort' | 'format';
 interface Attempt {
   failure: ScanFailure | null; httpStatus: number | null; input: number; output: number;
-  providerCode: string | null; raw: string; values: Record<string, AttributeValue>; dropped: number;
+  providerMessage: string | null; omitted: Omitted | null; providerCode: string | null; raw: string; values: Record<string, AttributeValue>; dropped: number;
 }
-const emptyAttempt = (failure: ScanFailure): Attempt => ({ failure, httpStatus: null, input: 0, output: 0, providerCode: null, raw: '', values: {}, dropped: 0 });
+const emptyAttempt = (failure: ScanFailure): Attempt => ({ failure, httpStatus: null, input: 0, output: 0, providerMessage: null, omitted: null, providerCode: null, raw: '', values: {}, dropped: 0 });
 
 export function scanImageMime(bytes: Uint8Array): ImageMime | null {
   if (bytes.length > MAX_IMAGE_BYTES) return null;
@@ -80,7 +81,7 @@ function redact(text: string, key: string): string {
   for (const value of new Set([key, encodeURIComponent(key), JSON.stringify(key).slice(1, -1)])) {
     if (value) text = text.split(value).join('[redacted]');
   }
-  return text;
+  return text.replace(/\b(?:sk-ant-|sk-|ghp_|github_pat_)[A-Za-z0-9_-]{12,}/g, '[redacted]');
 }
 /** Scrub decoded envelopes and nested JSON text before any success/error branch.
  * Successful evidence also loses literal, URL-encoded and Unicode-escaped echoes. */
@@ -131,7 +132,7 @@ async function boundedBody(response: Response): Promise<string> {
 
 /** The key lives only in this call's closure/header and is scrubbed before any persistence. */
 async function request(settings: Settings, options: ScanOptions, kind: CreativeKind,
-  system: string, copy: string, images: ImageBlock[]): Promise<Attempt | null> {
+  system: string, copy: string, images: ImageBlock[], omitted: Omitted | null = null): Promise<Attempt | null> {
   if (!scanEnabled(options.mode)) return null;
   const key = process.env.ANTHROPIC_API_KEY!.trim();
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 60_000);
@@ -141,8 +142,8 @@ async function request(settings: Settings, options: ScanOptions, kind: CreativeK
       method: 'POST', redirect: 'error', signal: controller.signal,
       headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({ model: settings.creativeScanModel, max_tokens: MAX_OUTPUT, system,
-        output_config: { format: { type: 'json_schema', schema: scanOutputSchema(kind) },
-          ...(/^claude-[a-z]+-5(?:-|$)/.test(settings.creativeScanModel) ? { effort: 'low' } : {}) },
+        ...(omitted === 'format' ? {} : { output_config: { format: { type: 'json_schema', schema: scanOutputSchema(kind) },
+          ...(omitted !== 'effort' && /^claude-[a-z]+-5(?:-|$)/.test(settings.creativeScanModel) ? { effort: 'low' } : {}) } }),
         messages: [{ role: 'user', content: [...images, { type: 'text', text: copy }] }] }),
     });
     httpStatus = response.status;
@@ -151,7 +152,9 @@ async function request(settings: Settings, options: ScanOptions, kind: CreativeK
     try { envelope = JSON.parse(text); } catch { envelope = null; }
     const input = envelope?.usage?.input_tokens, output = envelope?.usage?.output_tokens;
     const validUsage = Number.isSafeInteger(input) && input >= 0 && Number.isSafeInteger(output) && output >= 0;
-    const result: Attempt = { ...emptyAttempt(response.ok ? 'malformed' : 'refused'), httpStatus,
+    const result: Attempt = { ...emptyAttempt(response.ok ? 'malformed' : response.status < 500 ? 'rejected' : 'refused'), httpStatus, omitted,
+      providerMessage: response.status >= 400 && response.status < 500 && typeof envelope?.error?.message === 'string'
+        ? redact(envelope.error.message, key).slice(0, 200) : null,
       input: validUsage ? input : 0, output: validUsage ? output : 0,
       providerCode: ['invalid_request_error','authentication_error','permission_error','not_found_error','request_too_large','rate_limit_error','api_error','overloaded_error'].includes(envelope?.error?.type)
         ? envelope.error.type : null };
@@ -168,7 +171,7 @@ async function request(settings: Settings, options: ScanOptions, kind: CreativeK
     if (envelope?.stop_reason !== 'end_turn' || !validUsage) return result;
     const raw = blocks.map((part: any) => part.text).join('\n');
     try {
-      const parsed = JSON.parse(raw);
+      const parsed = JSON.parse(omitted === 'format' ? raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '') : raw);
       const safeParsed = JSON.parse(redact(JSON.stringify(parsed), key));
       const checked = validateAttributeValues(kind, 'model', safeParsed?.attributes);
       result.values = checked.values; result.dropped = checked.dropped;
@@ -261,11 +264,11 @@ async function saveAttempt(db: Database, settings: Settings, options: ScanOption
     const retry = attempt.failure ? scanRetryAt(finished) : null;
     if (!attempt.failure) await replaceSourceAttributes(tx, options.mode, options.accountId, group.id, 'model', attempt.values, finished);
     await tx.query(`INSERT INTO pulse.creative_scans(id,mode,account_id,media_group_id,model_id,status,failure_reason,http_status,input_tokens,
-      output_tokens,cost_gbp,raw_response,requested_at,finished_at,retry_after,poster_only,dropped_count,provider_code)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+      output_tokens,cost_gbp,raw_response,requested_at,finished_at,retry_after,poster_only,dropped_count,provider_code,provider_message,omitted_config)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
     [randomUUID(), options.mode, options.accountId, group.id, settings.creativeScanModel, attempt.failure ? 'failed' : 'done', attempt.failure,
       attempt.httpStatus, attempt.input, attempt.output, (attempt.input * settings.creativeScanInputPrice + attempt.output * settings.creativeScanOutputPrice) / 1_000_000,
-      attempt.raw, requested, finished, retry, posterOnly, attempt.dropped, attempt.providerCode]);
+      attempt.raw, requested, finished, retry, posterOnly, attempt.dropped, attempt.providerCode, attempt.providerMessage, attempt.omitted]);
   });
 }
 
@@ -293,23 +296,30 @@ export async function runCreativeScans(db: Database, settings: Settings, options
         result.failed++; result.state = 'failed'; console.error(`Creative scan failed (${input.failure})`);
         continue;
       }
-      {
+      let omitted: Omitted | null = null;
+      for (let send = 0; send < 2; send++) {
         if (result.attempts >= MAX_CALLS) return result;
         const now = clock(), spent = await scanSpendToday(db, options, now);
         if (spent + scanRequestReserve(settings, system, input.copy, input.images.length, group.kind) > settings.creativeScanCapGbp + 1e-12) {
           await saveAttempt(db, settings, options, group, emptyAttempt('cap'), now, clock(), input.posterOnly);
           return { ...result, state: 'cap', message: 'Daily scan cap reached; try again next UK day' };
         }
-        const attempt = await request(settings, options, group.kind, system, input.copy, input.images);
+        const attempt = await request(settings, options, group.kind, system, input.copy, input.images, omitted);
         if (!attempt) return { ...result, state: 'off' };
         result.attempts++;
         await saveAttempt(db, settings, options, group, attempt, now, clock(), input.posterOnly);
         if (attempt.failure) {
           result.failed++; result.state = 'failed';
-          console.error(`Creative scan failed (${scanFailureLabel(attempt.failure,attempt.httpStatus,attempt.providerCode)})`);
+          console.error(`Creative scan failed (${scanFailureLabel(attempt.failure,attempt.httpStatus,attempt.providerCode,attempt.providerMessage)})`);
         } else { result.done++; result.state = 'done'; }
-        // Do not retry a failed group in this pass. Stop on provider overload.
+        // One compatibility retry, with its own cap reservation and persisted spend.
+        if (send === 0 && attempt.httpStatus === 400) {
+          const message = attempt.providerMessage ?? '';
+          omitted = /effort/i.test(message) ? 'effort' : /output_config|format|json_schema|schema/i.test(message) ? 'format' : null;
+          if (omitted) continue;
+        }
         if (attempt.httpStatus === 429 || attempt.httpStatus !== null && attempt.httpStatus >= 500) return result;
+        break;
       }
     }
     return result;

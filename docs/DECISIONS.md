@@ -595,3 +595,7 @@ The planned Meta sources default is facebook, fb, instagram, ig, meta, an, msg, 
 ## 2026-10-26, stage 2 part B contract: first-order CAC (deferred)
 
 Before building, verify customerOrderIndex on Shopify Admin GraphQL 2026-10 with existing scopes; stop this item if another scope is required. Store only first/repeat/unknown, never a customer ID. Re-read stored orders through a resumable background job that yields to polling. Once complete for a period, use placed spend divided by counted first orders; until then label the all-counted-order fallback and waiting count. This is the requested replacement for the earlier CAC decision, taking effect only when part B implements it. Part A still uses all counted orders.
+
+## 2026-10-26, part B item 18: scan compatibility and safe diagnostics
+
+Persist redacted, 200-character 4xx messages alongside the safe provider code. HTTP 4xx is rejected; model stop_reason refusal remains refused. A named effort/schema rejection permits one cap-checked, separately charged retry without that feature; schema fallback accepts fenced JSON with the same redaction and attribute validation. Sources retains the omitted-feature note until a full request succeeds. Migration 043 holds diagnostics; schemas remain closed and use only the supported keyword subset.

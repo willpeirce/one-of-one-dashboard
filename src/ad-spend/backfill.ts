@@ -23,7 +23,7 @@ export async function backfillMetaSpend(db: Database, reader: SpendReader, accou
           const rows = await reader.read(account, cursor, end, settings, pollAt);
           await saveSpend(db, 'meta', account, cursor, end, rows, pollAt, addDays(end, 1));
           cursor = addDays(end, 1); span = 14;
-          await db.query("UPDATE pulse.ad_spend_jobs SET backfill_window_days=14,backfill_error=NULL WHERE source='meta' AND account_id=$1", [account]);
+          await db.query("UPDATE pulse.ad_spend_jobs SET backfill_window_days=14,backfill_error=NULL,backfill_failures=0 WHERE source='meta' AND account_id=$1", [account]);
           break;
         } catch (error) {
           if (!(error instanceof AdError) || !(error.status === 500 || error.providerCode === 1) || span === 1) throw error;
@@ -33,10 +33,10 @@ export async function backfillMetaSpend(db: Database, reader: SpendReader, accou
         }
       }
     }
-    await db.query("UPDATE pulse.ad_spend_jobs SET backfill_done=backfill_next>$2::date,backfill_error=NULL WHERE source='meta' AND account_id=$1", [account, last]);
+    await db.query("UPDATE pulse.ad_spend_jobs SET backfill_done=backfill_next>$2::date,backfill_error=NULL,backfill_failures=0 WHERE source='meta' AND account_id=$1", [account, last]);
   } catch (error) {
     const code = adErrorCode(error, 'meta');
-    await db.query("UPDATE pulse.ad_spend_jobs SET backfill_error=$2 WHERE source='meta' AND account_id=$1", [account, code]);
+    await db.query("UPDATE pulse.ad_spend_jobs SET backfill_error=$2,backfill_failures=backfill_failures+1 WHERE source='meta' AND account_id=$1", [account, code]);
     console.error(`Meta spend backfill failed (${code}).`);
   }
 }

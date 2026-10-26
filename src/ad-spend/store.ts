@@ -113,6 +113,7 @@ export interface SpendJob {
   backfill_window_days: number;
   backfill_next_run_at: Date | null;
   backfill_error: string | null;
+  backfill_failures?: number;
   last_poll_at: Date | null;
   last_success_at: Date | null;
   failures: number;
@@ -121,7 +122,7 @@ export interface SpendJob {
 export async function readJobs(db: Database): Promise<SpendJob[]> {
   return (
     await db.query<SpendJob & Record<string, unknown>>(
-      'SELECT source,account_id,backfill_next::text,backfill_done,backfill_first::text,backfill_window_days,backfill_next_run_at,backfill_error,last_poll_at,last_success_at,failures,actions_backfilled_at FROM pulse.ad_spend_jobs',
+      'SELECT source,account_id,backfill_next::text,backfill_done,backfill_first::text,backfill_window_days,backfill_next_run_at,backfill_error,backfill_failures,last_poll_at,last_success_at,failures,actions_backfilled_at FROM pulse.ad_spend_jobs',
     )
   ).rows;
 }
@@ -175,7 +176,7 @@ export async function saveSpend(
     if (source === 'meta') await saveMetaHours(tx, account, from, to, rows, now);
     if (next)
       await tx.query(
-        'UPDATE pulse.ad_spend_jobs SET backfill_next=$3 WHERE source=$1 AND account_id=$2',
+        'UPDATE pulse.ad_spend_jobs SET backfill_next=$3,backfill_failures=0,backfill_error=NULL WHERE source=$1 AND account_id=$2',
         [source, account, next],
       );
   });
@@ -191,6 +192,7 @@ export interface SpendFacts {
     status: string;
     fetchedAt: string | null;
     failures?: number;
+    backfillStall?: { day: string; code: string };
     stale?: boolean;
     lastAttemptAt?: string | null;
   }[];
@@ -326,6 +328,8 @@ function sourceFacts(source: AdSource, live: boolean, job: SpendJob | undefined,
               ? `backfill running · next ${job!.backfill_next}`
               : 'live',
     fetchedAt,
+    ...(source === 'meta' && live && (job?.backfill_failures ?? 0) >= 3 && job?.backfill_error
+      ? { backfillStall: { day: job.backfill_next, code: job.backfill_error } } : {}),
     failures: live ? job?.failures ?? 0 : 0,
     stale,
     lastAttemptAt: job?.last_poll_at ? new Date(job.last_poll_at).toISOString() : null,

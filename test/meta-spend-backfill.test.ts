@@ -120,3 +120,19 @@ test('Meta code 1 uses the existing three transport retries before the window ha
   await assert.rejects(http.request('https://example.test/insights',{method:'GET'}),error=>error instanceof AdError&&error.providerCode===1);
   assert.equal(calls,4);assert.ok(waits.includes(250)&&waits.includes(500)&&waits.includes(1000));
 });
+
+
+test('two failed backfill runs stay silent, three raise a card and success clears it',async t=>{
+ const db=await createTestDatabase();t.after(()=>db.close());t.mock.method(console,'error',()=>{});
+ await db.query("INSERT INTO pulse.ad_spend_jobs(source,account_id,backfill_first,backfill_next) VALUES('meta',$1,$2,$2)",[account,row.day]);
+ let fails=true;const reader:SpendReader={read:async()=>{if(fails)throw new AdError('http',400,100);return [];}};
+ const cards=async()=>spendNeeds(await spendFacts(db,settings,env,'live',row.day,'2026-10-26',now),settings,'2026-10-26',now).filter(c=>c.id==='meta-backfill-stuck');
+ for(let i=1;i<=3;i++){
+  await backfillMetaSpend(db,reader,account,settings,now,SPEND_POLL_INTERVAL_MS,()=>now,()=>false);
+  assert.equal((await readJobs(db))[0]!.backfill_failures,i);
+  assert.equal((await cards()).length,i===3?1:0);
+ }
+ assert.match((await cards())[0]!.title,/stuck at 2026-09-01: http 400, meta 100/);
+ fails=false;await backfillMetaSpend(db,reader,account,settings,now,SPEND_POLL_INTERVAL_MS,()=>now,()=>false);
+ assert.equal((await readJobs(db))[0]!.backfill_failures,0);assert.equal((await cards()).length,0);
+});

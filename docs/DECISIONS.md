@@ -599,3 +599,7 @@ Before building, verify customerOrderIndex on Shopify Admin GraphQL 2026-10 with
 ## 2026-10-26, part B item 18: scan compatibility and safe diagnostics
 
 Persist redacted, 200-character 4xx messages alongside the safe provider code. HTTP 4xx is rejected; model stop_reason refusal remains refused. A named effort/schema rejection permits one cap-checked, separately charged retry without that feature; schema fallback accepts fenced JSON with the same redaction and attribute validation. Sources retains the omitted-feature note until a full request succeeds. Migration 043 holds diagnostics; schemas remain closed and use only the supported keyword subset.
+
+## 2026-10-26, part B item 15: visible stalled history
+
+Count failed Meta history runs at the persisted cursor, separately from live-source failures. After three failures a read-only Needs card names the day and safe error code; retrying continues. Successful cursor commits reset the counter atomically. Migration 044 adds the durable counter.

@@ -377,6 +377,9 @@ export function spendNeeds(facts: SpendFacts, settings: Settings, today: string,
     }
   };
   for (const source of facts.sources) {
+    if (source.backfillStall) add('meta-backfill-stuck',
+      `Meta spend backfill stuck at ${source.backfillStall.day}: ${source.backfillStall.code}`,
+      'History keeps retrying this window. Live spend polling continues.', '/sources');
     const lastActivity = source.fetchedAt ?? source.lastAttemptAt,
       stale = source.stale || source.status.startsWith('stale') ||
         (!!lastActivity && now.getTime() - new Date(lastActivity).getTime() > SPEND_STALE_AFTER_MS);

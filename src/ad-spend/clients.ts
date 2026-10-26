@@ -1,3 +1,4 @@
+import { ACTIVITY_FIELDS, parseActivity, type MetaActivity } from '../meta-adsets/activity.js';
 import { fetchAdSets, type AdSet } from '../meta-adsets/catalogue.js';
 import { addDays, ukToday } from '../hero-range.js';
 import type { Settings } from '../settings.js';
@@ -18,6 +19,7 @@ import { metaAction, META_PURCHASE, META_ADD_TO_CART } from './meta-actions.js';
 import { spendMarket } from './placement.js';
 export interface SpendReader {
   read(account: string, from: string, to: string, settings: Settings, now?: Date): Promise<SpendRead>;
+  readActivities?(account: string, since: number): Promise<MetaActivity[]>;
   readCampaigns?(account: string): Promise<MetaCampaign[]>;
   readAdSets?(account: string, settings: Settings): Promise<AdSet[]>;
 }
@@ -213,6 +215,10 @@ export class MetaSpend implements SpendReader {
     const rows: any[] = [];
     for await (const page of this.readPages(path, params, timeoutMs, { resumeRateLimit })) rows.push(...page);
     return rows;
+  }
+  async readActivities(account: string, since: number): Promise<MetaActivity[]> {
+    const rows = await this.readAllPages(`act_${identifier(account)}/activities`, {fields:ACTIVITY_FIELDS,since:String(since),limit:'100'});
+    return rows.map(parseActivity).filter((row): row is MetaActivity => row !== null);
   }
   readAdSets(account: string, settings: Settings): Promise<AdSet[]> {
     return fetchAdSets(this, account, settings);

@@ -55,6 +55,7 @@ test('campaign and creative catalogue failures follow committed spend, preserve 
       }
       // The catalogue is another independent secondary read; refuse it explicitly.
       if (path.endsWith('/ads')) return response(failure, 400);
+      if (path.endsWith('/activities')) return response({data:[]});
       if (path.endsWith('/adsets') || path.endsWith('/insights') && new URL(String(url)).searchParams.get('level')==='ad') return response({data:[]});
       if (path.endsWith('/insights')) return response({ data: [{
         campaign_id: campaign.id, campaign_name: 'Invented Birch UK',
@@ -121,6 +122,7 @@ test('spend failure stays unavailable even when the independent campaign read su
   assert.equal((await readMetaCampaigns(db, s, e))[0]!.name, campaign.name);
   assert.deepEqual([...logs].sort(), [
     'Ad spend meta failed (http 400, meta 100/1487694).',
+    'Meta activity read failed (http 400, meta 100/1487694).',
     'Meta ad sets read failed (http 400, meta 100/1487694).',
     'Meta creatives read failed (http 400, meta 100/1487694 at insights).',
     'Meta creatives read failed (http 400, meta 100/1487694 at backfill).',

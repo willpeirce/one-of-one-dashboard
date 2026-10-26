@@ -1,3 +1,4 @@
+import { syncActivity } from '../meta-adsets/activity.js';
 import { backfillMetaSpend } from './backfill.js';
 import { saveAdSets } from '../meta-adsets/catalogue.js';
 import type { Database } from '../db.js';
@@ -219,6 +220,7 @@ export class SpendWorker {
         console.error(`Meta campaigns read failed (${code}).`);
       }
     }
+    if (source === 'meta' && reader.readActivities) await syncActivity(this.db,account,since=>reader.readActivities!(account,since),now);
     if (source === 'meta' && reader.readAdSets) {
       try { await saveAdSets(this.db, account, await reader.readAdSets(account, settings), settings, now); }
       catch (error) { console.error(`Meta ad sets read failed (${adErrorCode(error, 'meta')}).`); }

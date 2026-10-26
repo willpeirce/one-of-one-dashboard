@@ -576,9 +576,9 @@ Use Will's permitted part A/part B split: all eight review fixes (items 7–14),
 
 The hourly Orders chart extends to the later of today's poll hour and the newest counted order hour, capped by the current UK hour. Before the first poll on a new UK day, its base is the current UK hour. This supersedes the poll-only chart clock. Keep the salutation and summary during partial spend, superseding 25 Oct's greeting-hiding decision; the spend tile still comes first. Channel comparison is per UK day under the shared non-test rule: a short day means orders are missing from stored data, without offsetting it against another day's surplus. Order numbers stay in the existing live-only Sources diagnostics. Clean video pages grow back to 100; missing-video reasons agree in singular/plural; future-hour tooltips match the hidden table; resize work is coalesced per frame.
 
-## 2026-10-26, stage 2 part B contract: activity types and Our actors (deferred)
+## 2026-10-26, stage 2 part B item 3: activity types and Our actors
 
-The next part keeps only update_ad_set_budget, update_campaign_budget, update_ad_set_run_status and update_campaign_run_status from paged GET activities. Billing and budget-schedule events are ignored. Persist deduplicated events, parse nested pence and budget/status labels, and add Our actors as live-entered IDs only; an empty list treats every event as not ours. Actor/object/app names are runtime data. No activity reader or Setting is claimed in part A.
+Keep only update_ad_set_budget, update_campaign_budget, update_ad_set_run_status and update_campaign_run_status from paged GET activities. Billing and budget-schedule events are ignored. Persist deduplicated events, parse nested pence and budget/status labels, and add Our actors as live-entered IDs only; an empty list treats every event as not ours. Actor/object/app names are runtime data. Migration 045 stores deduplicated events and independent read health. Inclusive newest-event reads preserve events sharing a timestamp; the first read covers 30 days. The seven-day stat and every event detail remain read-only. Our actors uses the existing versioned Settings audit with a database allowlist update.
 
 ## 2026-10-26, stage 2 part B contract: read-only risk rules (deferred)
 

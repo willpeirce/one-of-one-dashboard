@@ -56,6 +56,7 @@ export interface Settings {
   googleCustomerId: string;
   googleLoginCustomerId: string;
   tiktokAdvertiserId: string;
+  ourActors: { actorId: string }[];
   metaOwners: { campaignId: string; owner: 'ours' | 'freelancer'; test?: boolean }[];
   expectedGoogleCampaigns: { campaignId: string }[];
   blendedMetaTripwireGbp: number;
@@ -144,7 +145,7 @@ export function defaultSettings(): Settings {
     series1UsTargetDate: '',
     ...creativeSettingsDefaults(),
     metaAdAccountId: '', googleCustomerId: '', googleLoginCustomerId: '', tiktokAdvertiserId: '',
-    metaOwners: [], expectedGoogleCampaigns: [],
+    ourActors: [], metaOwners: [], expectedGoogleCampaigns: [],
     blendedMetaTripwireGbp: 28,
     creatorRules: {
       assetCapGbp: 200, minimumUsageMonths: 3, pushPriceBeforeExtendingUsage: true,
@@ -335,6 +336,12 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
     googleCustomerId: accountId(value.googleCustomerId, 'googleCustomerId', true),
     googleLoginCustomerId: accountId(value.googleLoginCustomerId, 'googleLoginCustomerId', true),
     tiktokAdvertiserId: accountId(value.tiktokAdvertiserId, 'tiktokAdvertiserId'),
+    ourActors: list(value.ourActors, 'ourActors', (row, path) => {
+      const parsed = object(row, ['actorId'], path);
+      const actorId = accountId(parsed.actorId, `${path}.actorId`);
+      if (!actorId) return invalid(`${path}.actorId`);
+      return { actorId };
+    }, row => row.actorId),
     metaOwners: list(value.metaOwners, 'metaOwners', (row, path) => {
       const hasTest = !!row && typeof row === 'object' && Object.hasOwn(row, 'test');
       const parsed = object(row, hasTest ? ['campaignId', 'owner', 'test'] : ['campaignId', 'owner'], path);

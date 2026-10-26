@@ -122,8 +122,16 @@ export function applySpend(
     ...issues,
     ...gaps.map((gap) => gap.dependent),
   ].join('; ');
+  const hourly = spend.metaHourly;
+  const pollHour = hourly ? Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', hourCycle: 'h23' }).format(new Date(hourly.polledAt))) : -1;
+  // Successful reports cover quiet hours too. Both days use the poll's UK-hour cutoff.
+  const byYesterday = hourly && hourly.today === today && from === today && to === today && usable.some(source => source.source === 'meta')
+    ? pounds(hourly.rows.filter(row => row.day === addDays(today, -1) && row.hour <= pollHour && row.currency === 'GBP'
+      && (!inputs.market || inputs.market === 'all' || spendMarket(row) === inputs.market))
+      .reduce((sum, row) => sum + decimalMicros(row.amount), 0n)) : null;
+  const comparison = byYesterday === null ? '' : `\nMeta ${formatPounds(byYesterday)} by this time yesterday`;
   const soFar = to === today ? ' · so far' : '',
-    spendSubtitle = gaps.length ? gapLines(gaps, 'spend') + soFar : label + soFar,
+    spendSubtitle = (gaps.length ? gapLines(gaps, 'spend') + soFar : label + soFar) + comparison,
     dependentSubtitle = gaps.length ? gapLines(gaps, 'dependent') + soFar : label + soFar;
   const sum = (filter: (r: (typeof rows)[number]) => boolean = () => true) =>
     rows.filter(filter).reduce((s, r) => s + decimalMicros(r.amount), 0n);

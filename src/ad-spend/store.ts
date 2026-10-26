@@ -1,3 +1,4 @@
+import { readMetaHours, saveMetaHours, type MetaHours } from './hourly.js';
 import { formatUkTime } from '../uk-time.js';
 import type { Database } from '../db.js';
 import { addDays } from '../hero-range.js';
@@ -16,7 +17,7 @@ import {
   type AdSource,
   type MetaCampaign,
   type MetaCampaignView,
-  type SpendRow,
+  type SpendRow, type SpendRead,
 } from './model.js';
 export async function saveMetaCampaigns(
   db: Database,
@@ -126,7 +127,7 @@ export async function saveSpend(
   account: string,
   from: string,
   to: string,
-  rows: SpendRow[],
+  rows: SpendRead,
   now: Date,
   next?: string,
 ): Promise<void> {
@@ -163,9 +164,10 @@ export async function saveSpend(
       );
     await tx.query(
       `INSERT INTO pulse.ad_spend_days(source,account_id,uk_day,fetched_at,actions_complete) SELECT $1,$2,day,$5,$1='meta' FROM generate_series($3::date,$4::date,interval '1 day') AS day
-      ON CONFLICT (source,account_id,uk_day) DO UPDATE SET fetched_at=EXCLUDED.fetched_at,actions_complete=EXCLUDED.actions_complete`,
+      ON CONFLICT (source,account_id,uk_day) DO UPDATE SET fetched_at=EXCLUDED.fetched_at,actions_complete=EXCLUDED.actions_complete,hourly_complete=false`,
       [source, account, from, to, now],
     );
+    if (source === 'meta') await saveMetaHours(tx, account, from, to, rows, now);
     if (next)
       await tx.query(
         'UPDATE pulse.ad_spend_jobs SET backfill_next=$3 WHERE source=$1 AND account_id=$2',
@@ -176,6 +178,7 @@ export async function saveSpend(
 export interface SpendFacts {
   mode: SourceMode;
   rows: SpendRow[];
+  metaHourly?: MetaHours;
   sources: {
     source: AdSource;
     live: boolean;
@@ -240,7 +243,9 @@ export async function spendFacts(
     // A successfully fetched zero-spend day is still stored coverage for this range.
     if (source.stale && !stored.rows.length && !coverage.rows.length) source.ready = false;
   }
-  return { mode, rows, sources, days };
+  const meta = sources.find(source => source.source === 'meta' && source.live);
+  const metaHourly = meta ? await readMetaHours(db, settings, now, meta.fetchedAt) : undefined;
+  return { mode, rows, sources, days, metaHourly };
 }
 /** Invented daily spend, only returned alongside sample Shopify facts. */
 export function sampleSpend(

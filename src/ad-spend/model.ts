@@ -26,6 +26,9 @@ export interface SpendRow {
   purchases?: number | null;
   purchaseValue?: number | null;
 }
+export interface SpendHourRow extends SpendRow { hour: number }
+/** Optional recent hourly rows accompany the daily totals from the same report. */
+export type SpendRead = SpendRow[] & { hourly?: SpendHourRow[] };
 export interface MetaCampaign {
   id: string;
   name: string;
@@ -96,13 +99,13 @@ export function ownerFor(
     : 'freelancer';
 }
 /** Source hours are UTC unless Meta explicitly supplies another account timezone. */
-export function hourDay(day: string, hour: number, zone = 'UTC'): string {
+function sourceHourInstants(day: string, hour: number, zone: string): number[] {
   if (!/^20\d{2}-\d{2}-\d{2}$/.test(day) || !Number.isInteger(hour) || hour < 0 || hour > 23)
     throw new AdError('invalid');
   const wall = Date.parse(`${day}T${String(hour).padStart(2, '0')}:00:00Z`);
   if (!Number.isFinite(wall) || new Date(wall).toISOString().slice(0, 10) !== day)
     throw new AdError('invalid');
-  if (zone === 'UTC' || zone === 'GMT' || zone === 'Etc/GMT') return ukToday(new Date(wall));
+  if (zone === 'UTC' || zone === 'GMT' || zone === 'Etc/GMT') return [wall];
   const formatter = new Intl.DateTimeFormat('en-GB', {
     timeZone: zone,
     year: 'numeric',
@@ -121,10 +124,34 @@ export function hourDay(day: string, hour: number, zone = 'UTC'): string {
     [-24, 0, 24].map((h) => local(wall + h * 3600000) - (wall + h * 3600000)),
   );
   const candidates = [...offsets].map((offset) => wall - offset).filter((at) => local(at) === wall);
-  const days = [...new Set(candidates.map((at) => ukToday(new Date(at))))];
+  return candidates;
+}
+export function hourDay(day: string, hour: number, zone = 'UTC'): string {
+  const days = [...new Set(sourceHourInstants(day, hour, zone).map(at => ukToday(new Date(at))))];
   // A repeated source hour is an aggregate bucket; never invent its allocation.
   if (days.length !== 1) throw new AdError('invalid');
   return days[0]!;
+}
+const ukHourClock = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', hourCycle: 'h23' });
+/** Repeated autumn UK hours combine; a source bucket must map to one UK hour. */
+export function ukHourBucket(day: string, hour: number, zone: string): { day: string; hour: number } {
+  const buckets = new Map(sourceHourInstants(day, hour, zone).map(at => {
+    const date = new Date(at), bucket = { day: ukToday(date), hour: Number(ukHourClock.format(date)) };
+    return [`${bucket.day}:${bucket.hour}`, bucket] as const;
+  }));
+  if (buckets.size !== 1) throw new AdError('invalid');
+  return [...buckets.values()][0]!;
+}
+export function aggregateSpendHours(rows: SpendHourRow[], from: string, to: string): SpendHourRow[] {
+  const groups = new Map<string, SpendHourRow>();
+  for (const row of rows) {
+    if (row.day < from || row.day > to) continue;
+    const key = JSON.stringify([row.campaignId, row.adSetId, row.day, row.hour]);
+    const previous = groups.get(key);
+    if (previous && (previous.currency !== row.currency || previous.market !== row.market)) throw new AdError('invalid');
+    groups.set(key, { ...row, amount: microsDecimal(decimalMicros(row.amount) + (previous ? decimalMicros(previous.amount) : 0n)) });
+  }
+  return [...groups.values()];
 }
 export function aggregateHours(rows: SpendRow[], from: string, to: string): SpendRow[] {
   const groups = new Map<string, { row: SpendRow; micros: bigint }>();

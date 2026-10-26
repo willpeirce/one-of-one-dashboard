@@ -145,7 +145,7 @@ export class SpendWorker {
       // Re-read the last 14 full UK days once, including rows written before actions existed.
       const repairActions = source === 'meta' && !job.actions_backfilled_at;
       const from = addDays(today, repairActions ? -14 : -2),
-        rows = await reader.read(account, from, today, settings);
+        rows = await reader.read(account, from, today, settings, now);
       await saveSpend(this.db, source, account, from, today, rows, now);
       await this.db.query(
         'UPDATE pulse.ad_spend_jobs SET last_success_at=$3,actions_backfilled_at=CASE WHEN $4 THEN $3 ELSE actions_backfilled_at END WHERE source=$1 AND account_id=$2',
@@ -165,7 +165,7 @@ export class SpendWorker {
           account,
           cursor,
           end,
-          await reader.read(account, cursor, end, settings),
+          await reader.read(account, cursor, end, settings, now),
           now,
           addDays(end, 1),
         );

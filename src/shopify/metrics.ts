@@ -48,8 +48,8 @@ export const countedOrder = (order: Order, market: HeroMarket): boolean => paidO
 const ukClock = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 export function hourlyOrders(facts: Facts, today: string, market: HeroMarket = 'all', now = new Date()): HourlyOrders {
   const data = dataset(facts, today), yesterdayDay = addDays(today, -1);
-  const poll = facts.jobs.find(job => job.name === 'poll')?.last_success_at ?? `${today}T00:00:00Z`;
-  const baseHour = Number(ukClock.format(new Date(poll)).slice(0, 2));
+  const poll = facts.jobs.find(job => job.name === 'poll')?.last_success_at;
+  const baseHour = Number(ukClock.format(poll && ukToday(new Date(poll)) === today ? new Date(poll) : now).slice(0, 2));
   const orders = data.orders.filter(order => countedOrder(order, market));
   const newestHour = orders.filter(order => order.day === today)
     .reduce((latest, order) => Math.max(latest, Number(ukClock.format(new Date(order.createdAt)).slice(0, 2))), 0);

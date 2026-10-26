@@ -55,3 +55,14 @@ test('a counted webhook order after the poll extends the chart and keeps its sum
   facts.jobs[1]!.last_success_at = new Date(`${day}T23:00:00Z`);
   assert.equal(hourlyOrders(facts, day, 'all', now).nowHour, 13, 'never later than the current UK hour');
 });
+
+test('before the new day first poll the chart stops at the current UK hour', async () => {
+  const facts: Facts = { mode: 'live', sample: false, counts: {}, pendingWebhooks: 0, geoNotice: null, notices: [], noticeDetails: [], records: [],
+    jobs: [{ name: 'backfill', state: { from: '2026-10-01', ordersDone: true }, last_success_at: null, failures: 0 },
+      { name: 'poll', state: {}, last_success_at: new Date('2026-10-25T23:50:00Z'), failures: 0 }] };
+  const hours = hourlyOrders(facts, '2026-10-26', 'all', new Date('2026-10-26T00:10:00Z'));
+  assert.equal(hours.nowHour, 0);
+  assert.deepEqual(hours.today, [0, ...Array(23).fill(null)]);
+  facts.jobs[1]!.last_success_at = null;
+  assert.equal(hourlyOrders(facts, '2026-10-26', 'all', new Date('2026-10-26T03:10:00Z')).nowHour, 3);
+});

@@ -135,7 +135,7 @@ export interface HeroPeriod {
 }
 
 export type DashboardWidget = SampleProvenance & (
-  | { kind: 'dial'; value: DialModel }
+  | { kind: 'dial'; value: DialModel; markets?: Record<HeroMarket,DialModel> }
   | { kind: 'series-pace'; value: import('./series-pace/presentation.js').SeriesPaceCard }
   | { kind: 'ring'; value: RingModel }
   | { kind: 'detail'; value: Detail }

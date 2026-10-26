@@ -588,9 +588,9 @@ Use the hero's extracted shared CPO calculation over three complete UK days, las
 
 Names remain authoritative. The fallback stores only targeting countries and places otherwise unnamed sets as UK when all countries are GB/JE/GG/IM, US when US alone, otherwise unknown, asking for UK/US in the name. Migration 046 stores country-only projections with the set and daily/hourly spend. The reader uses the saved catalogue on live and backfill reads; the next poll picks up a newly read catalogue. This supersedes the no-targeting placement comment. Names, including conflicting market names, remain authoritative. No city, age or other targeting field is retained.
 
-## 2026-10-26, stage 2 part B contract: Meta sources (deferred)
+## 2026-10-26, stage 2 part B item 5: Meta sources and live attribution
 
-The planned Meta sources default is facebook, fb, instagram, ig, meta, an, msg, matched case-insensitively alongside fbclid. Settle it from the live ratio detail's other-source counts after merge. The ratio uses fourteen complete UK days and counted Shopify orders, with campaign-ID owner matches and explicitly estimated owner orders when no match exists. Part A keeps the labelled sample dial; no live attribution claim is added.
+The Meta sources default is facebook, fb, instagram, ig, meta, an, msg, matched case-insensitively alongside fbclid. Settle it from the live ratio detail's other-source counts after merge. The ratio uses fourteen complete UK days and counted Shopify orders, with campaign-ID owner matches and explicitly estimated owner orders when no match exists. Live w019 now uses stored Meta purchases and the shared countedOrder rule, independently for All/UK/US. Incomplete history or zero attributed orders shows No data; sample mode retains its sample. Owner matches use stored campaign IDs; unmatched owners show purchases divided by the measured market ratio, labelled estimated. Migration 047 extends the value-free Settings audit allowlist.
 
 ## 2026-10-26, stage 2 part B contract: first-order CAC (deferred)
 

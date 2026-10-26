@@ -1,0 +1,24 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {readFile} from 'node:fs/promises';
+import {cleanOrder,type Order} from '../src/shopify/model.js';
+import {metaAttribution,attributionDial,attributionZone} from '../src/ad-spend/attribution.js';
+import {defaultSettings} from '../src/settings.js';
+import {addDays} from '../src/hero-range.js';
+import type {SpendFacts} from '../src/ad-spend/store.js';
+const settings={...defaultSettings(),metaOwners:[{campaignId:'invented-owner-campaign',owner:'ours' as const}]},today='2026-10-26';
+const spend:SpendFacts={mode:'live',rows:[{source:'meta',accountId:'invented-ratio-account',campaignId:'invented-owner-campaign',campaignName:'Invented UK ratio',adSetId:'invented-ratio-set',adSetName:'Invented UK set',owner:'ours',market:'uk',day:'2026-10-25',amount:'60',currency:'GBP',purchases:3}],days:Array.from({length:14},(_,i)=>({source:'meta',day:addDays(today,i-14)})),sources:[{source:'meta',live:true,ready:true,status:'live',fetchedAt:'2026-10-26T12:00:00Z'}]};
+const order=(base:Order,source:string,extra:Record<string,unknown>={}):Order=>({...base,day:'2026-10-25',market:'UK' as const,lastVisit:{source,...extra}});
+test('fourteen complete UK days use counted last-visit Meta orders, owner estimates and other-source detail',async()=>{
+ const raw=JSON.parse(await readFile(new URL('./fixtures/shopify/orders.json',import.meta.url),'utf8'));
+ const base=cleanOrder(raw.data.orders.nodes[0]);
+ const orders=[order(base,'FaCeBoOk'),order(base,'invented-source',{fbclid:true}),order(base,'invented-other'),{...order(base,'fb'),day:today},{...order(base,'fb'),day:'2026-10-11'}];
+ const data=metaAttribution(spend,orders,settings,today,'all');assert.equal(data.count,2);assert.equal(data.purchases,3);assert.equal(data.ratio,1.5);assert.equal(data.complete,true);
+ assert.equal(data.owners[0]!.orders,2);assert.equal(data.owners[0]!.estimated,true);assert.deepEqual(data.other,[['invented-other',1]]);
+ orders[0]!.lastVisit={source:'facebook',campaign:'invented-owner-campaign'};
+ const matched=metaAttribution(spend,orders,settings,today,'uk');assert.equal(matched.owners[0]!.orders,1);assert.equal(matched.owners[0]!.estimated,false);
+ assert.equal(metaAttribution(spend,orders,settings,today,'us').count,0);
+ const dial=attributionDial(spend,orders,settings,today,'all',true);assert.equal(dial.t,'1.50×');assert.equal(dial.cap,'good');assert.match(dial.d.why,/Meta says 3 purchases · Shopify saw 2 orders from Meta ads/);
+ assert.equal(attributionDial({...spend,days:[]},orders,settings,today,'all',true).t,'No data');
+ for(const [value,zone] of [[1.5,'good'],[1.5001,'warn'],[1.8,'warn'],[1.8001,'alarm']] as const)assert.equal(attributionZone(value),zone);
+});

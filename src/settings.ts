@@ -56,6 +56,7 @@ export interface Settings {
   googleCustomerId: string;
   googleLoginCustomerId: string;
   tiktokAdvertiserId: string;
+  metaSources: { source: string }[];
   ourActors: { actorId: string }[];
   metaOwners: { campaignId: string; owner: 'ours' | 'freelancer'; test?: boolean }[];
   expectedGoogleCampaigns: { campaignId: string }[];
@@ -145,7 +146,7 @@ export function defaultSettings(): Settings {
     series1UsTargetDate: '',
     ...creativeSettingsDefaults(),
     metaAdAccountId: '', googleCustomerId: '', googleLoginCustomerId: '', tiktokAdvertiserId: '',
-    ourActors: [], metaOwners: [], expectedGoogleCampaigns: [],
+    metaSources: ['facebook','fb','instagram','ig','meta','an','msg'].map(source=>({source})), ourActors: [], metaOwners: [], expectedGoogleCampaigns: [],
     blendedMetaTripwireGbp: 28,
     creatorRules: {
       assetCapGbp: 200, minimumUsageMonths: 3, pushPriceBeforeExtendingUsage: true,
@@ -336,6 +337,10 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
     googleCustomerId: accountId(value.googleCustomerId, 'googleCustomerId', true),
     googleLoginCustomerId: accountId(value.googleLoginCustomerId, 'googleLoginCustomerId', true),
     tiktokAdvertiserId: accountId(value.tiktokAdvertiserId, 'tiktokAdvertiserId'),
+    metaSources: list(value.metaSources, 'metaSources', (row,path) => {
+      const parsed=object(row,['source'],path);
+      return {source:text(parsed.source,`${path}.source`,60).toLowerCase()};
+    },row=>row.source),
     ourActors: list(value.ourActors, 'ourActors', (row, path) => {
       const parsed = object(row, ['actorId'], path);
       const actorId = accountId(parsed.actorId, `${path}.actorId`);

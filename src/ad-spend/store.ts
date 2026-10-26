@@ -221,7 +221,7 @@ export async function spendFacts(
   for (const source of sources.filter((s) => s.live)) {
     const account = accountFor(source.source, settings);
     const stored = await db.query<any>(
-      `SELECT campaign_id,campaign_name,ad_set_id,ad_set_name,uk_day::text,spend_amount::text,currency,day_basis,target_countries FROM pulse.ad_spend WHERE mode='live' AND source=$1 AND account_id=$2 AND uk_day BETWEEN $3 AND $4`,
+      `SELECT campaign_id,campaign_name,ad_set_id,ad_set_name,uk_day::text,spend_amount::text,currency,day_basis,target_countries,purchases FROM pulse.ad_spend WHERE mode='live' AND source=$1 AND account_id=$2 AND uk_day BETWEEN $3 AND $4`,
       [source.source, account, from, to],
     );
     rows.push(
@@ -239,7 +239,7 @@ export async function spendFacts(
           day: r.uk_day,
           amount: r.spend_amount,
           currency: r.currency,
-          dayBasis: r.day_basis,
+          dayBasis: r.day_basis, purchases:r.purchases==null?null:Number(r.purchases),
         };
       }),
     );

@@ -1,3 +1,4 @@
+import { attributionDial } from '../ad-spend/attribution.js';
 import { metaRisks } from '../ad-spend/risks.js';
 import { spendNeeds, type AdHeroInputs } from '../ad-spend/metrics.js';
 import type { Database } from '../db.js';
@@ -81,6 +82,10 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
     pace = { markets: { UK: marketView('UK'), US: marketView('US') } } satisfies SeriesPaceCard;
   }
   snapshot.widgets.w017 = { source: ['shopify'], mode: facts.mode, kind: 'series-pace', value: pace };
+  if(facts.mode==='live'&&adInputs?.spend.sources.some(s=>s.source==='meta'&&s.live)) {
+    const markets=Object.fromEntries((['all','uk','us'] as const).map(m=>[m,attributionDial(adInputs.spend,data.orders,settings,today,m,data.ready&&data.from<=addDays(today,-14))])) as Record<'all'|'uk'|'us',DialModel>;
+    snapshot.widgets.w019={kind:'dial',source:['meta','shopify'],mode:'live',value:markets.all,markets};
+  }
   const stamp = facts.mode === 'sample' ? 'Shopify sample data' : 'Shopify live';
   const poll = facts.jobs.find(j => j.name === 'poll');
   const freshness = poll?.last_success_at ? `Last worked at ${new Date(poll.last_success_at).toISOString()}` : 'First sync pending';

@@ -107,8 +107,8 @@ const metrics: Record<Metric, (totals: Totals) => number> = {
   spend: (t) => t.spend,
   roas: (t) => divide(t.net, t.spend),
   margin: (t) => profitAndMargin({ netSales: t.net, landedCost: t.net * 0.25, adSpend: t.spend }).margin,
-  ukcpo: (t) => divide(t.ukM, t.uk),
-  uscpo: (t) => divide(t.usM, t.us),
+  ukcpo: (t) => metaCostPerOrder(t.ukM,t.uk),
+  uscpo: (t) => metaCostPerOrder(t.usM,t.us),
 };
 
 export interface HeroRangeOptions {
@@ -212,9 +212,8 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
   const amber = rounded(bar * 0.9);
   const poundsBar = formatPounds(bar, value => formatNumber(Math.round(value * 100) / 100));
   const zones: Zone[] = [[Math.min(12, bar / 2), amber, 'good'], [amber, bar, 'warn'], [bar, Math.max(40, bar + 12), 'decide']];
-  const cpo = (key: 'ukcpo' | 'uscpo', country: 'UK' | 'US'): HeroPeriod['ukcpo'] => {
-    const value = metrics[key](t);
-    const over = selected.filter((row) => metrics[key](aggregateDays([row])) > bar).length;
+  const cpoDial = (key: 'ukcpo' | 'uscpo', country: 'UK' | 'US'): HeroPeriod['ukcpo'] => {
+    const {value,over} = cpo(t,selected,key,bar);
     return {
       v: rounded(value), min: zones[0]![0], max: zones[2]![1], t: formatPounds(value), l: `${country} Meta cost per order`, z: structuredClone(zones),
       s: `${partial ? 'so far · ' : one ? '' : `${n}-day blend · `}bar ${poundsBar}`,
@@ -291,6 +290,13 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
         extra: sampleWaterfall,
       },
     }, ['shopify', 'meta', 'google-ads', 'github-hq']),
-    ukcpo: cpo('ukcpo', 'UK'), uscpo: cpo('uscpo', 'US'),
+    ukcpo: cpoDial('ukcpo', 'UK'), uscpo: cpoDial('uscpo', 'US'),
   };
 }
+
+/** Shared unrounded blend and daily threshold count used by hero dials and risk rules. */
+export function cpo(t: Totals, selected: readonly DailyMetrics[], key: 'ukcpo'|'uscpo', bar: number) {
+  return {value:metrics[key](t),over:selected.filter(row=>metrics[key](aggregateDays([row]))>bar).length};
+}
+
+export const metaCostPerOrder = (spend:number,orders:number):number => divide(spend,orders);

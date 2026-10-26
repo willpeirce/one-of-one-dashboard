@@ -13,6 +13,7 @@ import { SPEND_STALE_AFTER_MS } from './worker.js';
 import { spendMarket } from './placement.js';
 import { isTikTok } from '../shopify/order-market.js';
 export interface AdHeroInputs {
+  activity?: import('../meta-adsets/activity.js').MetaActivity[];
   spend: SpendFacts;
   costs: ShopifyCost[];
   estimates: { orderId: string; costPence: number | null; source: string }[];

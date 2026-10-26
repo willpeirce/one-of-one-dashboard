@@ -580,13 +580,13 @@ The hourly Orders chart extends to the later of today's poll hour and the newest
 
 Keep only update_ad_set_budget, update_campaign_budget, update_ad_set_run_status and update_campaign_run_status from paged GET activities. Billing and budget-schedule events are ignored. Persist deduplicated events, parse nested pence and budget/status labels, and add Our actors as live-entered IDs only; an empty list treats every event as not ours. Actor/object/app names are runtime data. Migration 045 stores deduplicated events and independent read health. Inclusive newest-event reads preserve events sharing a timestamp; the first read covers 30 days. The seven-day stat and every event detail remain read-only. Our actors uses the existing versioned Settings audit with a database allowlist update.
 
-## 2026-10-26, stage 2 part B contract: read-only risk rules (deferred)
+## 2026-10-26, stage 2 part B item 4: read-only risk rules
 
-The next part uses the hero's shared CPO calculation over three complete UK days, last-seven-day unassigned campaign spend, and individual budget changes strictly above 20% by actors outside Our actors. Our own changes raise no card. Freelancer campaigns are flagged and never touched. These rules write neither Meta nor Settings; exact threshold/window near misses need tests. Existing rules remain as they are until part B lands.
+Use the hero's extracted shared CPO calculation over three complete UK days, last-seven-day unassigned campaign spend, and individual budget changes strictly above 20% by actors outside Our actors. Our own changes raise no card. Freelancer campaigns are flagged and never touched. These rules write neither Meta nor Settings; exact threshold/window near misses need tests. Three complete UK days require stored Meta coverage and known Shopify counts; no Meta spend stays silent. Other risk cards inspect today and the preceding six UK days. Threshold comparisons use unrounded values; an exactly 20% change or exactly the CPO bar stays silent.
 
-## 2026-10-26, stage 2 part B contract: target-country fallback (deferred)
+## 2026-10-26, stage 2 part B item 4: target-country fallback
 
-Names remain authoritative. The planned fallback stores only targeting countries and places otherwise unnamed sets as UK when all countries are GB/JE/GG/IM, US when US alone, otherwise unknown, asking for UK/US in the name. It must reach live and backfill spend reads. This will supersede placement.ts's current no-targeting comment when implemented; part A deliberately retains the same name-based placement for hourly and daily rows.
+Names remain authoritative. The fallback stores only targeting countries and places otherwise unnamed sets as UK when all countries are GB/JE/GG/IM, US when US alone, otherwise unknown, asking for UK/US in the name. Migration 046 stores country-only projections with the set and daily/hourly spend. The reader uses the saved catalogue on live and backfill reads; the next poll picks up a newly read catalogue. This supersedes the no-targeting placement comment. Names, including conflicting market names, remain authoritative. No city, age or other targeting field is retained.
 
 ## 2026-10-26, stage 2 part B contract: Meta sources (deferred)
 

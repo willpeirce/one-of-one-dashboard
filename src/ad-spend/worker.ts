@@ -1,6 +1,6 @@
 import { syncActivity } from '../meta-adsets/activity.js';
 import { backfillMetaSpend } from './backfill.js';
-import { saveAdSets } from '../meta-adsets/catalogue.js';
+import { readAdSets, saveAdSets } from '../meta-adsets/catalogue.js';
 import type { Database } from '../db.js';
 import { addDays, ukToday } from '../hero-range.js';
 import { readSettings, type Settings } from '../settings.js';
@@ -141,6 +141,7 @@ export class SpendWorker {
         },
       });
     this.readers.set(readerScope, reader);
+    if (reader instanceof MetaSpend) reader.setTargetCountries(await readAdSets(this.db,account,settings));
     if (job.last_poll_at && now.getTime() - new Date(job.last_poll_at).getTime() < SPEND_POLL_INTERVAL_MS) {
       // A fresh migration can leave repair work due even when spend polled just before restart.
       if(source==='meta')this.startThruPlayRepair(reader,readerScope,account,settings,now);
@@ -208,7 +209,6 @@ export class SpendWorker {
         .catch(() => {});
       spendFailure = { error };
     }
-    if (source === 'meta' && !spendFailure && !job.backfill_done) this.startMetaBackfill(reader, account, settings, now);
     // Secondary Settings reads run after money is committed and cannot change its health.
     if (source === 'meta' && reader.readCampaigns) {
       try {
@@ -222,9 +222,14 @@ export class SpendWorker {
     }
     if (source === 'meta' && reader.readActivities) await syncActivity(this.db,account,since=>reader.readActivities!(account,since),now);
     if (source === 'meta' && reader.readAdSets) {
-      try { await saveAdSets(this.db, account, await reader.readAdSets(account, settings), settings, now); }
+      try {
+        const sets=await reader.readAdSets(account,settings);
+        await saveAdSets(this.db,account,sets,settings,now);
+        if(reader instanceof MetaSpend)reader.setTargetCountries(sets);
+      }
       catch (error) { console.error(`Meta ad sets read failed (${adErrorCode(error, 'meta')}).`); }
     }
+    if (source === 'meta' && !spendFailure && !job.backfill_done) this.startMetaBackfill(reader, account, settings, now);
     if (source === 'meta' && (reader instanceof MetaSpend || this.options.creativeReader)) {
       this.startThruPlayRepair(reader,readerScope,account,settings,now);
       const insightReader=this.options.creativeReader??this.creativeReaders.get(readerScope)??new MetaCreativeClient(reader as MetaSpend,this.options);

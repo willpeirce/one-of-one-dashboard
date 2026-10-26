@@ -149,6 +149,10 @@ export function parseTikTok(
   });
 }
 export class MetaSpend implements SpendReader {
+  private countries = new Map<string, string[]>();
+  setTargetCountries(sets: {id:string;targetCountries?:string[]}[]): void {
+    this.countries = new Map(sets.map(set=>[set.id,set.targetCountries ?? []]));
+  }
   private readonly http: AdTransport;
   constructor(
     private readonly token: string,
@@ -270,7 +274,10 @@ export class MetaSpend implements SpendReader {
       })) {
         // The requested action arrays are sparse on zero-action hours.
         const parsed = parseMeta({ data: page.map(row => ({ ...row, actions: row.actions ?? [], action_values: row.action_values ?? [] })) }, account, curr, zone, settings, hourly, yesterday)
-          .filter(row => row.day >= start && row.day <= end);
+          .filter(row => row.day >= start && row.day <= end).map(row => {
+            const targetCountries = this.countries.get(row.adSetId ?? '') ?? [];
+            return {...row,targetCountries,market:spendMarket({...row,targetCountries})};
+          });
         rows.push(...parsed.map(row => !hourly && zone !== 'Europe/London' ? { ...row, dayBasis: 'gmt' as const } : row));
         if (hourly) hours.push(...parsed.filter(row => row.day >= yesterday && row.day <= today) as SpendHourRow[]);
       }

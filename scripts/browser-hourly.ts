@@ -35,6 +35,9 @@ export async function checkHourly(context: BrowserContext): Promise<void> {
       const plot = chart.locator('.hourly-plot');
       await plot.focus(); await plot.press('ArrowLeft');
       assert.match(await chart.locator('.hourly-tooltip').innerText(), new RegExp(`${hourLabel(Math.max(0, fixture.hero.today.markets!.us.hourly!.nowHour - 1))} · Today \\d+ · Yesterday \\d+`));
+      for (let hour = 0; hour < 24; hour++) await plot.press('ArrowRight');
+      assert.match(await chart.locator('.hourly-tooltip').innerText(), /11 PM · Today Not yet · Yesterday/);
+      assert.equal(await chart.locator('tbody tr').last().locator('td').first().innerText(), 'Not yet');
       await plot.press('Escape'); assert.equal(await chart.locator('.hourly-tooltip').isVisible(), false);
       await plot.hover({ position: { x: 100, y: 40 } });
       assert.equal(await chart.locator('.hourly-tooltip').isVisible(), true);

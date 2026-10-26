@@ -260,7 +260,7 @@ function renderHourlyOrders(): void {
       dot.setAttribute('cx', String(x(selected))); dot.setAttribute('cy', String(y(value ?? 0)));
     }
     tooltip.replaceChildren();
-    for (const [text, strong] of [[`${hourLabel(selected)} · Today `, false], [data.today[selected] === null ? '—' : String(data.today[selected]), true], [' · Yesterday ', false], [String(data.yesterday[selected]), true]] as const) {
+    for (const [text, strong] of [[`${hourLabel(selected)} · Today `, false], [data.today[selected] === null ? 'Not yet' : String(data.today[selected]), true], [' · Yesterday ', false], [String(data.yesterday[selected]), true]] as const) {
       const part = document.createElement(strong ? 'strong' : 'span'); part.textContent = text; tooltip.append(part);
     }
   };

@@ -259,20 +259,28 @@ export class MetaSpend implements SpendReader {
       for await (const page of this.readPages(`act_${account}/insights`, {
         fields: 'spend,campaign_id,campaign_name,adset_id,adset_name,date_start,impressions,inline_link_clicks,actions,action_values',
         level: 'adset', time_increment: '1', limit: '500',
-        time_range: JSON.stringify({ since: zone === 'Europe/London' ? start : addDays(start, -1), until: zone === 'Europe/London' ? end : addDays(end, 1) }),
+        time_range: JSON.stringify({ since: !hourly || zone === 'Europe/London' ? start : addDays(start, -1), until: !hourly || zone === 'Europe/London' ? end : addDays(end, 1) }),
         ...(hourly ? { breakdowns: 'hourly_stats_aggregated_by_advertiser_time_zone' } : {}),
       })) {
         // The requested action arrays are sparse on zero-action hours.
         const parsed = parseMeta({ data: page.map(row => ({ ...row, actions: row.actions ?? [], action_values: row.action_values ?? [] })) }, account, curr, zone, settings, hourly, yesterday)
           .filter(row => row.day >= start && row.day <= end);
-        rows.push(...parsed);
+        rows.push(...parsed.map(row => !hourly && zone !== 'Europe/London' ? { ...row, dayBasis: 'gmt' as const } : row));
         if (hourly) hours.push(...parsed.filter(row => row.day >= yesterday && row.day <= today) as SpendHourRow[]);
       }
     };
     if (zone === 'Europe/London') {
       await readWindow(from, [to, addDays(today, -2)].sort()[0]!, false);
       await readWindow([from, yesterday].sort().at(-1)!, to, true);
-    } else await readWindow(from, to, true);
+    } else {
+      try { await readWindow(from, to, true); }
+      catch (error) {
+        if (!(error instanceof AdError) || error.code !== 'hourly_unavailable' || to >= yesterday
+          || !['GMT', 'UTC', 'Etc/GMT', 'Etc/UTC'].includes(zone)) throw error;
+        rows.length = 0; hours.length = 0;
+        await readWindow(from, to, false);
+      }
+    }
     const result: SpendRead = aggregateHours(rows.map(({ ...row }) => { delete (row as SpendRow & { hour?: number }).hour; return row; }), from, to);
     if (from <= today && to >= yesterday) result.hourly = aggregateSpendHours(hours, yesterday, today);
     return result;

@@ -147,6 +147,7 @@ export function applySpend(
       ['TikTok', pounds(sum((r) => r.source === 'tiktok'))],
     ] as [string, number][]
   ).map(([name, value]) => [name, formatPounds(value)]);
+  if (rows.some(row => row.source === 'meta' && row.dayBasis === 'gmt')) split.push(['Meta history day boundaries', 'This period includes Meta daily rows reported as GMT days; hourly breakdown was unavailable, so those days are not re-aligned to UK time.']);
   split.push(['Unknown market', `${formatPounds(unknown)} not split into UK or US`]);
   for (const source of spend.sources)
     split.push([
@@ -384,7 +385,7 @@ export function spendNeeds(facts: SpendFacts, settings: Settings, today: string,
         `Last fetched ${source.fetchedAt ? fetchedTime(source.fetchedAt) : 'never'}. Totals that include ad spend leave it out until it recovers. Check Source health.`,
         '/sources');
   }
-  for (const row of facts.rows) {
+  for (const row of facts.rows.filter(row => row.day >= addDays(today, -13) && row.day <= today)) {
     if (row.market === 'unknown')
       add(
         `ad-market:${row.source}:${row.campaignId}`,

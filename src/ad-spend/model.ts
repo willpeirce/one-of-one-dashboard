@@ -20,6 +20,7 @@ export interface SpendRow {
   day: string;
   amount: string;
   currency: string;
+  dayBasis?: 'uk' | 'gmt';
   impressions?: number | null;
   linkClicks?: number | null;
   addsToCart?: number | null;
@@ -49,6 +50,7 @@ export class AdError extends Error {
   readonly providerSubcode: number | undefined;
   constructor(
     readonly code:
+      | 'hourly_unavailable'
       | 'http'
       | 'timeout'
       | 'invalid'

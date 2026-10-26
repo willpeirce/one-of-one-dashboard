@@ -1,3 +1,4 @@
+import { backfillMetaSpend } from './backfill.js';
 import { saveAdSets } from '../meta-adsets/catalogue.js';
 import type { Database } from '../db.js';
 import { addDays, ukToday } from '../hero-range.js';
@@ -29,6 +30,16 @@ export class SpendWorker {
   private creativePass?: Promise<void>;
   private creativeInsightPass?: Promise<void>;
   private thruPlayPass?: Promise<void>;
+  private readonly backfills = new Map<string, Promise<void>>();
+  waitForSpendBackfill(): Promise<void> { return Promise.all(this.backfills.values()).then(() => {}); }
+  private startMetaBackfill(reader: SpendReader, account: string, settings: Settings, now: Date): void {
+    if (this.backfills.has(account) || this.closing) return;
+    const pass = backfillMetaSpend(this.db, reader, account, settings, now, SPEND_POLL_INTERVAL_MS,
+      () => this.options.clock?.() ?? new Date(), () => this.closing)
+      .catch(error => console.error(`Meta spend backfill failed (${adErrorCode(error, 'meta')}).`))
+      .finally(() => { this.backfills.delete(account); });
+    this.backfills.set(account, pass);
+  }
   constructor(
     private readonly db: Database,
     private readonly env: NodeJS.ProcessEnv,
@@ -46,6 +57,7 @@ export class SpendWorker {
     this.closing = true;
     if (this.timer) clearInterval(this.timer);
     await Promise.all(this.runs.values());
+    await this.waitForSpendBackfill();
     await this.waitForCreatives();
   }
   waitForCreativeInsights(): Promise<void> {
@@ -103,8 +115,9 @@ export class SpendWorker {
       return;
     }
     await this.db.query(
-      'INSERT INTO pulse.ad_spend_jobs(source,account_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',
-      [source, account],
+      `INSERT INTO pulse.ad_spend_jobs(source,account_id,backfill_next,backfill_first)
+       VALUES ($1,$2,CASE WHEN $1='meta' THEN $3::date ELSE '2026-08-07'::date END,CASE WHEN $1='meta' THEN $3::date ELSE NULL END) ON CONFLICT DO NOTHING`,
+      [source, account, addDays(today, -400)],
     );
     const job = (await readJobs(this.db)).find(
       (j) => j.source === source && j.account_id === account,
@@ -155,7 +168,7 @@ export class SpendWorker {
       let cursor = job.backfill_next;
       for (
         let chunk = 0;
-        chunk < 4 && !job.backfill_done && cursor <= addDays(today, -2) && !this.closing;
+        chunk < 4 && source !== 'meta' && !job.backfill_done && cursor <= addDays(today, -2) && !this.closing;
         chunk++
       ) {
         const end = [addDays(cursor, 13), addDays(today, -2)].sort()[0]!;
@@ -194,6 +207,7 @@ export class SpendWorker {
         .catch(() => {});
       spendFailure = { error };
     }
+    if (source === 'meta' && !spendFailure && !job.backfill_done) this.startMetaBackfill(reader, account, settings, now);
     // Secondary Settings reads run after money is committed and cannot change its health.
     if (source === 'meta' && reader.readCampaigns) {
       try {

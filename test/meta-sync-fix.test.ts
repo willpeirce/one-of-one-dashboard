@@ -60,6 +60,7 @@ test('campaign and creative catalogue failures follow committed spend, preserve 
         campaign_id: campaign.id, campaign_name: 'Invented Birch UK',
         adset_id: '900000000802', adset_name: 'Invented Birch audience',
         date_start: '2026-10-10', spend: '12.500000',
+        ...(new URL(String(url)).searchParams.has('breakdowns') ? { hourly_stats_aggregated_by_advertiser_time_zone: '09:00:00 - 09:59:59' } : {}),
       }] });
       return response({ currency: 'GBP', timezone_name: 'Europe/London' });
     },
@@ -67,7 +68,7 @@ test('campaign and creative catalogue failures follow committed spend, preserve 
   t.after(() => worker.stop());
   await worker.tick('meta');
   await worker.waitForCreatives();
-  assert.deepEqual(requests.slice(0,3), ['act_9000000000', 'insights', 'campaigns']);
+  assert.deepEqual(requests.slice(0,4), ['act_9000000000', 'insights', 'insights', 'campaigns']);
   assert.equal(requests.filter(path=>path==='adsets').length,1);
   assert.equal(requests.filter(path=>path==='ads').length,1);
   assert.ok(requests.filter(path=>path==='insights').length>1,'daily creative insights continue after a catalogue failure');

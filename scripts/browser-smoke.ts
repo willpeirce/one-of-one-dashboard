@@ -733,6 +733,9 @@ async function checkPartialAdSpend(context: BrowserContext): Promise<void> {
       await page.locator('html[data-dashboard-ready="true"]').waitFor();
       await page.locator('#hero [data-k="spend"][data-state="warn"]').waitFor();
       assert.equal(await page.locator('#hourly-orders').isVisible(), true);
+      assert.equal(await page.locator('#hero .greet h1').isVisible(), true);
+      assert.equal(await page.locator('#hero .greet .sub').isVisible(), true);
+      assert.equal(await page.locator('#hero .four [data-k="spend"]').evaluate(el => getComputedStyle(el).order), '-1');
       await page.evaluate(() => window.scrollTo(0, 0));
       if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({
         path: `${process.env.PULSE_SCREENSHOT_DIR}/ad-spend-partial-${viewport.width}.png`,
@@ -741,6 +744,7 @@ async function checkPartialAdSpend(context: BrowserContext): Promise<void> {
       assert.equal(await spend.getAttribute('data-state'), 'warn');
       assert.equal(await spend.locator('.chip.warn').count(), 1);
       assert.match((await spend.locator('.ss').innerText()).split('\n')[0]!, /^Meta missing · total excludes Meta(?: · so far)?$/);
+      await spend.evaluate(element => element.scrollIntoView({ block: 'center', behavior: 'instant' }));
       const bounds = await spend.evaluate(element => {
         const box = element.getBoundingClientRect();
         const subtitle = element.querySelector('.ss')!;
@@ -754,19 +758,21 @@ async function checkPartialAdSpend(context: BrowserContext): Promise<void> {
         document.body.append(colour);
         const amber = getComputedStyle(colour).color;
         colour.remove();
-        return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, lines,
+        const firstRow = Array.from(element.parentElement!.children).every(tile => tile.getBoundingClientRect().top >= box.top);
+        return { firstRow, left: box.left, right: box.right, top: box.top, bottom: box.bottom, lines,
           amber, border: getComputedStyle(element).borderTopColor, height: innerHeight,
           sideways: document.documentElement.scrollWidth > innerWidth,
           subtitleOverflow: subtitle.scrollWidth > subtitle.clientWidth };
       });
       step = `${scope}: amber border at ${viewport.width}px`;
       assert.equal(bounds.border, bounds.amber, 'Partial spend has an amber tile border');
-      step = `${scope}: above the fold at ${viewport.width}px (${Math.round(bounds.top)}–${Math.round(bounds.bottom)})`;
-      assert.ok(bounds.top >= 0 && bounds.bottom <= bounds.height, 'The warning tile must be above the fold on Home');
+      step = `${scope}: first tile with visible warning at ${viewport.width}px (${Math.round(bounds.top)}–${Math.round(bounds.bottom)})`;
+      assert.equal(bounds.firstRow, true, 'Partial spend occupies the first grid row while the greeting stays visible');
+      assert.ok(bounds.top >= 0 && bounds.bottom <= bounds.height, 'The warning tile fits in the viewport when scrolled into view');
       step = `${scope}: wrapped warning at ${viewport.width}px`;
       assert.ok(bounds.lines.length > 0);
       assert.ok(bounds.lines.every(line => line.left >= bounds.left && line.right <= bounds.right && line.bottom <= bounds.height),
-        'Every wrapped line of the source warning must fit inside the tile and the opening viewport');
+        'Every wrapped line of the source warning must fit inside the tile and visible viewport');
       if (viewport.width === 390) assert.ok(bounds.lines.length > 1, 'The phone source warning wraps within its tile');
       assert.equal(bounds.sideways, false);
       assert.equal(bounds.subtitleOverflow, false);

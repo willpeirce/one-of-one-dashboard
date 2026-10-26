@@ -47,6 +47,7 @@ async function refreshAccountVideos(db:Database,reader:CreativeReader,account:st
     [account,video.id,video.width,video.height,video.lengthSeconds,now]);
    await tx.query('UPDATE pulse.creative_jobs SET account_video_after=$2,account_video_list_complete=$3 WHERE account_id=$1',[account,result.after,result.after===null]);
   });
+  limit=Math.min(100,limit*2);
   after=result.after;
   if(!after){complete=true;break;}
   seen.add(after);number++;

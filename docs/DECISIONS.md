@@ -568,3 +568,30 @@ Read today and yesterday by advertiser-timezone hour for every Meta account, inc
 Migration 041 resets only Meta's spend cursor to 400 Europe/London calendar days before migration time; new Meta connections use the same horizon. Google, TikTok and creative jobs keep their cursors. Read forward through two days ago in at most four fortnight chunks per poll, saving each range and cursor atomically. The background pass shares the existing GET transport and its backoff, halves HTTP 500/Meta code 1 windows down to one day, persists the smaller window for restart, and yields when the next live poll is due. A successful chunk restores the fortnight size. History errors have their own progress line and cannot mark fresh live spend unavailable.
 
 Only an explicit hourly-breakdown refusal for old GMT/UTC-account history permits daily fallback. Keep those rows marked GMT days and disclose them in the selected spend period; never relabel them as UK-aligned. Other refusals, recent-hour refusals and non-GMT account-day fallbacks remain failures. Re-reads replace rows and the day-basis flag. Unknown-market and currency cards inspect today plus the preceding thirteen UK days, so the history expansion does not revive old warnings.
+
+
+## 2026-10-26, stage 2 part A: scope and review fixes
+
+Use Will's permitted part A/part B split: all eight review fixes (items 7–14), followed by hourly spend and backfill (1–2), in separate item commits. Activity history, risk rules, attribution and first-order CAC (3–6) remain whole features for part B. Each touches ingestion, storage, calculations and presentation; shipping partial Settings or live figures would make this already substantial spend change harder to review. BUILD-STATUS carries their exact remaining work.
+
+The hourly Orders chart extends to the later of today's poll hour and the newest counted order hour, capped by the current UK hour. Before the first poll on a new UK day, its base is the current UK hour. This supersedes the poll-only chart clock. Keep the salutation and summary during partial spend, superseding 25 Oct's greeting-hiding decision; the spend tile still comes first. Channel comparison is per UK day under the shared non-test rule: a short day means orders are missing from stored data, without offsetting it against another day's surplus. Order numbers stay in the existing live-only Sources diagnostics. Clean video pages grow back to 100; missing-video reasons agree in singular/plural; future-hour tooltips match the hidden table; resize work is coalesced per frame.
+
+## 2026-10-26, stage 2 part B contract: activity types and Our actors (deferred)
+
+The next part keeps only update_ad_set_budget, update_campaign_budget, update_ad_set_run_status and update_campaign_run_status from paged GET activities. Billing and budget-schedule events are ignored. Persist deduplicated events, parse nested pence and budget/status labels, and add Our actors as live-entered IDs only; an empty list treats every event as not ours. Actor/object/app names are runtime data. No activity reader or Setting is claimed in part A.
+
+## 2026-10-26, stage 2 part B contract: read-only risk rules (deferred)
+
+The next part uses the hero's shared CPO calculation over three complete UK days, last-seven-day unassigned campaign spend, and individual budget changes strictly above 20% by actors outside Our actors. Our own changes raise no card. Freelancer campaigns are flagged and never touched. These rules write neither Meta nor Settings; exact threshold/window near misses need tests. Existing rules remain as they are until part B lands.
+
+## 2026-10-26, stage 2 part B contract: target-country fallback (deferred)
+
+Names remain authoritative. The planned fallback stores only targeting countries and places otherwise unnamed sets as UK when all countries are GB/JE/GG/IM, US when US alone, otherwise unknown, asking for UK/US in the name. It must reach live and backfill spend reads. This will supersede placement.ts's current no-targeting comment when implemented; part A deliberately retains the same name-based placement for hourly and daily rows.
+
+## 2026-10-26, stage 2 part B contract: Meta sources (deferred)
+
+The planned Meta sources default is facebook, fb, instagram, ig, meta, an, msg, matched case-insensitively alongside fbclid. Settle it from the live ratio detail's other-source counts after merge. The ratio uses fourteen complete UK days and counted Shopify orders, with campaign-ID owner matches and explicitly estimated owner orders when no match exists. Part A keeps the labelled sample dial; no live attribution claim is added.
+
+## 2026-10-26, stage 2 part B contract: first-order CAC (deferred)
+
+Before building, verify customerOrderIndex on Shopify Admin GraphQL 2026-10 with existing scopes; stop this item if another scope is required. Store only first/repeat/unknown, never a customer ID. Re-read stored orders through a resumable background job that yields to polling. Once complete for a period, use placed spend divided by counted first orders; until then label the all-counted-order fallback and waiting count. This is the requested replacement for the earlier CAC decision, taking effect only when part B implements it. Part A still uses all counted orders.

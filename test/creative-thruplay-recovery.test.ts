@@ -83,7 +83,7 @@ test('returned rows with omitted video fields settle zero; absent ad rows wait t
  assert.deepEqual((await thruPlayHealth(db,account,now,'lifetime')).lastRunReport,{tried:0,filled:0,refused:0,waiting:1,codes:[]});
  for(const date of ['2026-10-21','2026-10-22'])await repairThruPlays(db,reader,account,new Date(`${date}T12:00:00Z`),'lifetime');
  const marker=(await db.query('SELECT completed,read_count,given_up_reason,retry_after FROM pulse.creative_thruplay_days')).rows[0]!;
- assert.equal(marker.completed,false);assert.equal(marker.read_count,3);assert.match(String(marker.given_up_reason),/no video row/);assert.equal(marker.retry_after,null);
+ assert.equal(marker.completed,false);assert.equal(marker.read_count,3);assert.equal(marker.given_up_reason,'1 ad with spend has no video row');assert.equal(marker.retry_after,null);
  const health=await thruPlayHealth(db,account,now,'lifetime');assert.equal(health.givenUp,1);assert.equal(health.completed,0);
  assert.match(thruPlayLine(health),/1 day given up after 3 reads/);
  assert.ok((await db.query('SELECT thruplays_backfilled_at FROM pulse.creative_jobs')).rows[0]!.thruplays_backfilled_at);
@@ -94,4 +94,18 @@ test('returned rows with omitted video fields settle zero; absent ad rows wait t
   readThruPlays:async()=>[{adId:'invented-zero-ad',day:'2026-10-23',plays:0,thruPlays:0}]};
  await repairThruPlays(db,zeroReader,account,new Date('2026-10-23T13:00:00Z'),'lifetime');
  assert.equal((await thruPlayHealth(db,account,new Date('2026-10-23T13:00:00Z'),'lifetime')).completed,1);
+});
+
+test('given-up SQL reason uses the plural for two missing video rows',async t=>{
+ const db=await createTestDatabase();t.after(()=>db.close());
+ const account='invented-plural-repair',day='2026-10-20',now=new Date(`${day}T12:00:00Z`);
+ await db.query('INSERT INTO pulse.creative_jobs(account_id) VALUES($1)',[account]);
+ for(const suffix of ['a','b']){
+  const adId=`invented-plural-${suffix}`,groupId=`invented-plural-video-${suffix}`;
+  await saveCatalogue(db,account,[{ad:creativeAd(adId,groupId,{accountId:account}),media:{...creativeGroup(groupId),thumbnail:null,poster:null,frames:[]}}],now);
+ }
+ await saveInsights(db,account,day,day,['a','b'].map(suffix=>creativeInsight(`invented-plural-${suffix}`,{day,plays:null,thruPlays:null})),now);
+ const reader:CreativeReader={readCatalogue:async function*(){},readInsights:async()=>[],imageBytes:async()=>new Uint8Array(),videoFrames:async()=>[],videoSource:async()=>'',readThruPlays:async()=>[]};
+ for(const date of [day,'2026-10-21','2026-10-22'])await repairThruPlays(db,reader,account,new Date(`${date}T12:00:00Z`),'lifetime');
+ assert.equal((await db.query('SELECT given_up_reason FROM pulse.creative_thruplay_days')).rows[0]!.given_up_reason,'2 ads with spend have no video row');
 });

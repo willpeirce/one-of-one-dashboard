@@ -733,7 +733,12 @@ function boot(): void {
   sheet.addEventListener('click', (event) => { if (event.target === sheet) sheet.close(); });
   connectUpdates();
   installPullToRefresh({ refresh: refreshDashboard, status: get('#update-status') });
-  window.addEventListener('resize', renderHourlyOrders);
+  let hourlyResizePending = false;
+  window.addEventListener('resize', () => {
+    if (hourlyResizePending) return;
+    hourlyResizePending = true;
+    requestAnimationFrame(() => { hourlyResizePending = false; renderHourlyOrders(); });
+  });
   window.addEventListener('pagehide', () => stream?.close(), { once: true });
   window.addEventListener('pageshow', (event) => { if (event.persisted) window.location.reload(); });
   document.documentElement.dataset.dashboardReady = 'true';

@@ -603,3 +603,7 @@ Persist redacted, 200-character 4xx messages alongside the safe provider code. H
 ## 2026-10-26, part B item 15: visible stalled history
 
 Count failed Meta history runs at the persisted cursor, separately from live-source failures. After three failures a read-only Needs card names the day and safe error code; retrying continues. Successful cursor commits reset the counter atomically. Migration 044 adds the durable counter.
+
+## 2026-10-26, part B item 16: elapsed-minute spend comparison
+
+Yesterday's earlier UK hours count in full; its poll hour counts by poll minute divided by 60. This supersedes part A's inclusive whole-hour comparison and applies to All, UK and US. Integer micros retain precision before the final display rounding.

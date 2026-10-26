@@ -41,12 +41,12 @@ test('GMT Meta reports retain UK hours across autumn and spring and London also 
   assert.deepEqual(JSON.parse(reads[2]!.searchParams.get('time_range')!), { since: '2026-10-25', until: '2026-10-26' });
 });
 
-test('hourly storage replaces, prunes and compares identical poll hours for All, UK and US', async t => {
+test('hourly storage replaces, prunes and pro-rates the poll hour at 14:30 for All, UK and US', async t => {
   const db = await createTestDatabase(); t.after(() => db.close());
-  const today = '2026-10-26', yesterday = addDays(today, -1), now = new Date(`${today}T02:15:00Z`);
+  const today = '2026-10-26', yesterday = addDays(today, -1), now = new Date(`${today}T14:30:00Z`);
   const hourly: SpendHourRow[] = [];
-  for (const day of [yesterday, today]) for (const market of ['uk', 'us', 'unknown'] as const) for (const hour of [0, 1, 2, 3, 23]) {
-    if (day === today && hour > 2) continue;
+  for (const day of [yesterday, today]) for (const market of ['uk', 'us', 'unknown'] as const) for (const hour of [0, 1, 14, 15, 23]) {
+    if (day === today && hour > 14) continue;
     hourly.push({ source: 'meta', accountId: settings.metaAdAccountId, campaignId: `invented-${market}`, campaignName: `Invented ${market.toUpperCase()}`,
       adSetId: `invented-${market}-set`, adSetName: `Invented ${market.toUpperCase()} set`, market, owner: 'ours', day, hour, amount: market === 'us' ? '2.000000' : '1.000000', currency: 'GBP' });
   }
@@ -57,16 +57,16 @@ test('hourly storage replaces, prunes and compares identical poll hours for All,
   const env = { META_ACCESS_TOKEN: randomBytes(16).toString('hex') };
   const facts = await spendFacts(db, settings, env, 'live', yesterday, today, now);
   assert.equal(facts.metaHourly!.rows.length, 24, 'rereads replace the same hours');
-  for (const [market, expected] of [['all', '12.00'], ['uk', '3.00'], ['us', '6.00']] as const) {
+  for (const [market, expected] of [['all', '10.00'], ['uk', '2.50'], ['us', '5.00']] as const) {
     const hero = buildHeroRange([{ date: today, net: 1, o: 1, uk: 1, us: 0, sess: 1, ukS: 1, ukM: 0, usM: 0, g: 0, ours: 0 }], today, today, { today });
     applySpend(hero, [], settings, today, { spend: facts, costs: [], estimates: [], now, market });
     assert.ok(hero.spend.ss.includes(`Meta £${expected} by this time yesterday`));
     hero.from = yesterday; applySpend(hero, [], settings, today, { spend: facts, costs: [], estimates: [], now, market });
     assert.doesNotMatch(hero.spend.ss, /by this time yesterday/);
   }
-  await saveSpend(db, 'meta', settings.metaAdAccountId, '2026-10-27', '2026-10-27', [], new Date('2026-10-27T02:15:00Z'));
+  await saveSpend(db, 'meta', settings.metaAdAccountId, '2026-10-27', '2026-10-27', [], new Date('2026-10-27T14:30:00Z'));
   assert.equal((await db.query('SELECT DISTINCT uk_day FROM pulse.meta_spend_hours')).rows.length, 2, 'two days old is retained');
-  await saveSpend(db, 'meta', settings.metaAdAccountId, '2026-10-28', '2026-10-28', [], new Date('2026-10-28T02:15:00Z'));
+  await saveSpend(db, 'meta', settings.metaAdAccountId, '2026-10-28', '2026-10-28', [], new Date('2026-10-28T14:30:00Z'));
   assert.equal((await db.query('SELECT DISTINCT uk_day::text AS day FROM pulse.meta_spend_hours')).rows[0]!.day, today);
   const empty: SpendRead = []; empty.hourly = [];
   await saveSpend(db, 'meta', settings.metaAdAccountId, yesterday, today, empty, now);

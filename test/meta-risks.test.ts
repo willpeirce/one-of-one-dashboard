@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {randomBytes} from 'node:crypto';
+import {decisionsHtml} from '../src/decisions/view.js';
 import {metaRisks} from '../src/ad-spend/risks.js';
 import {spendMarket} from '../src/ad-spend/placement.js';
 import {defaultSettings} from '../src/settings.js';
@@ -49,4 +50,20 @@ test('only countries survive catalogue parsing and reach current and historical 
   const saved=await spendFacts(db,settings,{META_ACCESS_TOKEN:randomBytes(16).toString('hex')},'live',day,day,now);
   assert.equal(saved.rows[0]!.market,'uk');assert.deepEqual(saved.rows[0]!.targetCountries,['GB','JE']);
  }
+});
+
+
+test('Meta CPO warns for positive spend with no counted orders and exposes a display figure', () => {
+ const noOrders = days.map(day => ({...day, o: 0, uk: 0, us: 0}));
+ const zero = metaRisks(facts([row]), noOrders, [], settings, today).find(need => need.id === 'meta-cpo:uk')!;
+ assert.equal(zero.source, 'meta'); assert.equal(zero.state, 'warn');
+ assert.deepEqual(zero.figure, {value: '£90.00', label: 'spent · 0 orders'});
+ assert.match(zero.why, /0 counted orders/);
+ assert.ok(!metaRisks(facts([{...row, amount: '0'}]), noOrders, [], settings, today).some(need => need.id.startsWith('meta-cpo:')));
+ const ordinary = metaRisks(facts([{...row, amount: '120'}]), days, [], settings, today).find(need => need.id === 'meta-cpo:uk')!;
+ assert.deepEqual(ordinary.figure, {value: '£40.00', label: 'an order · 3 days'});
+ const html = decisionsHtml({shopify: {mode: 'live', needs: [zero, ordinary], checks: [], stock: [], detail: {},
+   live: {lastOrder: '', dispatch: '', carts: ''}}});
+ assert.doesNotMatch(html, /Shopify/); assert.match(html, /Meta/);
+ assert.ok(metaRisks(facts([row]), days, [], settings, today).every(need => need.source === 'meta'));
 });

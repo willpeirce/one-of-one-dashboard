@@ -43,7 +43,10 @@ export async function checkMarketHero(page: Page, snapshot: DashboardSnapshot, w
     assert.equal(await page.locator('[data-k="ukcpo"]').isVisible(), market !== 'us');
     assert.equal(await page.locator('[data-k="uscpo"]').isVisible(), market !== 'uk');
   };
-  await page.locator('[data-tab="ads"]').click();
+  await page.locator('#tabs [data-tab="ads"]').click();
+  const sampleDials = page.locator('#p-ads .sample-dials');
+  if (await sampleDials.count() && await sampleDials.isVisible() && await sampleDials.getAttribute('open') === null)
+    await sampleDials.locator(':scope > summary').click();
   await page.locator('[data-period="today"]').click();
   let heroRequests = 0;
   const listener = (request: { url(): string }) => { if (new URL(request.url()).pathname === '/api/hero') heroRequests++; };

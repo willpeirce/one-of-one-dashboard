@@ -53,6 +53,7 @@ export interface Settings {
   creativeScanOutputPrice: number;
   creativeScanCapGbp: number;
   creativeFreelancerInitial: string;
+  freelancerLabel: string;
   googleCustomerId: string;
   googleLoginCustomerId: string;
   tiktokAdvertiserId: string;
@@ -145,6 +146,7 @@ export function defaultSettings(): Settings {
     series1UkTargetDate: '',
     series1UsTargetDate: '',
     ...creativeSettingsDefaults(),
+    freelancerLabel: 'Freelancer',
     metaAdAccountId: '', googleCustomerId: '', googleLoginCustomerId: '', tiktokAdvertiserId: '',
     metaSources: ['facebook','fb','instagram','ig','meta','an','msg'].map(source=>({source})), ourActors: [], metaOwners: [], expectedGoogleCampaigns: [],
     blendedMetaTripwireGbp: 28,
@@ -334,6 +336,13 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
       if (typeof value.creativeFreelancerInitial !== 'string' || !/^[A-Za-z]$/.test(value.creativeFreelancerInitial)) return invalid('creativeFreelancerInitial');
       return value.creativeFreelancerInitial.toUpperCase();
     })(),
+    freelancerLabel: (() => {
+      if (typeof value.freelancerLabel !== 'string') return invalid('freelancerLabel');
+      const label = value.freelancerLabel.trim();
+      if (!label) return defaults.freelancerLabel;
+      if (!/^[\p{L}\p{Nd} '’-]{1,24}$/u.test(label)) return invalid('freelancerLabel');
+      return label;
+    })(),
     googleCustomerId: accountId(value.googleCustomerId, 'googleCustomerId', true),
     googleLoginCustomerId: accountId(value.googleLoginCustomerId, 'googleLoginCustomerId', true),
     tiktokAdvertiserId: accountId(value.tiktokAdvertiserId, 'tiktokAdvertiserId'),
@@ -428,6 +437,7 @@ function storedSettings(input: unknown): Settings {
     series1UsTargetDate: defaults.series1UsTargetDate,
     metaSources: defaults.metaSources,
     ourActors: defaults.ourActors,
+    freelancerLabel: defaults.freelancerLabel,
     ...input as Record<string, unknown>,
   };
   if (!Object.hasOwn(stored, 'overheads') && !Object.hasOwn(stored, 'monthlyOverheadsGbp')) return validateSettings(stored);

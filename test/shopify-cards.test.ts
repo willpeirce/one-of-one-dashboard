@@ -14,7 +14,7 @@ import { blankObservation, dispatchLate, evaluateWatchdogs, observe, updateObser
 import { applyShopifyDashboard } from '../src/shopify/dashboard.js';
 import { getSampleDashboard } from '../src/sample-dashboard.js';
 import { dashboardPage } from '../src/dashboard-view.js';
-import { needsHtml } from '../src/shopify/presentation.js';
+import { decisionsHtml } from '../src/decisions/view.js';
 import { createTestDatabase } from './helpers/database.js';
 const now = new Date(appConfig.shopify.sampleNow);
 const settings = defaultSettings();
@@ -110,6 +110,7 @@ test('stock uses allocated lines by warehouse, 60 complete days and Settings; mi
   const f=facts([o],'2026-07-01',[{kind:'inventory',data:stock,fetched_at:now}]);
   let cover=stockCover(f,'2026-09-30',{...settings,seasonalMultiplier:2}).find(s=>s.name==='ONE OF ONE · Northampton')!;
   assert.equal(cover.dailyRate,4/60*2); assert.equal(cover.cover,60); assert.match(cover.basis,/no restock/);
+  assert.equal(cover.market,'uk'); assert.equal(cover.product,appConfig.shopify.stockProducts[0]!.name);
   assert.equal(stockCover(f,'2026-09-30',settings).find(s=>s.name===cover.name)!.cover,null);
   assert.equal(stockCover(facts([o],'2026-09-01',[{kind:'inventory',data:stock,fetched_at:now}]),'2026-09-30',{...settings,seasonalMultiplier:1}).find(s=>s.name===cover.name)!.cover,null);
   assert.ok(stockCover(f,'2026-09-30',settings).some(s=>s.available===null));
@@ -268,8 +269,8 @@ test('integrated live dashboard has no example Shopify values; mode changes cann
   assert.equal(snap.hero.today.net.mode,'live');assert.equal(snap.hero.today.net.n,66.62);assert.equal(snap.hero.today.spend.unavailable,true);
   assert.equal(snap.widgets.w037!.mode,'live');assert.match(snap.banner!,/Ad spend uses separately labelled source connections/);
   const html=dashboardPage(snap);assert.match(html,/£66.62/);assert.ok(!html.includes('£296'));assert.match(html,/New reviews/);
-  snap.shopify!.needs=[{id:'unsafe',state:'warn',title:'<script>alert(1)</script>',why:'<img src=x onerror=alert(1)>',link:'https://admin.shopify.com/store/example'}];
-  assert.ok(!needsHtml(snap.shopify!).includes('<script>'));assert.match(needsHtml(snap.shopify!),/&lt;img/);
+  snap.shopify!.needs=[{id:'unsafe',source:'shopify',state:'warn',title:'<script>alert(1)</script>',why:'<img src=x onerror=alert(1)>',link:'https://admin.shopify.com/store/example'}];
+  assert.ok(!decisionsHtml({shopify:snap.shopify!}).includes('<script>'));assert.match(decisionsHtml({shopify:snap.shopify!}),/&lt;img/);
 });
 
 test('self-check stays quiet about prior scan failures when no groups are waiting',()=>{
@@ -277,7 +278,8 @@ test('self-check stays quiet about prior scan failures when no groups are waitin
  const check=evaluateWatchdogs(facts([]),now,settings,blankObservation(),[],[source]).find(row=>row.id==='self')!;
  assert.equal(check.status,'pass');assert.doesNotMatch(check.why,/Anthropic/);
  source.scanWaiting=1;
- assert.equal(evaluateWatchdogs(facts([]),now,settings,blankObservation(),[],[source]).find(row=>row.id==='self')!.status,'tripped');
+ const failed=evaluateWatchdogs(facts([]),now,settings,blankObservation(),[],[source]).find(row=>row.id==='self')!;
+ assert.equal(failed.status,'tripped'); assert.equal(failed.link,'/sources');
 });
 
 test('Orders flowing checks paid times only inside compared windows and names each missing condition',async()=>{

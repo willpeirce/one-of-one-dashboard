@@ -34,7 +34,7 @@ export const dashboardTemplate = `
       <button class="pill" type="button" data-go="table"><svg class="ic" aria-hidden="true"><use href="#i-list"></use></svg><span class="t"><span data-sample-text="t0022">{{sample:t0022}}</span></span></button>
       <button class="pill" type="button" data-go="tests"><svg class="ic" aria-hidden="true"><use href="#i-flask"></use></svg><span class="t"><span data-sample-text="t0023">{{sample:t0023}}</span></span></button>
       <button class="pill" type="button" data-go="dials"><svg class="ic" aria-hidden="true"><use href="#i-dial"></use></svg><span class="t"><span data-sample-text="t0024">{{sample:t0024}}</span></span></button>
-      <button class="pill" type="button" data-go="foot"><svg class="ic" aria-hidden="true"><use href="#i-cal"></use></svg><span class="t"><span data-sample-text="t0025">{{sample:t0025}}</span></span></button>
+      <a class="pill" href="/audit" aria-label="Audit log"><svg class="ic" aria-hidden="true"><use href="#i-cal"></use></svg><span class="t"><span data-sample-text="t0025">{{sample:t0025}}</span></span></a>
     </nav>
     <div class="right">
       <label class="search"><svg class="ic" aria-hidden="true"><use href="#i-search"></use></svg><input id="q" type="search" placeholder="Find a dial" autocomplete="off" aria-label="Find a dial"></label>
@@ -111,101 +111,8 @@ export const dashboardTemplate = `
 
 <section class="chapter tbl" id="table" aria-labelledby="table-title">
   <header class="chapter-heading"><span class="chapter-number" aria-hidden="true">1</span><div class="chapter-copy"><p class="chapter-eyebrow">Decisions</p><h2 class="chapter-title" id="table-title"><span data-sample-text="t0123">{{sample:t0123}}</span></h2></div><span class="shm" id="deckcount"><span data-sample-text="t0124">{{sample:t0124}}</span></span></header>
-  <div class="deck" id="deck">
-
-    <article class="dcard" data-state="alarm" data-id="slabs" data-source="shopify github-hq" data-mode="sample">
-      <div class="rhead">
-        <span class="chip alarm"><span data-sample-text="t0125">{{sample:t0125}}</span></span>
-        <span class="src" aria-hidden="true"><svg class="ic"><use href="#i-box"></use></svg></span>
-        <button class="rt" type="button" aria-expanded="false"><h3><span data-sample-text="t0126">{{sample:t0126}}</span></h3><span class="rec"><span data-sample-text="t0127">{{sample:t0127}}</span></span></button>
-        <div class="nums"><div><b><span data-sample-text="t0128">{{sample:t0128}}</span></b><span><span data-sample-text="t0129">{{sample:t0129}}</span></span></div><div><b><span data-sample-text="t0130">{{sample:t0130}}</span></b><span><span data-sample-text="t0131">{{sample:t0131}}</span></span></div><div><b><span data-sample-text="t0132">{{sample:t0132}}</span></b><span><span data-sample-text="t0133">{{sample:t0133}}</span></span></div></div>
-        <div class="acts">
-          <button class="act primary" type="button" disabled title="Copy message to Helen · Not built yet" aria-label="Copy message to Helen · Not built yet">Not built yet</button>
-          <button class="act" type="button" disabled title="{{sample:t0008}}" aria-label="{{sample:t0009}}" data-sample-attributes="{&quot;title&quot;:&quot;t0008&quot;,&quot;aria-label&quot;:&quot;t0009&quot;}">Not built yet</button>
-        </div>
-      </div>
-      <p class="why" hidden><span data-sample-text="t0134">{{sample:t0134}}</span></p>
-
-
-    </article>
-
-    <article class="dcard" data-state="decide" data-id="news" data-source="meta" data-mode="sample">
-      <div class="rhead">
-        <span class="chip decide"><span data-sample-text="t0135">{{sample:t0135}}</span></span>
-        <span class="src" aria-hidden="true"><svg class="ic"><use href="#i-meta"></use></svg></span>
-        <button class="rt" type="button" aria-expanded="false"><h3><span data-sample-text="t0136">{{sample:t0136}}</span></h3><span class="rec"><span data-sample-text="t0137">{{sample:t0137}}</span></span></button>
-        <div class="nums"><div><b><span data-sample-text="t0138">{{sample:t0138}}</span></b><span><span data-sample-text="t0139">{{sample:t0139}}</span></span></div><div><b><span data-sample-text="t0140">{{sample:t0140}}</span></b><span><span data-sample-text="t0141">{{sample:t0141}}</span></span></div><div><b><span data-sample-text="t0142">{{sample:t0142}}</span></b><span><span data-sample-text="t0143">{{sample:t0143}}</span></span></div></div>
-      </div>
-      <p class="why" hidden><span data-sample-text="t0144">{{sample:t0144}}</span></p>
-
-
-    </article>
-
-    <article class="dcard" data-state="decide" data-id="google" data-source="google-ads github-hq" data-mode="sample">
-      <div class="rhead">
-        <span class="chip decide"><span data-sample-text="t0145">{{sample:t0145}}</span></span>
-        <span class="src" aria-hidden="true"><svg class="ic"><use href="#i-google"></use></svg></span>
-        <button class="rt" type="button" aria-expanded="false"><h3><span data-sample-text="t0146">{{sample:t0146}}</span></h3><span class="rec"><span data-sample-text="t0147">{{sample:t0147}}</span></span></button>
-        <div class="nums"><div><b><span data-sample-text="t0148">{{sample:t0148}}</span></b><span><span data-sample-text="t0149">{{sample:t0149}}</span></span></div><div><b><span data-sample-text="t0150">{{sample:t0150}}</span></b><span><span data-sample-text="t0151">{{sample:t0151}}</span></span></div><div><b><span data-sample-text="t0152">{{sample:t0152}}</span></b><span><span data-sample-text="t0153">{{sample:t0153}}</span></span></div></div>
-        <div class="acts">
-          <button class="act wa" type="button" disabled title="WhatsApp Laszlo · Not built yet" aria-label="WhatsApp Laszlo · Not built yet">Not built yet</button>
-          <button class="act" type="button" disabled title="{{sample:t0010}}" aria-label="{{sample:t0011}}" data-sample-attributes="{&quot;title&quot;:&quot;t0010&quot;,&quot;aria-label&quot;:&quot;t0011&quot;}">Not built yet</button>
-        </div>
-      </div>
-      <p class="why" hidden><span data-sample-text="t0154">{{sample:t0154}}</span></p>
-
-
-    </article>
-
-    <article class="dcard" data-state="decide" data-id="laszlo-us" data-source="meta" data-mode="sample">
-      <div class="rhead">
-        <span class="chip decide"><span data-sample-text="t0155">{{sample:t0155}}</span></span>
-        <span class="src" aria-hidden="true"><svg class="ic"><use href="#i-meta"></use></svg></span>
-        <button class="rt" type="button" aria-expanded="false"><h3><span data-sample-text="t0156">{{sample:t0156}}</span></h3><span class="rec"><span data-sample-text="t0157">{{sample:t0157}}</span></span></button>
-        <div class="nums"><div><b><span data-sample-text="t0158">{{sample:t0158}}</span></b><span><span data-sample-text="t0159">{{sample:t0159}}</span></span></div><div><b><span data-sample-text="t0160">{{sample:t0160}}</span></b><span><span data-sample-text="t0161">{{sample:t0161}}</span></span></div><div><b><span data-sample-text="t0162">{{sample:t0162}}</span></b><span><span data-sample-text="t0163">{{sample:t0163}}</span></span></div></div>
-        <div class="acts">
-          <button class="act wa" type="button" disabled title="WhatsApp Laszlo · Not built yet" aria-label="WhatsApp Laszlo · Not built yet">Not built yet</button>
-          <button class="act" type="button" disabled title="{{sample:t0012}}" aria-label="{{sample:t0013}}" data-sample-attributes="{&quot;title&quot;:&quot;t0012&quot;,&quot;aria-label&quot;:&quot;t0013&quot;}">Not built yet</button>
-        </div>
-      </div>
-      <p class="why" hidden><span data-sample-text="t0164">{{sample:t0164}}</span></p>
-
-
-    </article>
-
-    <article class="dcard" data-state="decide" data-id="mailchimp" data-source="mailchimp" data-mode="sample">
-      <div class="rhead">
-        <span class="chip decide"><span data-sample-text="t0165">{{sample:t0165}}</span></span>
-        <span class="src" aria-hidden="true"><svg class="ic"><use href="#i-mail"></use></svg></span>
-        <button class="rt" type="button" aria-expanded="false"><h3><span data-sample-text="t0166">{{sample:t0166}}</span></h3><span class="rec"><span data-sample-text="t0167">{{sample:t0167}}</span></span></button>
-        <div class="nums"><div><b><span data-sample-text="t0168">{{sample:t0168}}</span></b><span><span data-sample-text="t0169">{{sample:t0169}}</span></span></div><div><b><span data-sample-text="t0170">{{sample:t0170}}</span></b><span><span data-sample-text="t0171">{{sample:t0171}}</span></span></div><div><b><span data-sample-text="t0172">{{sample:t0172}}</span></b><span><span data-sample-text="t0173">{{sample:t0173}}</span></span></div></div>
-        <div class="acts">
-          <button class="act primary" type="button" disabled title="Add contact blocks · Not built yet" aria-label="Add contact blocks · Not built yet">Not built yet</button>
-          <button class="act" type="button" disabled title="Move up a tier · Not built yet" aria-label="Move up a tier · Not built yet">Not built yet</button>
-        </div>
-      </div>
-      <p class="why" hidden><span data-sample-text="t0174">{{sample:t0174}}</span></p>
-
-
-    </article>
-
-    <article class="dcard" data-state="decide" data-id="dates" data-source="shopify github-hq" data-mode="sample">
-      <div class="rhead">
-        <span class="chip decide"><span data-sample-text="t0175">{{sample:t0175}}</span></span>
-        <span class="src" aria-hidden="true"><svg class="ic"><use href="#i-bag"></use></svg></span>
-        <button class="rt" type="button" aria-expanded="false"><h3><span data-sample-text="t0176">{{sample:t0176}}</span></h3><span class="rec"><span data-sample-text="t0177">{{sample:t0177}}</span></span></button>
-        <div class="nums"><div><b><span data-sample-text="t0178">{{sample:t0178}}</span></b><span><span data-sample-text="t0179">{{sample:t0179}}</span></span></div><div><b><span data-sample-text="t0180">{{sample:t0180}}</span></b><span><span data-sample-text="t0181">{{sample:t0181}}</span></span></div><div><b><span data-sample-text="t0182">{{sample:t0182}}</span></b><span><span data-sample-text="t0183">{{sample:t0183}}</span></span></div></div>
-        <div class="acts">
-          <button class="act primary" type="button" disabled title="Keep Automated · Not built yet" aria-label="Keep Automated · Not built yet">Not built yet</button>
-          <button class="act" type="button" disabled title="Revert to Manual · Not built yet" aria-label="Revert to Manual · Not built yet">Not built yet</button>
-        </div>
-      </div>
-      <p class="why" hidden><span data-sample-text="t0184">{{sample:t0184}}</span></p>
-
-
-    </article>
-
-  </div>
+  <div class="deck" id="deck"></div>
+  <div id="creative-feedback" role="status" aria-live="polite"></div>
 </section>
 
 <section class="chapter revs" id="reviews" aria-labelledby="reviews-title"></section>
@@ -213,40 +120,32 @@ export const dashboardTemplate = `
 <section class="chapter tests" id="tests" aria-labelledby="tests-title">
   <header class="chapter-heading"><span class="chapter-number" aria-hidden="true">3</span><div class="chapter-copy"><p class="chapter-eyebrow">Experiments</p><h2 class="chapter-title" id="tests-title"><span data-sample-text="t0200">{{sample:t0200}}</span></h2></div><span class="shm" id="testcount"><span data-sample-text="t0201">{{sample:t0201}}</span></span></header>
   <article class="tcard" data-state="info" data-g="growth" data-id="t1" data-kind="coin" data-test="{{widget:w006}}" data-source="shopify" data-mode="sample" data-model-id="w006">
-    <div class="thead"><span class="tlane"><span data-sample-text="t0202">{{sample:t0202}}</span></span><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-bag"></use></svg></span><button class="rt" type="button" data-sheet="{{widget:w007}}" data-model-id="w007"><h3><span data-sample-text="t0203">{{sample:t0203}}</span></h3><span class="rec"><span data-sample-text="t0204">{{sample:t0204}}</span></span></button><span class="chip info" data-tchip><span data-sample-text="t0205">{{sample:t0205}}</span></span></div>
+    <div class="thead"><span class="tlane">Featured · <span class="chip info ghost">Sample</span></span><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-bag"></use></svg></span><button class="rt" type="button" data-sheet="{{widget:w007}}" data-model-id="w007"><h3 class="test-name"><span data-sample-text="t0203">{{sample:t0203}}</span></h3><span class="rec"><span data-sample-text="t0204">{{sample:t0204}}</span></span></button><span class="chip info" data-tchip><span data-sample-text="t0205">{{sample:t0205}}</span></span></div>
     <div class="tbody"><div class="tbars" data-bars></div><div class="tsure" data-sure></div></div>
     <p class="tsay" data-say></p>
-    <div class="tfoot"><span class="tprog" data-prog></span><div class="acts"><button class="act" data-call type="button" disabled title="{{sample:t0017}}" aria-label="{{sample:t0018}}" data-sample-attributes="{&quot;title&quot;:&quot;t0017&quot;,&quot;aria-label&quot;:&quot;t0018&quot;}">Not built yet</button></div></div>
+    <div class="tfoot"><span class="tprog" data-prog></span><div class="acts"><button class="act" data-call type="button" disabled title="Call · Not built yet" aria-label="Call · Not built yet">Not built yet</button></div></div>
 
 
   </article>
-  <div class="tsub"><span data-sample-text="t0206">{{sample:t0206}}</span></div>
-  <div class="trows">
-      <div class="trow" data-source="github-hq" data-mode="sample"><span class="chip warn"><span data-sample-text="t0207">{{sample:t0207}}</span></span><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-meta"></use></svg></span><button class="rt" type="button" data-sheet="{{widget:w008}}" data-model-id="w008"><h3><span data-sample-text="t0208">{{sample:t0208}}</span></h3><span class="rec"><span data-sample-text="t0209">{{sample:t0209}}</span></span></button><span class="d"><span data-sample-text="t0210">{{sample:t0210}}</span></span></div>
-      <div class="trow" data-source="github-hq" data-mode="sample"><span class="chip decide"><span data-sample-text="t0211">{{sample:t0211}}</span></span><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-bag"></use></svg></span><button class="rt" type="button" data-sheet="{{widget:w009}}" data-model-id="w009"><h3><span data-sample-text="t0212">{{sample:t0212}}</span></h3><span class="rec"><span data-sample-text="t0213">{{sample:t0213}}</span></span></button><button class="act" type="button" data-goto="dates"><span data-sample-text="t0214">{{sample:t0214}}</span></button></div>
-  </div>
-  <div class="tsub"><span data-sample-text="t0215">{{sample:t0215}}</span></div>
-  <div class="trows">
-      <div class="trow" data-source="github-hq" data-mode="sample"><span class="chip decide"><span data-sample-text="t0216">{{sample:t0216}}</span></span><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-meta"></use></svg></span><button class="rt" type="button" data-sheet="{{widget:w010}}" data-model-id="w010"><h3><span data-sample-text="t0217">{{sample:t0217}}</span></h3><span class="rec"><span data-sample-text="t0218">{{sample:t0218}}</span></span></button><span class="d"><span data-sample-text="t0219">{{sample:t0219}}</span></span></div>
-      <div class="trow" data-source="github-hq" data-mode="sample"><span class="chip info"><span data-sample-text="t0220">{{sample:t0220}}</span></span><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-meta"></use></svg></span><button class="rt" type="button" data-sheet="{{widget:w011}}" data-model-id="w011"><h3><span data-sample-text="t0221">{{sample:t0221}}</span></h3><span class="rec"><span data-sample-text="t0222">{{sample:t0222}}</span></span></button><span class="d"><span data-sample-text="t0223">{{sample:t0223}}</span></span></div>
-      <div class="trow wait" data-source="github-hq" data-mode="sample"><span class="chip info"><span data-sample-text="t0224">{{sample:t0224}}</span></span><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-bag"></use></svg></span><button class="rt" type="button" data-sheet="{{widget:w012}}" data-model-id="w012"><h3><span data-sample-text="t0225">{{sample:t0225}}</span></h3><span class="rec"><span data-sample-text="t0226">{{sample:t0226}}</span></span></button><span class="d"><span data-sample-text="t0227">{{sample:t0227}}</span></span></div>
-      <div class="trow wait" data-source="github-hq" data-mode="sample"><span class="chip info"><span data-sample-text="t0228">{{sample:t0228}}</span></span><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-bag"></use></svg></span><button class="rt" type="button" data-sheet="{{widget:w013}}" data-model-id="w013"><h3><span data-sample-text="t0229">{{sample:t0229}}</span></h3><span class="rec"><span data-sample-text="t0230">{{sample:t0230}}</span></span></button><span class="d"><span data-sample-text="t0231">{{sample:t0231}}</span></span></div>
-  </div>
-  <div class="tsub"><span data-sample-text="t0232">{{sample:t0232}}</span></div>
-  <div class="trows">
-      <div class="trow" data-source="github-hq" data-mode="sample"><span class="chip good"><span data-sample-text="t0233">{{sample:t0233}}</span></span><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-meta"></use></svg></span><button class="rt" type="button" data-sheet="{{widget:w014}}" data-model-id="w014"><h3><span data-sample-text="t0234">{{sample:t0234}}</span></h3><span class="rec"><span data-sample-text="t0235">{{sample:t0235}}</span></span></button><span class="d"><span data-sample-text="t0236">{{sample:t0236}}</span></span></div>
-      <div class="trow" data-source="github-hq" data-mode="sample"><span class="chip info"><span data-sample-text="t0237">{{sample:t0237}}</span></span><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-meta"></use></svg></span><button class="rt" type="button" data-sheet="{{widget:w015}}" data-model-id="w015"><h3><span data-sample-text="t0238">{{sample:t0238}}</span></h3><span class="rec"><span data-sample-text="t0239">{{sample:t0239}}</span></span></button><span class="d"><span data-sample-text="t0240">{{sample:t0240}}</span></span></div>
-      <div class="trow" data-source="github-hq" data-mode="sample"><span class="chip good"><span data-sample-text="t0241">{{sample:t0241}}</span></span><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-mail"></use></svg></span><button class="rt" type="button" data-sheet="{{widget:w016}}" data-model-id="w016"><h3><span data-sample-text="t0242">{{sample:t0242}}</span></h3><span class="rec"><span data-sample-text="t0243">{{sample:t0243}}</span></span></button><span class="d"><span data-sample-text="t0244">{{sample:t0244}}</span></span></div>
-  </div>
+  <div class="test-list"><span class="chip info ghost">Sample</span>
+      <div class="trow" data-source="github-hq" data-mode="sample"><span class="test-stage">Next</span><button class="rt" type="button" data-sheet="{{widget:w008}}" data-model-id="w008"><h3 class="test-name"><span data-sample-text="t0208">{{sample:t0208}}</span></h3></button></div>
+      <div class="trow" data-source="github-hq" data-mode="sample"><span class="test-stage">Won</span><button class="rt" type="button" data-sheet="{{widget:w014}}" data-model-id="w014"><h3 class="test-name"><span data-sample-text="t0234">{{sample:t0234}}</span></h3></button></div>
+      <div class="trow" data-source="github-hq" data-mode="sample"><span class="test-stage">Draw</span><button class="rt" type="button" data-sheet="{{widget:w015}}" data-model-id="w015"><h3 class="test-name"><span data-sample-text="t0238">{{sample:t0238}}</span></h3></button></div>
+  <details class="test-more"><summary>+6 more</summary><div class="trows">      <div class="trow" data-source="github-hq" data-mode="sample"><span class="chip decide"><span data-sample-text="t0211">{{sample:t0211}}</span></span><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-bag"></use></svg></span><button class="rt" type="button" data-sheet="{{widget:w009}}" data-model-id="w009"><h3 class="test-name"><span data-sample-text="t0212">{{sample:t0212}}</span></h3><span class="rec"><span data-sample-text="t0213">{{sample:t0213}}</span></span></button></div>
+      <div class="trow" data-source="github-hq" data-mode="sample"><span class="chip decide"><span data-sample-text="t0216">{{sample:t0216}}</span></span><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-meta"></use></svg></span><button class="rt" type="button" data-sheet="{{widget:w010}}" data-model-id="w010"><h3 class="test-name"><span data-sample-text="t0217">{{sample:t0217}}</span></h3><span class="rec"><span data-sample-text="t0218">{{sample:t0218}}</span></span></button><span class="d"><span data-sample-text="t0219">{{sample:t0219}}</span></span></div>
+      <div class="trow" data-source="github-hq" data-mode="sample"><span class="chip info"><span data-sample-text="t0220">{{sample:t0220}}</span></span><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-meta"></use></svg></span><button class="rt" type="button" data-sheet="{{widget:w011}}" data-model-id="w011"><h3 class="test-name"><span data-sample-text="t0221">{{sample:t0221}}</span></h3><span class="rec"><span data-sample-text="t0222">{{sample:t0222}}</span></span></button><span class="d"><span data-sample-text="t0223">{{sample:t0223}}</span></span></div>
+      <div class="trow wait" data-source="github-hq" data-mode="sample"><span class="chip info"><span data-sample-text="t0224">{{sample:t0224}}</span></span><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-bag"></use></svg></span><button class="rt" type="button" data-sheet="{{widget:w012}}" data-model-id="w012"><h3 class="test-name"><span data-sample-text="t0225">{{sample:t0225}}</span></h3><span class="rec"><span data-sample-text="t0226">{{sample:t0226}}</span></span></button><span class="d"><span data-sample-text="t0227">{{sample:t0227}}</span></span></div>
+      <div class="trow wait" data-source="github-hq" data-mode="sample"><span class="chip info"><span data-sample-text="t0228">{{sample:t0228}}</span></span><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-bag"></use></svg></span><button class="rt" type="button" data-sheet="{{widget:w013}}" data-model-id="w013"><h3 class="test-name"><span data-sample-text="t0229">{{sample:t0229}}</span></h3><span class="rec"><span data-sample-text="t0230">{{sample:t0230}}</span></span></button><span class="d"><span data-sample-text="t0231">{{sample:t0231}}</span></span></div>
+      <div class="trow" data-source="github-hq" data-mode="sample"><span class="chip good"><span data-sample-text="t0241">{{sample:t0241}}</span></span><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-mail"></use></svg></span><button class="rt" type="button" data-sheet="{{widget:w016}}" data-model-id="w016"><h3 class="test-name"><span data-sample-text="t0242">{{sample:t0242}}</span></h3><span class="rec"><span data-sample-text="t0243">{{sample:t0243}}</span></span></button><span class="d"><span data-sample-text="t0244">{{sample:t0244}}</span></span></div></div></details></div>
 </section>
 
 <section class="chapter dials" id="dials" aria-labelledby="dials-title">
   <header class="chapter-heading"><span class="chapter-number" aria-hidden="true">4</span><div class="chapter-copy"><p class="chapter-eyebrow">By source</p><h2 class="chapter-title" id="dials-title"><span data-sample-text="t0245">{{sample:t0245}}</span></h2></div><span class="shm" id="dialcount"><span data-sample-text="t0246">{{sample:t0246}}</span></span></header>
   <div class="tabs" id="tabs" role="tablist">
-    <button class="tab" role="tab" data-tab="ads" aria-selected="true"><svg class="ic"><use href="#i-meta"></use></svg><span class="t"><span data-sample-text="t0247">{{sample:t0247}}</span></span><span class="dot info"></span></button>
-    <button class="tab" role="tab" data-tab="store" aria-selected="false"><svg class="ic"><use href="#i-bag"></use></svg><span class="t"><span data-sample-text="t0248">{{sample:t0248}}</span></span><span class="dot info"></span></button>
-    <button class="tab" role="tab" data-tab="growth" aria-selected="false"><svg class="ic"><use href="#i-growth"></use></svg><span class="t"><span data-sample-text="t0249">{{sample:t0249}}</span></span><span class="dot info"></span></button>
-    <button class="tab" role="tab" data-tab="stock" aria-selected="false"><svg class="ic"><use href="#i-box"></use></svg><span class="t"><span data-sample-text="t0250">{{sample:t0250}}</span></span><span class="dot info"></span></button>
+    <button class="tab" role="tab" data-tab="ads" aria-label="Ads" aria-selected="true"><svg class="ic"><use href="#i-meta"></use></svg><span class="t"><span data-sample-text="t0247">{{sample:t0247}}</span></span><span class="dot info"></span></button>
+    <button class="tab" role="tab" data-tab="store" aria-label="Store" aria-selected="false"><svg class="ic"><use href="#i-bag"></use></svg><span class="t"><span data-sample-text="t0248">{{sample:t0248}}</span></span><span class="dot info"></span></button>
+    <button class="tab" role="tab" data-tab="growth" aria-label="Growth" aria-selected="false"><svg class="ic"><use href="#i-growth"></use></svg><span class="t"><span data-sample-text="t0249">{{sample:t0249}}</span></span><span class="dot info"></span></button>
+    <button class="tab" role="tab" data-tab="stock" aria-label="Stock" aria-selected="false"><svg class="ic"><use href="#i-box"></use></svg><span class="t"><span data-sample-text="t0250">{{sample:t0250}}</span></span><span class="dot info"></span></button>
   </div>
 
   <div class="panel" id="p-ads" data-panel="ads">
@@ -270,7 +169,7 @@ export const dashboardTemplate = `
         <span class="sl"><span data-sample-text="t0254">{{sample:t0254}}</span></span><span class="sv"><span data-sample-text="t0255">{{sample:t0255}}</span></span><span class="ss"><span data-sample-text="t0256">{{sample:t0256}}</span></span>
       </button>
     </div>
-    <div class="tabs-foot"><span class="pn"><span data-sample-text="t0257">{{sample:t0257}}</span></span><button class="btn" id="livesets"><span data-sample-text="t0258">{{sample:t0258}}</span></button></div>
+    <div class="tabs-foot"><div id="adset-summary"></div><button class="btn" id="livesets"><span data-sample-text="t0258">{{sample:t0258}}</span></button></div>
   </div>
 
   <div class="panel" id="p-store" data-panel="store" hidden>
@@ -337,11 +236,9 @@ export const dashboardTemplate = `
 </section>
 
 <footer class="glass foot" id="foot">
-  <div class="feeds" id="feeds"><span class="sample-section-note"><span data-sample-text="t0292">{{sample:t0292}}</span><a href="/sources">Actual source health</a></span>
-    <span><i></i><span data-sample-text="t0293">{{sample:t0293}}</span></span><span><i></i><span data-sample-text="t0294">{{sample:t0294}}</span></span><span><i></i><span data-sample-text="t0295">{{sample:t0295}}</span></span><span><i></i><span data-sample-text="t0296">{{sample:t0296}}</span></span><span><i></i><span data-sample-text="t0297">{{sample:t0297}}</span></span><span><i></i><span data-sample-text="t0298">{{sample:t0298}}</span></span><span><span data-sample-text="t0299">{{sample:t0299}}</span></span>
-  </div>
-  <div class="log" id="log"><strong>Sample activity</strong><ul id="loglist"><li class="mut"><span data-sample-text="t0300">{{sample:t0300}}</span><a href="/audit">Open the application audit log</a></li></ul></div>
-  <p class="note"><span data-sample-text="t0301">{{sample:t0301}}</span></p>
+  <span id="connection-status"></span><a href="/sources">Source health</a><a href="/audit">Audit log</a>
+  <span id="update-status" role="status" aria-live="polite">Connecting…</span>
+  <span id="auth-message" role="status" aria-live="polite"></span>
 </footer>
 
 </main>

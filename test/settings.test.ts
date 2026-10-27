@@ -7,6 +7,7 @@ import {
   SettingsValidationError, SETTINGS_KEY_NAMES, type Settings,
 } from '../src/settings.js';
 import { createTestDatabase } from './helpers/database.js';
+import { settingsPage } from '../src/settings-view.js';
 
 test('Meta ownership retains more campaigns than the bounded manual collections', () => {
   const metaOwners = Array.from({ length: 51 }, (_, index) => ({ campaignId: String(900000001000 + index), owner: 'ours' as const }));
@@ -418,4 +419,47 @@ test('pre-part-B Settings gain Meta sources and Our actors without changing stor
   assert.deepEqual((await db.query('SELECT * FROM pulse.settings')).rows, before);
   assert.equal((await db.query('SELECT * FROM pulse.audit_log')).rowCount, 0);
   assert.equal((await db.query('SELECT * FROM pulse.settings_changes')).rowCount, 0);
+});
+
+
+test('freelancer label defaults, trims, limits characters and falls back when blank', () => {
+  const defaults = defaultSettings();
+  assert.equal(defaults.freelancerLabel, 'Freelancer');
+  for (const [input, expected] of [
+    ['  Invented Partner  ', 'Invented Partner'], ["Invented's Team-7", "Invented's Team-7"],
+    ['A'.repeat(24), 'A'.repeat(24)], ['', 'Freelancer'], ['   ', 'Freelancer'],
+  ]) assert.equal(validateSettings({...defaults, freelancerLabel: input}).freelancerLabel, expected);
+  for (const input of ['A'.repeat(25), 'Invented_team', '<invented>', 'Invented\nTeam', 'Invented ¾', 7, null]) {
+    assert.throws(() => validateSettings({...defaults, freelancerLabel: input}), (error: unknown) =>
+      error instanceof SettingsValidationError && error.fields.includes('freelancerLabel'));
+  }
+});
+
+test('older settings acquire freelancer label on read without a write, version change or audit', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const {freelancerLabel: _newKey, ...stored} = defaultSettings();
+  await db.query('INSERT INTO pulse.settings (version, values) VALUES ($1, $2)', [5, JSON.stringify(stored)]);
+  const before = (await db.query('SELECT * FROM pulse.settings')).rows;
+  const read = await readSettings(db);
+  assert.equal(read.version, 5); assert.equal(read.values.freelancerLabel, 'Freelancer');
+  assert.deepEqual((await db.query('SELECT * FROM pulse.settings')).rows, before);
+  assert.equal((await db.query('SELECT * FROM pulse.audit_log')).rowCount, 0);
+});
+
+test('freelancer label saves with a value-free audit entry', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const initial = await readSettings(db);
+  const saved = await saveSettings(db, {...initial, values: {...initial.values, freelancerLabel: 'Invented Partner'}}, randomUUID());
+  assert.deepEqual(saved.changedFields, ['freelancerLabel']);
+  assert.equal((await readSettings(db)).values.freelancerLabel, 'Invented Partner');
+  assert.deepEqual((await db.query('SELECT field FROM pulse.settings_changes')).rows, [{field: 'freelancerLabel'}]);
+  assert.ok(!JSON.stringify((await db.query('SELECT * FROM pulse.audit_log')).rows).includes('Invented Partner'));
+});
+
+
+test('Settings renders the freelancer label escaped beside the initial', () => {
+  const html = settingsPage({version: 0, values: {...defaultSettings(), freelancerLabel: "Invented's Team"}}, [], 'sample', new Date('2026-10-27T12:00:00Z'));
+  assert.match(html, /name="freelancerLabel"[^>]*value="Invented&#39;s Team"/);
+  assert.doesNotMatch(html.match(/<input[^>]*name="freelancerLabel"[^>]*>/)![0], / required/);
+  assert.ok(html.indexOf('name="creativeFreelancerInitial"') < html.indexOf('name="freelancerLabel"'));
 });

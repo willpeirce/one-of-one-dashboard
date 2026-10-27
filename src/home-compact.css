@@ -1,0 +1,87 @@
+/* Home's compact chapter layout. Sheets and source pages retain their own styles. */
+#table,#reviews,#tests,#dials{min-width:0}
+#table :is(button,a,summary),#reviews :is(button,a,summary),#tests :is(button,a,summary),#dials :is(button,a,summary),#foot :is(button,a,summary){min-height:44px}
+#table summary,#reviews summary,#tests summary,#dials summary{cursor:pointer}
+#table [hidden],#reviews [hidden],#tests [hidden],#dials [hidden]{display:none!important}
+#creative-feedback:empty,#auth-message:empty{display:none}
+#tests{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:14px 18px}
+#tests>.chapter-heading{grid-column:1/-1}
+#tests .tcard{padding:12px;gap:8px;align-content:start}
+#tests .thead{grid-template-columns:minmax(0,1fr) auto;gap:6px 10px}
+#tests .thead>.src,#tests .thead .rec{display:none}
+#tests .tlane{grid-column:1/-1;font-size:11px;line-height:20px}
+#tests .thead>.rt{text-align:left;padding:0;min-width:0}
+#tests .test-name{font-size:14px;line-height:18px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;margin:0}
+#tests .tbody{grid-template-columns:minmax(0,1fr) 100px;gap:8px}
+#tests .tbars{padding:8px;gap:8px}
+#tests .tbar .tl2{font-size:11px;line-height:15px;gap:5px}
+#tests .tbar .tl2 b{font-size:14px;white-space:nowrap}
+#tests .tbar .tl2 b small{font-size:10px;margin-left:3px}
+#tests .trk{height:8px}
+#tests .tsure{padding:6px;gap:0;align-content:center}
+#tests .tsure svg{max-width:88px}
+#tests .tstrip,#tests .tcap,#tests .tprog,#tests .tsay small{display:none}
+#tests .tsay{font-size:11px;line-height:16px;color:var(--muted);margin:0}
+#tests .tfoot{justify-content:flex-end}
+#tests [data-call]{min-width:64px;padding:8px 12px}
+#tests .test-list{display:grid;gap:2px;align-content:start;min-width:0}
+#tests .test-list>.ghost{justify-self:start;margin-bottom:4px}
+#tests .ghost{background:transparent;border:1px solid var(--line);color:var(--faint);font-size:10px;padding:2px 7px;line-height:16px}
+#tests .test-list>.trow{display:grid;grid-template-columns:36px minmax(0,1fr);gap:8px;padding:0 10px;border-radius:10px;min-height:44px}
+#tests .test-stage{font-size:11px;color:var(--muted)}
+#tests .test-list>.trow .rt{padding:0;text-align:left;min-width:0}
+#tests .test-list>.trow>.sample-label{display:none}
+#tests .test-list>.trow .test-name{-webkit-line-clamp:1;white-space:nowrap;display:block;text-overflow:ellipsis;line-height:18px;font-size:12px}
+#tests .test-more summary{display:flex;align-items:center;font-size:12px;color:var(--muted);padding:0 10px}
+#tests .test-more[open] .trow{padding:8px;grid-template-columns:auto 28px minmax(0,1fr);gap:8px}
+#tests .test-more .trow .d{grid-column:1/-1;text-align:left}
+#dials .tabs{overflow:visible;justify-content:space-between}
+#dials .tab{min-height:44px;min-width:44px;flex:1;justify-content:center}
+#dials .panel>.grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+#dials .panel>.grid:empty{display:none}
+#dials .series-pace{grid-column:span 2}
+#dials .sample-dials{margin-top:8px;min-width:0}
+#dials .sample-dials>summary{display:flex;align-items:center;font-size:12px;color:var(--muted);padding:0 12px;border-radius:12px;background:var(--glass)}
+#dials .sample-dials[open]>.grid{margin-top:10px}
+#dials .tabs-foot{margin-top:10px;flex-wrap:nowrap;min-width:0;gap:8px}
+#dials #adset-summary{min-width:0;flex:1}
+#dials .adsum{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;font-size:12px;line-height:18px}
+#dials .adsum a{display:inline-flex;align-items:center;white-space:nowrap}
+#dials #livesets{white-space:nowrap;flex:none;padding:8px}
+#foot{display:flex;align-items:center;flex-wrap:nowrap;gap:10px;padding:8px 10px;min-height:60px;font-size:11px;min-width:0}
+#foot #connection-status{flex:none}
+#foot .chip{font-size:10px;padding:5px 7px;white-space:nowrap}
+#foot>a{display:inline-flex;align-items:center;white-space:nowrap;font-size:11px;flex:none}
+#foot #update-status{font-size:10px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;margin-left:auto}
+#foot #auth-message:not(:empty){position:absolute;bottom:100%;left:0;background:var(--well);padding:8px}
+@media(max-width:759px){
+ #tests{grid-template-columns:minmax(0,1fr);gap:10px}
+ #tests .thead{grid-template-columns:minmax(0,1fr) auto}
+ #tests .tbody{grid-template-columns:minmax(0,1fr) 88px}
+ #tests .test-list>.trow{grid-template-columns:36px minmax(0,1fr)}
+ #dials .tile .well svg{width:100%;height:70px}
+ #dials .tab .t{display:none}
+ #dials .panel>.grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ #dials .series-pace{grid-column:span 2}
+ #dials .tabs-foot{align-items:flex-start}
+ #dials .adsum{gap:2px 5px;font-size:11px}
+ #foot{gap:6px;padding:8px 6px}
+ #foot .chip{font-size:9px;padding:4px}
+ #foot>a{font-size:10px}
+}
+@media(min-width:1000px){
+ #dials .panel>.grid{grid-template-columns:repeat(5,minmax(0,1fr))}
+ #dials .pace-facts{grid-template-columns:minmax(0,1fr)}
+ #tests .tcard{gap:6px}
+ #dials #creative-panel .creative-home-panel .creative-picture{height:112px}
+ #dials .tile .well{padding:5px 8px;margin-bottom:4px}
+ #dials .tile .well svg{width:100%;height:80px}
+ #dials .pace-facts{gap:4px;line-height:1.3;font-size:11px}
+ #dials .pace-facts small{font-size:10px}
+ #dials #creative-panel .creative-home-panel{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:6px 16px}
+ #dials #creative-panel .creative-heading{grid-column:1;grid-row:1;margin:0}
+ #dials #creative-panel .creative-controls{grid-column:2;grid-row:1;margin:0;justify-content:flex-end}
+ #dials #creative-panel .creative-top{grid-column:1;grid-row:2}
+ #dials #creative-panel .creative-floor{grid-column:1;grid-row:3;margin:0}
+ #dials #creative-panel .creative-home-well{grid-column:2;grid-row:2/4;border-top:0;border-left:1px solid var(--line);padding:0 0 0 14px}
+}

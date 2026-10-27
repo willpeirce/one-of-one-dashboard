@@ -18,7 +18,7 @@ test('server-rendered spend-dependent tiles name their gap with a Watch chip bef
     const tile = html.match(new RegExp(`<button[^>]*data-k="${key}"[^>]*>[\\s\\S]*?</button>`))![0];
     assert.match(tile, /data-state="warn"/);
     assert.ok(tile.includes(snapshot.hero.today[key].ss));
-    assert.match(tile, /<span class="chip warn">! Watch<\/span>/);
+    assert.match(tile, /<span class="chip warn">△ Watch<\/span>/);
     assert.doesNotMatch(tile, /chip (?:good|alarm)/);
     assert.equal((tile.match(/<span\b/g) ?? []).length, (tile.match(/<\/span>/g) ?? []).length);
   }

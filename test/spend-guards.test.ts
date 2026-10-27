@@ -233,7 +233,7 @@ test('Needs waits for two failures, names only the source and time, and clears o
   assert.deepEqual(spendNeeds(spend, settings, today, now), []);
   source(spend).failures = 2;
   let cards = spendNeeds(spend, settings, today, now);
-  assert.deepEqual(cards, [{ id: 'ad-source:meta', state: 'warn', title: 'Meta ad spend not updating',
+  assert.deepEqual(cards, [{ id: 'ad-source:meta', source: 'meta', state: 'warn', title: 'Meta ad spend not updating',
     why: 'Last fetched 10 Oct 2026, 15:36 UK. Totals that include ad spend leave it out until it recovers. Check Source health.',
     link: '/sources' }]);
   spend.sources.push({ ...source(spend) });

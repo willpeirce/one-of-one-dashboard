@@ -52,7 +52,7 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
           ]
         ],
         "d": {
-          "why": "£49 of UK Meta spend so far today (ours plus Laszlo) over 2 UK orders. Too few orders to judge.",
+          "why": "£49 of UK Meta spend so far today (ours plus the freelancer) over 2 UK orders. Too few orders to judge.",
           "rule": "No judgement on a part day. From midnight UK: amber from 90% of the £28 blended bar (£25.20), over £28 is a decision.",
           "src": "Meta spend UK ÷ Shopify UK orders, today so far",
           "hist": [
@@ -101,7 +101,7 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
           ]
         ],
         "d": {
-          "why": "£111 of US Meta spend so far today (ours plus Laszlo) over 4 US orders. Too few orders to judge.",
+          "why": "£111 of US Meta spend so far today (ours plus the freelancer) over 4 US orders. Too few orders to judge.",
           "rule": "No judgement on a part day. From midnight UK: amber from 90% of the £28 blended bar (£25.20), over £28 is a decision.",
           "src": "Meta spend US ÷ Shopify US orders, today so far",
           "hist": [
@@ -714,7 +714,7 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
         "min": 8,
         "max": 36,
         "t": "£17.90",
-        "l": "Laszlo UK cost",
+        "l": "the freelancer UK cost",
         "s": "bar £18.56",
         "z": [
           [
@@ -734,9 +734,9 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
           ]
         ],
         "d": {
-          "why": "Laszlo’s UK sets at £17.90 per purchase over 7 days, 96% of the £18.56 break-even.",
+          "why": "the freelancer’s UK sets at £17.90 per purchase over 7 days, 96% of the £18.56 break-even.",
           "rule": "Amber from 90% of break-even. Over it for 3 days is a decision: message him.",
-          "src": "Meta, Laszlo campaigns UK, 7 days",
+          "src": "Meta, the freelancer campaigns UK, 7 days",
           "hist": [
             16.4,
             17.1,
@@ -761,7 +761,7 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
         "min": 8,
         "max": 36,
         "t": "£27.40",
-        "l": "Laszlo US cost",
+        "l": "the freelancer US cost",
         "s": "bar £22.70 · row 4",
         "z": [
           [
@@ -781,9 +781,9 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
           ]
         ],
         "d": {
-          "why": "Laszlo’s US sets at £27.40 per purchase over 7 days against £22.70 break-even. Two sets are over £30.",
+          "why": "the freelancer’s US sets at £27.40 per purchase over 7 days against £22.70 break-even. Two sets are over £30.",
           "rule": "Over break-even for 3 days is a decision, which is row 4 on the table.",
-          "src": "Meta, Laszlo campaigns US, 7 days",
+          "src": "Meta, the freelancer campaigns US, 7 days",
           "hist": [
             23.1,
             24.8,
@@ -950,7 +950,7 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       ],
       "mode": "sample",
       "value": {
-        "why": "No changes made to our Meta account by anyone else in the last 24 h. Google: 2 changes by Laszlo (row 3).",
+        "why": "No changes made to our Meta account by anyone else in the last 24 h. Google: 2 changes by the freelancer (row 3).",
         "rule": "Any change not made by us or logged in HQ is a decision.",
         "src": "Meta activity log, Google change history"
       }
@@ -1699,52 +1699,6 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       ],
       "mode": "sample"
     },
-    "t0008": {
-      "value": "Snooze to 8 Oct · Not built yet",
-      "source": [
-        "shopify",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0009": {
-      "value": "Snooze to 8 Oct · Not built yet",
-      "source": [
-        "shopify",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0010": {
-      "value": "Accept £165 · Not built yet",
-      "source": [
-        "google-ads",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0011": {
-      "value": "Accept £165 · Not built yet",
-      "source": [
-        "google-ads",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0012": {
-      "value": "Wait for 3 Oct · Not built yet",
-      "source": [
-        "meta"
-      ],
-      "mode": "sample"
-    },
-    "t0013": {
-      "value": "Wait for 3 Oct · Not built yet",
-      "source": [
-        "meta"
-      ],
-      "mode": "sample"
-    },
     "t0014": {
       "value": "2",
       "source": [
@@ -2008,7 +1962,7 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       "mode": "sample"
     },
     "t0051": {
-      "value": "ours £59 · Laszlo £101 · Google £14",
+      "value": "ours £59 · the freelancer £101 · Google £14",
       "source": [
         "meta",
         "google-ads"
@@ -2393,7 +2347,7 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       "mode": "sample"
     },
     "t0103": {
-      "value": "Laszlo review",
+      "value": "the freelancer review",
       "source": [
         "github-hq"
       ],
@@ -2542,456 +2496,6 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
     "t0124": {
       "value": "1 alarm · 5 decisions",
       "source": [
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0125": {
-      "value": "✕ Alarm",
-      "source": [
-        "shopify",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0126": {
-      "value": "US Slabs & Label pack runs dry 14 Oct",
-      "source": [
-        "shopify",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0127": {
-      "value": "Draft the ask now so it is the first thing Helen reads.",
-      "source": [
-        "shopify",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0128": {
-      "value": "14 d",
-      "source": [
-        "shopify",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0129": {
-      "value": "of stock",
-      "source": [
-        "shopify",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0130": {
-      "value": "21 d",
-      "source": [
-        "shopify",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0131": {
-      "value": "floor",
-      "source": [
-        "shopify",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0132": {
-      "value": "8 Oct",
-      "source": [
-        "shopify",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0133": {
-      "value": "Helen back",
-      "source": [
-        "shopify",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0134": {
-      "value": "The only item under its floor. Helen is away until 8 Oct, so the fix is 700–1,000 US packs by air the day she is back.",
-      "source": [
-        "shopify",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0135": {
-      "value": "◆ Decide",
-      "source": [
-        "meta"
-      ],
-      "mode": "sample"
-    },
-    "t0136": {
-      "value": "News article · US feed",
-      "source": [
-        "meta"
-      ],
-      "mode": "sample"
-    },
-    "t0137": {
-      "value": "Pause it. Resume later if a new creative is ready.",
-      "source": [
-        "meta"
-      ],
-      "mode": "sample"
-    },
-    "t0138": {
-      "value": "£43.52",
-      "source": [
-        "meta"
-      ],
-      "mode": "sample"
-    },
-    "t0139": {
-      "value": "7d per purchase",
-      "source": [
-        "meta"
-      ],
-      "mode": "sample"
-    },
-    "t0140": {
-      "value": "£22.70",
-      "source": [
-        "meta"
-      ],
-      "mode": "sample"
-    },
-    "t0141": {
-      "value": "US break-even",
-      "source": [
-        "meta"
-      ],
-      "mode": "sample"
-    },
-    "t0142": {
-      "value": "£60",
-      "source": [
-        "meta"
-      ],
-      "mode": "sample"
-    },
-    "t0143": {
-      "value": "a day",
-      "source": [
-        "meta"
-      ],
-      "mode": "sample"
-    },
-    "t0144": {
-      "value": "Kill rule met: three days over break-even with the full budget spent. It is dragging the US blended number over £28.",
-      "source": [
-        "meta"
-      ],
-      "mode": "sample"
-    },
-    "t0145": {
-      "value": "◆ Decide",
-      "source": [
-        "google-ads",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0146": {
-      "value": "Google is at £165 a day, not £90",
-      "source": [
-        "google-ads",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0147": {
-      "value": "Ask Laszlo whether this is the plan for the week.",
-      "source": [
-        "google-ads",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0148": {
-      "value": "£165",
-      "source": [
-        "google-ads",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0149": {
-      "value": "budget now",
-      "source": [
-        "google-ads",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0150": {
-      "value": "£90",
-      "source": [
-        "google-ads",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0151": {
-      "value": "agreed",
-      "source": [
-        "google-ads",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0152": {
-      "value": "14:00",
-      "source": [
-        "google-ads",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0153": {
-      "value": "switched on 30 Sep",
-      "source": [
-        "google-ads",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0154": {
-      "value": "PMax xLM US v2 (£50) and Branded Search US V2 (£25) went live yesterday afternoon. Not by us, not yet confirmed with Laszlo.",
-      "source": [
-        "google-ads",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0155": {
-      "value": "◆ Decide",
-      "source": [
-        "meta"
-      ],
-      "mode": "sample"
-    },
-    "t0156": {
-      "value": "Laszlo’s US sets over £30",
-      "source": [
-        "meta"
-      ],
-      "mode": "sample"
-    },
-    "t0157": {
-      "value": "Message him today. His UK Card games and Gift sets are due a look on 3 Oct anyway.",
-      "source": [
-        "meta"
-      ],
-      "mode": "sample"
-    },
-    "t0158": {
-      "value": "2 sets",
-      "source": [
-        "meta"
-      ],
-      "mode": "sample"
-    },
-    "t0159": {
-      "value": "birthday, Pokémon",
-      "source": [
-        "meta"
-      ],
-      "mode": "sample"
-    },
-    "t0160": {
-      "value": "3 days",
-      "source": [
-        "meta"
-      ],
-      "mode": "sample"
-    },
-    "t0161": {
-      "value": "over £30",
-      "source": [
-        "meta"
-      ],
-      "mode": "sample"
-    },
-    "t0162": {
-      "value": "£22.70",
-      "source": [
-        "meta"
-      ],
-      "mode": "sample"
-    },
-    "t0163": {
-      "value": "US break-even",
-      "source": [
-        "meta"
-      ],
-      "mode": "sample"
-    },
-    "t0164": {
-      "value": "His UK sets are fine (7d £17.90). The US pair has been over £30 per purchase three days running.",
-      "source": [
-        "meta"
-      ],
-      "mode": "sample"
-    },
-    "t0165": {
-      "value": "◆ Decide",
-      "source": [
-        "mailchimp"
-      ],
-      "mode": "sample"
-    },
-    "t0166": {
-      "value": "Mailchimp audience is over plan",
-      "source": [
-        "mailchimp"
-      ],
-      "mode": "sample"
-    },
-    "t0167": {
-      "value": "Pick one before 12 Oct. Blocks cost less if the audience stays under 5,500.",
-      "source": [
-        "mailchimp"
-      ],
-      "mode": "sample"
-    },
-    "t0168": {
-      "value": "5,151",
-      "source": [
-        "mailchimp"
-      ],
-      "mode": "sample"
-    },
-    "t0169": {
-      "value": "contacts",
-      "source": [
-        "mailchimp"
-      ],
-      "mode": "sample"
-    },
-    "t0170": {
-      "value": "5,000",
-      "source": [
-        "mailchimp"
-      ],
-      "mode": "sample"
-    },
-    "t0171": {
-      "value": "plan",
-      "source": [
-        "mailchimp"
-      ],
-      "mode": "sample"
-    },
-    "t0172": {
-      "value": "12 d",
-      "source": [
-        "mailchimp"
-      ],
-      "mode": "sample"
-    },
-    "t0173": {
-      "value": "to the bill",
-      "source": [
-        "mailchimp"
-      ],
-      "mode": "sample"
-    },
-    "t0174": {
-      "value": "103% of the plan. The 595 cold contacts from August stay archived, so the bill on 12 Oct adds contact blocks or moves up a tier.",
-      "source": [
-        "mailchimp"
-      ],
-      "mode": "sample"
-    },
-    "t0175": {
-      "value": "◆ Decide",
-      "source": [
-        "shopify",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0176": {
-      "value": "Keep Automated delivery dates?",
-      "source": [
-        "shopify",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0177": {
-      "value": "Decide after the 16:20 check. Nothing has been over-promised.",
-      "source": [
-        "shopify",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0178": {
-      "value": "~14:00",
-      "source": [
-        "shopify",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0179": {
-      "value": "Automated rolls",
-      "source": [
-        "shopify",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0180": {
-      "value": "12:00",
-      "source": [
-        "shopify",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0181": {
-      "value": "Manual rolled",
-      "source": [
-        "shopify",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0182": {
-      "value": "16:00",
-      "source": [
-        "shopify",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0183": {
-      "value": "real cutoff",
-      "source": [
-        "shopify",
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0184": {
-      "value": "Automated halved the afternoon gap but did not close it. Two observe-only checks run today at 15:35 and 16:20.",
-      "source": [
-        "shopify",
         "github-hq"
       ],
       "mode": "sample"
@@ -3763,76 +3267,6 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       ],
       "mode": "sample"
     },
-    "t0292": {
-      "value": "Sample feed ages · ",
-      "source": [
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0293": {
-      "value": "Shopify 2 min",
-      "source": [
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0294": {
-      "value": "Meta 12 min",
-      "source": [
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0295": {
-      "value": "Google 58 min",
-      "source": [
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0296": {
-      "value": "Mailchimp 15 min",
-      "source": [
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0297": {
-      "value": "Uptime 1 min",
-      "source": [
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0298": {
-      "value": "HQ repo 07:39",
-      "source": [
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0299": {
-      "value": "· Daily ads check still runs: parallel day 1 of 7",
-      "source": [
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0300": {
-      "value": "Source actions are not built yet. ",
-      "source": [
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0301": {
-      "value": "Sample presentation copied from the supplied mockup. All business numbers, reviews, feed ages and health scores here are invented examples, fixed at the sample date. Source clients and source actions arrive in later stages. Source marks are the mockup’s drawn placeholders.",
-      "source": [
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
     "t0302": {
       "value": "i",
       "source": [
@@ -4254,7 +3688,7 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       "mode": "sample"
     },
     "t0362": {
-      "value": "Laszlo UK Card games and Gift sets",
+      "value": "the freelancer UK Card games and Gift sets",
       "source": [
         "github-hq"
       ],

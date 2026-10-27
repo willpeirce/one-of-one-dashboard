@@ -1,9 +1,11 @@
-import {adSetCards,adSetSummary,adSetsDialog} from './meta-adsets/view.js';
+import { decisionsHtml } from './decisions/view.js';
+import { footerChipHtml, homeDialsHtml } from './home-layout.js';
+import {adSetSummary,adSetsDialog} from './meta-adsets/view.js';
 import { metricSign } from './metric-sign.js';
 import { glance } from './fulfilment/view.js';
-import { creativePanelHtml, creativeCardsHtml, creativeDialogHtml } from './creatives/view.js';
+import { creativePanelHtml, creativeDialogHtml } from './creatives/view.js';
 import type { DashboardSnapshot } from './dashboard-types.js';
-import { liveHtml, needsHtml, storePanelsHtml } from './shopify/presentation.js';
+import { liveHtml, storePanelsHtml } from './shopify/presentation.js';
 import { dashboardTemplate } from './dashboard-template.js';
 import { formatNumber, formatMetricNumber, formatPounds } from './money.js';
 import { seriesPaceCardHtml } from './series-pace/presentation.js';
@@ -26,15 +28,15 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
     if (value === undefined) throw new Error('Dashboard sample binding is missing');
     return escapeHtml(value);
   });
+  content = homeDialsHtml(content, snapshot.widgets);
+  content = content.replace('<div class="deck" id="deck"></div>', `<div class="deck" id="deck">${decisionsHtml({shopify: snapshot.shopify, adSets: snapshot.adSets, creatives: snapshot.creatives?.cards, market: 'all'})}</div>`);
   if(snapshot.adSets){
-    content=content.replace('<div class="deck" id="deck">',`<div class="deck" id="deck"><div id="adset-cards">${adSetCards(snapshot.adSets)}</div>`);
-    content=content.replace(/(<div class="panel" id="p-ads" data-panel="ads">[\s\S]*?<\/div>)/,`$1<div id="adset-summary">${adSetSummary(snapshot.adSets)}</div>`);
+    content=content.replace('<div id="adset-summary"></div>', `<div id="adset-summary">${adSetSummary(snapshot.adSets,'all',true)}</div>`);
     content+=adSetsDialog();
   }
   const pace = snapshot.widgets.w017;
   if (snapshot.creatives) {
-    content = content.replace('<div class="deck" id="deck">', `<div class="deck" id="deck"><div id="creative-cards">${creativeCardsHtml(snapshot.creatives.cards)}</div><div id="creative-feedback" role="status" aria-live="polite"></div>`);
-    content = content.replace(/(<header class="chapter-heading"><span class="chapter-number" aria-hidden="true">4<\/span>[\s\S]*?<\/header>)/, `$1<div id="creative-panel">${creativePanelHtml(snapshot.creatives)}</div>`);
+    content = content.replace(/(<header class="chapter-heading"><span class="chapter-number" aria-hidden="true">4<\/span>[\s\S]*?<\/header>)/, `$1<div id="creative-panel">${creativePanelHtml(snapshot.creatives, true)}</div>`);
     content += creativeDialogHtml();
   }
   if (snapshot.reviews) {
@@ -52,10 +54,9 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
       const status = metric.statusLabel ?? ({ good: 'Good', warn: 'Watch', decide: 'Decide', alarm: 'Alarm', info: 'Info', sofar: 'So far', est: 'Estimate' }[metric.state]);
       const signedTag = ['margin', 'contribution', 'profit'].includes(key) ? tag.replace(/>$/, ` data-sign="${metricSign(metric)}">`) : tag;
       const opening = signedTag.replace(/data-mode="[^"]+"/, `data-mode="${metric.mode}"`).replace(/data-source="[^"]+"/, `data-source="${metric.source.join(' ')}"`).replace(/data-state="[^"]+"/, `data-state="${metric.state}"`);
-      return `${opening}<span class="sl">${heroLabels[key]}</span><span class="sv${key === 'net' ? ' big' : ''}" style="--number-chars:${display.length}">${escapeHtml(display)}</span>${key === 'net' ? `<span class="gross">${snapshot.hero.today.grossUnavailable ? 'Total unavailable' : `Total ${escapeHtml(formatPounds(snapshot.hero.today.gross))}`}</span><span class="spark" data-spark="${snapshot.hero.today.spark.join(',')}" aria-hidden="true"></span>` : ''}<span class="ss">${escapeHtml(metric.ss)}</span><span class="chip ${metric.state}">${({ good: '✓', warn: '!', decide: '◆', alarm: '✕', info: 'i', sofar: '·', est: '≈' }[metric.state])} ${escapeHtml(status)}</span></button>`;
+      return `${opening}<span class="sl">${heroLabels[key]}</span><span class="sv${key === 'net' ? ' big' : ''}" style="--number-chars:${display.length}">${escapeHtml(display)}</span>${key === 'net' ? `<span class="gross">${snapshot.hero.today.grossUnavailable ? 'Total unavailable' : `Total ${escapeHtml(formatPounds(snapshot.hero.today.gross))}`}</span><span class="spark" data-spark="${snapshot.hero.today.spark.join(',')}" aria-hidden="true"></span>` : ''}<span class="ss">${escapeHtml(metric.ss)}</span><span class="chip ${metric.state}">${({ good: '✓', warn: '△', decide: '◆', alarm: '✕', info: 'i', sofar: '·', est: '≈' }[metric.state])} ${escapeHtml(status)}</span></button>`;
     });
   if (snapshot.shopify) {
-    content = content.replace('<div class="deck" id="deck">', `<div class="deck" id="deck"><div id="shopify-needs">${needsHtml(snapshot.shopify)}</div><p class="note">Sample decisions from later stages</p>`);
     content = content.replace(/(<div class="srows" data-sp="live">)[\s\S]*?(?=<div class="srows" data-sp="wins")/, `$1${liveHtml(snapshot.shopify)}</div>\n`);
     content = content.replace('<div class="panel" id="p-store" data-panel="store" hidden>', `<div class="panel" id="p-store" data-panel="store" hidden><div id="shopify-panels">${storePanelsHtml(snapshot.shopify)}</div>`);
     content = content.replace(/data-model-id="(w029|w030|w031|w032|w033|w034|w035|w036|w037|w039|w046|w047|w048)"/g, `$& data-ingested-shopify`);
@@ -66,6 +67,7 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
     content = content.replace(/<button\b[^>]*data-k="(net|orders|aov|cac|cr|spend|roas|margin|contribution|profit)"[^>]*>/g, (tag, key: 'net'|'orders'|'aov'|'cac'|'cr'|'spend'|'roas'|'margin'|'contribution'|'profit') => tag.replace(/data-mode="[^"]+"/, `data-mode="${snapshot.hero.today[key].mode}"`).replace(/data-source="[^"]+"/, `data-source="${snapshot.hero.today[key].source.join(' ')}"`).replace(/data-state="[^"]+"/, `data-state="${snapshot.hero.today[key].state}"`));
     // Label surviving mockup examples individually when a live source sits beside them.
     content = content.replace(/(<(?:article|button|div)\b[^>]*data-mode="sample"[^>]*>)/g, '$1<span class="sample-label">Sample data</span>');
+    content = content.replace(/(<div class="trow[^"]*"[^>]*>)<span class="sample-label">Sample data<\/span>/g, '$1');
   }
   if (snapshot.fulfilment) {
     content = content.replace('<div id="shopify-panels">', `<div id="fulfilment-glance">${glance(snapshot.fulfilment)}</div><div id="shopify-panels">`);
@@ -74,9 +76,7 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
   // Labels are already HTML-escaped with the snapshot bindings above.
   content = content.replace(/(<button\b[^>]*\bdata-unbuilt\b[^>]*aria-label="([^"]*)"[^>]*>)Not built yet<\/button>/g,
     (_button, openingTag: string, label: string) => `<span class="unbuilt-action">${openingTag}${label.replace(/ · Not built yet$/, '')}</button><small class="unbuilt-note" aria-hidden="true">Not built yet</small></span>`);
-  const healthLabels = { waiting_for_keys: 'waiting for keys', not_implemented: 'client not built', healthy: 'connected', error: 'source unavailable' };
-  const connections = (snapshot.sourceHealth ?? []).map((row) => `<span><i style="background:var(--info)"></i>${escapeHtml(row.name)} · ${healthLabels[row.status]}</span>`).join('');
-  content = content.replace(/<div class="feeds" id="feeds">[\s\S]*?<\/div>/, `<div class="feeds" id="feeds" aria-label="Actual source connections">${connections}<a href="/sources">Connection details</a></div>`);
+  content = content.replace('<span id="connection-status"></span>', `<span id="connection-status">${footerChipHtml(snapshot.sourceHealth)}</span>`);
   content = content.replace('<main class="wrap">', '<main class="wrap" id="main">');
   const failing = snapshot.shopify?.checks.filter(check => check.status === 'tripped').length ?? 0;
   const unconfirmed = snapshot.metaCampaigns?.unconfirmedCount ?? 0;
@@ -88,7 +88,6 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
       <button type="button" id="sign-out" disabled>Sign out</button>
     </nav>
   </details>`);
-  content = content.replace('</footer>', '<p id="update-status" role="status" aria-live="polite">Connecting…</p><p id="auth-message" role="status" aria-live="polite"></p></footer>');
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -107,6 +106,7 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
   <link rel="stylesheet" href="/assets/dashboard.css">
   <link rel="stylesheet" href="/assets/fulfilment.css">
   <link rel="stylesheet" href="/assets/creatives.css"><link rel="stylesheet" href="/assets/adsets.css">
+  <link rel="stylesheet" href="/assets/home-compact.css"><link rel="stylesheet" href="/assets/home-panels.css"><link rel="stylesheet" href="/assets/decisions.css">
   <script type="module" src="/assets/browser.js"></script>
   <script type="module" src="/assets/dashboard.js"></script>
 </head>

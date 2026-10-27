@@ -5,15 +5,20 @@ import {decisionRows} from './decision-rows.js';
 import {addDays} from '../hero-range.js';
 const money=(n:number|null)=>n===null?'Unknown':formatPounds(n);
 const count=(n:number|null)=>n===null?'Unknown':formatNumber(n);
-const actButton=(row:AdSetRow,view:AdSetsView)=>view.actionsEnabled&&row.set.owner==='ours'?`<button class="btn" data-adset-act="${e(row.set.id)}">Act</button>`:'';
+export const actButton=(row:AdSetRow,view:AdSetsView)=>view.actionsEnabled&&row.set.owner==='ours'?`<button class="btn" data-adset-act="${e(row.set.id)}">Act</button>`:'';
 import {adSetName} from './name.js';
-const tone=(word:string)=>word==='Kill'||word==='Slipping'?'alarm':word==='Step'?'good':word==='Clear'?'info':'warn';
+const tone=(word:string)=>['Kill','Slipping','Step'].includes(word)?'decide':word==='Clear'?'info':'warn';
 export const adSetsDialog=()=>'<dialog id="adset-sheet" class="adset-dialog"><button type="button" class="btn" data-adset-close>Close</button><div id="adset-sheet-content"></div></dialog>';
 export function adSetCards(view:AdSetsView,market='all'):string {
  if(!view.lastRead)return '<p class="note">Ad-set catalogue has never been read.</p>';
  return `${view.mode==='sample'?'<p class="sample-label">Sample data · invented ad sets</p>':''}${decisionRows(view,market).map(r=>`<article class="adset-card glass" data-adset-verdict="${r.verdict!.verdict}" data-mode="${view.mode}" data-market="${r.set.market}"><div><span class="chip">${r.set.market.toUpperCase()}</span> <strong class="adset-verdict" data-tone="${tone(r.verdict!.verdict)}">${r.verdict!.verdict}</strong></div><h3><button class="adset-name" data-adset-open="${e(r.set.id)}">${e(adSetName(r.set.name))}</button></h3><p>${e(r.verdict!.reason)}</p><p class="adset-figures">${r.verdict!.figures.map(f=>`<strong>${e(f)}</strong>`).join(' · ')}${r.verdict!.includesSpikeDays?' <small>includes spike days</small>':''}</p>${actButton(r,view)}</article>`).join('')||'<p class="note">Every live set is inside its rules.</p>'}`;
 }
-export function adSetSummary(view:AdSetsView,market='all'):string {
+export function adSetSummary(view:AdSetsView,market='all',compact=false):string {
+ if(compact){
+  const rows=view.rows.filter(r=>r.set.owner==='ours'&&r.set.effectiveStatus==='ACTIVE'&&(market==='all'||r.set.market===market));
+  const slipping=rows.filter(r=>r.verdict?.verdict==='Slipping').length,step=rows.filter(r=>r.verdict?.verdict==='Step').length;
+  return `<p class="adsum">${rows.length} live sets · ${slipping} slipping · ${step} to step · spend so far unavailable <a href="/ads">Open ads</a></p>`;
+ }
  const rows=view.rows.filter(r=>r.set.owner==='ours'&&r.set.effectiveStatus==='ACTIVE'&&(market==='all'||r.set.market===market)),sunday=new Date(`${addDays(view.today,-1)}T12:00:00Z`).getUTCDay()===0;
  const spend=rows.some(r=>r.yesterday===null)?null:rows.reduce((s,r)=>s+r.yesterday!,0);
  const expected=rows.some(r=>sunday?r.set.dailyBudget===null:r.weekdayBudget===null)?null:rows.reduce((s,r)=>s+(sunday?r.set.dailyBudget!/100:r.weekdayBudget!),0);

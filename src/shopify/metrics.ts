@@ -100,7 +100,7 @@ function marketHero(facts: Facts, today: string, from: string, to: string, setti
     return { ...row, spendKnown: inputs.spend.mode === 'sample' || usable.length > 0 && usable.every(source => covered.get(source.source)?.has(row.date)), adSpend: sum(), ukM: sum(r => r.source === 'meta' && r.market === 'uk'), usM: sum(r => r.source === 'meta' && r.market === 'us'), g: sum(r => r.source !== 'meta'), ours: sum(r => r.source === 'meta' && r.owner === 'ours') };
   });
   const resolvedName = name ?? (from === today && to === today ? 'today so far' : from === addDays(today,-1) && to === from ? 'yesterday' : to === addDays(today,-1) && from === addDays(today,-7) ? 'last 7 days' : to === addDays(today,-1) && from === addDays(today,-30) ? 'last 30 days' : undefined);
-  const hero = buildHeroRange(rows, from, to, { today, name: resolvedName, market, blendedMetaTripwireGbp: settings.blendedMetaTripwireGbp });
+  const hero = buildHeroRange(rows, from, to, { today, name: resolvedName, market, blendedMetaTripwireGbp: settings.blendedMetaTripwireGbp, freelancerLabel: settings.freelancerLabel });
   hero.net.n = Math.round(rows.filter(r => r.date >= from && r.date <= to).reduce((n, r) => n + r.net, 0) * 100) / 100;
   hero.net.dp = 2;
   hero.gross = Math.round(hero.gross * 100) / 100;
@@ -192,13 +192,13 @@ export function shopifyHero(facts: Facts, today: string, from: string, to: strin
   return { ...all, markets: { all, uk, us } };
 }
 
-export interface StockCover { productId: string; locationId: string; name: string; available: number | null; required: number | null; dailyRate: number | null; cover: number | null; runOut: string | null; basis: string }
+export interface StockCover { market: 'uk' | 'us'; product: string; productId: string; locationId: string; name: string; available: number | null; required: number | null; dailyRate: number | null; cover: number | null; runOut: string | null; basis: string }
 export function stockCover(facts: Facts, today: string, settings: Settings): StockCover[] {
   const { orders, inventory, from, ready } = dataset(facts, today);
   const start = addDays(today, -60), end = addDays(today, -1);
   const complete = ready && from <= start;
   const rows: StockCover[] = [];
-  for (const location of Object.values(appConfig.shopify.locations)) for (const product of appConfig.shopify.stockProducts) {
+  for (const [market, location] of Object.entries(appConfig.shopify.locations)) for (const product of appConfig.shopify.stockProducts) {
     const productId = `gid://shopify/Product/${product.id}`;
     const levels = inventory.filter(i => i.productId === productId && i.locationId === location.id);
     const known = levels.length > 0 && levels.every(l => l.quantities.some(q => q.name === 'available'));
@@ -214,7 +214,7 @@ export function stockCover(facts: Facts, today: string, settings: Settings): Sto
     const kitQuantity = sold.reduce((n, o) => n + allocatedQuantity(o, kitIds), 0);
     const required = !kits && complete && allocationComplete && kitQuantity > 0 ? quantity / kitQuantity * remainingKits : null;
     const cover = kits && available !== null && rate !== null && rate > 0 ? available / rate : null;
-    rows.push({ productId, locationId: location.id, name: `${product.name} · ${location.name}`, available, required, dailyRate: rate, cover,
+    rows.push({ market: market as StockCover['market'], product: product.name, productId, locationId: location.id, name: `${product.name} · ${location.name}`, available, required, dailyRate: rate, cover,
       runOut: cover !== null ? addDays(today, Math.floor(cover)) : null,
       basis: kits ? '60 complete UK days × seasonal multiplier; fulfilled warehouse orders only. Series 1: run-out, no restock.' : `Attach rate × remaining kits: ${required === null ? 'unknown' : formatNumber(Math.ceil(required)) + ' needed'}. Accessories have no daily-rate cover.` });
   }

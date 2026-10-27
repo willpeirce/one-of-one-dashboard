@@ -378,3 +378,44 @@ test('validation failure stores nothing and never reflects untrusted values or f
   assert.deepEqual(await readSettings(db), initial);
   assert.equal((await db.query('SELECT * FROM pulse.audit_log')).rowCount, 0);
 });
+
+// Frozen pre-extension schema: never add new defaultSettings keys to this list.
+// New keys must instead acquire their default when an older document is read.
+const originalStoredSettingsKeys: readonly string[] = Object.freeze([
+  'goalOrdersPerDay', 'goalNetMarginPercent', 'overheads',
+  'cppUkBreakEvenGbp', 'cppUkTargetGbp', 'cppUsBreakEvenGbp', 'cppUsTargetGbp',
+  'paymentFeePercent', 'startingCogs', 'jjGbpPerUsd', 'flatFulfilmentUkGbp', 'flatFulfilmentUsGbp',
+  'dispatchCutoffUk', 'dispatchCutoffUs', 'supplierLeadTimes', 'safetyWeeks',
+  'seasonalMultiplier', 'markersPerKit', 'pencilsPerKit', 'metaAdAccountId',
+  'googleCustomerId', 'googleLoginCustomerId', 'tiktokAdvertiserId', 'metaOwners',
+  'expectedGoogleCampaigns', 'blendedMetaTripwireGbp', 'creatorRules', 'waitingContacts',
+  'deadlines', 'keyExpiryDates', 'morningSummaryEnabled', 'brand',
+]);
+
+test('every Settings key added beyond the frozen stored schema gets its default on read', async (t) => {
+  const db = await createTestDatabase();
+  t.after(() => db.close());
+  const defaults = defaultSettings();
+  await readSettings(db);
+  for (const key of Object.keys(defaults) as (keyof Settings)[]) {
+    if (originalStoredSettingsKeys.includes(key)) continue;
+    const stored: Partial<Settings> = { ...defaults };
+    delete stored[key];
+    await db.query('UPDATE pulse.settings SET values = $1', [JSON.stringify(stored)]);
+    const snapshot = await readSettings(db);
+    assert.deepEqual(snapshot.values[key], defaults[key], `${key} must default on read`);
+  }
+});
+
+test('pre-part-B Settings gain Meta sources and Our actors without changing storage, version or audit', async (t) => {
+  const db = await createTestDatabase();
+  t.after(() => db.close());
+  const defaults = defaultSettings();
+  const { metaSources, ourActors, ...stored } = defaults;
+  await db.query('INSERT INTO pulse.settings (version, values) VALUES ($1, $2)', [7, JSON.stringify(stored)]);
+  const before = (await db.query('SELECT * FROM pulse.settings')).rows;
+  assert.deepEqual(await readSettings(db), { version: 7, values: { ...stored, metaSources, ourActors } });
+  assert.deepEqual((await db.query('SELECT * FROM pulse.settings')).rows, before);
+  assert.equal((await db.query('SELECT * FROM pulse.audit_log')).rowCount, 0);
+  assert.equal((await db.query('SELECT * FROM pulse.settings_changes')).rowCount, 0);
+});

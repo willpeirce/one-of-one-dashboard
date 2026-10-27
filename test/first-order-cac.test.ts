@@ -61,3 +61,58 @@ test('first-order CAC history and comparisons use first orders and refuse incomp
  const incomplete=buildHeroRange(rows,'2026-10-18','2026-10-18',{today:'2026-10-26'});
  assert.match(incomplete.cac.ss,/no earlier days to compare/);assert.deepEqual(incomplete.cac.d.hist,[]);
 });
+
+
+// All identifiers and row values below are invented; these are raw legacy projections.
+const legacyRows = [
+ { mode: 'live', kind: 'order', id: 'invented-order-missing', data: { customerId: 'invented-customer-a', note: 'invented retained field' } },
+ { mode: 'live', kind: 'order', id: 'invented-order-first', data: { customerId: 'invented-customer-b', firstOrder: 'first' } },
+ { mode: 'live', kind: 'order', id: 'invented-order-repeat', data: { customerId: 'invented-customer-c', firstOrder: 'repeat' } },
+ { mode: 'live', kind: 'order', id: 'invented-order-no-keys', data: {} },
+ { mode: 'live', kind: 'order', id: 'invented-order-clean', data: { firstOrder: 'first' } },
+ { mode: 'sample', kind: 'order', id: 'invented-sample-order', data: { customerId: 'invented-sample-customer' } },
+ { mode: 'live', kind: 'inventory', id: 'invented-inventory-row', data: { customerId: 'invented-non-order-marker' } },
+];
+async function insertLegacyRows(db: Awaited<ReturnType<typeof createTestDatabase>>) {
+ for (const row of legacyRows) await db.query(`INSERT INTO pulse.shopify_records
+   (mode,kind,source_id,fetched_at,source_updated_at,data) VALUES($1,$2,$3,$4,$4,$5)`,
+   [row.mode,row.kind,row.id,now,JSON.stringify(row.data)]);
+}
+async function checkLegacyRows(db: Awaited<ReturnType<typeof createTestDatabase>>, liveOnly: boolean) {
+ for (const row of legacyRows) {
+  const stored = (await db.query('SELECT data FROM pulse.shopify_records WHERE mode=$1 AND kind=$2 AND source_id=$3', [row.mode,row.kind,row.id])).rows[0]!.data;
+  const { customerId: _removed, ...rest } = row.data;
+  const cleaned = { ...rest, firstOrder: row.data.firstOrder ?? 'unknown' };
+  assert.deepEqual(stored, row.kind === 'order' && (!liveOnly || row.mode === 'live') ? cleaned : row.data, row.id);
+ }
+}
+
+test('migration 049 repeats order cleanup, preserving flags and leaving other kinds alone', async t => {
+ const db = await createTestDatabase(); t.after(() => db.close());
+ await insertLegacyRows(db);
+ const sql = await readFile(new URL('../migrations/049_order_customer_cleanup.sql', import.meta.url), 'utf8');
+ await db.query(sql);
+ await checkLegacyRows(db, false);
+ await db.query(sql);
+ await checkLegacyRows(db, false);
+});
+
+test('every first-order run cleans live legacy rows even when the next run is tomorrow, leaving samples alone', async t => {
+ const db = await createTestDatabase(); t.after(() => db.close());
+ const tomorrow = new Date(now.getTime() + 86_400_000);
+ await db.query("INSERT INTO pulse.shopify_first_order_backfill(mode,next_run_at) VALUES('live',$1)", [tomorrow]);
+ // Also due for a poll: cleanup must precede both scheduling checks.
+ await db.query("INSERT INTO pulse.shopify_jobs(mode,name,next_run_at) VALUES('live','poll',$1)", [now]);
+ const reader: ShopifyReader = Object.assign(new SampleShopify(true), {
+  firstOrderFlags: async () => { assert.fail('No source read before the scheduled run'); },
+ });
+ for (let run = 0; run < 2; run++) {
+  await db.query('DELETE FROM pulse.shopify_records');
+  await insertLegacyRows(db); // Simulate the old release syncing again between runs.
+  await backfillFirstOrders(db, reader, () => now, () => false);
+  await checkLegacyRows(db, true);
+ }
+ const job = (await db.query('SELECT next_run_at,cursor FROM pulse.shopify_first_order_backfill')).rows[0]!;
+ assert.equal(new Date(job.next_run_at as string).toISOString(), tomorrow.toISOString());
+ assert.equal(job.cursor, '');
+});

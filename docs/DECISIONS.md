@@ -611,3 +611,12 @@ Yesterday's earlier UK hours count in full; its poll hour counts by poll minute 
 ## 2026-10-26, part B item 17: initial history progress
 
 Before the first saved chunk, Sources says starting from the first day, with remaining days and next UK run time. Only a committed chunk permits read from/to wording. No migration is needed.
+
+
+## 2026-10-27, stage 2 startup fix: defaults, order cleanup and diagnostics
+
+Every new Settings key must be filled on read for stored documents that predate it, in the same pull request. A frozen baseline-key test checks every later defaultSettings key with that key absent. Fill metaSources and ourActors beside the existing creative, adRules and Series 1 defaults. Keep the targeted list: spreading all defaults would hide the absent overheads key needed by the legacy monthlyOverheadsGbp conversion. Reads preserve the document, version and audit; the next ordinary save persists the new keys.
+
+Order rows never retain a customer ID. Migration 049 repeats 048's cleanup without creating objects: remove customerId and retain firstOrder, defaulting to unknown. Because the previous release can write its old projection between Shell migration and Republish, every first-order run also cleans live order rows holding customerId or lacking firstOrder before scheduling and poll checks. Sample rows are excluded from that recurring cleanup. A one-time migration alone cannot cover the deployment overlap.
+
+Startup names SettingsValidationError as SETTINGS_INVALID and reports at most ten field paths, never values or error details. Other diagnostic codes remain unchanged. Tests use invented rows and values; deployment and stage 2 part B live acceptance remain Claude's follow-up. No new key, scope or dependency is needed.

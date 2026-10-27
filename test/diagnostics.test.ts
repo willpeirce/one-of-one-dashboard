@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import type { Database } from '../src/db.js';
 import { errorCode, failureMessage, MigrationError } from '../src/diagnostics.js';
 import { migrate } from '../src/migrate.js';
+import { SettingsValidationError } from '../src/settings.js';
 import { logNodeVersion } from '../src/runtime.js';
 
 const migrationName = '002_application_schema.sql';
@@ -211,4 +212,17 @@ test('startup and migration commands expose connection codes without exposing th
       assert.ok(!result.output.includes(privateValue), 'Command output must omit private connection details');
     }
   }
+});
+
+
+test('settings failure names only its first ten field paths and never values or error details', () => {
+  const fields = Array.from({ length: 12 }, (_, index) => `metaSources.${index}.source`);
+  const marker = 'invented-private-setting-value';
+  const error = Object.assign(new SettingsValidationError(fields), {
+    message: marker, value: marker, values: { metaSources: [{ source: marker }] }, detail: marker,
+  });
+  const output = failureMessage('startup', error);
+  assert.equal(output, `Pulse could not start (code: SETTINGS_INVALID; fields: ${fields.slice(0, 10).join(', ')}).`);
+  for (const omitted of [...fields.slice(10), marker]) assert.ok(!output.includes(omitted));
+  assert.equal(failureMessage('startup', new SettingsValidationError()), 'Pulse could not start (code: SETTINGS_INVALID).');
 });

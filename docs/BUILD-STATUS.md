@@ -4,6 +4,7 @@ Updated in every pull request.
 
 | Stage | What | Code | Keys in Replit | Live check ("Done when") |
 |---|---|---|---|---|
+| 2 startup fix · 27 Oct | Older Settings defaults, frozen-key guard, repeated order privacy cleanup and named settings failures | built on `fix-settings-defaults`; migration 049 | none | Republish passes startup, then stage 2 part B checks below |
 | 2 part A · 1 | Meta spend by UK hour, today and yesterday; same poll-hour comparison for All/UK/US | built on `stage-2-meta`; migration 042 | no new keys | check comparison and three days to the penny against Ads Manager |
 | 2 part A · 2 | 400-day Meta spend backfill, shrinking retries, durable cursor, GMT-day disclosure and Sources progress | built on `stage-2-meta`; migration 041 | no new keys | check cursor/progress and uninterrupted 30-minute live spend |
 | 2 part B · 3 | Budget/status activity history, Our actors and named read health | built on `stage-2-part-b`; migration 045 | no new key or scope; actor IDs entered live only | check seven-day stat, newest-first detail, ours markings and any refusal line |
@@ -75,9 +76,11 @@ Updated in every pull request.
 
 ## Next step
 
-Review **stage 2 part B** on `stage-2-part-b`, based on main `c2b890b` (merged PR #38, migrations 041–042). All eight requested items are built in commit order 18, 15, 16, 17, 3, 4, 5, 6. Run migrations **043–048** after merging. Needs from Will after merge: **nothing**. Claude merges, runs the Shell merge, `npm run migrate`, and Republish; the builder does not merge or deploy.
+Review **fix-settings-defaults**, based on merged PR #39. Its publish failed the deployment health check while the previous release kept serving. Older Settings now receive Meta sources and Our actors on read without a version change or audit entry; a frozen-key regression test guards future additions. Startup names settings failures and at most ten field paths without values.
 
-**Verification:** the full PostgreSQL suite in CI, focused PGlite regression tests, typecheck, build, the complete phone/desktop browser suite and secret scans passed. The browser suite includes ratio market switching and its detail. CI must finish green on the final revision before this PR is marked ready. Fixtures are invented; automated checks do not claim live source agreement.
+Migrations **043–048** already ran in production. After this fix merges, Claude runs the Shell merge, `npm run migrate` (**049**) and Republish, then the stage 2 part B live checks below. Migration 049 repeats the order cleanup; every first-order run also cleans live legacy order projections before its schedule checks to cover writes during the deployment overlap. Needs from Will after merge: **nothing**. The builder does not merge or deploy.
+
+**Verification:** typecheck, all 684 tests on PGlite (no skips), build, the complete phone/desktop browser suite and secret scanning passed before pushing. Final CI must also pass against PostgreSQL before the PR is ready. The added regressions cover missing Settings keys and unchanged storage/audit, the frozen key guard, migration 049, repeated live-only cleanup while scheduled for tomorrow, and bounded value-free startup diagnostics. Fixtures are invented; automated checks do not claim live source agreement.
 
 **Sample and live:** sample w019 remains its sample; connected Meta and Shopify use the measured fourteen-complete-day ratio. Activity and risk cards use live records only. CAC uses counted first orders when every counted order in the period has a flag; otherwise it says all orders with the waiting count. Unknown source data stays unavailable. Only first/repeat/unknown is retained; the unused customer-ID projection is removed.
 

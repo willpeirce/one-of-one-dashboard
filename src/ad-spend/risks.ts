@@ -1,3 +1,4 @@
+import type {DashboardNeed} from '../shopify/dashboard.js';
 import {addDays,aggregateDays,cpo,ukToday,type DailyMetrics} from '../hero-range.js';
 import type {Settings} from '../settings.js';
 import type {MetaActivity} from '../meta-adsets/activity.js';
@@ -8,9 +9,9 @@ import {formatPounds} from '../money.js';
 
 /** Read-only observations: these rules have no source or Settings writer. */
 export function metaRisks(facts:SpendFacts,days:DailyMetrics[],events:MetaActivity[],settings:Settings,today:string) {
-  const needs:{id:string;state:'warn';title:string;why:string;link:string}[]=[];
+  const needs:DashboardNeed[]=[];
   if(facts.mode!=='live')return needs;
-  const add=(id:string,title:string,why:string,link='/ads')=>{if(!needs.some(n=>n.id===id))needs.push({id,state:'warn',title,why,link});};
+  const add=(id:string,title:string,why:string,link='/ads',figure?:DashboardNeed['figure'])=>{if(!needs.some(n=>n.id===id))needs.push({id,state:'warn',source:'meta',title,why,link,...(figure ? {figure} : {})});};
   const from=addDays(today,-3),to=addDays(today,-1);
   const placed=placedSpendRows(facts,from,to,today).filter(r=>r.source==='meta');
   const selected=days.filter(d=>d.date>=from&&d.date<=to).map(d=>({...d,
@@ -20,8 +21,12 @@ export function metaRisks(facts:SpendFacts,days:DailyMetrics[],events:MetaActivi
     const totals=aggregateDays(selected);
     for(const market of ['uk','us'] as const){
       const value=cpo(totals,selected,market==='uk'?'ukcpo':'uscpo',settings.blendedMetaTripwireGbp).value;
-      if(totals[market==='uk'?'ukM':'usM']>0&&value>settings.blendedMetaTripwireGbp)
-        add(`meta-cpo:${market}`,`${market.toUpperCase()} Meta cost per order over the bar`,`${formatPounds(value)} over ${from}–${to}; bar ${formatPounds(settings.blendedMetaTripwireGbp)}. Shopify orders, all Meta owners.`);
+      const spend=totals[market==='uk'?'ukM':'usM'],orders=totals[market];
+      if(spend>0&&(orders===0||value>settings.blendedMetaTripwireGbp))
+        add(`meta-cpo:${market}`,`${market.toUpperCase()} Meta cost per order over the bar`,
+          orders===0 ? `${formatPounds(spend)} spent with 0 counted orders over ${from}–${to}; all Meta owners.`
+            : `${formatPounds(value)} over ${from}–${to}; bar ${formatPounds(settings.blendedMetaTripwireGbp)}. Counted orders, all Meta owners.`,
+          '/ads',{value:formatPounds(orders===0?spend:value),label:orders===0?'spent · 0 orders':'an order · 3 days'});
     }
   }
   const recent=facts.rows.filter(r=>r.source==='meta'&&r.day>=addDays(today,-6)&&r.day<=today&&Number(r.amount)>0);

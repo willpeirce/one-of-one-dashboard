@@ -1,3 +1,4 @@
+import type {DashboardNeed} from '../shopify/dashboard.js';
 import type { HeroMarket, HeroPeriod } from '../dashboard-types.js';
 import { addDays, dayCount, ukToday, metaCostPerOrder } from '../hero-range.js';
 import type { Settings } from '../settings.js';
@@ -377,36 +378,36 @@ export function applySpend(
 }
 export function spendNeeds(facts: SpendFacts, settings: Settings, today: string, now = new Date()) {
   if (facts.mode === 'sample') return [];
-  const needs: { id: string; state: 'warn'; title: string; why: string; link: string }[] = [],
+  const needs: DashboardNeed[] = [],
     seen = new Set<string>();
-  const add = (id: string, title: string, why: string, link = '/settings') => {
+  const add = (source: DashboardNeed['source'], id: string, title: string, why: string, link = '/settings') => {
     if (!seen.has(id)) {
       seen.add(id);
-      needs.push({ id, state: 'warn', title, why, link });
+      needs.push({ id, state: 'warn', source, title, why, link });
     }
   };
   for (const source of facts.sources) {
-    if (source.backfillStall) add('meta-backfill-stuck',
+    if (source.backfillStall) add('meta', 'meta-backfill-stuck',
       `Meta spend backfill stuck at ${source.backfillStall.day}: ${source.backfillStall.code}`,
       'History keeps retrying this window. Live spend polling continues.', '/sources');
     const lastActivity = source.fetchedAt ?? source.lastAttemptAt,
       stale = source.stale || source.status.startsWith('stale') ||
         (!!lastActivity && now.getTime() - new Date(lastActivity).getTime() > SPEND_STALE_AFTER_MS);
     if (source.live && ((source.failures ?? 0) >= 2 || stale))
-      add(`ad-source:${source.source}`, `${adNames[source.source]} ad spend not updating`,
+      add(source.source, `ad-source:${source.source}`, `${adNames[source.source]} ad spend not updating`,
         `Last fetched ${source.fetchedAt ? fetchedTime(source.fetchedAt) : 'never'}. Totals that include ad spend leave it out until it recovers. Check Source health.`,
         '/sources');
   }
   for (const row of facts.rows.filter(row => row.day >= addDays(today, -13) && row.day <= today)) {
     if (row.market === 'unknown')
       add(
-        `ad-market:${row.source}:${row.campaignId}`,
+        row.source, `ad-market:${row.source}:${row.campaignId}`,
         `${adNames[row.source]} campaign market unknown`,
         `${row.campaignName}: spend counts in All, not split into UK or US.`,
       );
     if (row.currency !== 'GBP')
       add(
-        `ad-currency:${row.source}`,
+        row.source, `ad-currency:${row.source}`,
         `${adNames[row.source]} reports in ${row.currency}: not counted`,
         'No currency conversion is applied.',
       );
@@ -423,7 +424,7 @@ export function spendNeeds(facts: SpendFacts, settings: Settings, today: string,
     );
     if (missing.length)
       add(
-        `ad-expected:${expected.campaignId}`,
+        'google-ads', `ad-expected:${expected.campaignId}`,
         'Expected Google campaign has no rows for a complete day',
         `Campaign ${expected.campaignId} · ${missing[0]!.day}${missing.length > 1 ? ' and other complete days' : ''}`,
       );

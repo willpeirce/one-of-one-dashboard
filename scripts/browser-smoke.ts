@@ -13,6 +13,7 @@ import type { SpendFacts } from '../src/ad-spend/store.js';
 import { defaultSettings, type SettingsSnapshot } from '../src/settings.js';
 import { calculateSeriesPace, paceDate, paceNumber } from '../src/series-pace/model.js';
 import type { SeriesPaceMarketView } from '../src/series-pace/presentation.js';
+import { checkHomeCompact } from './home-compact-browser-check.js';
 import { checkHomeChapters, checkFulfilmentChapter } from './chapter-browser-check.js';
 import { checkDrops } from './browser-drops.js';
 import { checkMarketHero, installMarketUpdateHook } from './browser-market.js';
@@ -52,6 +53,12 @@ interface DashboardSnapshot {
   hero: Record<Period, HeroPeriod>;
   bounds: { min: string; max: string; today: string };
   shopify?: { checks: Array<{ id: string; status: string }> };
+}
+
+// Legacy detail checks intentionally open the sample collection before exercising its dials.
+// The compact Home budget fixture uses a separate page with the default closed collections.
+async function showSampleDials(page: Page): Promise<void> {
+  await page.locator('#dials details.sample-dials').evaluateAll(rows => rows.forEach(row => { (row as HTMLDetailsElement).open = true; }));
 }
 
 async function showAccountMenu(page: Page): Promise<void> {
@@ -312,6 +319,7 @@ async function checkReviews(context: BrowserContext): Promise<void> {
     const fixture = await response.json() as FullDashboardSnapshot;
     assert.ok(fixture.reviews);
     const sample = structuredClone(fixture.reviews);
+    const ranked = [...sample.rows].sort((a, b) => Number(b.rating <= 3) - Number(a.rating <= 3) || Date.parse(b.createdAt) - Date.parse(a.createdAt));
     assert.equal(sample.mode, 'sample');
     assert.equal(sample.rows.length, 3);
     assert.equal(sample.publishEnabled, false);
@@ -334,13 +342,11 @@ async function checkReviews(context: BrowserContext): Promise<void> {
       await page.locator('html[data-dashboard-ready="true"]').waitFor();
       const rows = page.locator('#reviews .rv[data-review-id]');
       assert.equal(await rows.count(), 3);
-      assert.deepEqual(await rows.evaluateAll(elements => elements.map(element => element.getAttribute('data-review-id'))), sample.rows.map(review => review.id));
+      assert.deepEqual(await rows.evaluateAll(elements => elements.map(element => element.getAttribute('data-review-id'))), ranked.map(review => review.id));
       assert.match(await page.locator('#counts button[data-rv]').innerText(), /3.*sample.*reviews/is);
       assert.equal((await page.locator('#subrv').innerText()).trim(), '3 sample reviews, 1 needs reading first.');
       assert.match(await page.locator('#reviews').innerText(), /sample/i);
-      assert.match(await rows.last().innerText(), /Flagged by Judge.me/);
-      assert.match(await rows.last().innerText(), /Email request/);
-      assert.doesNotMatch(await rows.first().innerText(), /Flagged by Judge.me/);
+      assert.doesNotMatch(await page.locator('#reviews').innerText(), /Flagged by Judge.me|Email request|Verified buyer|photos?/);
       const health = await page.locator('#counts > span').allTextContents();
       const drops = await page.locator('#drops').innerText();
       await page.locator('#counts button[data-rv]').click();
@@ -351,12 +357,20 @@ async function checkReviews(context: BrowserContext): Promise<void> {
       assert.doesNotMatch(await page.locator('#reviews').innerHTML(), /Invented browser private reviewer|invented-browser-private@example\.invalid/);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
       if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/reviews-panel-${viewport.width}.png` });
-      for (const [index, review] of sample.rows.entries()) {
+      for (const [index, review] of ranked.entries()) {
         step = `${scope}: review sheet ${index + 1} at ${viewport.width}px`;
-        await rows.nth(index).locator('button[data-review-open]').click();
+        const row = page.locator(`#reviews button[data-review-open="${review.id}"]`);
+        const folded = row.locator('xpath=ancestor::details[1]');
+        if (await folded.count() && await folded.getAttribute('open') === null) await folded.locator('summary').first().click();
+        await row.click();
         assert.equal(await page.locator('#sheet').isVisible(), true);
         assert.equal(await page.locator('#sh-extra .review-body').innerText(), review.body);
         assert.match(await page.locator('#sheet').innerText(), /sample data/i);
+        if (review.flagged) assert.match(await page.locator('#sh-extra').innerText(), /Flagged by Judge.me/);
+        else assert.doesNotMatch(await page.locator('#sh-extra').innerText(), /Flagged by Judge.me/);
+        if (review.source === 'email') assert.match(await page.locator('#sh-extra').innerText(), /Email request/);
+        if (review.verifiedBuyer) assert.match(await page.locator('#sh-extra').innerText(), /Verified buyer/i);
+        if (review.photoCount) assert.match(await page.locator('#sh-extra').innerText(), new RegExp(`${review.photoCount} ${review.photoCount === 1 ? 'photo' : 'photos'}`));
         const links = page.locator('#sh-extra [data-review-link]');
         assert.equal(await links.first().innerText(), review.rating <= 3 ? 'Read in Judge.me' : 'Open in Judge.me');
         assert.ok(await links.count() >= 1);
@@ -420,6 +434,7 @@ async function checkSeriesPace(context: BrowserContext): Promise<void> {
     await page.goto('/');
     await page.locator('html[data-dashboard-ready="true"]').waitFor();
     await page.locator('#tabs [data-tab="ads"]').click();
+    await showSampleDials(page);
     for (const viewport of viewports) {
       step = `${scope}: sample card and market sheets at ${viewport.width}px`;
       await page.setViewportSize(viewport);
@@ -505,6 +520,7 @@ async function checkSeriesPace(context: BrowserContext): Promise<void> {
     await page.locator('html[data-dashboard-ready="true"]').waitFor();
     await page.waitForFunction(() => document.querySelector('[data-model-id="w017"]')?.getAttribute('data-mode') === 'live');
     await page.locator('#tabs [data-tab="ads"]').click();
+    await showSampleDials(page);
     const boundary = page.locator('[data-model-id="w017"] [data-series-market="UK"]');
     assert.equal(await boundary.getAttribute('data-state'), 'good');
     assert.equal(await boundary.locator('.well svg text').first().textContent(), '+5.0d');
@@ -669,6 +685,7 @@ async function checkSeriesPaceWaiting(context: BrowserContext): Promise<void> {
         await page.goto('/');
         await page.locator('html[data-dashboard-ready="true"]').waitFor();
         await page.locator('#tabs [data-tab="ads"]').click();
+        await showSampleDials(page);
         const dial = page.locator('[data-model-id="w017"] [data-series-market="UK"]');
         assert.equal(await dial.getAttribute('data-state'), sample.state);
         assert.equal(await dial.locator('.ds').innerText(), sample.reason);
@@ -732,6 +749,7 @@ async function checkPartialAdSpend(context: BrowserContext): Promise<void> {
       await page.setViewportSize(viewport);
       await page.goto('/');
       await page.locator('html[data-dashboard-ready="true"]').waitFor();
+      await showSampleDials(page);
       await page.locator('#hero [data-k="spend"][data-state="warn"]').waitFor();
       assert.equal(await page.locator('#hourly-orders').isVisible(), true);
       assert.equal(await page.locator('#hero .greet h1').isVisible(), true);
@@ -1065,12 +1083,12 @@ async function assertSampleTextStyles(page: Page): Promise<void> {
   }));
   assert.deepEqual(mismatches, [], 'Sample-text wrappers must inherit their parent typography');
   const values = await page.locator('#table .nums b > [data-sample-text]').evaluateAll((wrappers) => wrappers.map((wrapper) => getComputedStyle(wrapper).fontSize));
-  assert.deepEqual(values, Array<string>(18).fill('17px'));
+  assert.deepEqual(values, [], 'The six static sample decision cards and their figures are removed');
 }
 
 async function assertUnbuiltActions(page: Page): Promise<void> {
   const buttons = page.locator('button[data-unbuilt]');
-  assert.equal(await page.locator('#table button[data-unbuilt]').count(), 10);
+  assert.equal(await page.locator('#table button[data-unbuilt]').count(), 0);
   assert.equal(await page.locator('#tests button[data-unbuilt]').count(), 1);
   assert.equal(await page.locator('#review-publish').isDisabled(), true);
   for (const button of await buttons.all()) {
@@ -1558,7 +1576,7 @@ async function run(): Promise<void> {
     const currentUkHour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: 'numeric', hourCycle: 'h23' }).format(new Date()));
     const greeting = currentUkHour >= 5 && currentUkHour < 12 ? 'Morning' : currentUkHour >= 12 && currentUkHour < 18 ? 'Afternoon' : 'Evening';
     assert.equal(await page.locator('#greeting').innerText(), `${greeting}, Will.`);
-    assert.doesNotMatch(await page.locator('#shopify-needs').innerText(), /Meta campaign not assigned/i);
+    assert.doesNotMatch(await page.locator('#deck').innerText(), /Meta campaign not assigned/i);
     await showAccountMenu(page);
     assert.equal(await page.locator('#settings-count').innerText(), '1');
     await hideAccountMenu(page);
@@ -1586,6 +1604,7 @@ async function run(): Promise<void> {
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
         await assertHeroLayout(page);
         await checkMarketHero(page, snapshot as unknown as FullDashboardSnapshot, viewport.width);
+        await showSampleDials(page);
         await checkHomeChapters(page);
         if (process.env.PULSE_SCREENSHOT_DIR) await page.locator('#hero').screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/hero-profit-${viewport.width}-${preference}.png` });
         await assertLocalFonts(page);
@@ -1737,13 +1756,14 @@ async function run(): Promise<void> {
 
     step = 'check source mutations are unavailable';
     const mutations = page.locator('button[data-unbuilt], [data-act], [data-call]');
-    assert.ok(await mutations.count() >= 10);
+    assert.equal(await mutations.count(), 1, 'Only the disabled experiment Call remains after removing static sample decisions');
     for (const button of await mutations.all()) {
       assert.equal(await button.isDisabled(), true);
       assert.ok((await button.textContent())?.trim());
     }
     await assertUnbuiltActions(page);
     await page.locator('#tabs [data-tab="ads"]').click();
+    await showSampleDials(page);
     await page.locator('#livesets').click();
     await assertSampleTextStyles(page);
     await assertUnbuiltActions(page);
@@ -1764,6 +1784,9 @@ async function run(): Promise<void> {
     await checkHourly(context);
     await checkMetaAttribution(context);
 
+    step = 'check compact Home budgets and re-rendered actions on the dense fixture';
+    await checkHomeCompact(context);
+
     step = 'check creative pictures, playing media, windows and gallery filters at phone and desktop widths';
     await checkCreatives(context);
     step = 'check ad-set decisions and Ads table in both widths and colour preferences';
@@ -1778,6 +1801,7 @@ async function run(): Promise<void> {
     step = 'check Settings persistence, audit and live dashboard update';
     await page.locator('#period [data-period="7d"]').click();
     await page.locator('#tabs [data-tab="stock"]').click();
+    await showSampleDials(page);
     await hideAccountMenu(page);
     assert.ok(eventStreams > 0);
     const beforeUpdate = { url: page.url(), scroll: await page.evaluate(() => window.scrollY), fetches: dashboardFetches };
@@ -2021,7 +2045,7 @@ async function run(): Promise<void> {
 
     step = 'check the audit trail';
     await showAccountMenu(page);
-    await page.getByRole('link', { name: 'Audit log', exact: true }).click();
+    await page.locator('#account-menu').getByRole('link', { name: 'Audit log', exact: true }).click();
     await page.locator('#audit-log').waitFor();
     assert.ok(await page.locator('#audit-log tbody tr').count() >= 3);
     const auditText = await page.locator('#audit-log').textContent();

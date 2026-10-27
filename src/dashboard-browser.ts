@@ -1,10 +1,13 @@
+import {setDecisions} from './decisions/browser.js';
+import {footerChipHtml} from './home-layout.js';
+import {arrangeHomeDials} from './home-layout-browser.js';
 import { hourLabel, hourlyTop, monotoneSegments } from './hourly-orders.js';
 import {updateAdSets} from './meta-adsets/browser.js';
 import { metricSign } from './metric-sign.js';
 import { dropsHtml, radarMeasure, radarSummary, weakestRadarGauge, type DropArea } from './radar.js';
 import { glance } from './fulfilment/view.js';
 import { updateCreativeSnapshot } from './creatives/browser.js';
-import { liveHtml, needsHtml, storePanelsHtml } from './shopify/presentation.js';
+import { liveHtml, storePanelsHtml } from './shopify/presentation.js';
 import type { DashboardSnapshot, Detail, DialModel, HeroMarket, HeroMetric, HeroPeriod, Period, RingModel, SheetModel, State, TestModel, Zone } from './dashboard-types.js';
 import { createDatePicker } from './dashboard-dates.js';
 import { rangeLabel } from './hero-range.js';
@@ -16,7 +19,7 @@ import type { SeriesPaceMarket } from './series-pace/model.js';
 import { reviewsGreeting, reviewsPanelHtml, reviewSheetHtml } from './judgeme/presentation.js';
 
 const states: Record<State, [string, string]> = {
-  good: ['Good', '✓'], warn: ['Watch', '!'], decide: ['Decide', '◆'], alarm: ['Alarm', '✕'],
+  good: ['Good', '✓'], warn: ['Watch', '△'], decide: ['Decide', '◆'], alarm: ['Alarm', '✕'],
   info: ['Info', 'i'], sofar: ['So far', '·'], est: ['Estimate', '≈'],
 };
 const rank: Record<State, number> = { good: 0, info: 0, sofar: 0, est: 0, warn: 1, decide: 2, alarm: 3 };
@@ -324,7 +327,7 @@ function renderHero(hero: HeroPeriod, animate = false): void {
     all(`[data-sample-text="${subKey}"]`).forEach(e => { e.textContent = `${rangeLabel(hero.from, hero.to)} · Shopify ${hero.net.mode}`; });
     if (element) details.set(element, { state: 'info', title: kind === 'email' ? 'Email · Shopify' : 'Refill Pack', detail: model.detail, mode: hero.net.mode });
   }
-  renderHealth();
+  setDecisions({amberDials:all('#dials .tile[data-state=warn][data-mode=live]').length});
   renderHourlyOrders();
 }
 
@@ -365,7 +368,7 @@ function renderTest(card: HTMLElement, data: TestModel): void {
   const badge = get('[data-tchip]', card);
   badge.className = `chip ${result.state}`;
   badge.textContent = result.chipText;
-  get('[data-say]', card).innerHTML = `${esc(result.say)}<small>${esc(result.small)}</small>`;
+  get('[data-say]', card).innerHTML = card.closest('#tests') ? 'Grey until 95% on two mornings · Rates unavailable' : `${esc(result.say)}<small>${esc(result.small)}</small>`;
   get('[data-prog]', card).textContent = result.progress;
   const call = card.querySelector<HTMLButtonElement>('[data-call]');
   if (call) call.disabled = true;
@@ -379,11 +382,12 @@ function radarGroup(element: HTMLElement): string | undefined {
   const icon = element.querySelector('.src use')?.getAttribute('href')?.slice(1) ?? '';
   return element.dataset.g || sourceGroups[element.dataset.src ?? ''] || iconGroups[icon] || panelGroups[panel];
 }
+document.addEventListener('pulse:decisions-rendered',()=>renderHealth());
 function renderHealth(): void {
   const total = emptyTally(), byGroup: Record<string, Tally> = {};
   const gauges: Record<string, HTMLElement[]> = {};
   radarTargets.clear();
-  all('.tile[data-state],.dcard[data-state],.tcard[data-state]').forEach((element) => {
+  all('.tile[data-state],.dcard[data-state],.tcard[data-state],#deck [data-state]').forEach((element) => {
     const state = element.dataset.state ?? '';
     if (!(state in total)) return;
     const group = radarGroup(element);
@@ -391,7 +395,7 @@ function renderHealth(): void {
       && !(element.hidden && (element.dataset.k === 'ukcpo' || element.dataset.k === 'uscpo'))) {
       (gauges[group] ??= []).push(element);
     }
-    if (snapshot.shopify && element.dataset.mode === 'sample' && !element.hasAttribute('data-ingested-shopify') && !element.closest('#shopify-needs') && !element.closest('#hero')) return;
+    if (snapshot.shopify && element.dataset.mode === 'sample' && !element.hasAttribute('data-ingested-shopify') && !element.closest('#deck') && !element.closest('#hero')) return;
     total[state as keyof Tally] += 1;
     if (!group || group === 'hero' || element.dataset.mode !== 'live' || !element.matches('.tile')) return;
     byGroup[group] ??= emptyTally();
@@ -409,7 +413,7 @@ function renderHealth(): void {
     return { key, name, measure, alarms: byGroup[key]?.alarm ?? 0, title: weakest ? details.get(weakest)?.title ?? measure.label : measure.label, ...(weakest ? { target: weakest.id } : {}) };
   });
   const { health } = radarSummary(areas), healthLabel = health === null ? 'Not enough data' : `${formatNumber(health)} health`;
-  const rows = snapshot.shopify ? all('#shopify-needs .dcard[data-state],#creative-cards .dcard[data-mode=live]') : all('.dcard[data-state]'), alarmCount = rows.filter((row) => row.dataset.state === 'alarm').length, decisions = rows.filter((row) => row.dataset.state === 'decide').length;
+  const rows = all('#deck [data-state]'), alarmCount = rows.filter((row) => row.dataset.state === 'alarm').length, decisions = rows.filter((row) => row.dataset.state === 'decide').length;
   const reviewCount = snapshot.reviews?.rows.length ?? 0;
   get('#counts').innerHTML = `<span class="pk health">${health === null ? healthLabel : `<b>${formatNumber(health)}</b> health`}</span>` + ([['alarm', alarmCount, alarmCount === 1 ? 'alarm' : 'alarms'], ['decide', decisions, decisions === 1 ? 'decision' : 'decisions'], ['warn', total.warn, 'to watch'], ['good', total.good, 'good']] as const).map(([state, count, label]) => `<span class="pk" style="--c:${colour[state]}"><i>${states[state][1]}</i><b>${formatNumber(count)}</b> ${label}</span>`).join('') + `<button class="pk" type="button" data-rv style="--c:var(--decide)"><i>★</i>${reviewCount ? `<b>${formatNumber(reviewCount)}</b> ${snapshot.reviews?.mode === 'sample' ? 'sample ' : 'new '}${reviewCount === 1 ? 'review' : 'reviews'}` : esc(snapshot.reviews ? reviewsGreeting(snapshot.reviews) : 'All caught up')}</button>`;
   get('#subrv').textContent = snapshot.reviews ? ` ${reviewsGreeting(snapshot.reviews)}.` : '';
@@ -446,7 +450,7 @@ function showDetail(element: HTMLElement, reopen = true): void {
     openDetail = element; openTemplateId = undefined;
     get('#sh-title').textContent = review ? `${review.rating}★ · ${review.productTitle}` : 'Review no longer waiting';
     get('#sh-dot').className = `dot ${review && review.rating <= 3 ? 'warn' : 'decide'}`;
-    get('#sh-dot').textContent = review && review.rating <= 3 ? '!' : '◆';
+    get('#sh-dot').textContent = review && review.rating <= 3 ? '△' : '◆';
     get('#sh-dl').hidden = true;
     get('#sh-chart').replaceChildren();
     get('#sh-extra').innerHTML = review ? reviewSheetHtml(review, snapshot.reviews) : '<p>This review is no longer waiting in Judge.me.</p>';
@@ -495,10 +499,13 @@ function selectDeck(deck: string): void {
   all('[data-panel]').forEach((element) => { element.hidden = element.dataset.panel !== deck; });
   history.replaceState(null, '', `#${deck}`);
 }
+const sampleOpenBeforeSearch=new Map<HTMLDetailsElement,boolean>();
 function filterDials(): void {
   const query = get<HTMLInputElement>('#q').value.trim().toLowerCase();
   const tiles = all('[data-panel] .tile');
   if (!query) {
+    for(const [group,open] of sampleOpenBeforeSearch)if(group.isConnected)group.open=open;
+    sampleOpenBeforeSearch.clear();
     tiles.forEach((tile) => { tile.hidden = !!tile.dataset.marketOnly && selectedMarket !== 'all' && tile.dataset.marketOnly !== selectedMarket; });
     selectDeck(selectedDeck);
     get('#dialcount').textContent = 'Tap any dial for the detail';
@@ -507,6 +514,7 @@ function filterDials(): void {
   all('[data-panel]').forEach((panel) => { panel.hidden = false; });
   let matches = 0;
   tiles.forEach((tile) => { tile.hidden = (!!tile.dataset.marketOnly && selectedMarket !== 'all' && tile.dataset.marketOnly !== selectedMarket) || !tile.textContent?.toLowerCase().includes(query); if (!tile.hidden) matches += 1; });
+  all<HTMLDetailsElement>('.sample-dials').forEach(group=>{if(!sampleOpenBeforeSearch.has(group))sampleOpenBeforeSearch.set(group,group.open);group.open=all('.tile',group).some(tile=>!tile.hidden);});
   all('.tab[data-tab]').forEach((tab) => tab.setAttribute('aria-selected', 'false'));
   get('#dialcount').textContent = `${formatNumber(matches)} ${matches === 1 ? 'dial' : 'dials'} match “${get<HTMLInputElement>('#q').value.trim()}”`;
 }
@@ -555,7 +563,7 @@ function updateSnapshot(next: DashboardSnapshot, initial = false): void {
     }
   });
   if (snapshot.shopify) {
-    get('#shopify-needs').innerHTML = needsHtml(snapshot.shopify);
+
     if (snapshot.fulfilment) { get('#fulfilment-glance').innerHTML = glance(snapshot.fulfilment); }
     get('[data-sp="live"]').innerHTML = liveHtml(snapshot.shopify);
     get('#shopify-panels').innerHTML = storePanelsHtml(snapshot.shopify);
@@ -579,15 +587,17 @@ function updateSnapshot(next: DashboardSnapshot, initial = false): void {
     element.innerHTML = [1, 2, 3, 4, 5].map((star) => `<svg class="${star <= rating ? 'on' : 'off'}" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-star"/></svg>`).join('');
   });
   renderHero(activeHero(), initial);
-  all('.tab[data-tab]').forEach((tab) => {
+  all('#tabs .tab[data-tab]').forEach((tab) => {
     const panel = document.querySelector<HTMLElement>(`[data-panel="${tab.dataset.tab}"]`);
     if (!panel) return;
     const worst = all('.tile[data-state]', panel).reduce<State>((previous, tile) => rank[(tile.dataset.state ?? 'info') as State] > rank[previous] ? tile.dataset.state as State : previous, 'info');
     const dot = get('.dot', tab); dot.className = `dot ${worst}`; dot.textContent = states[worst][1];
   });
   filterDials();
-  const healthLabels = { waiting_for_keys: 'waiting for keys', not_implemented: 'client not built', healthy: 'connected', error: 'source unavailable' };
-  get('#feeds').innerHTML = (snapshot.sourceHealth ?? []).map((row) => `<span><i style="background:var(--info)"></i>${esc(row.name)} · ${row.source === 'shopify' && row.status === 'not_implemented' ? 'first sync pending' : healthLabels[row.status]}</span>`).join('') + '<a href="/sources">Connection details</a>';
+  const connectionStatus=document.querySelector<HTMLElement>('#connection-status');
+  if(connectionStatus)connectionStatus.innerHTML=footerChipHtml(snapshot.sourceHealth);
+  arrangeHomeDials(document);
+  setDecisions({shopify:snapshot.shopify,amberDials:all('#dials .tile[data-state=warn][data-mode=live]').length});
   document.documentElement.dataset.updatedAt = snapshot.generatedAt;
   get('#update-status').textContent = `Updated ${new Date(snapshot.generatedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Europe/London' })}`;
   if (get<HTMLDialogElement>('#sheet').open) {
@@ -671,6 +681,8 @@ function boot(): void {
         const panel = gauge.closest<HTMLElement>('[data-panel]')?.dataset.panel;
         if (panel) selectDeck(panel);
         filterDials();
+        const samples = gauge.closest<HTMLDetailsElement>('details.sample-dials');
+        if (samples) samples.open = true;
         scrollTo(gauge); gauge.focus({ preventScroll: true });
         all('.drop-highlight').forEach(element => element.classList.remove('drop-highlight'));
         gauge.classList.add('drop-highlight');
@@ -689,7 +701,7 @@ function boot(): void {
     if (period === 'pick') { dates.open(); return; }
     if (period === 'today' || period === 'yday' || period === '7d' || period === '30d') { setPeriod(period); return; }
     const deck = target.closest<HTMLElement>('.tab[data-tab]')?.dataset.tab;
-    if (deck) { get<HTMLInputElement>('#q').value = ''; selectDeck(deck); filterDials(); return; }
+    if (deck) { get<HTMLInputElement>('#q').value = ''; selectDeck(deck); filterDials(); if(target.closest('#deck'))scrollTo(get('#dials')); return; }
     const scoreTab = target.closest<HTMLElement>('[data-st]')?.dataset.st;
     if (scoreTab) {
       all('[data-st]').forEach((tab) => tab.setAttribute('aria-selected', String(tab.dataset.st === scoreTab)));

@@ -1,3 +1,4 @@
+import {setDecisions} from '../decisions/browser.js';
 import { fullEvidenceHtml } from './lift-view.js';
 import type { LiftWindowDays } from './lifts.js';
 import type { CreativeView, CreativeSheet, CreativeSelection } from './presentation-types.js';
@@ -34,9 +35,10 @@ function status(message: string): void {
 function render(next: CreativeView): void {
   view = next;
   element('#creative-panel')?.replaceChildren();
-  const panel = element('#creative-panel'); if (panel) panel.innerHTML = creativePanelHtml(next);
+  const panel = element('#creative-panel'); if (panel) panel.innerHTML = creativePanelHtml(next, Boolean(document.querySelector('#table')));
   const gallery = element('#creative-gallery'); if (gallery) gallery.innerHTML = creativeGalleryHtml(next);
   const cards = element('#creative-cards'); if (cards) cards.innerHTML = creativeCardsHtml(next.cards);
+  setDecisions({creatives:next.cards});
   const attributes = element('#creative-attribute-filters'); if (attributes) attributes.innerHTML = creativeAttributeFiltersHtml(next);
   const undo = element<HTMLButtonElement>('#creative-merge-undo'); if (undo) undo.hidden = !lastMerge;
   const form = element<HTMLFormElement>('#creative-filters');
@@ -165,7 +167,7 @@ async function scanNow(button: HTMLButtonElement): Promise<void> {
   }
 }
 async function copyBrief(text: string, button: HTMLButtonElement): Promise<void> {
-  try { await navigator.clipboard.writeText(text); button.setAttribute('aria-label', 'Copied'); brieflySaved(element('#creative-gallery-status'), 'Copied'); }
+  try { await navigator.clipboard.writeText(text); button.setAttribute('aria-label', 'Copied'); brieflySaved(element('#creative-gallery-status'), 'Copied'); brieflySaved(element('#creative-feedback'), 'Copied'); }
   catch { status('Copy was unavailable. Open the creative and try again.'); }
 }
 async function cardAction(cardId: string, action: 'done' | 'snooze' | 'undo'): Promise<void> {

@@ -1,3 +1,4 @@
+import {setDecisions} from '../decisions/browser.js';
 import {adSetName} from './name.js';
 import {adSetCards,adSetSummary,adSetTable,adSetSheet,actionForm} from './view.js';
 import type {AdSetsView} from './presentation.js';
@@ -8,7 +9,8 @@ export function updateAdSets(next:AdSetsView,selectedMarket=market):void {
  view=next;market=selectedMarket;
  const cards=document.querySelector('#adset-cards'),summary=document.querySelector('#adset-summary'),table=document.querySelector('#adsets-table');
  if(cards)cards.innerHTML=adSetCards(view,market);
- if(summary)summary.innerHTML=adSetSummary(view,market);
+ if(summary)summary.innerHTML=adSetSummary(view,market,true);
+ setDecisions({adSets:view,market});
  if(table)table.innerHTML=adSetTable(view,market);
  if(!acting&&opened&&document.querySelector<HTMLDialogElement>('#adset-sheet')?.open)show(opened);
 }

@@ -164,6 +164,7 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     number('creativeHitKilledTargetMultiplier', 'Hit rate killed target multiplier', { min: 1, max: 100 }),
     number('creativeMediaCapMb', 'Media storage cap (MB)', { integer: true, min: 1, max: 10_000 }),
     { key: 'creativeFreelancerInitial', label: 'Freelancer initial', maxlength: 1, hint: 'One letter for the owner mark on each picture.' },
+    { key: 'freelancerLabel', label: 'Freelancer label', maxlength: 24, optional: true, hint: 'Shown beside our spend. Blank uses Freelancer.' },
   ], values)}</div><h3>Attribute lifts</h3><p class="setting-help">Compare tagged creatives of the same type. Each side must meet both minimums. A lift is a correlation, not a cause.</p><div class="settings-grid">${fields([
     number('creativeLiftMinimumGroups', 'Lift minimum groups per side', { integer: true, min: 1, max: 1_000 }),
     number('creativeLiftMinimumSpendGbp', 'Lift minimum spend per side (£)', { min: 0.01, max: 100_000 }),

@@ -3,6 +3,7 @@ import test from 'node:test';
 import { defaultSettings } from '../src/settings.js';
 import { sampleCreativeData } from '../src/creatives/sample.js';
 import { buildCreativeSheet, buildCreativeView } from '../src/creatives/routes.js';
+import { homeMakeNextHtml } from '../src/creatives/lift-view.js';
 import { creativeGalleryHtml, creativePanelHtml, creativeSheetHtml } from '../src/creatives/view.js';
 
 const settings = defaultSettings(), today = '2026-10-13';
@@ -43,4 +44,32 @@ test('sheet performance keeps four windows as columns and every video metric as 
   assert.equal((html.match(/scope="row"/g) ?? []).length, 9);
   for (const metric of ['Purchases', 'Purchase value', 'ROAS', 'Per purchase', 'Hook', 'Hold', 'Watch-through', 'Add to cart']) assert.ok(html.includes(metric));
   assert.doesNotMatch(html, /maxlength="200"|creative-table-scroll/);
+});
+
+
+test('Home chooses one Make next well by first-bullet confidence, preferring video on a tie', () => {
+  const view = buildCreativeView(data, settings, today);
+  const briefs = structuredClone(view.homeMakeNext);
+  for (const kind of ['video', 'image'] as const) briefs[kind].bullets = Array.from({length: 4}, (_, i) => ({text: `Invented ${kind} instruction ${i}`, confidence: 'Likely', liftIds: []}));
+  let html = homeMakeNextHtml(briefs);
+  assert.match(html, /data-home-make-next="video"/);
+  assert.equal((html.match(/<li>/g) ?? []).length, 3);
+  assert.match(html, /aria-label="Copy brief"/);
+  briefs.image.bullets[0]!.confidence = 'Strong';
+  html = homeMakeNextHtml(briefs);
+  assert.match(html, /data-home-make-next="image"/);
+  assert.ok(html.includes('data-creative-copy='));
+  briefs.video.bullets = []; briefs.image.bullets = [];
+  html = homeMakeNextHtml(briefs);
+  assert.ok(html.includes(briefs.video.empty));
+  assert.doesNotMatch(html, /data-creative-copy/);
+});
+
+test('compact Home creatives keep pictures and controls but omit repeated detail paragraphs', () => {
+  const view = buildCreativeView(data, settings, today), html = creativePanelHtml(view, true);
+  assert.equal((html.match(/class="creative-picture"/g) ?? []).length, 3);
+  assert.match(html, /id="creative-ours"/); assert.match(html, /class="cline creative-floor"/);
+  assert.doesNotMatch(html, /creative-unplaced|creative-lines|creative-cpp/);
+  assert.equal((html.match(/data-home-make-next=/g) ?? []).length, 1);
+  assert.match(creativePanelHtml(view), /creative-lines/);
 });

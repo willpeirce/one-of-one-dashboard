@@ -240,7 +240,8 @@ test('without a token Judge.me waits for keys and its sample worker never reads 
 test('every Open and Read action uses the final Judge.me reviews dashboard URL', () => {
   const panel = sampleReviews();
   assert.equal(reviewLink(), 'https://app.judge.me/index');
-  for (const html of [reviewsPanelHtml(panel), ...panel.rows.map(row => reviewSheetHtml(row, panel))]) {
+  assert.doesNotMatch(reviewsPanelHtml(panel), /data-review-link/);
+  for (const html of panel.rows.map(row => reviewSheetHtml(row, panel))) {
     const links = [...html.matchAll(/data-review-link href="([^"]+)"/g)];
     assert.ok(links.length > 0);
     for (const [, href] of links) assert.equal(href, 'https://app.judge.me/index');
@@ -252,7 +253,7 @@ test('reviews share sample/live rendering, safely escape full text, disable Publ
   assert.equal(panel.publishEnabled, false); assert.equal(appConfig.judgeme.publishEnabled, false);
   assert.equal(reviewsGreeting(panel), '3 sample reviews, 1 needs reading first');
   const html = reviewsPanelHtml(panel), sheet = reviewSheetHtml(row, panel);
-  assert.match(html, /id="review-publish"[^>]*disabled/); assert.match(html, /Verified buyer/); assert.match(html, /1 photo/);
+  assert.match(html, /id="review-publish"[^>]*disabled/); assert.doesNotMatch(html, /Verified buyer|1 photo/); assert.match(sheet, /Verified buyer/); assert.match(sheet, /1 photo/);
   assert.ok(sheet.indexOf('Read in Judge.me') < sheet.indexOf('Open in Judge.me'));
   assert.equal((sheet.match(/data-review-link/g) ?? []).length, 2); assert.ok(sheet.includes(reviewLink()));
   assert.match(sheet, /Sample data/); assert.match(sheet, new RegExp(row.body.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
@@ -282,7 +283,7 @@ test('empty reviews use only the title chip and preserve pending, unavailable an
 test('review source chips label web and email flows and retain other raw wording',()=>{
  for(const [source,label] of [['web','Web'],['new-rre-flow','Email request'],['invented-email-flow','Email request'],['invented-channel','invented channel']]){
   const panel=sampleReviews();panel.rows=[{...panel.rows[0]!,source:source!,flagged:false}];
-  for(const html of [reviewsPanelHtml(panel),reviewSheetHtml(panel.rows[0]!,panel)]){
+  for(const html of [reviewSheetHtml(panel.rows[0]!,panel)]){
    assert.ok(html.includes(`<span class="chip info">${label}</span>`));
    assert.doesNotMatch(html,/New rre flow/);
   }
@@ -303,11 +304,24 @@ test('waiting reviews retain email flags last, use only explicit hidden/publishe
   await saveReviews(db,cleaned,now);
   const panel=await readReviews(db,now);
   assert.deepEqual(panel.rows,waitingReviews(cleaned));
-  const html=reviewsPanelHtml(panel);assert.match(html,/Flagged by Judge.me/);assert.match(html,/Email request/);assert.match(html,/>Web</);
+  const html=reviewsPanelHtml(panel)+panel.rows.map(row=>reviewSheetHtml(row,panel)).join('');assert.match(html,/Flagged by Judge.me/);assert.match(html,/Email request/);assert.match(html,/>Web</);
   assert.equal((html.match(/Flagged by Judge.me/g)??[]).length,1);assert.doesNotMatch(html,/903001|903004|Invented Reviewer|reviewer@example.test|203\.0\.113\.8/);
   const health=await readReviewHealth(db);assert.deepEqual(health,{read:4,waiting:2,flagged:1,last:now.toISOString(),mode:'live'});
   const snapshot=getSampleDashboard();
   const shopify={...snapshot.shopify,checks:[] } as NonNullable<Parameters<typeof sourceHealthPage>[4]>['shopify'];
   assert.match(sourceHealthPage([],undefined,undefined,undefined,{summary:'Invented sources',shopify,checkedAt:now.toISOString(),reviewHealth:health}),/Reviews: 4 read, 2 waiting, 1 flagged, last/);
   const {published,...missing}=raw[0]!;assert.equal(cleanReview(missing),null);
+});
+
+
+test('compact reviews rank low ratings first, fold after three and omit unknown markets', () => {
+  const panel = sampleReviews();
+  panel.rows = Array.from({length: 6}, (_, i) => ({...panel.rows[0]!, id: `invented-review-${i}`,
+    rating: i === 1 || i === 4 ? 2 : 5, createdAt: `2026-10-${String(10 + i).padStart(2, '0')}T12:00:00Z`, market: null}));
+  const html = reviewsPanelHtml(panel), visible = html.split('<details')[0]!;
+  assert.deepEqual([...visible.matchAll(/data-review-open="([^"]+)"/g)].map(match => match[1]), ['invented-review-4', 'invented-review-1', 'invented-review-5']);
+  assert.match(html, /<summary>\+3 more<\/summary>/);
+  assert.doesNotMatch(html, /Market unknown|Verified buyer|data-review-link|photo/);
+  assert.match(html, /class="chip info" id="rvcount"/);
+  assert.equal((html.match(/data-review-open/g) ?? []).length, 6);
 });

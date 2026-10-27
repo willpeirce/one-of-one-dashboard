@@ -122,6 +122,7 @@ export interface HeroRangeOptions {
   name?: string;
   market?: import('./dashboard-types.js').HeroMarket;
   blendedMetaTripwireGbp?: number;
+  freelancerLabel?: string;
 }
 
 /** Weighted ratios are calculated from summed numerators and denominators. */
@@ -269,10 +270,10 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
         why: `${integer(t.o)} orders from ${integer(t.sess)} sessions ${on}, ${rounded(cr, 1)}%. ${marketDetail}` }),
     }, ['shopify']),
     spend: metric({ n: Math.round(t.spend), state: partial ? 'sofar' : 'info', pre: '£',
-      ss: `ours ${money(t.ours)} · Laszlo ${money(t.meta - t.ours)} · Google ${money(t.g)}`,
+      ss: `ours ${money(t.ours)} · ${options.freelancerLabel ?? 'Freelancer'} ${money(t.meta - t.ours)} · Google ${money(t.g)}`,
       d: detail('spend', { hp: '£', rule: 'Spend has no bar of its own. The budget dial under Ads watches ours against the day plan.',
-        src: `Meta Ads Manager (ours and Laszlo), Google Ads, ${when}`,
-        why: `${money(t.spend)} ${on}: Meta ${money(t.meta)} (ours ${money(t.ours)}, Laszlo ${money(t.meta - t.ours)}), Google ${money(t.g)}.` }),
+        src: `Meta Ads Manager (ours and ${options.freelancerLabel ?? 'Freelancer'}), Google Ads, ${when}`,
+        why: `${money(t.spend)} ${on}: Meta ${money(t.meta)} (ours ${money(t.ours)}, ${options.freelancerLabel ?? 'Freelancer'} ${money(t.meta - t.ours)}), Google ${money(t.g)}.` }),
     }, ['meta', 'google-ads']),
     roas: metric({ n: rounded(roas), state: 'info', suf: '×', dp: 2, ss: 'net sales ÷ all ad spend · set a bar',
       d: detail('roas', { hs: '×', rule: 'No bar yet. Break-even ROAS comes from costs.md: 1 ÷ (1 − non-ad cost share). Grey until then.',

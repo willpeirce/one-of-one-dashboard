@@ -19,6 +19,10 @@ test('fourteen complete UK days use counted last-visit Meta orders, owner estima
  const matched=metaAttribution(spend,orders,settings,today,'uk');assert.equal(matched.owners[0]!.orders,1);assert.equal(matched.owners[0]!.estimated,false);
  assert.equal(metaAttribution(spend,orders,settings,today,'us').count,0);
  const dial=attributionDial(spend,orders,settings,today,'all',true);assert.equal(dial.t,'1.50×');assert.equal(dial.cap,'good');assert.match(dial.d.why,/Meta says 3 purchases · Shopify saw 2 orders from Meta ads/);
+ assert.ok(dial.d.extra!.some(([owner,value])=>owner==='ours' && value==='3 Meta purchases · 1 Shopify orders'));
+ assert.ok(dial.d.extra!.some(([source,value])=>source==='Other lastVisit source: invented-other' && value==='1 order'));
+ orders[0]!.lastVisit={source:'facebook'};
+ assert.ok(attributionDial(spend,orders,settings,today,'all',true).d.extra!.some(([owner,value])=>owner==='ours' && value==='3 Meta purchases · 2.00 Shopify orders · estimated'));
  assert.equal(attributionDial({...spend,days:[]},orders,settings,today,'all',true).t,'No data');
  for(const [value,zone] of [[1.5,'good'],[1.5001,'warn'],[1.8,'warn'],[1.8001,'alarm']] as const)assert.equal(attributionZone(value),zone);
 });

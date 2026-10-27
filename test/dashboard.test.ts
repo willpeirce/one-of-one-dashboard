@@ -4,6 +4,7 @@ import { dashboardPage } from '../src/dashboard-view.js';
 import { dashboardTemplate } from '../src/dashboard-template.js';
 import { getSampleDashboard } from '../src/sample-dashboard.js';
 import { defaultSettings } from '../src/settings.js';
+import { reviewSheetHtml } from '../src/judgeme/presentation.js';
 import { sourceDefinitions } from '../src/sources.js';
 
 test('every dashboard binding resolves from source-tagged server sample data', () => {
@@ -134,9 +135,11 @@ test('unbuilt source actions stay disabled while read-only review links and acco
   assert.ok(!/<button[^>]*id="sign-out"[^>]*data-unbuilt/.test(page));
   for (const path of ['/sources', '/settings', '/audit']) assert.ok(page.includes(`href="${path}"`));
   assert.ok(!/\bsrc="https?:/.test(page), 'no third-party assets');
-  const external = [...page.matchAll(/<a\b[^>]*href="https?:[^>]*>/g)];
+  const panel = getSampleDashboard().reviews!;
+  const sheet = panel.rows.map(review => reviewSheetHtml(review, panel)).join('');
+  const external = [...sheet.matchAll(/<a\b[^>]*href="https?:[^>]*>/g)];
   assert.ok(external.length > 0);
-  assert.ok(external.every(([link]) => link.includes('data-review-link') && link.includes('rel="noopener noreferrer"')));
+  assert.ok(external.every(([link]) => link.includes('data-review-link') && link.includes('target="_blank"') && link.includes('rel="noopener noreferrer"')));
 });
 
 test('legacy Meta pause placeholders are absent and Act is the sole flag-gated set action',async()=>{

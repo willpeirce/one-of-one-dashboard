@@ -27,6 +27,9 @@ await build({
 const assets = [
   ['src/styles.css', 'styles.css'],
   ['src/dashboard.css', 'dashboard.css'],
+  ['src/home-compact.css', 'home-compact.css'],
+  ['src/home-panels.css', 'home-panels.css'],
+  ['src/decisions/style.css', 'decisions.css'],
   ['src/settings.css', 'settings.css'],
   ['src/pull-refresh.css', 'pull-refresh.css'],
   ['src/fulfilment/style.css', 'fulfilment.css'],

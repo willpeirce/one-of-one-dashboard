@@ -4,6 +4,7 @@ Updated in every pull request.
 
 | Stage | What | Code | Keys in Replit | Live check ("Done when") |
 |---|---|---|---|---|
+| Home · 27 Oct | Compact ranked Decisions, stock grid, capped reviews/experiments/creatives, folded sample dials and actual source footer | built on `home-compact`; migration 050 (approved audit allowlist only); browser budgets pinned at phone/desktop widths | none | Claude checks live Home at 390 and 1280 px against the same budgets |
 | 2 scan fix · 27 Oct | Restore four-field scan request, tolerant JSON parsing, bounded timeouts and latest-attempt diagnostics | built on `fix-creative-scan`; no new migration | none | Claude runs one live Scan now after Republish and checks `/sources` |
 | 2 startup fix · 27 Oct | Older Settings defaults, frozen-key guard, repeated order privacy cleanup and named settings failures | built on `fix-settings-defaults`; migration 049 | none | Republish passes startup, then stage 2 part B checks below |
 | 2 part A · 1 | Meta spend by UK hour, today and yesterday; same poll-hour comparison for All/UK/US | built on `stage-2-meta`; migration 042 | no new keys | check comparison and three days to the penny against Ads Manager |
@@ -77,13 +78,13 @@ Updated in every pull request.
 
 ## Next step
 
-Review **fix-creative-scan**, based on merged PR #40. Creative scans send only model, max_tokens, system and messages. The strict format is removed; compilation complexity/latency remains a suspected cause rather than a proven diagnosis. A request-key test guards future changes, and Claude must run one live Scan now after every Republish that changes the model request.
+Review **home-compact**, based on merged PR #41. The four Home chapters retain their identities. Decisions use one shared state/renderer, ranked Act cards, a product/market stock grid, compact watch rows and a folded check list. Reviews, experiments and creative highlights show three entries before expansion; sample dials are folded and the footer reports source health. Existing sheets and source reads remain in place.
 
-Automatic runs attempt never-tried groups first, newest first within each priority, and stop after two timeouts. Any successful scan for the current model keeps a group scanned and out of the automatic queue after a failed manual re-scan. `/sources` keeps the last success and shows the current model's latest attempt, UK time, outcome, HTTP diagnostics and seconds. Sample mode remains off for paid scans. Existing Settings-default and order-cleanup fixes from PR #40 are retained.
+**Verification:** typecheck, all 702 tests on PostgreSQL (no skips), build, the full browser suite and secret scanning passed before pushing. The dense phone/desktop browser fixture pins heights, control counts, 44 px tap targets, text clamps, overflow, hand-counted states and interactions after a re-render. All requested budgets pass unchanged; they must not be raised. CI must be green before review readiness. All new fixtures and values are invented.
 
-Needs from Will after merge: **nothing**. Claude merges, runs the Shell merge, `npm run migrate` and Republish, then runs Scan now on one group and checks `/sources`. This fix adds no migration; historical omitted_config rows remain. The builder does not merge, deploy or run paid live scans.
+**Known constraint:** the ad-set view only exposes completed-day spend. Its compact summary says spend so far unavailable; showing a measured current-day amount requires a separate read change. Sample experiment arms retain their counts and say rates unavailable because their model has no visitor denominator.
 
-**Verification:** typecheck, all 689 tests on PGlite (no skips), build, phone/desktop browser checks and secret scanning passed before pushing. Final CI must also pass against PostgreSQL before the PR is ready. Regression coverage pins the request keys, tolerant parsing, one attempt per group, the second-timeout stop, never-tried ordering, preserved successful scans and latest-attempt diagnostics. All added rows and values are invented; automated checks do not establish live provider acceptance.
+Needs from Will after merge: **nothing**. Claude merges, runs the Shell merge, `npm run migrate` (050) and Republish, then checks live Home at 390 and 1280 px against the pinned budgets. The builder does not merge or deploy.
 
 **Sample and live:** sample w019 remains its sample; connected Meta and Shopify use the measured fourteen-complete-day ratio. Activity and risk cards use live records only. CAC uses counted first orders when every counted order in the period has a flag; otherwise it says all orders with the waiting count. Unknown source data stays unavailable. Only first/repeat/unknown is retained; the unused customer-ID projection is removed.
 

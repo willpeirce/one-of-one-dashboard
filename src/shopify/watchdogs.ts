@@ -118,6 +118,7 @@ export function evaluateWatchdogs(facts: Facts, now: Date, settings: Settings, o
   const expiry = settings.keyExpiryDates.filter(k => k.expiresOn <= addDays(day, 14));
   add('self', 'Self-check', failed.length || otherFailures.length || expiry.length ? 'tripped' : facts.jobs.some(j => j.name in intervals && !j.last_success_at && !(facts.mode === 'sample' && j.name === 'subscriptions')) ? 'unknown' : 'pass',
     [...failed.map(j => `${j.name}: failed ${formatNumber(j.failures)} times; last worked at ${j.last_success_at ? formatUkTime(j.last_success_at) : 'never'}`), ...otherFailures.map(h => `${h.name}: last worked at ${h.lastSuccessAt ? formatUkTime(h.lastSuccessAt) : 'never'}`), ...expiry.map(k => `${k.keyName}: expires ${k.expiresOn}`)].join(' · ') || 'No repeated failures, stale feeds or keys within 14 days of expiry.', '');
+  if (otherFailures.some(source => source.source !== 'shopify') || expiry.some(key => !key.keyName.startsWith('SHOPIFY_'))) checks.find(check => check.id === 'self')!.link = '/sources';
   for (const notice of facts.noticeDetails) if (notice.kind === 'channel_short') {
     const d = notice.detail;
     const day = d.day ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(`${d.day}T12:00:00Z`)) : `${d.from}–${d.to}`;

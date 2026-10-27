@@ -127,19 +127,24 @@ export async function checkCreatives(context: BrowserContext): Promise<void> {
           await page.locator('[data-creative-close]').click();
         }
         if (scenario === 'videos') {
-          await page.locator('[data-creative-window="24h"]').click();
-          await page.waitForFunction(() => document.querySelector('[data-creative-window="24h"]')?.getAttribute('aria-pressed') === 'true');
-          assert.match(await page.locator('#creative-panel').innerText(), /Last complete UK day plus today so far/);
-          await page.locator('[data-creative-window="7d"]').click();
-          await page.waitForFunction(() => document.querySelector('[data-creative-window="7d"]')?.getAttribute('aria-pressed') === 'true');
-          assert.match(await page.locator('#creative-panel').innerText(), /Last 7 UK days/);
+          for (const window of ['24h', '7d'] as const) {
+            const refreshed = page.waitForResponse(response => /\/api\/creatives\?/.test(response.url()) && new URL(response.url()).searchParams.get('window') === window);
+            await page.locator(`[data-creative-window="${window}"]`).click();
+            const selected = await (await refreshed).json() as CreativeView;
+            assert.equal(selected.selection.window, window);
+            await page.waitForFunction(value => document.querySelector(`[data-creative-window="${value}"]`)?.getAttribute('aria-pressed') === 'true', window);
+            assert.deepEqual(await page.locator('#creative-panel .creative-top [data-group-id]').evaluateAll(elements => elements.map(element => element.getAttribute('data-group-id'))), selected.top.groups.map(group => group.group.id));
+          }
           await page.locator('#creative-ours').check();
           await page.waitForFunction(() => Array.from(document.querySelectorAll('#creative-panel .creative-owner')).every(element => element.textContent?.startsWith('Ours')));
           await page.locator('#creative-ours').uncheck();
           await page.waitForFunction(() => Array.from(document.querySelectorAll('#creative-panel .creative-owner')).some(element => !element.textContent?.startsWith('Ours')));
+          const marketRead = page.waitForResponse(response => /\/api\/creatives\?/.test(response.url()) && new URL(response.url()).searchParams.get('market') === 'uk');
           await page.locator('#market [data-market="uk"]').click();
-          await page.waitForFunction(() => Boolean(document.querySelector('.creative-unplaced')));
-          assert.match(await page.locator('.creative-unplaced').innerText(), /without a market.*under All/);
+          const selected = await (await marketRead).json() as CreativeView;
+          assert.equal(selected.selection.market, 'uk');
+          await page.waitForFunction(ids => JSON.stringify(Array.from(document.querySelectorAll('#creative-panel .creative-top [data-group-id]')).map(element => element.getAttribute('data-group-id'))) === JSON.stringify(ids), selected.top.groups.map(group => group.group.id));
+          assert.equal(await page.locator('.creative-unplaced').count(), 0, 'Home omits the unplaced-detail paragraph');
           await noOverflow(page);
         }
       }
@@ -150,6 +155,19 @@ export async function checkCreatives(context: BrowserContext): Promise<void> {
       await page.goto('/creatives');
       await page.locator('#creative-filters').waitFor();
       assert.ok(await page.locator('#creative-gallery .creative-picture').count() >= 6);
+      // Detailed window and unplaced descriptions remain in the full creative library.
+      for (const [window, description] of [['24h', /Last complete UK day plus today so far/], ['7d', /Last 7 UK days/]] as const) {
+        await page.locator(`[data-creative-window="${window}"]`).click();
+        await page.waitForFunction(value => document.querySelector(`[data-creative-window="${value}"]`)?.getAttribute('aria-pressed') === 'true', window);
+        assert.match(await page.locator('#creative-panel').innerText(), description);
+      }
+      await page.locator('[data-creative-window="3d"]').click();
+      await page.waitForFunction(() => document.querySelector('[data-creative-window="3d"]')?.getAttribute('aria-pressed') === 'true');
+      await page.locator('#creative-filters [name=market]').selectOption('uk');
+      await page.locator('.creative-unplaced').waitFor();
+      assert.match(await page.locator('.creative-unplaced').innerText(), /without a market.*under All/);
+      await page.locator('#creative-filters [name=market]').selectOption('all');
+      await page.waitForFunction(() => !document.querySelector('.creative-unplaced'));
       await checkMakeNext(page, width);
       await page.locator('[data-creative-tag="sample-video-3"]').click();
       await page.locator('#creative-tagging').waitFor();

@@ -38,6 +38,6 @@ export function attributionDial(facts:SpendFacts,orders:Order[],settings:Setting
     z:[[0,1.5,'good'],[1.5,1.8,'warn'],[1.8,Math.max(3,value??0),'alarm']],
     d:{why:`Meta says ${formatNumber(data.purchases)} purchases · Shopify saw ${formatNumber(data.count)} orders from Meta ads${!data.complete||!shopifyComplete?' · history incomplete':''}`,
       rule:'Meta purchases ÷ counted Shopify orders with a last-visit fbclid or a configured Meta source. Good to 1.5×, warn to 1.8×, alarm above.',src:'Live Meta + Shopify',
-      extra:[['Window',`${data.from}–${data.to} · complete UK days`],...data.owners.map(o=>[o.owner,`${formatNumber(o.purchases)} Meta purchases · ${o.orders===null?'unavailable':formatNumber(o.orders,2)} Shopify orders${o.estimated?' · estimated':''}`] as [string,string]),
-        ...data.other.map(([source,count])=>[`Other lastVisit source: ${source}`,`${count} orders`] as [string,string])]}};
+      extra:[['Window',`${data.from}–${data.to} · complete UK days`],...data.owners.map(o=>[o.owner,`${formatNumber(o.purchases)} Meta purchases · ${o.orders===null?'unavailable':formatNumber(o.orders,o.estimated?2:0)} Shopify orders${o.estimated?' · estimated':''}`] as [string,string]),
+        ...data.other.map(([source,count])=>[`Other lastVisit source: ${source}`,`${count} ${count===1?'order':'orders'}`] as [string,string])]}};
 }

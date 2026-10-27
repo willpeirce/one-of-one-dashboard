@@ -186,7 +186,7 @@ test('a selected range recomputes all eight hero metrics from its raw totals', (
   assert.equal(hero.net.n, 1_000);
   assert.equal(hero.orders.n, 10);
   assert.equal(hero.spend.n, 500);
-  assert.match(hero.spend.ss, /ours £100 · Laszlo £300 · Google £100/);
+  assert.match(hero.spend.ss, /ours £100 · Freelancer £300 · Google £100/);
   assert.equal(hero.cr.n, 1);
   assert.equal(hero.roas.n, 2);
   assert.equal(hero.margin.n, 25);
@@ -343,4 +343,14 @@ test('spike notes list up to five days, then use a count throughout the range de
     assert.ok(hero.orders.d.hm?.some((mark) => mark.includes('30 Sep (UK and US)')));
     if (count === 63) assert.equal(hero.orders.d.hm?.[0], 'Spike days: 1 Jan (US)');
   }
+});
+
+
+test('hero spend uses the supplied invented freelancer label', () => {
+  const hero = buildHeroRange([smallDay, largeDay], '2026-05-01', '2026-05-02', {
+    ...completed, freelancerLabel: 'Invented Partner',
+  });
+  assert.match(hero.spend.ss, /ours £100 · Invented Partner £300 · Google £100/);
+  assert.match(hero.spend.d.src!, /ours and Invented Partner/);
+  assert.match(hero.spend.d.why, /Invented Partner £300/);
 });

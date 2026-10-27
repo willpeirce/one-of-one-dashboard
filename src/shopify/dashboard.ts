@@ -1,3 +1,5 @@
+import { attributionDial } from '../ad-spend/attribution.js';
+import { metaRisks } from '../ad-spend/risks.js';
 import { spendNeeds, type AdHeroInputs } from '../ad-spend/metrics.js';
 import type { Database } from '../db.js';
 import { addDays, ukToday } from '../hero-range.js';
@@ -80,6 +82,10 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
     pace = { markets: { UK: marketView('UK'), US: marketView('US') } } satisfies SeriesPaceCard;
   }
   snapshot.widgets.w017 = { source: ['shopify'], mode: facts.mode, kind: 'series-pace', value: pace };
+  if(facts.mode==='live'&&adInputs?.spend.sources.some(s=>s.source==='meta'&&s.live)) {
+    const markets=Object.fromEntries((['all','uk','us'] as const).map(m=>[m,attributionDial(adInputs.spend,data.orders,settings,today,m,data.ready&&data.from<=addDays(today,-14))])) as Record<'all'|'uk'|'us',DialModel>;
+    snapshot.widgets.w019={kind:'dial',source:['meta','shopify'],mode:'live',value:markets.all,markets};
+  }
   const stamp = facts.mode === 'sample' ? 'Shopify sample data' : 'Shopify live';
   const poll = facts.jobs.find(j => j.name === 'poll');
   const freshness = poll?.last_success_at ? `Last worked at ${new Date(poll.last_success_at).toISOString()}` : 'First sync pending';
@@ -136,7 +142,7 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
   for (const row of stock) if (row.cover !== null && row.cover < 60) needs.push({ id: `stock:${row.productId}:${row.locationId}`, state: row.cover < 21 ? 'alarm' : 'warn', title: row.name, why: `${formatNumber(Math.floor(row.cover))} days of cover; run-out ${row.runOut}. Series 1 kits are not restocked.`, link: `https://admin.shopify.com/store/${appConfig.shopify.storeDomain.split('.')[0]}/products/${row.productId.split('/').at(-1)}` });
   for (const row of stock) if (row.available !== null && row.required !== null && row.available < row.required) needs.push({ id: `attach:${row.productId}:${row.locationId}`, state: 'warn', title: row.name, why: `${formatNumber(row.available)} available; ${formatNumber(Math.ceil(row.required))} needed at the measured attach rate for remaining kits. Source-owned stock only; TikTok gift stock awaits its source.`, link: `https://admin.shopify.com/store/${appConfig.shopify.storeDomain.split('.')[0]}/products/${row.productId.split('/').at(-1)}` });
   for (const n of facts.noticeDetails) if (['reports_unavailable', 'address_unavailable'].includes(n.kind)) needs.push({ id: n.source_id, state: 'warn', title: n.kind === 'reports_unavailable' ? 'Shopify reports unavailable' : 'Address access unavailable', why: n.kind === 'reports_unavailable' ? 'ShopifyQL was denied. Sessions may be daily routine data or unavailable; older order detail needs read_all_orders. Check granted Level 2 access.' : 'Order markets use currency/warehouse fallback. Check the app’s address permission; no personal address is stored.', link: `https://admin.shopify.com/store/${appConfig.shopify.storeDomain.split('.')[0]}/settings/apps` });
-  if(adInputs)needs.push(...spendNeeds(adInputs.spend,settings,today,now));
+  if(adInputs)needs.push(...spendNeeds(adInputs.spend,settings,today,now),...metaRisks(adInputs.spend,preparedRows,adInputs.activity??[],settings,today));
   needs.sort((a, b) => Number(b.state === 'alarm') - Number(a.state === 'alarm'));
   // Direct Judge.me and advertising examples remain explicitly separate until their parts land.
   snapshot.banner = `${stamp}. Ad spend uses separately labelled source connections; reviews and other stages: sample data; fulfilment uses separately labelled J&J uploads.`;

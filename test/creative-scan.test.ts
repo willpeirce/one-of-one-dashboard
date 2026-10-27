@@ -182,10 +182,10 @@ test('429 stores its safe provider code, stops without retrying and recovers nex
   assert.equal((await runCreativeScans(db,settings(),opts)).failed,1);
   assert.equal(calls,1);assert.deepEqual(waits,[]);
   const saved=await rows();assert.equal(saved[0].http_status,429);assert.equal(saved[0].provider_code,'rate_limit_error');
-  assert.match((await readScanHealth(db,settings(),options())).line,/1 failed · refused \(http 429, rate_limit_error\)/);
+  assert.match((await readScanHealth(db,settings(),options())).line,/1 failed · rejected \(http 429, rate_limit_error, \[redacted\]\)/);
   assert.equal((await runCreativeScans(db,settings(),opts)).state,'cooldown');assert.equal(calls,1);
   instant=scanRetryAt(now);assert.equal((await runCreativeScans(db,settings(),opts)).done,1);assert.equal(calls,2);
-  assert.deepEqual(logs,['Creative scan failed (refused (http 429, rate_limit_error))']);
+  assert.deepEqual(logs,['Creative scan failed (rejected (http 429, rate_limit_error, [redacted]))']);
   assert.ok(!JSON.stringify([saved,logs]).includes(process.env.ANTHROPIC_API_KEY!));
   assert.equal((await readScanHealth(db,settings(),options())).failed,0);
 });
@@ -304,7 +304,7 @@ test('refused and missing-usage envelopes scrub Unicode key echoes before their 
   for (const groupId of ['encoded-error', 'encoded-usage', 'encoded-malformed']) await runCreativeScans(db, settings(), options({ groupId,
     fetch: async () => replies.shift()! }));
   const saved = await rows();
-  assert.deepEqual(saved.map(row => row.failure_reason), ['refused', 'malformed', 'malformed']);
+  assert.deepEqual(saved.map(row => row.failure_reason), ['rejected', 'malformed', 'malformed']);
   for (const row of saved) {
     assert.ok(!row.raw_response.includes(key)); assert.ok(!row.raw_response.includes(encoded));
     assert.equal(row.raw_response, '');
@@ -392,4 +392,54 @@ test('truncation, refusal category, absent text and dropped attributes persist s
   const row=(await rows()).at(-1);assert.equal(row.failure_reason,reason);assert.equal(row.provider_code,code);assert.equal(row.raw_response,'');assert.equal(row.dropped_count,dropped);
   assert.match((await readScanHealth(db,settings(),options())).line,new RegExp(`${reason} \\(http 200, ${code}\\)`));
  }
+});
+
+test('every scan schema uses supported closed objects and unique non-empty enums', async () => {
+  const { scanOutputSchema } = await import('../src/creatives/scan.js');
+  const walk = (schema: any) => {
+    for (const key of Object.keys(schema)) assert.ok(['type','properties','required','additionalProperties','enum','description'].includes(key), key);
+    if (schema.type === 'object') assert.equal(schema.additionalProperties, false);
+    if (schema.enum) { assert.ok(schema.enum.length); assert.equal(new Set(schema.enum).size, schema.enum.length); }
+    for (const child of Object.values(schema.properties ?? {})) walk(child);
+  };
+  for (const kind of ['image','video'] as const) walk(scanOutputSchema(kind));
+});
+
+test('400 compatibility retry omits only the rejected feature, accounts spend and retains diagnostics until full success', async t => {
+  t.mock.method(console, 'error', () => {});
+  for (const part of ['effort','schema','unrelated']) {
+    await db.query('TRUNCATE pulse.media_groups CASCADE');
+    await seed([entry('compatibility')]);
+    let calls = 0;
+    const result = await runCreativeScans(db, settings(), options({fetch: async (_, init) => {
+      const body = JSON.parse(String(init?.body));
+      if (++calls === 1) return Response.json({error: {type:'invalid_request_error', message:`Invented ${part} rejected`}, usage:{input_tokens:10,output_tokens:0}}, {status:400});
+      if (part === 'effort') { assert.equal(body.output_config.effort, undefined); assert.ok(body.output_config.format); }
+      else assert.equal(body.output_config, undefined);
+      return answer(part === 'schema' ? '```json\n' + JSON.stringify({attributes}) + '\n```' : undefined);
+    }}));
+    assert.equal(calls, part === 'unrelated' ? 1 : 2);
+    assert.equal(result.done, part === 'unrelated' ? 0 : 1);
+    const saved = await rows();
+    assert.equal(saved[0].failure_reason, 'rejected');
+    assert.equal(saved[0].provider_message, `Invented ${part} rejected`);
+    assert.ok(Number(saved[0].cost_gbp) > 0);
+    if (part !== 'unrelated') {
+      assert.match((await readScanHealth(db, settings(), options())).line, /left out/);
+      await runCreativeScans(db,settings(),options({groupId:'compatibility',fetch:async()=>answer()}));
+      assert.doesNotMatch((await readScanHealth(db, settings(), options())).line, /left out/);
+    }
+  }
+});
+
+test('4xx message is scrubbed before storage, logging and its 200-character limit', async t => {
+  const logs: unknown[] = []; t.mock.method(console,'error', (...args:unknown[])=>logs.push(args));
+  await seed([entry('diagnostic')]);
+  const shaped = ['sk','ant','invented'.repeat(8)].join('-');
+  await runCreativeScans(db,settings(),options({fetch:async()=>Response.json({error:{type:'invalid_request_error',message:`${inventedCredential} ${shaped} ${'x'.repeat(250)}`}}, {status:400})}));
+  const saved = (await rows())[0];
+  assert.equal(saved.provider_message.length,200);
+  assert.match(saved.provider_message,/\[redacted\] \[redacted\]/);
+  assert.ok(!JSON.stringify(logs).includes(shaped));
+  assert.ok(!JSON.stringify(saved).includes(inventedCredential));
 });

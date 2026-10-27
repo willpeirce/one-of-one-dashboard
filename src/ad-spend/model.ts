@@ -9,6 +9,7 @@ export const adNames: Record<AdSource, string> = {
   tiktok: 'TikTok',
 };
 export interface SpendRow {
+  targetCountries?: string[];
   source: AdSource;
   accountId: string;
   campaignId: string;

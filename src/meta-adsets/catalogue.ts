@@ -2,9 +2,10 @@ import type { Database } from '../db.js';
 import type { Settings } from '../settings.js';
 import type { MetaSpend } from '../ad-spend/clients.js';
 import { AdError } from '../ad-spend/model.js';
-import { metaSpendMarket } from '../ad-spend/placement.js';
+import { spendMarket } from '../ad-spend/placement.js';
 
 export interface AdSet {
+  targetCountries?: string[];
   id: string; campaignId: string; name: string; status: string; effectiveStatus: string;
   dailyBudget: number | null; lifetimeBudget: number | null; currency: string;
   createdTime: string; updatedTime: string; learningStage: string | null;
@@ -30,19 +31,20 @@ const budget = (value: unknown): number | null => {
   if (!/^\d+$/.test(String(value)) || !Number.isSafeInteger(Number(value))) throw new AdError('invalid');
   return Number(value);
 };
-export const AD_SET_FIELDS = 'id,name,campaign_id,status,effective_status,daily_budget,lifetime_budget,created_time,updated_time,learning_stage_info';
+export const AD_SET_FIELDS = 'id,name,campaign_id,status,effective_status,daily_budget,lifetime_budget,created_time,updated_time,learning_stage_info,targeting{geo_locations}';
 export function parseAdSet(row: any, currency: string, settings: Settings, campaignName = ''): AdSet {
   if (!row || typeof row.name !== 'string' || row.name.length > 1000 || !/^[A-Z]{3}$/.test(currency)) throw new AdError('invalid');
   const campaignId = identifier(row.campaign_id), learning = row.learning_stage_info;
   const edit = learning?.last_sig_edit_ts == null ? null : Number(learning.last_sig_edit_ts);
   if (edit !== null && (!Number.isFinite(edit) || edit < 0)) throw new AdError('invalid');
+  const targetCountries: string[] = [...new Set<string>((Array.isArray(row.targeting?.geo_locations?.countries) ? row.targeting.geo_locations.countries : []).filter((c:unknown) => typeof c === 'string' && /^[A-Z]{2}$/.test(c)))].sort();
   return {
-    id: identifier(row.id), campaignId, name: row.name, status: identifier(row.status), effectiveStatus: identifier(row.effective_status),
+    targetCountries, id: identifier(row.id), campaignId, name: row.name, status: identifier(row.status), effectiveStatus: identifier(row.effective_status),
     dailyBudget: budget(row.daily_budget), lifetimeBudget: budget(row.lifetime_budget), currency,
     createdTime: instant(row.created_time), updatedTime: instant(row.updated_time),
     learningStage: typeof learning?.status === 'string' ? learning.status.slice(0, 100) : null,
     lastSignificantEdit: edit === null ? null : new Date(edit * 1000).toISOString(),
-    market: metaSpendMarket(campaignName, row.name, adSetOwner(campaignId, settings)),
+    market: spendMarket({source:'meta',campaignName,adSetName:row.name,owner:adSetOwner(campaignId,settings),targetCountries}),
   };
 }
 /** No effective_status filter: deleted objects are never requested or retained from the response. */
@@ -65,11 +67,11 @@ export async function saveAdSets(db: Database, account: string, rows: AdSet[], s
         await tx.query('INSERT INTO pulse.meta_ad_set_changes(audit_id,account_id,ad_set_id,field,old_value,new_value,observed_at) VALUES($1,$2,$3,$4,$5,$6,$7)',[audit.rows[0]!.id,account,row.id,field,old,next,now]);
       }
       const campaignName = campaigns.rows.find(c => c.campaign_id === row.campaignId)?.name ?? '';
-      const market = metaSpendMarket(campaignName, row.name, adSetOwner(row.campaignId, settings));
-      await tx.query(`INSERT INTO pulse.meta_ad_sets(account_id,ad_set_id,campaign_id,name,status,effective_status,daily_budget,lifetime_budget,currency,created_time,updated_time,learning_stage,last_significant_edit,market,first_seen,last_seen,last_read)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$15,$15)
-        ON CONFLICT(account_id,ad_set_id) DO UPDATE SET campaign_id=EXCLUDED.campaign_id,name=EXCLUDED.name,status=EXCLUDED.status,effective_status=EXCLUDED.effective_status,daily_budget=EXCLUDED.daily_budget,lifetime_budget=EXCLUDED.lifetime_budget,currency=EXCLUDED.currency,created_time=EXCLUDED.created_time,updated_time=EXCLUDED.updated_time,learning_stage=EXCLUDED.learning_stage,last_significant_edit=EXCLUDED.last_significant_edit,market=EXCLUDED.market,last_seen=EXCLUDED.last_seen,last_read=EXCLUDED.last_read`,
-      [account,row.id,row.campaignId,row.name,row.status,row.effectiveStatus,row.dailyBudget,row.lifetimeBudget,row.currency,row.createdTime,row.updatedTime,row.learningStage,row.lastSignificantEdit,market,now]);
+      const market = spendMarket({source:'meta',campaignName,adSetName:row.name,owner:adSetOwner(row.campaignId,settings),targetCountries:row.targetCountries});
+      await tx.query(`INSERT INTO pulse.meta_ad_sets(account_id,ad_set_id,campaign_id,name,status,effective_status,daily_budget,lifetime_budget,currency,created_time,updated_time,learning_stage,last_significant_edit,market,first_seen,last_seen,last_read,target_countries)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$15,$15,$16)
+        ON CONFLICT(account_id,ad_set_id) DO UPDATE SET campaign_id=EXCLUDED.campaign_id,name=EXCLUDED.name,status=EXCLUDED.status,effective_status=EXCLUDED.effective_status,daily_budget=EXCLUDED.daily_budget,lifetime_budget=EXCLUDED.lifetime_budget,currency=EXCLUDED.currency,created_time=EXCLUDED.created_time,updated_time=EXCLUDED.updated_time,learning_stage=EXCLUDED.learning_stage,last_significant_edit=EXCLUDED.last_significant_edit,market=EXCLUDED.market,target_countries=EXCLUDED.target_countries,last_seen=EXCLUDED.last_seen,last_read=EXCLUDED.last_read`,
+      [account,row.id,row.campaignId,row.name,row.status,row.effectiveStatus,row.dailyBudget,row.lifetimeBudget,row.currency,row.createdTime,row.updatedTime,row.learningStage,row.lastSignificantEdit,market,now,JSON.stringify(row.targetCountries ?? [])]);
     }
     if (!appAction) await tx.query('INSERT INTO pulse.meta_ad_set_sync(account_id,last_read) VALUES($1,$2) ON CONFLICT(account_id) DO UPDATE SET last_read=EXCLUDED.last_read', [account,now]);
   });
@@ -80,7 +82,7 @@ export async function readAdSets(db: Database, account: string, settings: Settin
     flatBudget:r.flat_budget, dailyBudget:r.daily_budget == null ? null : Number(r.daily_budget),lifetimeBudget:r.lifetime_budget == null ? null : Number(r.lifetime_budget),currency:r.currency,
     createdTime:new Date(r.created_time).toISOString(),updatedTime:new Date(r.updated_time).toISOString(),learningStage:r.learning_stage,
     lastSignificantEdit:r.last_significant_edit ? new Date(r.last_significant_edit).toISOString() : null,
-    market:r.market,
+    market:r.market,targetCountries:r.target_countries,
     owner:adSetOwner(r.campaign_id,settings),campaignName:r.campaign_name ?? '',
     firstSeen:new Date(r.first_seen).toISOString(),lastSeen:new Date(r.last_seen).toISOString(),lastRead:new Date(r.last_read).toISOString(),
   }));

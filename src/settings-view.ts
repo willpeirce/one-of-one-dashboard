@@ -178,7 +178,7 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     {key:'googleCustomerId',label:'Google customer ID',optional:true,hint:'Dashes are removed when saved.'},
     {key:'googleLoginCustomerId',label:'Google login customer ID (manager, optional)',optional:true},
     {key:'tiktokAdvertiserId',label:'TikTok advertiser ID',optional:true},
-  ], values)}</div>${campaignOwners(metaCampaigns, campaignSync, values)}${creativeControls}${collection('expectedGoogleCampaigns', 'Google campaign', [
+  ], values)}</div>${campaignOwners(metaCampaigns, campaignSync, values)}${collection('metaSources', 'Meta sources', [{key:'source',label:'Last-visit source'}], values.metaSources, 'Matched case-insensitively alongside fbclid. Settle this list from the live Meta over-credit detail.')}${collection('ourActors', 'Our actors', [{key:'actorId',label:'Actor ID'}], values.ourActors, 'Enter actor IDs from the live activity log. An empty list treats every change as not ours.')}${creativeControls}${collection('expectedGoogleCampaigns', 'Google campaign', [
     { key: 'campaignId', label: 'Campaign ID' },
   ], values.expectedGoogleCampaigns, 'Campaign IDs expected to report on complete days. This does not enable a campaign.')}`);
   const creators = section('Creator negotiation', 'Your rules for agreeing an asset and its usage.', `<div class="settings-grid">${fields([

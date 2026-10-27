@@ -1,3 +1,4 @@
+import { readActivity } from './meta-adsets/activity.js';
 import {readMetaActions} from './meta-adsets/actions.js';
 import {registerAdSets} from './meta-adsets/routes.js';
 import {readAdSetsView} from './meta-adsets/presentation.js';
@@ -157,7 +158,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   });
   async function heroInputs(facts:Awaited<ReturnType<typeof shopify.store.facts>>,settings:Awaited<ReturnType<typeof readSettings>>['values']) {
     const now=sourceNow(), today=ukToday(now);
-    return {spend:await spendFacts(db,settings,sourceEnv,shopify.mode,dataset(facts,today).min,today,now),costs:await shopify.store.costHistory(),estimates:await readEstimates(db,shopify.mode),now};
+    return {activity:shopify.mode==='live' ? (await readActivity(db,settings.metaAdAccountId,settings,now)).events : [],spend:await spendFacts(db,settings,sourceEnv,shopify.mode,dataset(facts,today).min,today,now),costs:await shopify.store.costHistory(),estimates:await readEstimates(db,shopify.mode),now};
   }
   let unconfirmedCampaigns: { scope: string; count: number } | undefined;
   async function snapshot() {

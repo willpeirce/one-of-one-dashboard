@@ -113,6 +113,7 @@ export interface SpendJob {
   backfill_window_days: number;
   backfill_next_run_at: Date | null;
   backfill_error: string | null;
+  backfill_failures?: number;
   last_poll_at: Date | null;
   last_success_at: Date | null;
   failures: number;
@@ -121,7 +122,7 @@ export interface SpendJob {
 export async function readJobs(db: Database): Promise<SpendJob[]> {
   return (
     await db.query<SpendJob & Record<string, unknown>>(
-      'SELECT source,account_id,backfill_next::text,backfill_done,backfill_first::text,backfill_window_days,backfill_next_run_at,backfill_error,last_poll_at,last_success_at,failures,actions_backfilled_at FROM pulse.ad_spend_jobs',
+      'SELECT source,account_id,backfill_next::text,backfill_done,backfill_first::text,backfill_window_days,backfill_next_run_at,backfill_error,backfill_failures,last_poll_at,last_success_at,failures,actions_backfilled_at FROM pulse.ad_spend_jobs',
     )
   ).rows;
 }
@@ -142,10 +143,10 @@ export async function saveSpend(
     );
     if (rows.length)
       await tx.query(
-        `INSERT INTO pulse.ad_spend(mode,source,account_id,campaign_id,campaign_name,ad_set_id,ad_set_name,market,owner,uk_day,spend_amount,spend_gbp,currency,fetched_at,impressions,link_clicks,adds_to_cart,purchases,purchase_value,day_basis)
-      SELECT 'live',$1,$2,r.campaign_id,r.campaign_name,r.ad_set_id,r.ad_set_name,r.market,r.owner,r.day,r.amount,CASE WHEN r.currency='GBP' THEN r.amount ELSE NULL END,r.currency,$4,r.impressions,r.link_clicks,r.adds_to_cart,r.purchases,r.purchase_value,r.day_basis
-      FROM jsonb_to_recordset($3::jsonb) AS r(campaign_id text,campaign_name text,ad_set_id text,ad_set_name text,market text,owner text,day date,amount numeric,currency text,impressions numeric,link_clicks numeric,adds_to_cart numeric,purchases numeric,purchase_value numeric,day_basis text)
-      ON CONFLICT (mode,source,campaign_id,ad_set_id,uk_day) DO UPDATE SET account_id=EXCLUDED.account_id,campaign_name=EXCLUDED.campaign_name,ad_set_name=EXCLUDED.ad_set_name,market=EXCLUDED.market,owner=EXCLUDED.owner,spend_amount=EXCLUDED.spend_amount,spend_gbp=EXCLUDED.spend_gbp,currency=EXCLUDED.currency,fetched_at=EXCLUDED.fetched_at,impressions=EXCLUDED.impressions,link_clicks=EXCLUDED.link_clicks,adds_to_cart=EXCLUDED.adds_to_cart,purchases=EXCLUDED.purchases,purchase_value=EXCLUDED.purchase_value,day_basis=EXCLUDED.day_basis`,
+        `INSERT INTO pulse.ad_spend(mode,source,account_id,campaign_id,campaign_name,ad_set_id,ad_set_name,market,owner,uk_day,spend_amount,spend_gbp,currency,fetched_at,impressions,link_clicks,adds_to_cart,purchases,purchase_value,day_basis,target_countries)
+      SELECT 'live',$1,$2,r.campaign_id,r.campaign_name,r.ad_set_id,r.ad_set_name,r.market,r.owner,r.day,r.amount,CASE WHEN r.currency='GBP' THEN r.amount ELSE NULL END,r.currency,$4,r.impressions,r.link_clicks,r.adds_to_cart,r.purchases,r.purchase_value,r.day_basis,r.target_countries
+      FROM jsonb_to_recordset($3::jsonb) AS r(campaign_id text,campaign_name text,ad_set_id text,ad_set_name text,market text,owner text,day date,amount numeric,currency text,impressions numeric,link_clicks numeric,adds_to_cart numeric,purchases numeric,purchase_value numeric,day_basis text,target_countries jsonb)
+      ON CONFLICT (mode,source,campaign_id,ad_set_id,uk_day) DO UPDATE SET account_id=EXCLUDED.account_id,campaign_name=EXCLUDED.campaign_name,ad_set_name=EXCLUDED.ad_set_name,market=EXCLUDED.market,owner=EXCLUDED.owner,spend_amount=EXCLUDED.spend_amount,spend_gbp=EXCLUDED.spend_gbp,currency=EXCLUDED.currency,fetched_at=EXCLUDED.fetched_at,impressions=EXCLUDED.impressions,link_clicks=EXCLUDED.link_clicks,adds_to_cart=EXCLUDED.adds_to_cart,purchases=EXCLUDED.purchases,purchase_value=EXCLUDED.purchase_value,day_basis=EXCLUDED.day_basis,target_countries=EXCLUDED.target_countries`,
         [
           source,
           account,
@@ -160,7 +161,7 @@ export async function saveSpend(
               day: r.day,
               amount: r.amount,
               currency: r.currency,
-              day_basis: r.dayBasis ?? 'uk',
+              day_basis: r.dayBasis ?? 'uk', target_countries: r.targetCountries ?? [],
               impressions:r.impressions ?? null,link_clicks:r.linkClicks ?? null,adds_to_cart:r.addsToCart ?? null,purchases:r.purchases ?? null,purchase_value:r.purchaseValue ?? null,
             })),
           ),
@@ -175,7 +176,7 @@ export async function saveSpend(
     if (source === 'meta') await saveMetaHours(tx, account, from, to, rows, now);
     if (next)
       await tx.query(
-        'UPDATE pulse.ad_spend_jobs SET backfill_next=$3 WHERE source=$1 AND account_id=$2',
+        'UPDATE pulse.ad_spend_jobs SET backfill_next=$3,backfill_failures=0,backfill_error=NULL WHERE source=$1 AND account_id=$2',
         [source, account, next],
       );
   });
@@ -191,6 +192,7 @@ export interface SpendFacts {
     status: string;
     fetchedAt: string | null;
     failures?: number;
+    backfillStall?: { day: string; code: string };
     stale?: boolean;
     lastAttemptAt?: string | null;
   }[];
@@ -219,7 +221,7 @@ export async function spendFacts(
   for (const source of sources.filter((s) => s.live)) {
     const account = accountFor(source.source, settings);
     const stored = await db.query<any>(
-      `SELECT campaign_id,campaign_name,ad_set_id,ad_set_name,uk_day::text,spend_amount::text,currency,day_basis FROM pulse.ad_spend WHERE mode='live' AND source=$1 AND account_id=$2 AND uk_day BETWEEN $3 AND $4`,
+      `SELECT campaign_id,campaign_name,ad_set_id,ad_set_name,uk_day::text,spend_amount::text,currency,day_basis,target_countries,purchases FROM pulse.ad_spend WHERE mode='live' AND source=$1 AND account_id=$2 AND uk_day BETWEEN $3 AND $4`,
       [source.source, account, from, to],
     );
     rows.push(
@@ -232,12 +234,12 @@ export async function spendFacts(
           campaignName: r.campaign_name,
           adSetId: r.ad_set_id,
           adSetName: r.ad_set_name,
-          market: spendMarket({ source: source.source, campaignName: r.campaign_name, adSetName: r.ad_set_name, owner }),
-          owner,
+          market: spendMarket({ source: source.source, campaignName: r.campaign_name, adSetName: r.ad_set_name, owner, targetCountries:r.target_countries }),
+          owner, targetCountries:r.target_countries,
           day: r.uk_day,
           amount: r.spend_amount,
           currency: r.currency,
-          dayBasis: r.day_basis,
+          dayBasis: r.day_basis, purchases:r.purchases==null?null:Number(r.purchases),
         };
       }),
     );
@@ -326,6 +328,8 @@ function sourceFacts(source: AdSource, live: boolean, job: SpendJob | undefined,
               ? `backfill running · next ${job!.backfill_next}`
               : 'live',
     fetchedAt,
+    ...(source === 'meta' && live && (job?.backfill_failures ?? 0) >= 3 && job?.backfill_error
+      ? { backfillStall: { day: job.backfill_next, code: job.backfill_error } } : {}),
     failures: live ? job?.failures ?? 0 : 0,
     stale,
     lastAttemptAt: job?.last_poll_at ? new Date(job.last_poll_at).toISOString() : null,
@@ -351,5 +355,7 @@ export function metaBackfillLine(job: SpendJob, now: Date): string {
     job.backfill_next_run_at ? new Date(job.backfill_next_run_at).getTime() : now.getTime(),
     job.last_poll_at ? new Date(job.last_poll_at).getTime() + SPEND_POLL_INTERVAL_MS : 0,
   ));
-  return `Meta spend backfill: read from ${job.backfill_first} to ${last}, ${left} days left, next run ${formatUkTime(next)}${job.backfill_error ? ` · ${job.backfill_error}` : ''}`;
+  const progress = job.backfill_next === job.backfill_first
+    ? `starting from ${job.backfill_first}` : `read from ${job.backfill_first} to ${last}`;
+  return `Meta spend backfill: ${progress}, ${left} days left, next run ${formatUkTime(next)}${job.backfill_error ? ` · ${job.backfill_error}` : ''}`;
 }

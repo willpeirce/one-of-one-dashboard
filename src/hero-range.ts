@@ -23,6 +23,8 @@ export interface DailyMetrics {
   spendKnown?: boolean;
   netKnown?: boolean;
   countsKnown?: boolean;
+  firstOrders?: number;
+  flaggedOrders?: number;
   sessionsKnown?: boolean;
   ukM: number;
   usM: number;
@@ -71,6 +73,10 @@ export function aggregateDays(rows: readonly DailyMetrics[]): Totals {
   totals.usS = rows.reduce((sum, row) => sum + (row.usS ?? row.sess - row.ukS), 0);
   totals.meta = totals.ukM + totals.usM;
   totals.spend = rows.reduce((sum, row) => sum + (row.adSpend ?? row.ukM + row.usM + row.g), 0);
+  if(rows.some(row=>row.flaggedOrders!==undefined)){
+    totals.firstOrders=rows.reduce((n,row)=>n+(row.firstOrders??0),0);
+    totals.flaggedOrders=rows.reduce((n,row)=>n+(row.flaggedOrders??0),0);
+  }
   return totals;
 }
 
@@ -107,8 +113,8 @@ const metrics: Record<Metric, (totals: Totals) => number> = {
   spend: (t) => t.spend,
   roas: (t) => divide(t.net, t.spend),
   margin: (t) => profitAndMargin({ netSales: t.net, landedCost: t.net * 0.25, adSpend: t.spend }).margin,
-  ukcpo: (t) => divide(t.ukM, t.uk),
-  uscpo: (t) => divide(t.usM, t.us),
+  ukcpo: (t) => metaCostPerOrder(t.ukM,t.uk),
+  uscpo: (t) => metaCostPerOrder(t.usM,t.us),
 };
 
 export interface HeroRangeOptions {
@@ -135,6 +141,9 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
   const n = dayCount(from, to);
   if (selected.length !== n) throw new HeroRangeError();
   const t = aggregateDays(selected);
+  const firstCac = t.o>0 && t.flaggedOrders===t.o;
+  const valueFor = (metric:Metric,total:Totals) => metric==='cac'&&firstCac ? divide(total.spend,total.firstOrders??0) : metrics[metric](total);
+  const cacMissing = (list:readonly DailyMetrics[]) => list.some(row=>row.spendKnown===false) || firstCac && list.some(row=>row.flaggedOrders!==row.o || row.o>0&&!row.firstOrders);
   const one = n === 1;
   const partial = to === options.today;
   const label = rangeLabel(from, to);
@@ -146,7 +155,7 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
   const base = previous.length === comparisonDays ? aggregateDays(previous) : null;
   const countMetrics = new Set<Metric>(['orders', 'aov', 'cac', 'cr']);
   const salesMetrics = new Set<Metric>(['net', 'aov', 'roas', 'margin']);
-  const comparison = (metric: Metric): number | null => base && !(metric === 'cac' && previous.some(row => row.spendKnown === false)) && !(salesMetrics.has(metric) && previous.some(row => row.netKnown === false)) && !(countMetrics.has(metric) && previous.some(row => row.countsKnown === false)) && !(metric === 'cr' && previous.some(row => row.sessionsKnown === false)) ? metrics[metric](base) / (one && additive.has(metric) ? 7 : 1) : null;
+  const comparison = (metric: Metric): number | null => base && !(metric === 'cac' && cacMissing(previous)) && !(salesMetrics.has(metric) && previous.some(row => row.netKnown === false)) && !(countMetrics.has(metric) && previous.some(row => row.countsKnown === false)) && !(metric === 'cr' && previous.some(row => row.sessionsKnown === false)) ? valueFor(metric,base) / (one && additive.has(metric) ? 7 : 1) : null;
   const spikeRows = selected.filter((row) => marketSpikes(row.date).length);
   const spikeSummary = spikeRows.length > 5 ? `${formatNumber(spikeRows.length)} spike days in this range`
     : `Spike days: ${spikeRows.map((row) => `${shortDate(row.date)} (${marketSpikes(row.date).join(' and ')})`).join(', ')}`;
@@ -178,9 +187,9 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
     return marks.length ? `Spike days: ${marks.join(', ')}` : '';
   });
   const ha = `${weekly ? 'Week by week, average a day' : 'Day by day'}, ${rangeLabel(firstChartDate, to)}${spikeNote ? `. ${spikeNote}` : ''}`;
-  const history = (metric: Metric): number[] => (metric === 'cac' && chartRows.some(row => row.spendKnown === false) || salesMetrics.has(metric) && chartRows.some(row => row.netKnown === false) || countMetrics.has(metric) && chartRows.some(row => row.countsKnown === false) || metric === 'cr' && chartRows.some(row => row.sessionsKnown === false)) ? [] : bins.map((bin) => {
+  const history = (metric: Metric): number[] => (metric === 'cac' && cacMissing(chartRows) || salesMetrics.has(metric) && chartRows.some(row => row.netKnown === false) || countMetrics.has(metric) && chartRows.some(row => row.countsKnown === false) || metric === 'cr' && chartRows.some(row => row.sessionsKnown === false)) ? [] : bins.map((bin) => {
     const total = aggregateDays(bin);
-    const value = metrics[metric](total);
+    const value = valueFor(metric,total);
     return additive.has(metric) ? Math.round(value / total.days) : rounded(value, metric === 'cr' ? 1 : metric === 'margin' ? 0 : 2);
   });
   const detail = (metric: Metric, value: Pick<Detail, 'why' | 'src'> & Partial<Detail>): Detail => ({
@@ -191,7 +200,7 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
   const cNet = comparison('net');
   const cOrders = comparison('orders');
   const cCr = comparison('cr');
-  const aov = metrics.aov(t), cac = metrics.cac(t);
+  const aov = metrics.aov(t), cac = valueFor('cac',t);
   const cAov = comparison('aov'), cCac = comparison('cac');
   const ratioComparison = (value: number, base: number | null): string => base === null ? 'no earlier days to compare' : `${one ? '7-day avg' : `prev ${n} days`} ${formatPounds(base)}${!partial && base ? ` · ${value >= base ? '+' : '−'}${percent(value, base)}%` : ''}`;
   const cr = metrics.cr(t);
@@ -212,9 +221,8 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
   const amber = rounded(bar * 0.9);
   const poundsBar = formatPounds(bar, value => formatNumber(Math.round(value * 100) / 100));
   const zones: Zone[] = [[Math.min(12, bar / 2), amber, 'good'], [amber, bar, 'warn'], [bar, Math.max(40, bar + 12), 'decide']];
-  const cpo = (key: 'ukcpo' | 'uscpo', country: 'UK' | 'US'): HeroPeriod['ukcpo'] => {
-    const value = metrics[key](t);
-    const over = selected.filter((row) => metrics[key](aggregateDays([row])) > bar).length;
+  const cpoDial = (key: 'ukcpo' | 'uscpo', country: 'UK' | 'US'): HeroPeriod['ukcpo'] => {
+    const {value,over} = cpo(t,selected,key,bar);
     return {
       v: rounded(value), min: zones[0]![0], max: zones[2]![1], t: formatPounds(value), l: `${country} Meta cost per order`, z: structuredClone(zones),
       s: `${partial ? 'so far · ' : one ? '' : `${n}-day blend · `}bar ${poundsBar}`,
@@ -291,6 +299,13 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
         extra: sampleWaterfall,
       },
     }, ['shopify', 'meta', 'google-ads', 'github-hq']),
-    ukcpo: cpo('ukcpo', 'UK'), uscpo: cpo('uscpo', 'US'),
+    ukcpo: cpoDial('ukcpo', 'UK'), uscpo: cpoDial('uscpo', 'US'),
   };
 }
+
+/** Shared unrounded blend and daily threshold count used by hero dials and risk rules. */
+export function cpo(t: Totals, selected: readonly DailyMetrics[], key: 'ukcpo'|'uscpo', bar: number) {
+  return {value:metrics[key](t),over:selected.filter(row=>metrics[key](aggregateDays([row]))>bar).length};
+}
+
+export const metaCostPerOrder = (spend:number,orders:number):number => divide(spend,orders);

@@ -6,10 +6,10 @@ Updated in every pull request.
 |---|---|---|---|---|
 | 2 part A · 1 | Meta spend by UK hour, today and yesterday; same poll-hour comparison for All/UK/US | built on `stage-2-meta`; migration 042 | no new keys | check comparison and three days to the penny against Ads Manager |
 | 2 part A · 2 | 400-day Meta spend backfill, shrinking retries, durable cursor, GMT-day disclosure and Sources progress | built on `stage-2-meta`; migration 041 | no new keys | check cursor/progress and uninterrupted 30-minute live spend |
-| 2 part B · 3 | Budget/status activity history and Our actors | deferred as a complete feature | no new key or scope planned; actor IDs entered in live Settings only | activity parsing, pagination, deduplication, `/ads` stat and named refusal line remain |
-| 2 part B · 4 | Meta risk cards and target-country fallback through spend ingestion | deferred with activity history | no new keys; read-only rules | shared hero CPO, unassigned spend, external budget changes and country placement remain |
-| 2 part B · 5 | Live 14-complete-day Meta-to-Shopify ratio and Meta sources Setting | deferred | no new keys; defaults to settle from live detail | All/UK/US, owner matches/estimates and zone edges remain; sample unchanged |
-| 2 part B · 6 | First-order CAC and resumable order-flag re-read | deferred; current CAC still counts all counted orders | verify customerOrderIndex on Shopify 2026-10 with existing scopes before building | privacy-limited flag, waiting count, market split and first-order CAC remain |
+| 2 part B · 3 | Budget/status activity history, Our actors and named read health | built on `stage-2-part-b`; migration 045 | no new key or scope; actor IDs entered live only | check seven-day stat, newest-first detail, ours markings and any refusal line |
+| 2 part B · 4 | Read-only Meta risk cards and country fallback through live/backfill spend | built on `stage-2-part-b`; migration 046 | none | check CPO, unassigned campaigns, external budget changes and rename cards; freelancer remains untouched |
+| 2 part B · 5 | Live 14-complete-day Meta-to-Shopify ratio and Meta sources | built on `stage-2-part-b`; migration 047 | no new keys; default source list supplied | check All/UK/US, owner matches/estimates and settle Meta sources from other-source detail |
+| 2 part B · 6 | First-order CAC and resumable background order flags | built on `stage-2-part-b`; migration 048; Shopify 2026-10 field/scope verified | no new key or scope | check waiting count falls, all-orders fallback label, then first-order CAC and market split |
 | Review fix · 7 | Webhook orders after the poll extend today's chart, capped at current UK hour | built on `stage-2-meta` | none | chart sum equals Orders tile in All/UK/US |
 | Review fix · 8 | Before first poll after midnight, use current UK hour | built on `stage-2-meta` | none | 00:10 chart stops at 12 AM after yesterday's 23:50 poll |
 | Review fix · 9 | Keep greeting h1 and summary visible while partial spend stays first | built on `stage-2-meta` | none | phone/desktop greeting and warning order |
@@ -18,6 +18,11 @@ Updated in every pull request.
 | Review fix · 12 | Singular given-up reason for one missing video row | built on `stage-2-meta` | none | one ad versus two ads |
 | Review fix · 13 | Future-hour tooltip and hidden table both say Not yet | built on `stage-2-meta` | none | keyboard, hover and tap |
 | Review fix · 14 | Hourly chart redraws at most once per animation frame on resize | built on `stage-2-meta`; browser regression included | none | resizing retains the chart width and interactions |
+
+| Review fix · 15 | Backfill stall Needs card after three failed runs at one cursor | built on `stage-2-part-b`; migration 044 | none | check a persistent failure names day/code and successful progress clears it |
+| Review fix · 16 | Yesterday spend pro-rated at the poll minute | built on `stage-2-part-b` | none | compare All/UK/US against Ads Manager hourly view |
+| Review fix · 17 | Starting-from wording before first saved backfill chunk | built on `stage-2-part-b` | none | check progress before/after first chunk |
+| Review fix · 18 | Scrubbed scan rejection reasons and one compatibility retry | built on `stage-2-part-b`; migration 043 | none | next scan succeeds or Sources names the API reason and omitted feature |
 
 | Change | Home drop line; radar removed 25 Oct | built on `change-oct-25`; health maths retained | no new keys | check weakest-gauge targeting and one-line layout at 390px and 1280px |
 | Change | Orders by hour, today against yesterday | built on `change-oct-25`; shared Orders rule and UK poll clock | no new keys | check All/UK/US, period independence, hover/keyboard/tap and tile total agreement |
@@ -70,15 +75,15 @@ Updated in every pull request.
 
 ## Next step
 
-Review **stage 2 part A** on `stage-2-meta`, based on latest main `3cdc57b` (merged PR #37 and migration 040). Separate item commits follow the permitted split order: 7–14, then 1–2. Migrations 041 and 042 are both required. Needs from Will after merge: **nothing**. Claude merges, runs the Shell merge, `npm run migrate`, and Republish; the builder does not merge or deploy.
+Review **stage 2 part B** on `stage-2-part-b`, based on main `c2b890b` (merged PR #38, migrations 041–042). All eight requested items are built in commit order 18, 15, 16, 17, 3, 4, 5, 6. Run migrations **043–048** after merging. Needs from Will after merge: **nothing**. Claude merges, runs the Shell merge, `npm run migrate`, and Republish; the builder does not merge or deploy.
 
-**Local verification:** typecheck, build, all 666 tests (no skips), the complete phone/desktop browser suite, and secret-scanner self-tests plus working-tree/full-history scans passed. Fixture tests use PGlite; GitHub runs the database suite against PostgreSQL. Browser tests exercise the resize guard, future-hour wording and the visible greeting/first spend tile. Source agreement still requires the live checks below.
+**Verification:** the full PostgreSQL suite in CI, focused PGlite regression tests, typecheck, build, the complete phone/desktop browser suite and secret scans passed. The browser suite includes ratio market switching and its detail. CI must finish green on the final revision before this PR is marked ready. Fixtures are invented; automated checks do not claim live source agreement.
 
-**Part B holds items 3–6 in order.** Activity ingestion/Settings/audit presentation, risk rules with targeting through current and historical spend reads, the live attribution ratio with owner estimates, and first-order CAC with its API/scope check and resumable projection repair are each substantial end-to-end changes. They are deferred together to keep this PR reviewable; no partial Setting or live dial claims those features exist. Our actors and Meta sources are not added in part A, and the current all-order CAC is not relabelled first-order CAC.
+**Sample and live:** sample w019 remains its sample; connected Meta and Shopify use the measured fourteen-complete-day ratio. Activity and risk cards use live records only. CAC uses counted first orders when every counted order in the period has a flag; otherwise it says all orders with the waiting count. Unknown source data stays unavailable. Only first/repeat/unknown is retained; the unused customer-ID projection is removed.
 
-Claude checks Home and `/ads` at 390px and 1280px; chart equals tile including after a webhook order and before the first new-day poll; greeting stays visible while spend is partial; Meta by-this-time-yesterday follows All/UK/US; `/sources` shows Meta spend backfill progress and then its history start; old GMT-day periods explain their boundary. Compare three complete days against Ads Manager to the penny and verify ours plus freelancer plus unassigned equals the account. Source agreement is a live check, not claimed by fixture tests. Part B adds the remaining acceptance checks: enter Our actors on the live app, activity/refusal lines, risk cards, 14-day ratio with Meta sources settled from detail, and first-order CAC.
+Claude enters Our actors in live Settings, then checks Home and `/ads` at 390px and 1280px; the activity stat/detail and any refusal line; risk cards; the ratio and owner estimates, settling Meta sources from its other-source counts; first-order CAC and its waiting count; backfill progress/stall recovery; yesterday's comparison against Ads Manager hourly spend; and the next creative scan, whose Sources line must show the API reason if still rejected. Existing spend agreement remains a live check.
 
-Sources stay read-only except for the existing off-by-default, explicitly confirmed Meta ad-set action path. Judge.me Publish stays behind its off flag. No Meta async insights POST, new key, scope or dependency. `docs/spec/` and `replit.md` remain untouched.
+Sources stay read-only except for the existing off-by-default, confirmed Meta ad-set action path. Judge.me Publish stays behind its off flag. No Meta async insights POST, new key, scope or dependency. `docs/spec/` and `replit.md` remain untouched.
 
 **Video recovery follow-up (superseded 25 Oct):** the old rule kept successful reports with omitted video fields pending. Migration 040 and the narrow-report zero rule above replace that behaviour; an absent ad-day row still waits, up to three reads. The narrow repair supplies the matching daily hold denominator for hourly-only rows while preserving known values when that field is omitted. Existing migrations 034–035 are unchanged.
 

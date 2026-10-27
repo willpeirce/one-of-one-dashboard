@@ -16,6 +16,7 @@ export const appConfig = {
   },
   shopify: {
     storeDomain: '6q0g0j-fv.myshopify.com',
+    // customerJourneySummary.customerOrderIndex is available with the existing read_orders scope.
     apiVersion: '2026-10',
     webhookPath: '/webhooks/shopify',
     sampleNow: '2026-09-30T12:00:00Z',

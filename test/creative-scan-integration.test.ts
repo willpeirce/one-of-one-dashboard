@@ -140,7 +140,7 @@ async function sourceHealthHtml(config: Settings) {
   }) };
 }
 
-test('Source health maps scan success and refusal to Anthropic with safe reason and cap figures', async t => {
+test('Source health maps scan success and HTTP rejection to Anthropic with safe reason and cap figures', async t => {
   await seed(); t.mock.method(console, 'error', () => {});
   await syncSourceHealth(db, { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY });
   await runCreativeScans(db, settings(), { mode: 'live', accountId: account, clock: () => now, fetch: async () => answer(undefined, 400_000, 10_000) });
@@ -154,11 +154,13 @@ test('Source health maps scan success and refusal to Anthropic with safe reason 
   assert.match(capped.html, /Daily scan cap reached; try again next UK day/);
   await runCreativeScans(db, settings(), { mode: 'live', accountId: account, groupId: entry.media.id!, clock: () => now,
     fetch: async () => new Response(JSON.stringify({ error: process.env.ANTHROPIC_API_KEY }), { status: 400 }) });
+  // Old stored 4xx attempts also use the new label; model refusal remains separate.
+  await db.query("UPDATE pulse.creative_scans SET failure_reason='refused' WHERE http_status=400");
   const failed = await sourceHealthHtml(settings());
   assert.equal(failed.anthropic.status, 'error'); assert.equal(failed.anthropic.consecutiveFailures, 1);
-  assert.equal(failed.anthropic.statusText, 'Scan failed: refused (http 400)');
-  assert.match(failed.html, /Scan failed: refused \(http 400\)/);
-  assert.match(failed.html, /Scan: on · 0 scanned · 1 failed · refused \(http 400\) · £0.42 of £1.00 today/);
+  assert.equal(failed.anthropic.statusText, 'Scan failed: rejected (http 400)');
+  assert.match(failed.html, /Scan failed: rejected \(http 400\)/);
+  assert.match(failed.html, /Scan: on · 0 scanned · 1 failed · rejected \(http 400\) · £0.42 of £1.00 today/);
   assert.ok(!failed.html.includes(process.env.ANTHROPIC_API_KEY!));
 });
 

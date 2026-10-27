@@ -13,7 +13,7 @@ export class ShopifyStore {
   async put(kind: string, id: string, data: unknown, fetched: Date, updated = fetched): Promise<void> {
     await this.db.query(`INSERT INTO pulse.shopify_records (mode, kind, source_id, data, fetched_at, source_updated_at)
       VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (mode, kind, source_id) DO UPDATE SET
-      data = EXCLUDED.data, fetched_at = EXCLUDED.fetched_at, source_updated_at = EXCLUDED.source_updated_at
+      data = CASE WHEN EXCLUDED.kind='order' AND EXCLUDED.data->>'firstOrder'='unknown' AND shopify_records.data->>'firstOrder' IN ('first','repeat') THEN jsonb_set(EXCLUDED.data,'{firstOrder}',shopify_records.data->'firstOrder') ELSE EXCLUDED.data END, fetched_at = EXCLUDED.fetched_at, source_updated_at = EXCLUDED.source_updated_at
       WHERE shopify_records.source_updated_at <= EXCLUDED.source_updated_at`, [this.mode, kind, id, JSON.stringify(data), fetched, updated]);
   }
   async orders(rows: any[], fetched: Date): Promise<void> {

@@ -1,3 +1,4 @@
+import { firstOrderFlag } from './first-order.js';
 import { appConfig } from '../config.js';
 import { ukToday } from '../hero-range.js';
 import { ShopifyError } from './http.js';
@@ -83,7 +84,7 @@ export function cleanOrder(raw: any) {
     totalPence: raw.totalPriceSet ? pence(raw.totalPriceSet) : pence(raw.subtotalPriceSet) + pence(raw.totalShippingPriceSet) + (raw.taxesIncluded ? 0 : pence(raw.totalTaxSet)),
     // Keep only process tags; arbitrary tags can contain customer information.
     tags: (Array.isArray(raw.tags) ? raw.tags : []).filter((tag: unknown): tag is string => typeof tag === 'string' && freeOrderTag.test(tag.trim())).map((tag: string) => tag.trim().toLowerCase()),
-    customerId: raw.customer ? gid('Customer', raw.customer.id) : null,
+    firstOrder: firstOrderFlag(raw.customerJourneySummary?.customerOrderIndex),
     market, marketBasis: country ? 'country' : 'currency_and_warehouse', country,
     region: typeof raw.shippingAddress?.provinceCode === 'string' && /^[A-Z0-9-]{1,10}$/.test(raw.shippingAddress.provinceCode) ? raw.shippingAddress.provinceCode : null,
     postcodeArea: postcode(raw.shippingAddress?.zip),

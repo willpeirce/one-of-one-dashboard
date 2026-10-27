@@ -1,3 +1,4 @@
+import { checkMetaAttribution } from './browser-meta-attribution.js';
 import { checkHourly } from './browser-hourly.js';
 import {checkAdSets} from './browser-adsets.js';
 import assert from 'node:assert/strict';
@@ -1761,6 +1762,7 @@ async function run(): Promise<void> {
     step = 'check measured health, drop line and weakest-gauge actions at phone and desktop widths';
     await checkDrops(context);
     await checkHourly(context);
+    await checkMetaAttribution(context);
 
     step = 'check creative pictures, playing media, windows and gallery filters at phone and desktop widths';
     await checkCreatives(context);

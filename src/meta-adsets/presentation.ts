@@ -1,3 +1,4 @@
+import { readActivity, type ActivityView } from './activity.js';
 import {decisionRows} from './decision-rows.js';
 export {decisionRows} from './decision-rows.js';
 import {readMetaActions,type MetaAction} from './actions.js';
@@ -9,7 +10,7 @@ import { readAdSets, type StoredAdSet } from './catalogue.js';
 import {judgeAdSet,totalDays,type SetDay,type SetVerdict,type RuleContext} from './rules.js';
 import {breakEven,weekdayBudget} from './settings.js';
 export interface AdSetRow { set: StoredAdSet; days: SetDay[]; verdict: SetVerdict|null; yesterday: number|null; spend: number; purchases: number|null; cpp: number|null; cpatc:number|null; breakEven:number|null; breakEvenNote:string; weekdayBudget:number|null; freelancer: {window:3|7; cpp:number|null; oursCpp:number|null; over:boolean|null}[]; changes: {time:string;field:string;old:string;value:string}[] }
-export interface AdSetsView { mode:'sample'|'live';today:string;lastRead:string|null;stale:boolean;count:number;rows:AdSetRow[];accountYesterday:number|null;actionsEnabled:boolean; actions?:MetaAction[] }
+export interface AdSetsView { mode:'sample'|'live';today:string;lastRead:string|null;stale:boolean;count:number;rows:AdSetRow[];accountYesterday:number|null;actionsEnabled:boolean; actions?:MetaAction[]; activity?:ActivityView }
 export function buildAdSetsView(sets:StoredAdSet[],days:Map<string,SetDay[]>,settings:Settings,today:string,options:{mode:'sample'|'live';lastRead:string|null;stale?:boolean;accountYesterday:number|null;contexts?:Map<string,RuleContext>;recentActionIds?:string[]}):AdSetsView {
  const yesterday=addDays(today,-1),ownerOrder={ours:0,freelancer:1,unassigned:2};
  const ours=(market:string,window:number)=>totalDays(sets.filter(s=>s.owner==='ours'&&s.market===market).flatMap(s=>(days.get(s.id)??[]).filter(d=>d.day>=addDays(today,-window)&&d.day<today)));
@@ -51,6 +52,7 @@ export async function readAdSetsView(db:Database,settings:Settings,env:NodeJS.Pr
  }
  const lastRead=sync.rows[0]?new Date(sync.rows[0].last_read).toISOString():null,yesterday=addDays(today,-1);
  const view=buildAdSetsView(sets,days,settings,today,{recentActionIds:actions.rows.filter(a=>now.getTime()-new Date(a.time).getTime()<=86_400_000).map(a=>a.ad_set_id),mode:'live',lastRead,stale:!!lastRead&&now.getTime()-Date.parse(lastRead)>2*60*60_000,accountYesterday:coverage.rows.some(r=>r.day===yesterday)?stored.rows.filter(r=>r.day===yesterday).reduce((s,r)=>s+Number(r.spend_amount),0):null,contexts});
+ view.activity=await readActivity(db,account,settings,now);
  view.actionsEnabled=creativeFeatureFlags(env).metaActionsEnabled;
  view.actions=await readMetaActions(db,account);
  for(const row of view.rows){

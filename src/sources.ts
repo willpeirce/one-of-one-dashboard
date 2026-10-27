@@ -1,3 +1,4 @@
+import { formatUkTime } from './uk-time.js';
 import type { Database } from './db.js';
 import { scanFailureLabel, type ScanHealth } from './creatives/scan-health.js';
 
@@ -42,6 +43,7 @@ export interface SourceHealth {
   updatedAt: Date;
   statusText?: string;
   scanWaiting?: number;
+  scanAttempt?: string;
 }
 
 // Read presence only. Neither the returned metadata nor the health table contains values.
@@ -107,7 +109,9 @@ export async function readSourceHealth(db: Database, scanHealth?: ScanHealth): P
       lastAttemptAt: scan ? scan.lastAttemptAt ? new Date(scan.lastAttemptAt) : null : row.last_attempt_at,
       consecutiveFailures: scan?.consecutiveFailures ?? row.consecutive_failures,
       updatedAt: row.updated_at,
-      ...(scan ? { scanWaiting: scan.enabled ? scan.waiting : 0, statusText: scan.status === 'waiting_for_keys' ? 'Waiting for keys'
+      ...(scan ? { scanAttempt: scan.lastAttemptAt
+        ? `Last attempt ${formatUkTime(scan.lastAttemptAt)} · ${scan.lastAttemptStatus === 'done' ? `done${scan.httpStatus ? ` (http ${scan.httpStatus})` : ''}` : scanFailureLabel(scan.reason, scan.httpStatus, scan.providerCode, scan.providerMessage)}${scan.lastAttemptSeconds !== null ? ` · ${scan.lastAttemptSeconds} seconds` : ''}`
+        : undefined, scanWaiting: scan.enabled ? scan.waiting : 0, statusText: scan.status === 'waiting_for_keys' ? 'Waiting for keys'
         : scan.status === 'healthy' ? 'Healthy'
         : scan.status === 'error' ? `Scan failed: ${scanFailureLabel(scan.reason, scan.httpStatus, scan.providerCode, scan.providerMessage)}`
         : scan.enabled ? scan.message ?? 'First scan pending' : 'Scan: off' } : {}),

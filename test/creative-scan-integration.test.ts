@@ -7,6 +7,7 @@ import type { AdInsight, CatalogueEntry, CreativeReader } from '../src/creatives
 import { CreativeWorker } from '../src/creatives/worker.js';
 import { creativeHealth, saveCatalogue, saveInsights } from '../src/creatives/store.js';
 import { readScanHealth, runCreativeScans } from '../src/creatives/scan.js';
+import { scanFailureLabel } from '../src/creatives/scan-health.js';
 import { defaultSettings, type Settings } from '../src/settings.js';
 import { settingsPage } from '../src/settings-view.js';
 import { readSourceHealth, syncSourceHealth } from '../src/sources.js';
@@ -160,7 +161,7 @@ test('Source health maps scan success and HTTP rejection to Anthropic with safe 
   assert.equal(failed.anthropic.status, 'error'); assert.equal(failed.anthropic.consecutiveFailures, 1);
   assert.equal(failed.anthropic.statusText, 'Scan failed: rejected (http 400)');
   assert.match(failed.html, /Scan failed: rejected \(http 400\)/);
-  assert.match(failed.html, /Scan: on · 0 scanned · 1 failed · rejected \(http 400\) · £0.42 of £1.00 today/);
+  assert.match(failed.html, /Scan: on · 1 scanned · 0 failed · £0.42 of £1.00 today/);
   assert.ok(!failed.html.includes(process.env.ANTHROPIC_API_KEY!));
 });
 
@@ -189,4 +190,54 @@ test('scan health reports no waiting work once spend eligibility is gone',async(
  const scan=await readScanHealth(db,settings(),{mode:'live',accountId:account,now});assert.equal(scan.waiting,0);
  await syncSourceHealth(db,{ANTHROPIC_API_KEY:process.env.ANTHROPIC_API_KEY});
  assert.equal((await readSourceHealth(db,scan)).find(row=>row.source==='anthropic')!.scanWaiting,0);
+});
+
+
+test('Sources keeps last success and shows the current model attempt, UK time, HTTP diagnostics and elapsed seconds', async t => {
+  t.mock.method(console, 'error', () => {});
+  await seed(); await syncSourceHealth(db, {ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY});
+  let instant = now;
+  await runCreativeScans(db, settings(), {mode: 'live', accountId: account, clock: () => instant, fetch: async () => {
+    instant = new Date(now.getTime() + 2_000); return answer();
+  }});
+  const success = await sourceHealthHtml(settings());
+  assert.match(success.html, /Last attempt 14 Oct 13:00 UK · done \(http 200\) · 2 seconds/);
+  const succeededAt = success.anthropic.lastSuccessAt!.toISOString();
+  instant = new Date('2026-10-27T12:00:00Z');
+  await runCreativeScans(db, settings(), {mode: 'live', accountId: account, groupId: entry.media.id!, clock: () => instant, fetch: async () => {
+    instant = new Date(instant.getTime() + 60_000); throw new DOMException('Invented timeout', 'TimeoutError');
+  }});
+  const timeout = await sourceHealthHtml(settings());
+  assert.equal(timeout.anthropic.lastSuccessAt!.toISOString(), succeededAt);
+  assert.match(timeout.html, /Last attempt 27 Oct 12:00 UK · timeout · 60 seconds/);
+  assert.equal(timeout.scan.scanned, 1); assert.equal(timeout.scan.failed, 0);
+
+  // A newer attempt using another model must not replace the current model's attempt.
+  await runCreativeScans(db, {...settings(), creativeScanModel: 'claude-invented-other'}, {
+    mode: 'live', accountId: account, groupId: entry.media.id!, clock: () => instant, fetch: async () => answer(),
+  });
+  assert.match((await sourceHealthHtml(settings())).html, /Last attempt 27 Oct 12:00 UK · timeout · 60 seconds/);
+
+  instant = new Date('2026-10-28T12:00:00Z');
+  await runCreativeScans(db, settings(), {mode: 'live', accountId: account, groupId: entry.media.id!, clock: () => instant, fetch: async () => {
+    instant = new Date(instant.getTime() + 3_000);
+    return Response.json({error: {type: 'invalid_request_error', message: 'Invented provider diagnostic'}}, {status: 400});
+  }});
+  assert.match((await sourceHealthHtml(settings())).html,
+    /Last attempt 28 Oct 12:00 UK · rejected \(http 400, invalid_request_error, Invented provider diagnostic\) · 3 seconds/);
+});
+
+test('provider errors use the HTTP label while a model refusal remains refused', async t => {
+  t.mock.method(console, 'error', () => {});
+  assert.equal(scanFailureLabel('refused', 529), 'provider error (http 529)');
+  assert.equal(scanFailureLabel('refused', 200), 'refused (http 200)');
+  await seed(); await syncSourceHealth(db, {ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY});
+  await runCreativeScans(db, settings(), {mode: 'live', accountId: account, clock: () => now,
+    fetch: async () => new Response('Invented provider outage', {status: 529})});
+  assert.equal((await scanRows())[0]!.failure_reason, 'refused');
+  assert.match((await sourceHealthHtml(settings())).html, /provider error \(http 529\)/);
+  await db.query('TRUNCATE pulse.creative_scans');
+  await runCreativeScans(db, settings(), {mode: 'live', accountId: account, clock: () => now,
+    fetch: async () => Response.json({stop_reason: 'refusal', usage: {input_tokens: 10, output_tokens: 0}})});
+  assert.match((await sourceHealthHtml(settings())).html, /refused \(http 200, refusal\)/);
 });

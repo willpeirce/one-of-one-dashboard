@@ -204,7 +204,7 @@ test('5xx stops the pass and repeated failures remain eligible each next UK day'
 test('preflight cap stops before an unaffordable request, charges actual usage and resumes next UK day', async () => {
   await seed([entry('cap-first'), entry('cap-next', false, new Date('2026-10-13T12:00:00Z'))]);
   const config = settings(), copy = 'Ad body: Invented drawing kit cap-first\nAd title: Invented headline\nCall to action: SHOP_NOW';
-  config.creativeScanCapGbp = scanRequestReserve(config, scanSystemText('image'), copy, 1, 'image') + 0.0001;
+  config.creativeScanCapGbp = scanRequestReserve(config, scanSystemText('image'), copy, 1) + 0.0001;
   let calls = 0;
   const opts = options({ fetch: async () => { calls++; return answer(); } });
   assert.equal((await runCreativeScans(db, config, opts)).state, 'cap'); assert.equal(calls, 1);
@@ -352,25 +352,13 @@ test('oversized media stores a reason without a model call and the common failur
   assert.equal((await runCreativeScans(db,settings(),opts)).state,'cooldown');
 });
 
-test('structured output schemas stay within 24 optional keys and prohibit extra properties',async()=>{
- const {scanOutputSchema}=await import('../src/creatives/scan.js');
- for(const kind of ['image','video'] as const){
-  const schema=scanOutputSchema(kind),attributes=schema.properties.attributes;
-  assert.ok(Object.keys(attributes.properties).length<=24,`${kind} exceeds the API optional-property limit`);
-  assert.deepEqual(schema.required,['attributes']);assert.equal(schema.additionalProperties,false);assert.equal(attributes.additionalProperties,false);
-  for(const property of Object.values(attributes.properties)){
-   assert.equal(property.additionalProperties,false);assert.deepEqual(property.required,['value','confidence','reason']);
-   assert.deepEqual(property.properties.confidence,{type:'number'});assert.ok(property.properties.value.enum.length);
-  }
- }
-});
-
-test('thinking precedes valid text; requests use structured format and Claude 5 low effort only',async()=>{
+test('thinking precedes valid text; request keys stay pinned to the four working fields',async()=>{
  await seed([entry('structured')]);
- for(const model of ['claude-haiku-5-5','claude-opus-5-5','claude-sonnet-4-5']){
+ for(const model of ['claude-invented-5-1','claude-invented-4-1']){
   const result=await runCreativeScans(db,{...settings(),creativeScanModel:model},options({groupId:'structured',fetch:async(_,init)=>{
-   const body=JSON.parse(String(init?.body));assert.equal(body.output_config.format.type,'json_schema');
-   assert.equal(body.output_config.effort,model.includes('-5-5')?'low':undefined);
+   const body=JSON.parse(String(init?.body));
+   assert.deepEqual(Object.keys(body).sort(), ['max_tokens','messages','model','system']);
+   assert.equal(body.output_config, undefined);
    for(const key of ['tool_choice','temperature','top_p','top_k'])assert.equal(key in body,false);
    assert.equal(body.max_tokens,1500);
    return Response.json({stop_reason:'end_turn',content:[{type:'thinking',thinking:'Invented ignored thought'},{type:'text',text:JSON.stringify({attributes})}],usage:{input_tokens:100,output_tokens:50}});
@@ -394,42 +382,23 @@ test('truncation, refusal category, absent text and dropped attributes persist s
  }
 });
 
-test('every scan schema uses supported closed objects and unique non-empty enums', async () => {
-  const { scanOutputSchema } = await import('../src/creatives/scan.js');
-  const walk = (schema: any) => {
-    for (const key of Object.keys(schema)) assert.ok(['type','properties','required','additionalProperties','enum','description'].includes(key), key);
-    if (schema.type === 'object') assert.equal(schema.additionalProperties, false);
-    if (schema.enum) { assert.ok(schema.enum.length); assert.equal(new Set(schema.enum).size, schema.enum.length); }
-    for (const child of Object.values(schema.properties ?? {})) walk(child);
-  };
-  for (const kind of ['image','video'] as const) walk(scanOutputSchema(kind));
-});
-
-test('400 compatibility retry omits only the rejected feature, accounts spend and retains diagnostics until full success', async t => {
+test('400 rejection gets one attempt with no leave-out retry or omitted config on new rows', async t => {
   t.mock.method(console, 'error', () => {});
-  for (const part of ['effort','schema','unrelated']) {
-    await db.query('TRUNCATE pulse.media_groups CASCADE');
-    await seed([entry('compatibility')]);
-    let calls = 0;
-    const result = await runCreativeScans(db, settings(), options({fetch: async (_, init) => {
-      const body = JSON.parse(String(init?.body));
-      if (++calls === 1) return Response.json({error: {type:'invalid_request_error', message:`Invented ${part} rejected`}, usage:{input_tokens:10,output_tokens:0}}, {status:400});
-      if (part === 'effort') { assert.equal(body.output_config.effort, undefined); assert.ok(body.output_config.format); }
-      else assert.equal(body.output_config, undefined);
-      return answer(part === 'schema' ? '```json\n' + JSON.stringify({attributes}) + '\n```' : undefined);
-    }}));
-    assert.equal(calls, part === 'unrelated' ? 1 : 2);
-    assert.equal(result.done, part === 'unrelated' ? 0 : 1);
-    const saved = await rows();
-    assert.equal(saved[0].failure_reason, 'rejected');
-    assert.equal(saved[0].provider_message, `Invented ${part} rejected`);
-    assert.ok(Number(saved[0].cost_gbp) > 0);
-    if (part !== 'unrelated') {
-      assert.match((await readScanHealth(db, settings(), options())).line, /left out/);
-      await runCreativeScans(db,settings(),options({groupId:'compatibility',fetch:async()=>answer()}));
-      assert.doesNotMatch((await readScanHealth(db, settings(), options())).line, /left out/);
-    }
-  }
+  await seed([entry('invented-rejection')]);
+  let calls = 0;
+  const result = await runCreativeScans(db, settings(), options({fetch: async () => {
+    calls++;
+    return Response.json({error: {type: 'invalid_request_error', message: 'Invented schema rejection'},
+      usage: {input_tokens: 10, output_tokens: 0}}, {status: 400});
+  }}));
+  assert.equal(calls, 1); assert.equal(result.failed, 1);
+  const saved = await rows();
+  assert.equal(saved.length, 1); assert.equal(saved[0].omitted_config, null);
+  assert.equal(saved[0].provider_message, 'Invented schema rejection');
+  assert.ok(Number(saved[0].cost_gbp) > 0);
+  await db.query("UPDATE pulse.creative_scans SET omitted_config='format'");
+  assert.doesNotMatch((await readScanHealth(db, settings(), options())).line, /left out/);
+  assert.equal((await rows())[0].omitted_config, 'format', 'historical diagnostics remain stored');
 });
 
 test('4xx message is scrubbed before storage, logging and its 200-character limit', async t => {
@@ -442,4 +411,73 @@ test('4xx message is scrubbed before storage, logging and its 200-character limi
   assert.match(saved.provider_message,/\[redacted\] \[redacted\]/);
   assert.ok(!JSON.stringify(logs).includes(shaped));
   assert.ok(!JSON.stringify(saved).includes(inventedCredential));
+});
+
+
+test('scan text accepts preambles, fences, trailing notes and escaped braces in reasons', async () => {
+  const value = JSON.stringify({attributes: {childInShot: {value: 'yes', confidence: 0.8,
+    reason: 'Invented {caption} with a "quote", a closing } and a backslash \\.'}}});
+  for (const text of [`Invented short preamble.\n${value}`, `\`\`\`json\n${value}\n\`\`\``, `${value}\nInvented trailing note.`]) {
+    await db.query('TRUNCATE pulse.media_groups CASCADE');
+    await seed([entry('invented-lenient')]);
+    const result = await runCreativeScans(db, settings(), options({fetch: async () => answer(text)}));
+    assert.equal(result.done, 1);
+    assert.deepEqual(JSON.parse((await rows())[0].raw_response), JSON.parse(value));
+  }
+});
+
+test('a missing complete JSON object stays malformed with the next UK day retry', async t => {
+  t.mock.method(console, 'error', () => {});
+  for (const text of ['Invented text without JSON', 'Invented prefix {"attributes":{"childInShot":', '{"attributes":{}']) {
+    await db.query('TRUNCATE pulse.media_groups CASCADE');
+    await seed([entry('invented-incomplete')]);
+    const result = await runCreativeScans(db, settings(), options({fetch: async () => answer(text)}));
+    assert.equal(result.failed, 1);
+    const row = (await rows())[0];
+    assert.equal(row.failure_reason, 'malformed'); assert.equal(row.provider_code, null); assert.equal(row.raw_response, '');
+    assert.equal(new Date(row.retry_after).toISOString(), scanRetryAt(now).toISOString());
+  }
+});
+
+test('one timeout continues; a second timeout in the same run stops before the remaining groups', async t => {
+  t.mock.method(console, 'error', () => {});
+  for (const timeoutCalls of [[1], [1, 3]]) {
+    await db.query('TRUNCATE pulse.media_groups CASCADE');
+    await seed(Array.from({length: 4}, (_, i) => entry(`invented-timeout-${i}`)));
+    let calls = 0;
+    const result = await runCreativeScans(db, settings(), options({fetch: async () => {
+      if (timeoutCalls.includes(++calls)) throw new DOMException('Invented timeout', 'TimeoutError');
+      return answer();
+    }}));
+    assert.equal(calls, timeoutCalls.length === 1 ? 4 : 3);
+    assert.equal(result.attempts, calls); assert.equal(result.failed, timeoutCalls.length);
+    assert.equal(result.done, calls - timeoutCalls.length);
+    assert.equal((await rows()).length, calls);
+  }
+});
+
+test('never-tried groups precede failed groups, newest first within each', async t => {
+  t.mock.method(console, 'error', () => {});
+  const ids = ['invented-untried-old', 'invented-untried-new', 'invented-failed-old', 'invented-failed-new'];
+  await seed(ids.map((id, i) => entry(id, false, new Date(now.getTime() + i * 1000))));
+  for (const groupId of ids.slice(2)) await runCreativeScans(db, settings(), options({groupId,
+    fetch: async () => answer('Invented malformed reply')}));
+  await runCreativeScans(db, settings(), options({clock: () => scanRetryAt(now), fetch: async () => answer()}));
+  assert.deepEqual((await rows()).slice(2).map(row => row.media_group_id), [ids[1], ids[0], ids[3], ids[2]]);
+});
+
+test('a successful group stays scanned and out of automatic runs after a failed manual re-scan', async t => {
+  t.mock.method(console, 'error', () => {});
+  await seed([entry('invented-rescan')]);
+  await runCreativeScans(db, settings(), options({fetch: async () => answer()}));
+  const before = await readAttributeRows(db, 'live', account, 'invented-rescan');
+  const failed = await runCreativeScans(db, settings(), options({groupId: 'invented-rescan', fetch: async () => answer('Invented malformed reply')}));
+  assert.equal(failed.attempts, 1); assert.equal(failed.failed, 1);
+  const health = await readScanHealth(db, settings(), {mode: 'live', accountId: account, now});
+  assert.equal(health.scanned, 1); assert.equal(health.failed, 0); assert.equal(health.waiting, 0);
+  assert.equal(health.status, 'error', 'latest provider attempt still reports failure');
+  assert.deepEqual(await readAttributeRows(db, 'live', account, 'invented-rescan'), before);
+  const automatic = await runCreativeScans(db, settings(), options({clock: () => scanRetryAt(now),
+    fetch: async () => { assert.fail('A successful group must not be automatically re-scanned'); }}));
+  assert.equal(automatic.state, 'idle'); assert.equal(automatic.attempts, 0);
 });

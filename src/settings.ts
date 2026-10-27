@@ -426,6 +426,8 @@ function storedSettings(input: unknown): Settings {
     series1UsLandingOffsetDays: defaults.series1UsLandingOffsetDays,
     series1UkTargetDate: defaults.series1UkTargetDate,
     series1UsTargetDate: defaults.series1UsTargetDate,
+    metaSources: defaults.metaSources,
+    ourActors: defaults.ourActors,
     ...input as Record<string, unknown>,
   };
   if (!Object.hasOwn(stored, 'overheads') && !Object.hasOwn(stored, 'monthlyOverheadsGbp')) return validateSettings(stored);

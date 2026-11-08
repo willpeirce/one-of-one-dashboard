@@ -1,4 +1,4 @@
-import { backfillFirstOrders } from './first-order.js';
+import { backfillFirstOrders, cleanLegacyOrders } from './first-order.js';
 import { missingSeriesPaceWindow, saveSeriesPaceSales, seriesPaceQuery, takeStockSnapshot } from '../series-pace/store.js';
 import { RoutineSessions, type DailySessionFallback } from './fallback.js';
 import { appConfig } from '../config.js';
@@ -59,6 +59,14 @@ export class ShopifyWorker {
   readonly store: ShopifyStore;
   readonly client: ShopifyReader;
   readonly mode: SourceMode;
+  private orderCleanup?: Promise<void>;
+  /** Called only by the post-listen startup hook; repeated calls share one attempt. */
+  startOrderCleanup(): Promise<void> {
+    if (!this.orderCleanup) this.orderCleanup = this.mode === 'live' && !this.closing
+      ? cleanLegacyOrders(this.db).catch(() => console.error('Startup Shopify order cleanup could not finish.'))
+      : Promise.resolve();
+    return this.orderCleanup;
+  }
   private firstOrders?: Promise<void>;
   waitForFirstOrders(): Promise<void> { return this.firstOrders ?? Promise.resolve(); }
   private startFirstOrders(): void {
@@ -96,7 +104,7 @@ export class ShopifyWorker {
     this.timer = setInterval(() => { this.trigger(); this.triggerInbox(); }, 1000); this.timer.unref();
   }
   trigger(): void { if (!this.closing) void this.tick().catch(() => {}); }
-  async stop(): Promise<void> { this.closing = true; if (this.timer) clearInterval(this.timer); await Promise.all([this.running, this.inboxRunning]); await this.waitForFirstOrders(); }
+  async stop(): Promise<void> { this.closing = true; if (this.timer) clearInterval(this.timer); await Promise.all([this.running, this.inboxRunning]); await this.waitForFirstOrders(); await this.orderCleanup; }
   async tick(): Promise<void> {
     if (this.running) return this.running;
     this.running = this.run();

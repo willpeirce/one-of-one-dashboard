@@ -91,6 +91,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     if (startupRun) return startupRun;
     ads.start();
     reviews.start();
+    void shopify.startOrderCleanup();
     observationTimer = setInterval(() => { void observe(); }, 60_000);
     observationTimer.unref();
     startupRun = (async () => {

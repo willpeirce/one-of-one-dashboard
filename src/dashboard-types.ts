@@ -64,6 +64,7 @@ export interface TestModel {
     state: State;
     chipText: string;
     say: string;
+    homeSay: string;
     small: string;
     progress: string;
     buttonText: string;

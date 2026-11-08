@@ -1625,7 +1625,7 @@ async function run(): Promise<void> {
         await page.locator('#hero [data-k="spend"]').click();
         step = 'check ad spend detail split';
         const spendSheet = (await page.locator('#sheet').textContent()) ?? '';
-        for (const split of ['Meta ours', 'Meta freelancer', 'Google', 'TikTok', 'Unknown market']) assert.ok(spendSheet.includes(split));
+        for (const split of ['Meta ours', 'Meta Freelancer', 'Google', 'TikTok', 'Unknown market']) assert.ok(spendSheet.includes(split));
         step = 'check hourly realignment in spend sheet';
         assert.match(spendSheet, /hours re-aligned to UK time/);
         step = 'check Google lag in spend sheet';

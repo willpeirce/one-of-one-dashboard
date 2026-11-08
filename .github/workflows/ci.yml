@@ -37,6 +37,10 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - name: Fulfilment imports under a non-UTC host timezone
+        run: node --import tsx --test test/fulfilment.test.ts
+        env:
+          TZ: America/New_York
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser

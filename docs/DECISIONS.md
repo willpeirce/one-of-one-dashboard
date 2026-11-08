@@ -647,3 +647,16 @@ Home no longer shows the health score, count pills or narrative greeting line. T
 Pin the top of .hero-grid at 530px for 390×844 and 440px for 1280×960, rounded up from measured tops of 527.06px and 433.63px in the dense invented fixture to the next 10px. Never raise these budgets to accommodate a regression. Keep the existing section budgets, alarm-first Decisions, deck counts, drop-line targeting, hourly chart summary, date picker and hero metrics. Removing only the pills was considered but left the redundant narrative consuming the fold. This task overrides the health score, pills and greeting-line requirements in the read-only spec; the spec itself stays unchanged. No data reads, migration, Settings key or key handling changes.
 
 CI follow-up: pin the test job to Ubuntu 24.04. The moving ubuntu-latest image switched to Ubuntu 26.04, where the pinned Playwright 1.58.2 cannot install Chromium dependencies. Keep the existing Playwright version and every check; a dependency upgrade would broaden this presentation fix unnecessarily. The secret-scan job remains unchanged.
+
+
+## 2026-11-08, build A–G: one pull request for this task
+
+The explicit task instruction overrides the usual one-stage-per-PR rule for this build only. Parts A–G share build-8-nov, with separate lettered commits and green typecheck, tests, build and browser checks before each part is pushed. Parts remain independently revertable; source writes, private data, new dependencies other than the final pinned Playwright upgrade, and changes to the read-only spec remain outside scope.
+
+## 2026-11-08, Part A: chart, Home and carry fixes
+
+Shorten the hourly plot by 28px and tighten the hero-grid top to 500px at 390×844 and 410px at 1280×960; never raise these limits. Preserve the review flag, drop line, chart comparison and all dense-fixture counts. Keep the live spend split in the sheet with the configured freelancer label, model the test say-line, escape decision metadata, validate stock markets and map shop-review titles on presentation. Waiting review rows retain their flag during a source outage.
+
+The dense invented fixture measures 499.0625px on the phone and 405.625px on desktop, within the new budgets. Unit checks run against PostgreSQL 17.6; the fulfilment subset also runs under America/New_York. Pin the retry test's fake clock so its Retry-After assertion measures the requested delay rather than incidental wall-clock time.
+
+Skip and count malformed activity rows individually with additive migration 051, map legacy activity object types when reading, and show waiting before the first activity read. Give the ad-set name column room and round scan durations. Read zone-free despatch timestamps as text and cover imports under a non-UTC CI timezone. Privacy cleanup moves from every first-order pass to one bounded, non-fatal run after listen per worker lifecycle; this supersedes the 27 October every-run cleanup decision.

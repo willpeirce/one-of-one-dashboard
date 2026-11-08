@@ -4,6 +4,7 @@ Updated in every pull request.
 
 | Stage | What | Code | Keys in Replit | Live check ("Done when") |
 |---|---|---|---|---|
+| Build 8 Nov · A | Chart and Home follow-ups; activity/import/background carry fixes | built on `build-8-nov`; additive migration 051 | none | Live acceptance follows merge and Republish |
 | Home fold · 8 Nov | Remove health score, count pills and narrative; one review flag beside the market switch; pin hero-grid top | built on `hero-fold`; no migration | none | Check live Home at 390 and 1280 px against the pinned budgets after merge and Republish |
 | Home · 27 Oct | Compact ranked Decisions, stock grid, capped reviews/experiments/creatives, folded sample dials and actual source footer | built on `home-compact`; migration 050 (approved audit allowlist only); browser budgets pinned at phone/desktop widths | none | Claude checks live Home at 390 and 1280 px against the same budgets |
 | 2 scan fix · 27 Oct | Restore four-field scan request, tolerant JSON parsing, bounded timeouts and latest-attempt diagnostics | built on `fix-creative-scan`; no new migration | none | Claude runs one live Scan now after Republish and checks `/sources` |
@@ -79,19 +80,11 @@ Updated in every pull request.
 
 ## Next step
 
-Review **home-compact**, based on merged PR #41. The four Home chapters retain their identities. Decisions use one shared state/renderer, ranked Act cards, a product/market stock grid, compact watch rows and a folded check list. Reviews, experiments and creative highlights show three entries before expansion; sample dials are folded and the footer reports source health. Existing sheets and source reads remain in place.
+Review **build-8-nov**, based on the merged Home fold change. One PR contains separately validated lettered parts, as explicitly requested for this task. Part A tightens the hero-grid budgets to 500px at 390×844 and 410px at 1280×960 while preserving all existing section/count/control limits. Parts B–G are in progress and will be recorded here as they are completed or explicitly deferred.
 
-**Verification:** typecheck, all 702 tests on PostgreSQL (no skips), build, the full browser suite and secret scanning passed before pushing. The dense phone/desktop browser fixture pins heights, control counts, 44 px tap targets, text clamps, overflow, hand-counted states and interactions after a re-render. All requested budgets pass unchanged; they must not be raised. CI must be green before review readiness. All new fixtures and values are invented.
+After merge: run `npm run migrate`, Republish, supply live Settings values, and perform source and phone/desktop acceptance checks. Live source data is not available to the builder. The only requested new secret is `MAILCHIMP_API_KEY` when that source is wanted live; it is never entered in this repository.
 
-**Known constraint:** the ad-set view only exposes completed-day spend. Its compact summary says spend so far unavailable; showing a measured current-day amount requires a separate read change. Sample experiment arms retain their counts and say rates unavailable because their model has no visitor denominator.
-
-Needs from Will after merge: **nothing**. Claude merges, runs the Shell merge, `npm run migrate` (050) and Republish, then checks live Home at 390 and 1280 px against the pinned budgets. The builder does not merge or deploy.
-
-**Sample and live:** sample w019 remains its sample; connected Meta and Shopify use the measured fourteen-complete-day ratio. Activity and risk cards use live records only. CAC uses counted first orders when every counted order in the period has a flag; otherwise it says all orders with the waiting count. Unknown source data stays unavailable. Only first/repeat/unknown is retained; the unused customer-ID projection is removed.
-
-Claude enters Our actors in live Settings, then checks Home and `/ads` at 390px and 1280px; the activity stat/detail and any refusal line; risk cards; the ratio and owner estimates, settling Meta sources from its other-source counts; first-order CAC and its waiting count; backfill progress/stall recovery; yesterday's comparison against Ads Manager hourly spend; and the next creative scan, whose Sources line must show the API reason if still rejected. Existing spend agreement remains a live check.
-
-Sources stay read-only except for the existing off-by-default, confirmed Meta ad-set action path. Judge.me Publish stays behind its off flag. No Meta async insights POST, new key, scope or dependency. `docs/spec/` and `replit.md` remain untouched.
+The existing source-mode boundaries and labelled samples remain. No new Home section, automatic budget change or source write is introduced. The spec, AGENTS.md, replit.md and key handling remain unchanged.
 
 **Video recovery follow-up (superseded 25 Oct):** the old rule kept successful reports with omitted video fields pending. Migration 040 and the narrow-report zero rule above replace that behaviour; an absent ad-day row still waits, up to three reads. The narrow repair supplies the matching daily hold denominator for hourly-only rows while preserving known values when that field is omitted. Existing migrations 034–035 are unchanged.
 

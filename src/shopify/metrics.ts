@@ -191,6 +191,10 @@ export function shopifyHero(facts: Facts, today: string, from: string, to: strin
 }
 
 export interface StockCover { market: 'uk' | 'us'; product: string; productId: string; locationId: string; name: string; available: number | null; required: number | null; dailyRate: number | null; cover: number | null; runOut: string | null; basis: string }
+export function stockMarket(value: string): StockCover['market'] {
+  if (value !== 'uk' && value !== 'us') throw new Error('Invalid configured stock market');
+  return value;
+}
 export function stockCover(facts: Facts, today: string, settings: Settings): StockCover[] {
   const { orders, inventory, from, ready } = dataset(facts, today);
   const start = addDays(today, -60), end = addDays(today, -1);
@@ -212,7 +216,7 @@ export function stockCover(facts: Facts, today: string, settings: Settings): Sto
     const kitQuantity = sold.reduce((n, o) => n + allocatedQuantity(o, kitIds), 0);
     const required = !kits && complete && allocationComplete && kitQuantity > 0 ? quantity / kitQuantity * remainingKits : null;
     const cover = kits && available !== null && rate !== null && rate > 0 ? available / rate : null;
-    rows.push({ market: market as StockCover['market'], product: product.name, productId, locationId: location.id, name: `${product.name} · ${location.name}`, available, required, dailyRate: rate, cover,
+    rows.push({ market: stockMarket(market), product: product.name, productId, locationId: location.id, name: `${product.name} · ${location.name}`, available, required, dailyRate: rate, cover,
       runOut: cover !== null ? addDays(today, Math.floor(cover)) : null,
       basis: kits ? '60 complete UK days × seasonal multiplier; fulfilled warehouse orders only. Series 1: run-out, no restock.' : `Attach rate × remaining kits: ${required === null ? 'unknown' : formatNumber(Math.ceil(required)) + ' needed'}. Accessories have no daily-rate cover.` });
   }

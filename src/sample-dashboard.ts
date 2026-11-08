@@ -260,6 +260,7 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
         "note": "B also collected 24 sign-ups",
         "presentation": {
           "sure": 61,
+          "homeSay": "Grey until 95% on two mornings · Rates unavailable",
           "state": "info",
           "chipText": "i Too early",
           "say": "A 36 orders, B 29. A is ahead by 24%, but a gap this size happens by chance about 4 times in 10. Too early to call.",

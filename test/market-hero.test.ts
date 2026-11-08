@@ -148,3 +148,13 @@ test('hourly orders share the tile rule for All, UK and US, leaving free and tes
   }
   assert.equal(hero.orders.n, 4); assert.equal(hero.markets!.uk.orders.n, 1); assert.equal(hero.markets!.us.orders.n, 1);
 });
+
+
+test('shopifyHero keeps the configured freelancer label and measured spend split in the live sheet', async () => {
+  const hero = shopifyHero(facts(await orders()), today, date, date,
+    {...settings, freelancerLabel: 'Invented partner'}, undefined, undefined,
+    {spend: spend(), costs: [], estimates: [], now});
+  assert.match(hero.spend.d.why, /Meta ours £16.00.*Meta Invented partner £5.00.*Google £7.00/);
+  assert.ok(hero.spend.d.extra?.some(([label, value]) => label === 'Meta Invented partner' && value === '£5.00'));
+  assert.doesNotMatch(hero.spend.d.why, /Meta freelancer/);
+});

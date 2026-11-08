@@ -20,6 +20,7 @@ export async function checkAdSets(page:Page,origin:string):Promise<void>{
  assert.match(await page.locator('[data-owner=freelancer]').innerText(),/3d under trigger/);
  await page.locator('[data-adset-market=us]').click();assert.equal(await page.locator('[data-adset-row]').count(),0);
  await page.locator('[data-adset-market=all]').click();await page.locator('[data-adset-open]').first().click();await page.locator('#adset-sheet[open]').waitFor();await page.locator('[data-adset-close]').click();
+ if(page.viewportSize()!.width===1280)assert.ok((await page.locator('td[data-label=Set]').first().boundingBox())!.width>=200,'desktop Set column keeps a readable minimum width');
  if(page.viewportSize()!.width===390){
   assert.ok((await page.locator('td[data-label=Reason]').first().boundingBox())!.width>300,'phone reason uses the full row width');
   assert.ok((await page.locator('.adset-table caption').boundingBox())!.width>300,'phone caption uses the full table width');

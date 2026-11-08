@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readFile} from 'node:fs/promises';
+import {randomBytes} from 'node:crypto';
+import {ShopifyWorker} from '../src/shopify/worker.js';
 import {cleanOrder} from '../src/shopify/model.js';
 import {orderFields,type ShopifyReader} from '../src/shopify/client.js';
 import {backfillFirstOrders} from '../src/shopify/first-order.js';
@@ -97,22 +99,52 @@ test('migration 049 repeats order cleanup, preserving flags and leaving other ki
  await checkLegacyRows(db, false);
 });
 
-test('every first-order run cleans live legacy rows even when the next run is tomorrow, leaving samples alone', async t => {
+test('post-listen cleanup runs once, is bounded and leaves scheduled flag backfills read-only until due', async t => {
  const db = await createTestDatabase(); t.after(() => db.close());
  const tomorrow = new Date(now.getTime() + 86_400_000);
  await db.query("INSERT INTO pulse.shopify_first_order_backfill(mode,next_run_at) VALUES('live',$1)", [tomorrow]);
- // Also due for a poll: cleanup must precede both scheduling checks.
  await db.query("INSERT INTO pulse.shopify_jobs(mode,name,next_run_at) VALUES('live','poll',$1)", [now]);
  const reader: ShopifyReader = Object.assign(new SampleShopify(true), {
   firstOrderFlags: async () => { assert.fail('No source read before the scheduled run'); },
  });
- for (let run = 0; run < 2; run++) {
-  await db.query('DELETE FROM pulse.shopify_records');
-  await insertLegacyRows(db); // Simulate the old release syncing again between runs.
-  await backfillFirstOrders(db, reader, () => now, () => false);
-  await checkLegacyRows(db, true);
+ const statements: string[] = [];
+ const observed: typeof db = {...db, transaction: fn => db.transaction(tx => fn({...tx, query: async (text, values) => {
+  statements.push(text); return tx.query(text, values);
+ }}))};
+ const worker = new ShopifyWorker(observed, {SHOPIFY_CLIENT_ID: randomBytes(16).toString('hex'), SHOPIFY_CLIENT_SECRET: randomBytes(32).toString('hex')}, 'https://example.test', {reader, clock: () => now});
+ await insertLegacyRows(db);
+ const cleanup = worker.startOrderCleanup();
+ assert.equal(worker.startOrderCleanup(), cleanup);
+ await cleanup;
+ await checkLegacyRows(db, true);
+ assert.equal(statements[0], "SET LOCAL statement_timeout = '5s'");
+ assert.equal(statements[1], "SET LOCAL lock_timeout = '1s'");
+ assert.equal(statements.length, 3);
+ await db.query('DELETE FROM pulse.shopify_records');
+ await insertLegacyRows(db);
+ for (let run = 0; run < 2; run++) await backfillFirstOrders(db, reader, () => now, () => false);
+ await worker.startOrderCleanup();
+ assert.equal(statements.length, 3, 'Worker ticks and repeated startup calls never repeat the cleanup');
+ for (const row of legacyRows) {
+  const stored = (await db.query('SELECT data FROM pulse.shopify_records WHERE mode=$1 AND kind=$2 AND source_id=$3', [row.mode,row.kind,row.id])).rows[0]!.data;
+  assert.deepEqual(stored, row.data);
  }
  const job = (await db.query('SELECT next_run_at,cursor FROM pulse.shopify_first_order_backfill')).rows[0]!;
  assert.equal(new Date(job.next_run_at as string).toISOString(), tomorrow.toISOString());
  assert.equal(job.cursor, '');
+ await worker.stop();
+});
+
+test('post-listen order cleanup failure is non-fatal, logged safely and never repeated', async t => {
+ const db = await createTestDatabase(); t.after(() => db.close());
+ let attempts = 0;
+ const logs: string[] = [];
+ t.mock.method(console, 'error', (line: string) => logs.push(line));
+ const failing: typeof db = {...db, transaction: async () => {attempts++; throw new Error('invented-private-error');}};
+ const worker = new ShopifyWorker(failing, {SHOPIFY_CLIENT_ID: randomBytes(16).toString('hex'), SHOPIFY_CLIENT_SECRET: randomBytes(32).toString('hex')}, 'https://example.test', {reader: new SampleShopify(true)});
+ await worker.startOrderCleanup();
+ await worker.startOrderCleanup();
+ assert.equal(attempts, 1);
+ assert.deepEqual(logs, ['Startup Shopify order cleanup could not finish.']);
+ await worker.stop();
 });

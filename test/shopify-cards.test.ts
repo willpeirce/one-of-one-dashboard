@@ -9,7 +9,7 @@ import { ShopifyStore } from '../src/shopify/store.js';
 import { fixture, SampleShopify } from '../src/shopify/sample.js';
 import { ShopifyWorker, channelQuery } from '../src/shopify/worker.js';
 import { orderFields } from '../src/shopify/client.js';
-import { dataset, dailyRows, emailFlow, shopifyHero, stockCover, type Facts } from '../src/shopify/metrics.js';
+import { dataset, dailyRows, emailFlow, shopifyHero, stockCover, stockMarket, type Facts } from '../src/shopify/metrics.js';
 import { blankObservation, dispatchLate, evaluateWatchdogs, observe, updateObservation } from '../src/shopify/watchdogs.js';
 import { applyShopifyDashboard } from '../src/shopify/dashboard.js';
 import { getSampleDashboard } from '../src/sample-dashboard.js';
@@ -343,4 +343,11 @@ test('channel shortages name one day of seven even when another day offsets the 
   reader.equal = true;
   await db.query("UPDATE pulse.shopify_jobs SET next_run_at=$1 WHERE name='reconcile'", [now]); await worker.tick();
   assert.equal((await worker.store.facts()).noticeDetails.filter(n => n.kind === 'channel_short').length, 0);
+});
+
+
+test('stock market configuration accepts only supported country groups', () => {
+  assert.equal(stockMarket('uk'), 'uk');
+  assert.equal(stockMarket('us'), 'us');
+  for (const value of ['eu', 'UK', '', 'invented']) assert.throws(() => stockMarket(value), /Invalid configured stock market/);
 });

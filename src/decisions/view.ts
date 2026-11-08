@@ -30,10 +30,11 @@ const figure = (value?: {value:string;label:string}, mark='') => value
   : `<div class="act-figure source-mark" aria-hidden="true">${e(mark)}</div>`;
 const more = (body:string) => `<details class="act-more"><summary aria-label="More actions">⋯</summary><div class="act-menu">${body}</div></details>`;
 function actCard(rank:number,state:'alarm'|'decide',source:string,verdict:string,title:string,reason:string,visual:string,primary:string,extra:string,attributes=''):string {
+  // data-rank is the category rank (Alarm, Kill, Slipping, Make next, Step), not the card position.
   return `<article class="dcard act-card" data-rank="${rank}" data-state="${state}" ${attributes}>${visual}<div class="act-copy"><div class="act-meta"><span class="chip ${state}">${state==='alarm'?'✕ Alarm':'◆ Decide'}</span><span>${e(source)}${verdict?` · ${e(verdict)}`:''}</span></div><h3 class="act-title" title="${e(title)}">${e(title)}</h3><p class="act-reason">${e(reason)}</p></div><div class="act-controls">${primary}${more(extra)}</div></article>`;
 }
 function needCard(need:Need):string {
-  return actCard(0,'alarm',source(need),'',need.title,need.why,figure(need.figure,source(need)),needLink(need),`<p>${e(need.why)}</p>`,`data-source="${need.source}"`);
+  return actCard(0,'alarm',source(need),'',need.title,need.why,figure(need.figure,source(need)),needLink(need),`<p>${e(need.why)}</p>`,`data-source="${e(need.source)}"`);
 }
 function adCard(row:AdSetRow,view:AdSetsView,rank:number):string {
   const verdict=row.verdict!;
@@ -41,7 +42,7 @@ function adCard(row:AdSetRow,view:AdSetsView,rank:number):string {
     figure({value:verdict.figures[0]??'',label:verdict.figures[1]??''}),
     `<button class="btn" type="button" data-adset-open="${e(row.set.id)}">Open set</button>`,
     `<a class="btn" href="/ads">Open ads</a>${actButton(row,view)}`,
-    `data-adset-verdict="${verdict.verdict}" data-mode="${view.mode}" data-market="${row.set.market}"`);
+    `data-adset-verdict="${verdict.verdict}" data-mode="${view.mode}" data-market="${e(row.set.market)}"`);
 }
 const copyButton=(card:CreativeCard)=>`<button class="btn" type="button" data-creative-copy="${e(card.brief??'')}">Copy brief</button>`;
 const creativeActions=(card:CreativeCard,watch=false)=>`<button class="btn" type="button" data-creative-open="${e(card.groupId)}">Open creative</button><button class="btn" type="button" data-creative-action="done" data-card-id="${e(card.id)}">Done</button>${watch?`<button class="btn" type="button" data-creative-action="snooze" data-card-id="${e(card.id)}">Snooze 7 days</button>${copyButton(card)}`:''}`;
@@ -66,11 +67,11 @@ function stockHtml(model:ShopifyDashboard):string {
   const fine=productRows.filter(p=>p.rows.length>=2&&p.rows.every(r=>status(r)==='good'));
   const cell=(product:string,market:string)=>{
     const row=model.stock.find(r=>r.product===product&&r.market===market);
-    if(!row)return `<div class="stock-cell" data-stock-product="${e(product)}" data-stock-market="${market}">i Unknown</div>`;
+    if(!row)return `<div class="stock-cell" data-stock-product="${e(product)}" data-stock-market="${e(market)}">i Unknown</div>`;
     const state=status(row),attach=row.required!==null;
     const ratio=attach?row.required!>0?(row.available??0)/row.required!:1:(row.cover??0)/90;
     const text=attach?`${row.available===null?'?':formatNumber(row.available)} / ${formatNumber(Math.ceil(row.required!))}`:row.cover===null?'Unknown':`${formatNumber(Math.floor(row.cover))} days`;
-    return `<div class="stock-cell" aria-label="${e(`${state==='alarm'?'✕ Alarm':state==='warn'?'△ Watch':state==='good'?'✓ Good':'i Info'} · ${product} · ${market.toUpperCase()} · ${text}`)}" data-stock-product="${e(product)}" data-stock-market="${market}"${state==='alarm'||state==='warn'?` data-state="${state}"`:''}><span>${state==='alarm'?'✕':state==='warn'?'△':state==='good'?'✓':'i'} ${e(text)}</span><span class="stock-bar" aria-hidden="true"><i style="width:${Math.max(0,Math.min(1,ratio))*100}%"></i></span></div>`;
+    return `<div class="stock-cell" aria-label="${e(`${state==='alarm'?'✕ Alarm':state==='warn'?'△ Watch':state==='good'?'✓ Good':'i Info'} · ${product} · ${market.toUpperCase()} · ${text}`)}" data-stock-product="${e(product)}" data-stock-market="${e(market)}"${state==='alarm'||state==='warn'?` data-state="${state}"`:''}><span>${state==='alarm'?'✕':state==='warn'?'△':state==='good'?'✓':'i'} ${e(text)}</span><span class="stock-bar" aria-hidden="true"><i style="width:${Math.max(0,Math.min(1,ratio))*100}%"></i></span></div>`;
   };
   const rows=(items:typeof productRows)=>items.map(({product})=>`<div class="stock-product">${e(product)}</div>${cell(product,'uk')}${cell(product,'us')}`).join('');
   const regular=productRows.filter(p=>!fine.includes(p));
@@ -85,8 +86,8 @@ export function decisionsHtml(state:DecisionsState):string {
   for(const row of ads){const rank=({Kill:1,Slipping:2,Step:4} as Record<string,number>)[row.verdict!.verdict];if(rank!==undefined)ranked.push({rank,html:adCard(row,adSets!,rank)});}
   ranked.push(...creatives.filter(c=>c.kind==='decide').map(c=>({rank:3,html:creativeCard(c)})));
   ranked.sort((a,b)=>a.rank-b.rank);
-  const watch=needs.filter(n=>n.state==='warn').map(n=>watchRow(`${source(n)} · ${n.title} · ${n.why}`,needLink(n),n.figure,`data-source="${n.source}"`));
+  const watch=needs.filter(n=>n.state==='warn').map(n=>watchRow(`${source(n)} · ${n.title} · ${n.why}`,needLink(n),n.figure,`data-source="${e(n.source)}"`));
   for(const row of ads.filter(r=>['Delivery','Test share'].includes(r.verdict!.verdict)))watch.push(watchRow(`Meta · ${row.verdict!.verdict} · ${adSetName(row.set.name)} · ${row.verdict!.reason}`,`<button class="btn" type="button" data-adset-open="${e(row.set.id)}">Open set</button><a class="btn" href="/ads">Open ads</a>${actButton(row,adSets!)}`,{value:row.verdict!.figures[0]??'',label:row.verdict!.figures[1]??''},`data-adset-verdict="${row.verdict!.verdict}"`));
   watch.push(...creatives.filter(c=>c.kind==='watch').map(c=>watchRow(`Meta · ${c.title} · ${c.reason}`,creativeActions(c,true),undefined,`data-card-id="${e(c.id)}" data-mode="${c.mode}"`)));
-  return `<section id="act" aria-label="Act"><div class="act-list">${ranked.length?fold(ranked.map(r=>r.html),'more decisions','act'):'<p class="nothing-decide">✓ Nothing to decide</p>'}</div></section><section id="stock" aria-label="Stock">${state.shopify?stockHtml(state.shopify):''}</section><section id="watch" aria-label="To watch">${watch.length?`<h3>To watch</h3>${fold(watch,'more','watch')}`:''}${state.amberDials?`<a class="amber-dials" href="#dials">${formatNumber(state.amberDials)} dials in amber</a>`:''}</section><section id="checks">${state.shopify?checksHtml(state.shopify):''}</section>`;
+  return `<section id="act" aria-label="Act"><div class="act-list">${ranked.length?fold(ranked.map(r=>r.html),'more decisions','act'):'<p class="nothing-decide">✓ Nothing to decide</p>'}</div></section><section id="stock" aria-label="Stock">${state.shopify?stockHtml(state.shopify):''}</section><section id="watch" aria-label="To watch">${watch.length?`<h3>To watch</h3>${fold(watch,'more','watch')}`:''}${state.amberDials?`<a class="amber-dials" href="#dials">${formatNumber(state.amberDials)} ${state.amberDials===1?'dial':'dials'} in amber</a>`:''}</section><section id="checks">${state.shopify?checksHtml(state.shopify):''}</section>`;
 }

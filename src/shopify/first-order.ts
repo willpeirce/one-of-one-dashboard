@@ -4,11 +4,18 @@ import {ShopifyError} from './http.js';
 export type FirstOrder = 'first'|'repeat'|'unknown';
 export const firstOrderFlag=(index:unknown):FirstOrder=>Number.isSafeInteger(index)&&Number(index)>0 ? index===1?'first':'repeat':'unknown';
 
+/** Once after listen: the previous deployment may have written its old projection. */
+export async function cleanLegacyOrders(db: Database): Promise<void> {
+  await db.transaction(async tx => {
+    await tx.query("SET LOCAL statement_timeout = '5s'");
+    await tx.query("SET LOCAL lock_timeout = '1s'");
+    await tx.query(`UPDATE pulse.shopify_records SET data=(data-'customerId') || jsonb_build_object('firstOrder',COALESCE(data->>'firstOrder','unknown'))
+      WHERE mode='live' AND kind='order' AND (data ? 'customerId' OR NOT (data ? 'firstOrder'))`);
+  });
+}
+
 /** Narrow projections, persisted by page; no order or customer details are re-saved. */
 export async function backfillFirstOrders(db:Database,reader:ShopifyReader,clock:()=>Date,closing:()=>boolean):Promise<void> {
-  // The previous release can still write its old projection until deployment swaps over.
-  await db.query(`UPDATE pulse.shopify_records SET data=(data-'customerId') || jsonb_build_object('firstOrder',COALESCE(data->>'firstOrder','unknown'))
-    WHERE mode='live' AND kind='order' AND (data ? 'customerId' OR NOT (data ? 'firstOrder'))`);
   if(!reader.firstOrderFlags)return;
   const now=clock();
   await db.query("INSERT INTO pulse.shopify_first_order_backfill(mode,next_run_at) VALUES('live',$1) ON CONFLICT DO NOTHING",[now]);

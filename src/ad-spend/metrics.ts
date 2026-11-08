@@ -144,7 +144,7 @@ export function applySpend(
   const split: [string, string][] = (
     [
       ['Meta ours', pounds(sum((r) => r.source === 'meta' && r.owner === 'ours'))],
-      ['Meta freelancer', pounds(sum((r) => r.source === 'meta' && r.owner === 'freelancer'))],
+      [`Meta ${settings.freelancerLabel}`, pounds(sum((r) => r.source === 'meta' && r.owner === 'freelancer'))],
       ['Meta unassigned', pounds(sum((r) => r.source === 'meta' && r.owner === 'unassigned'))],
       ['Google', pounds(sum((r) => r.source === 'google-ads'))],
       ['TikTok', pounds(sum((r) => r.source === 'tiktok'))],
@@ -172,7 +172,7 @@ export function applySpend(
     state: gaps.length ? 'warn' : to === today ? 'sofar' : 'info',
     ss: `${spendSubtitle}${inputs.market && inputs.market !== 'all' && unknown ? ' · store-wide spend stays under All' : ''}`,
     d: {
-      why: `Total spend ${formatPounds(total)}. ${label}.`,
+      why: `Total spend ${formatPounds(total)}. ${split.slice(0, 5).map(([name, value]) => `${name} ${value}`).join(" · ")}. ${label}.`,
       rule: 'GBP spend only. Re-fetches replace daily rows. Ad sets/campaign names place spend by market; unplaceable spend is store-wide under All only and is never shared out.',
       src: label,
       extra: split,

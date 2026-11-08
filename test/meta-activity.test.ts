@@ -20,12 +20,12 @@ test('activity parses nested pence and status, ignores every other type and foll
   assert.equal(init?.method,'GET');const url=new URL(String(input));assert.equal(url.searchParams.get('fields'),ACTIVITY_FIELDS);assert.equal(url.searchParams.get('since'),'1234');
   if(++calls===1)return Response.json({data:[raw],paging:{cursors:{after:'invented-next'},next:'https://graph.facebook.com/ignored'}});
   assert.equal(url.searchParams.get('after'),'invented-next');return Response.json({data:[{...raw,event_type:'billing_event'}]});
- }});assert.equal((await reader.readActivities(account,1234)).length,1);assert.equal(calls,2);
+ }});assert.equal((await reader.readActivities(account,1234)).events.length,1);assert.equal(calls,2);
 });
 test('activity saves once, resumes inclusively, empty actors count all and read refusals have their own line',async t=>{
  const db=await createTestDatabase();t.after(()=>db.close());t.mock.method(console,'error',()=>{});
  const event=parseActivity(raw)!,settings=defaultSettings();let since=0;
- const read=async(s:number)=>{since=s;return [event,event];};
+ const read=async(s:number)=>{since=s;return {events:[event,event],skipped:0};};
  await syncActivity(db,account,read,now);assert.equal(since,(now.getTime()-30*86400000)/1000);
  await syncActivity(db,account,read,now);assert.equal(since,Date.parse(event.time)/1000);
  let view=await readActivity(db,account,settings,now);assert.equal(view.events.length,1);assert.equal(view.notOurs,1);
@@ -34,4 +34,37 @@ test('activity saves once, resumes inclusively, empty actors count all and read 
  await syncActivity(db,account,async()=>{throw new AdError('http',403,200);},now);
  assert.match((await readActivity(db,account,settings,now)).line,/Meta activity: read refused · http 403, meta 200/);
  await syncActivity(db,account,read,now);assert.doesNotMatch((await readActivity(db,account,settings,now)).line,/refused/);
+});
+
+test('malformed activity rows are skipped and counted without refusing valid rows or irrelevant types',async t=>{
+ const db=await createTestDatabase();t.after(()=>db.close());
+ let malformed=true;
+ const reader=new MetaSpend(randomBytes(16).toString('hex'),{sleep:async()=>{},fetch:async()=>Response.json({data:malformed?[
+  raw,{...raw,event_time:'invented-invalid-time'},{...raw,extra_data:'{broken'},
+  {...raw,extra_data:'null'},null,42,{...raw,event_time:{toString:null}},
+  {...raw,event_type:'billing_event',event_time:'invalid'},
+ ]:[raw]})});
+ const result=await reader.readActivities(account,0);
+ assert.equal(result.events.length,1);assert.equal(result.skipped,6);
+ await syncActivity(db,account,since=>reader.readActivities(account,since),now);
+ let view=await readActivity(db,account,defaultSettings(),now);
+ assert.equal(view.events.length,1);assert.equal(view.hasRead,true);
+ assert.match(view.line,/6 malformed events skipped/);assert.doesNotMatch(view.line,/refused/);
+ assert.equal((await db.query<{skipped_rows:number}>('SELECT skipped_rows FROM pulse.meta_activity_sync WHERE account_id=$1',[account])).rows[0]!.skipped_rows,6);
+ malformed=false;await syncActivity(db,account,since=>reader.readActivities(account,since),now);
+ view=await readActivity(db,account,defaultSettings(),now);assert.doesNotMatch(view.line,/skipped/);
+});
+
+test('activity waits before the first successful read and maps stored legacy types on read',async t=>{
+ const db=await createTestDatabase();t.after(()=>db.close());const settings=defaultSettings();
+ const waiting=await readActivity(db,account,settings,now);
+ assert.equal(waiting.hasRead,false);assert.equal(waiting.line,'Meta activity: waiting for first read');
+ const html=activityStat({...sampleAdSetsView(settings),mode:'live',activity:waiting});
+ assert.match(html,/<strong>Waiting<\/strong>/);assert.doesNotMatch(html,/<strong>0<\/strong>|No budget or status changes/);
+ const events=['CAMPAIGN','CAMPAIGN_GROUP','AD_SET'].map((objectType,i)=>({...parseActivity(raw)!,id:`invented-legacy-${i}`,objectType}));
+ await syncActivity(db,account,async()=>({events,skipped:0}),now);
+ const read=await readActivity(db,account,settings,now);
+ assert.deepEqual(read.events.map(event=>event.objectType),['Ad set','Campaign','Ad set']);
+ assert.deepEqual((await db.query<{data:{objectType:string}}>('SELECT data FROM pulse.meta_activity ORDER BY event_id')).rows.map(row=>row.data.objectType),['CAMPAIGN','CAMPAIGN_GROUP','AD_SET']);
+ assert.match(activityStat({...sampleAdSetsView(settings),mode:'live',activity:read}),/ · Ad set · Invented object/);
 });

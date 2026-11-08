@@ -4,6 +4,7 @@ import { monthlyOverheadTotal, type OverheadItem } from './overheads.js';
 import { installPullToRefresh, reloadPageForRefresh } from './pull-refresh.js';
 import { seriesPaceDates } from './series-pace/dates.js';
 import { paceDate } from './series-pace/model.js';
+import { inboundProductWarning } from './shopify/stock-gap.js';
 
 type SettingInput = HTMLInputElement | HTMLSelectElement;
 type JsonObject = { [key: string]: unknown };
@@ -114,6 +115,18 @@ function initializeSettings(form: HTMLFormElement): void {
     }
   }
 
+  function showInboundWarnings(): void {
+    const list = form.querySelector<HTMLElement>('[data-settings-list="inboundStock"]');
+    if (!list) return;
+    const products = Array.from(list.querySelectorAll<HTMLOptionElement>('#inbound-stock-products option'), option => option.value);
+    for (const row of Array.from(list.querySelectorAll<HTMLElement>('[data-list-rows] > .setting-row'))) {
+      const product = row.querySelector<HTMLInputElement>('[data-setting-path$=".product"]')!.value;
+      const warning = row.querySelector<HTMLElement>('[data-row-hint]')!;
+      warning.textContent = inboundProductWarning(product, products);
+      warning.hidden = !warning.textContent;
+    }
+  }
+
   function showSeriesPaceDates(): void {
     const input = (key: string) => form.querySelector<HTMLInputElement>(`[data-setting-path="${key}"]`)!;
     const orderDate = input('series1OrderDate').value;
@@ -137,6 +150,7 @@ function initializeSettings(form: HTMLFormElement): void {
     updateDirty();
     showShopifyCosts();
     showActorWarnings();
+    showInboundWarnings();
     showOverheadsTotal();
     showSeriesPaceDates();
     message.textContent = dirty ? 'You have unsaved changes.' : 'All changes saved.';
@@ -272,6 +286,7 @@ function initializeSettings(form: HTMLFormElement): void {
     }
     showShopifyCosts();
     showActorWarnings();
+    showInboundWarnings();
     showOverheadsTotal();
     showSeriesPaceDates();
   }
@@ -359,6 +374,7 @@ function initializeSettings(form: HTMLFormElement): void {
   });
   showOverheadsTotal();
   showActorWarnings();
+  showInboundWarnings();
   showSeriesPaceDates();
   savedValues = readValues();
   const canRefresh = () => dirty || pending ? 'Save or discard your changes first' : true;

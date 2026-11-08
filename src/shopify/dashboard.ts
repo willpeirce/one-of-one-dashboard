@@ -16,6 +16,7 @@ import { formatNumber, formatMetricNumber, formatPounds } from '../money.js';
 import { dailyRows, dataset, emailFlow, isRefill, isUpgrade, isKit, kitIds, orderNet, ratio, shopifyHero, stockCover, type Facts, type StockCover } from './metrics.js';
 import { blankObservation, evaluateWatchdogs, type Check, type Observation } from './watchdogs.js';
 import { isFreeOrder } from './model.js';
+import { stockGapNeeds } from './stock-gap.js';
 
 export interface DashboardNeed {
   id: string; state: State; title: string; why: string; link: string;
@@ -147,6 +148,7 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
   for (const row of stock) if (row.cover !== null && row.cover < 60) needs.push({ source: 'shopify', id: `stock:${row.productId}:${row.locationId}`, state: row.cover < 21 ? 'alarm' : 'warn', title: row.name, why: `${formatNumber(Math.floor(row.cover))} days of cover; run-out ${row.runOut}. Series 1 kits are not restocked.`, link: `https://admin.shopify.com/store/${appConfig.shopify.storeDomain.split('.')[0]}/products/${row.productId.split('/').at(-1)}` });
   for (const row of stock) if (row.available !== null && row.required !== null && row.available < row.required) needs.push({ source: 'shopify', id: `attach:${row.productId}:${row.locationId}`, state: 'warn', title: row.name, why: `${formatNumber(row.available)} available; ${formatNumber(Math.ceil(row.required))} needed at the measured attach rate for remaining kits. Source-owned stock only; TikTok gift stock awaits its source.`, link: `https://admin.shopify.com/store/${appConfig.shopify.storeDomain.split('.')[0]}/products/${row.productId.split('/').at(-1)}` });
   for (const n of facts.noticeDetails) if (['reports_unavailable', 'address_unavailable'].includes(n.kind)) needs.push({ source: 'shopify', id: n.source_id, state: 'warn', title: n.kind === 'reports_unavailable' ? 'Shopify reports unavailable' : 'Address access unavailable', why: n.kind === 'reports_unavailable' ? 'ShopifyQL was denied. Sessions may be daily routine data or unavailable; older order detail needs read_all_orders. Check granted Level 2 access.' : 'Order markets use currency/warehouse fallback. Check the app’s address permission; no personal address is stored.', link: `https://admin.shopify.com/store/${appConfig.shopify.storeDomain.split('.')[0]}/settings/apps` });
+  needs.push(...stockGapNeeds(stock, settings.inboundStock, settings.supplierLeadTimes, today, facts.mode));
   if(adInputs)needs.push(...spendNeeds(adInputs.spend,settings,today,now),...metaRisks(adInputs.spend,preparedRows,adInputs.activity??[],settings,today));
   needs.sort((a, b) => Number(b.state === 'alarm') - Number(a.state === 'alarm'));
   // Direct Judge.me and advertising examples remain explicitly separate until their parts land.

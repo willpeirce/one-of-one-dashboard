@@ -670,3 +670,9 @@ Readable campaign tags often do not match campaign IDs. Keep an owner's estimate
 The creative library builds one request-local group/insight index and the sheet aggregates only its selected parent. Stored insight conversion uses its fixed shape. Video-frame hydration remains on the media route and cannot hold up the sheet JSON. No shared cache, extra index or dependency is needed, so refreshed data and sample/live accounts cannot cross. On 1,500 invented groups, 4,500 ads and 135,000 daily insights in local PostgreSQL, three-run API medians fell from 15.326s to 2.352s for the library and 2.425s to 1.163s for the sheet. The committed benchmark also measures tap-to-filled-sheet at a 1.172s median (1.113–1.387s). These are fixture measurements, not a live-app claim.
 
 Shopify polling and its first-order work now start with the explicit post-listen hook alongside the other workers. Startup still seeds only bounded invented sample data; live source polling never starts from onReady.
+
+## 2026-11-08, Part C: next arrival against stock cover
+
+Add inboundStock as an empty-by-default Settings collection, with product, UK/US market, positive quantity and expected UK calendar date. Match the StockCover product label without case sensitivity, warn about unmatched product labels, and ignore arrivals whose date has passed. Migration 053 allows the audited key; older Settings documents fill it on read without changing their saved version.
+
+The pure stock-gap calculation compares cover with the next arrival for that product and market. Without an upcoming arrival it uses the shortest supplied lead time and explicitly labels the resulting date an assumption. With no timing or no known cover it raises nothing. A positive gap adds only a live Shopify Watch need, linked to Settings and named stock-gap:, so the existing stock-card filtering and dense sample fixture remain unchanged.

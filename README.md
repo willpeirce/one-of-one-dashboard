@@ -34,6 +34,8 @@ Creative spend and additive counts use UK days, including accounts set to GMT or
 
 Batch 4 adds attributes, tap-to-save tags, a tagging queue, attribute filters, model scans, calculated lifts and copyable Make next briefs. After Publish, run `npm run migrate` for migration 017. Creative Settings remain in the Meta block. Set both scan prices from the selected model’s current pricing, converted to pounds per million tokens, and check the daily cap before adding `ANTHROPIC_API_KEY` and setting `CREATIVE_SCAN_ENABLED=true` in Replit Secrets, then Publish again. Prices default to zero and scans wait until both are configured; the flag defaults off. Scan now and scheduled scans use the same prices and cap. Every Meta request remains a GET; the only new outbound POST is the flagged Anthropic Messages call. Tags change only Pulse, and Copy sends nothing. All added sample media, names, identifiers and figures are invented; sample lifts are fixed labelled illustrations while live lifts recompute after tags and worker runs. See [the post-Publish checks](docs/BUILD-STATUS.md#next-step).
 
+Stock planning Settings accepts inbound rows by product, UK/US market, quantity and expected date. Product labels match Stock and cover without case sensitivity; unmatched labels are flagged. Past arrivals stop counting. Live stock gaps appear in Watch; a supplier lead-time fallback explicitly says its arrival date is assumed.
+
 ## Install and run locally
 
 Prerequisites: Node 24 (`.nvmrc`), npm and PostgreSQL 17. Install the pinned dependencies from the repository root:

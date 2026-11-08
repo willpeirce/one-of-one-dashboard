@@ -10,6 +10,8 @@ import { seriesPaceDates } from './series-pace/dates.js';
 import { paceDate } from './series-pace/model.js';
 import { creativeFeatureFlags } from './creatives/config.js';
 import type { ActorChoices } from './meta-adsets/activity.js';
+import { appConfig } from './config.js';
+import { inboundProductWarning } from './shopify/stock-gap.js';
 
 function escapeHtml(value: string | number): string {
   return String(value).replace(/[&<>"']/g, (character) => ({
@@ -99,7 +101,7 @@ function actorPicker(values: Settings, choices?: ActorChoices): string {
   return collection('ourActors', 'Our actors', [{ key: 'actorId', label: 'Actor ID', list: 'recent-meta-actors' }], values.ourActors, 'Choose a recent actor or enter an ID. An empty list treats every change as not ours. Choose Save settings to keep edits.', undefined, { footer, rowHint: hint });
 }
 
-export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly ShopifyCost[] = [], mode: 'sample' | 'live' = 'sample', now = new Date(), metaCampaigns: readonly MetaCampaignView[] = [], campaignSync: CampaignSyncState = { state: 'pending', at: null }, creativeFlags = creativeFeatureFlags(), actorChoices?: ActorChoices): string {
+export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly ShopifyCost[] = [], mode: 'sample' | 'live' = 'sample', now = new Date(), metaCampaigns: readonly MetaCampaignView[] = [], campaignSync: CampaignSyncState = { state: 'pending', at: null }, creativeFlags = creativeFeatureFlags(), actorChoices?: ActorChoices, stockProductNames: readonly string[] = appConfig.shopify.stockProducts.map(product => product.name)): string {
   const values = snapshot.values;
   const costLabels: Record<string, string> = Object.create(null);
   for (const c of shopifyCosts) if (c.sku) {
@@ -150,7 +152,15 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     number('pencilsPerKit', 'Pencils per kit', { nullable: true, integer: true }),
   ], values)}</div>${collection('supplierLeadTimes', 'Supplier lead time', [
     { key: 'supplier', label: 'Supplier business' }, number('days', 'Lead time (days)', { nullable: true, integer: true }),
-  ], values.supplierLeadTimes, 'Starting supplier lead times. Freight and confirmed arrival dates come with uploads.')}`);
+  ], values.supplierLeadTimes, 'Starting supplier lead times. Without an upcoming inbound row, the shortest known lead time is an assumed arrival date.')}${collection('inboundStock', 'Inbound stock', [
+    { key: 'product', label: 'Product', list: 'inbound-stock-products', hint: 'Use the product name shown in Stock and cover.' },
+    { key: 'market', label: 'Market', options: [{ value: 'uk', label: 'UK' }, { value: 'us', label: 'US' }] },
+    number('quantity', 'Quantity', { integer: true, min: 1, max: 1_000_000 }),
+    { key: 'expectedDate', label: 'Expected arrival (UK date)', type: 'date' },
+  ], values.inboundStock, 'Confirmed arrivals by product and market. Dates before today no longer count as the next arrival. Saving changes only the local stock plan.', undefined, {
+    rowHint: row => inboundProductWarning(row.product, stockProductNames),
+    footer: `<datalist id="inbound-stock-products">${stockProductNames.map(product => `<option value="${escapeHtml(product)}"></option>`).join('')}</datalist>`,
+  })}`);
   const paceMarket = (market: 'UK' | 'US') => {
     const suffix = market === 'UK' ? 'Uk' : 'Us';
     const dates = seriesPaceDates(values.series1OrderDate, values[`series1${suffix}LandingOffsetDays`], values[`series1${suffix}TargetDate`])!;

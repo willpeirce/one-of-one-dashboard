@@ -5,6 +5,7 @@ import type { Database } from './db.js';
 import type { OverheadItem } from './overheads.js';
 import { sourceDefinitions } from './sources.js';
 import { isSeriesDate, seriesPaceDates } from './series-pace/dates.js';
+import type { InboundStock } from './shopify/stock-gap.js';
 
 export const SETTINGS_KEY_NAMES = Object.freeze(sourceDefinitions.flatMap((source) => [...source.requiredKeys]));
 type KeyName = (typeof SETTINGS_KEY_NAMES)[number];
@@ -26,6 +27,7 @@ export interface Settings {
   dispatchCutoffUk: string;
   dispatchCutoffUs: string;
   supplierLeadTimes: { supplier: string; days: number | null }[];
+  inboundStock: InboundStock[];
   safetyWeeks: number;
   seasonalMultiplier: number | null;
   markersPerKit: number | null;
@@ -136,6 +138,7 @@ export function defaultSettings(): Settings {
       { supplier: 'Rising Games', days: 35 }, { supplier: 'Hedy', days: 2 },
       { supplier: 'Shanghai Joan', days: null }, { supplier: 'Freight forwarder', days: null },
     ],
+    inboundStock: [],
     safetyWeeks: 3,
     seasonalMultiplier: null,
     markersPerKit: null,
@@ -306,6 +309,11 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
       const parsed = object(row, ['supplier', 'days'], path);
       return { supplier: businessText(parsed.supplier, `${path}.supplier`), days: number(parsed.days, `${path}.days`, 730, true, true) };
     }, (row) => row.supplier),
+    inboundStock: list(value.inboundStock, 'inboundStock', (row, path) => {
+      const parsed = object(row, ['product', 'market', 'quantity', 'expectedDate'], path);
+      return { product: text(parsed.product, `${path}.product`), market: choice(parsed.market, `${path}.market`, ['uk', 'us'] as const),
+        quantity: requiredNumber(parsed.quantity, `${path}.quantity`, 1_000_000, true, 1), expectedDate: seriesDate(parsed.expectedDate, `${path}.expectedDate`) };
+    }, (row) => `${row.product}:${row.market}:${row.expectedDate}`),
     safetyWeeks: requiredNumber(value.safetyWeeks, 'safetyWeeks', 104),
     seasonalMultiplier: number(value.seasonalMultiplier, 'seasonalMultiplier', 100, true, false, 0.01),
     markersPerKit: number(value.markersPerKit, 'markersPerKit', 1_000, true, true),
@@ -438,6 +446,7 @@ function storedSettings(input: unknown): Settings {
     metaSources: defaults.metaSources,
     ourActors: defaults.ourActors,
     freelancerLabel: defaults.freelancerLabel,
+    inboundStock: defaults.inboundStock,
     ...input as Record<string, unknown>,
   };
   if (!Object.hasOwn(stored, 'overheads') && !Object.hasOwn(stored, 'monthlyOverheadsGbp')) return validateSettings(stored);

@@ -116,6 +116,23 @@ test('stock uses allocated lines by warehouse, 60 complete days and Settings; mi
   assert.ok(stockCover(f,'2026-09-30',settings).some(s=>s.available===null));
 });
 
+test('stock arrival gaps join live DashboardNeeds without entering sample Home', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const o = await order(); o.day = '2026-09-29';
+  const product = appConfig.shopify.stockProducts[0]!;
+  o.lines[0]!.productId = `gid://shopify/Product/${product.id}`;
+  o.fulfillments = [{id: 'invented-gap-fulfilment', status: 'SUCCESS', createdAt: now.toISOString(), updatedAt: now.toISOString(),
+    locationId: appConfig.shopify.locations.uk.id, lines: [{lineId: o.lines[0]!.id, quantity: 1}]}];
+  const inventory = {productId: o.lines[0]!.productId, locationId: appConfig.shopify.locations.uk.id, quantities: [{name: 'available', quantity: 1}]};
+  const f = facts([o], '2026-07-01', [{kind: 'inventory', data: inventory, fetched_at: now}]);
+  const values = {...settings, seasonalMultiplier: 60, supplierLeadTimes: [], inboundStock: [{product: product.name.toLowerCase(), market: 'uk' as const, quantity: 19, expectedDate: '2026-10-10'}]};
+  const live = await applyShopifyDashboard(getSampleDashboard(), db, f, values, [], now);
+  const needs = live.shopify!.needs.filter(need => need.id.startsWith('stock-gap:'));
+  assert.equal(needs.length, 1); assert.deepEqual(needs[0]!.figure, {value: '9', label: 'days gap · rounded up'});
+  const sample = await applyShopifyDashboard(getSampleDashboard(), db, {...f, mode: 'sample', sample: true}, values, [], now);
+  assert.equal(sample.shopify!.needs.filter(need => need.id.startsWith('stock-gap:')).length, 0);
+});
+
 test('email explanations use human weekday dates for one day, a range and a year boundary', async () => {
   const o = await order();
   const oneDay = shopifyHero(facts([o]), '2026-09-30', '2026-09-30', '2026-09-30', settings).business!.email.detail.why;

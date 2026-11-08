@@ -192,7 +192,7 @@ Orders-flowing, US-cart, checkout, dispatch, refunds, webhook, geo and self-chec
 
 Home uses the same sample/live source reads and hero metrics. The shared review flag renders on the server and follows browser snapshots; clear, pending and unavailable reviews remain described in the Reviews chapter. The health score, count pills, narrative line and their unused fields are removed. Dense invented browser fixtures check both widths, review visibility, 44px tap height, one-row alignment, overflow and a fixed hero-grid top: 530px at 390×844 and 440px at 1280×960 (measured 527.06px and 433.63px).
 
-Validation: typecheck, all 702 tests on PostgreSQL 17.6, production build, the full Chromium browser suite and secret scanning pass locally. The browser checks include review snapshot transitions and the pinned fold budgets.
+Validation: typecheck, all 702 tests on PostgreSQL 17.6, production build, the full Chromium browser suite and secret scanning pass locally. The browser checks include review snapshot transitions and the pinned fold budgets. The CI test runner is pinned to Ubuntu 24.04 because Playwright 1.58.2 rejects the newer Ubuntu 26.04 image; all checks remain enabled.
 
 Next step after merge: Shell merge, `npm run migrate`, Republish, then check live Home at 390 and 1280 px against the same budgets. No new keys, Settings values, decisions or other user input are needed. Deployment and live acceptance remain outstanding.
 

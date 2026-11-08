@@ -57,6 +57,15 @@ export function activityObjectType(value: string): string {
   return value === 'CAMPAIGN' || value === 'AD_SET' ? 'Ad set' : value === 'CAMPAIGN_GROUP' ? 'Campaign' : value;
 }
 export interface ActivityView { hasRead: boolean; events: (MetaActivity & { ours: boolean; ukTime: string })[]; notOurs: number; line: string }
+export interface ActorChoices { hasRead: boolean; line: string; actors: { id: string; name: string }[] }
+/** Activity rows arrive newest first; a renamed actor keeps their latest label. */
+export function activityActors(activity: ActivityView): ActorChoices {
+  const actors = new Map<string, { id: string; name: string }>();
+  for (const event of activity.events) {
+    if (event.actorId && !actors.has(event.actorId)) actors.set(event.actorId, { id: event.actorId, name: event.actor || 'Name not provided' });
+  }
+  return { hasRead: activity.hasRead, line: activity.line, actors: [...actors.values()] };
+}
 export async function syncActivity(db: Database, account: string, read: (since: number) => Promise<ActivityRead>, now: Date): Promise<void> {
   try {
     const newest = (await db.query<{newest:Date|null}>('SELECT max(event_time) AS newest FROM pulse.meta_activity WHERE account_id=$1',[account])).rows[0]?.newest;

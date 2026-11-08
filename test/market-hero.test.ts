@@ -70,7 +70,8 @@ test('AOV/CAC comparisons use summed facts and show seven-day averages or previo
   assert.match(one.aov.ss, /7-day avg/); assert.match(one.cac.ss, /7-day avg/); assert.equal(one.aov.state, 'good'); assert.equal(one.cac.state, 'warn');
   const range = buildHeroRange(rows, '2026-09-15', '2026-09-16', { today: '2026-09-17' });
   assert.match(range.aov.ss, /prev 2 days/); assert.match(range.cac.ss, /prev 2 days/); assert.equal(range.aov.n, 100); assert.equal(range.cac.n, 25);
-  assert.match(range.cac.d.rule, /Cost per order until first orders can be told apart; no bar of its own yet/);
+  assert.match(range.cac.d.rule, /First-order CAC uses only known first orders/);
+  assert.match(range.cac.d.rule, /No bar of its own yet; the Meta cost-per-order dials carry the bar/);
 });
 test('server-rendered hero has independent market control, eight ordered cards and a tappable profit strip', () => {
   const snapshot = getSampleDashboard(), html = dashboardPage(snapshot);

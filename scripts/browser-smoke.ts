@@ -21,6 +21,7 @@ import { checkGrossHistoryProgress } from './browser-gross-history.js';
 import { metricSign } from '../src/metric-sign.js';
 import { checkCreatives } from './browser-creatives.js';
 import { checkCreativeSettings } from './browser-creative-settings.js';
+import { checkActorSettings } from './browser-actor-settings.js';
 
 let step = 'read test configuration';
 
@@ -1798,6 +1799,8 @@ async function run(): Promise<void> {
     await hideAccountMenu(page);
     assert.ok(eventStreams > 0);
     const beforeUpdate = { url: page.url(), scroll: await page.evaluate(() => window.scrollY), fetches: dashboardFetches };
+    step = 'check recent actor choices and local-only edits';
+    await checkActorSettings(context);
     const settingsPage = await context.newPage();
     step = 'load the Settings form';
     await settingsPage.goto('/settings');

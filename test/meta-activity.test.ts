@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {randomBytes} from 'node:crypto';
-import {parseActivity,readActivity,syncActivity,ACTIVITY_FIELDS} from '../src/meta-adsets/activity.js';
+import {activityActors,parseActivity,readActivity,syncActivity,ACTIVITY_FIELDS} from '../src/meta-adsets/activity.js';
 import {MetaSpend} from '../src/ad-spend/clients.js';
 import {AdError} from '../src/ad-spend/model.js';
 import {defaultSettings} from '../src/settings.js';
@@ -67,4 +67,23 @@ test('activity waits before the first successful read and maps stored legacy typ
  assert.deepEqual(read.events.map(event=>event.objectType),['Ad set','Campaign','Ad set']);
  assert.deepEqual((await db.query<{data:{objectType:string}}>('SELECT data FROM pulse.meta_activity ORDER BY event_id')).rows.map(row=>row.data.objectType),['CAMPAIGN','CAMPAIGN_GROUP','AD_SET']);
  assert.match(activityStat({...sampleAdSetsView(settings),mode:'live',activity:read}),/ · Ad set · Invented object/);
+});
+
+test('actor choices use the latest name once per ID from this account and the last seven UK days', async t => {
+ const db=await createTestDatabase();t.after(()=>db.close());const settings=defaultSettings();
+ const event=parseActivity(raw)!;
+ const events=[
+  {...event,id:'invented-older-name',time:'2026-10-25T08:00:00Z',actor:'Invented old label'},
+  {...event,id:'invented-newer-name',time:'2026-10-26T08:00:00Z',actor:'Invented latest label'},
+  {...event,id:'invented-expired',time:'2026-10-19T22:59:59Z',actorId:'990002'},
+  {...event,id:'invented-boundary',time:'2026-10-19T23:00:00Z',actorId:'990003',actor:''},
+  {...event,id:'invented-no-id',actorId:''},
+  {...event,id:'invented-future',time:'2026-10-27T08:00:00Z',actorId:'990004'},
+ ];
+ await syncActivity(db,account,async()=>({events,skipped:0}),now);
+ await syncActivity(db,'invented-other-account',async()=>({events:[{...event,actorId:'990005'}],skipped:0}),now);
+ const choices=activityActors(await readActivity(db,account,settings,now));
+ assert.equal(choices.hasRead,true);
+ assert.deepEqual(choices.actors,[{id:'990001',name:'Invented latest label'},{id:'990003',name:'Name not provided'}]);
+ assert.match(choices.line,/Meta activity: last read/);
 });

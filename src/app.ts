@@ -1,4 +1,4 @@
-import { readActivity } from './meta-adsets/activity.js';
+import { activityActors, readActivity } from './meta-adsets/activity.js';
 import {readMetaActions} from './meta-adsets/actions.js';
 import {registerAdSets} from './meta-adsets/routes.js';
 import {readAdSetsView} from './meta-adsets/presentation.js';
@@ -89,6 +89,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   // Called by server.ts after listen resolves; repeated calls share the same run.
   function startBackgroundWork(): Promise<void> {
     if (startupRun) return startupRun;
+    shopify.start();
     ads.start();
     reviews.start();
     void shopify.startOrderCleanup();
@@ -114,7 +115,6 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     await startupRun;
     await observationRun;
   });
-  app.addHook('onReady', async () => { shopify.start(); });
   app.addHook('onClose', async () => { await shopify.stop(); });
   app.addHook('onRequest', async (request, reply) => {
     reply.header('Cache-Control', 'no-store');
@@ -227,7 +227,9 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   app.get('/settings', async (request, reply) => {
     if (!await auth.session(request)) return reply.redirect('/login');
     const settings = await readSettings(db);
-    return reply.type('text/html; charset=utf-8').send(settingsPage(settings, await shopify.store.latestCosts(), shopify.mode, new Date(), await readMetaCampaigns(db, settings.values, sourceEnv), await readCampaignSync(db, settings.values, sourceEnv), creativeFeatureFlags(sourceEnv)));
+    const metaLive = !!settings.values.metaAdAccountId && getSourceStates(sourceEnv).some(source => source.source === 'meta' && source.mode === 'live');
+    const actors = metaLive ? activityActors(await readActivity(db, settings.values.metaAdAccountId, settings.values, creativeNow())) : undefined;
+    return reply.type('text/html; charset=utf-8').send(settingsPage(settings, await shopify.store.latestCosts(), shopify.mode, new Date(), await readMetaCampaigns(db, settings.values, sourceEnv), await readCampaignSync(db, settings.values, sourceEnv), creativeFeatureFlags(sourceEnv), actors));
   });
   app.get('/api/settings', async (request, reply) => {
     if (!await auth.session(request)) return reply.code(401).send({ error: 'Sign in to continue.' });

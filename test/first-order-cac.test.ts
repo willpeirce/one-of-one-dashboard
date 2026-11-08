@@ -12,18 +12,20 @@ import {defaultSettings} from '../src/settings.js';
 import {createTestDatabase} from './helpers/database.js';
 import {ShopifyStore} from '../src/shopify/store.js';
 import {SampleShopify} from '../src/shopify/sample.js';
+import {appConfig} from '../src/config.js';
+import {firstOrderCoverage, firstOrderRecentAfter} from '../src/shopify/first-order-coverage.js';
 import type {SpendFacts} from '../src/ad-spend/store.js';
 const rawOrder=async()=>JSON.parse(await readFile(new URL('./fixtures/shopify/orders.json',import.meta.url),'utf8')).data.orders.nodes[0];
 const now=new Date('2026-10-26T12:00:00Z'),day='2026-10-25';
 test('first-order projection reads only the index and stores a flag without a customer identifier',async()=>{
  const raw=await rawOrder();
  assert.match(orderFields(true),/customerJourneySummary \{ customerOrderIndex/);assert.doesNotMatch(orderFields(true),/customer \{/);
- for(const [index,flag] of [[1,'first'],[2,'repeat'],[null,'unknown'],[undefined,'unknown']] as const){
+ for(const [index,flag] of [[1,'first'],[2,'repeat'],[null,'unknown'],[0,'unknown'],[-1,'unknown'],[undefined,'unknown']] as const){
   const order=cleanOrder({...raw,customerJourneySummary:{customerOrderIndex:index}});
   assert.equal(order.firstOrder,flag);assert.ok(!('customerId' in order));assert.ok(!('customerOrderIndex' in order));
  }
 });
-test('CAC waits for every counted flag, then uses first orders and keeps market denominators',async()=>{
+test('CAC waits for recent unknown flags, then uses first orders and keeps market denominators',async()=>{
  const base=cleanOrder(await rawOrder());
  const orders=[{...base,day,market:'UK' as const,firstOrder:'first' as const},{...base,day,market:'UK' as const,firstOrder:'repeat' as const},{...base,day,market:'US' as const,firstOrder:'unknown' as const}];
  const spend:SpendFacts={mode:'live',rows:(['uk','us'] as const).map(m=>({source:'meta',accountId:'invented-cac-account',campaignId:`invented-cac-${m}`,campaignName:`Invented ${m.toUpperCase()}`,adSetId:`invented-cac-set-${m}`,adSetName:`Invented ${m.toUpperCase()} set`,owner:'ours',market:m,day,amount:m==='uk'?'80':'40',currency:'GBP'})),days:[{source:'meta',day}],sources:[{source:'meta',live:true,ready:true,status:'live',fetchedAt:now.toISOString()}]};
@@ -55,13 +57,63 @@ test('flag backfill commits a cursor, yields to the poll and resumes without re-
 });
 
 
-test('first-order CAC history and comparisons use first orders and refuse incomplete flag history',()=>{
+test('first-order CAC history and comparisons use first orders and reject periods above the unknown tolerance',()=>{
  const rows=Array.from({length:8},(_,i)=>({date:`2026-10-${String(11+i).padStart(2,'0')}`,net:100,o:2,uk:2,us:0,sess:10,ukS:10,ukM:40,usM:0,g:0,ours:40,firstOrders:1,flaggedOrders:2}));
  const hero=buildHeroRange(rows,'2026-10-18','2026-10-18',{today:'2026-10-26'});
  assert.equal(hero.cac.n,40);assert.deepEqual(hero.cac.d.hist,[40,40,40,40,40,40,40]);assert.match(hero.cac.ss,/40.00/);
  rows[1]!.flaggedOrders=1;
+ const tolerated=buildHeroRange(rows,'2026-10-18','2026-10-18',{today:'2026-10-26'});
+ assert.match(tolerated.cac.ss,/40.00/); // One aged unknown in fourteen comparison orders is within tolerance.
+ rows[2]!.flaggedOrders=1;
  const incomplete=buildHeroRange(rows,'2026-10-18','2026-10-18',{today:'2026-10-26'});
  assert.match(incomplete.cac.ss,/no earlier days to compare/);assert.deepEqual(incomplete.cac.d.hist,[]);
+});
+
+test('an aged unknown within tolerance is excluded from first-order CAC; recent and excessive unknowns keep waiting',async()=>{
+ const base=cleanOrder(await rawOrder()), olderDay=firstOrderRecentAfter('2026-10-26');
+ assert.equal(firstOrderRecentAfter('2026-10-26'),'2026-10-19'); // Calendar days, across the UK clock change.
+ const count=1/appConfig.shopify.firstOrderCoverage.maxUnknownShare;
+ for(const [orderDay,unknownCount,firstCac] of [[olderDay,1,true],[day,1,false],[olderDay,2,false]] as const){
+  const orders=Array.from({length:count},(_,i)=>({...base,day:orderDay,firstOrder:i<unknownCount?'unknown' as const:i<unknownCount+4?'first' as const:'repeat' as const}));
+  const row={date:orderDay,net:200,o:count,uk:count,us:0,sess:30,ukS:30,ukM:120,usM:0,g:0,ours:120,firstOrders:4,flaggedOrders:count-unknownCount};
+  const hero=buildHeroRange([row],orderDay,orderDay,{today:'2026-10-26'});
+  assert.equal(hero.cac.n,firstCac?30:12);
+  assert.match(hero.cac.d.why,firstCac?/1 unflagged, excluded/:/waiting for first-order flags/);
+  const spend:SpendFacts={mode:'live',rows:[{source:'meta',accountId:'invented-coverage-account',campaignId:'invented-coverage-campaign',campaignName:'Invented UK coverage',adSetId:'invented-coverage-set',adSetName:'Invented UK coverage set',owner:'ours',market:'uk',day:orderDay,amount:'120',currency:'GBP'}],days:[{source:'meta',day:orderDay}],sources:[{source:'meta',live:true,ready:true,status:'live',fetchedAt:now.toISOString()}]};
+  applySpend(hero,orders,defaultSettings(),'2026-10-26',{spend,costs:[],estimates:[],now});
+  assert.equal(hero.cac.n,firstCac?30:12);
+  assert.match(hero.cac.ss,firstCac?/^first orders · 1 unflagged, excluded/:new RegExp(`all orders · ${unknownCount} waiting`));
+  assert.match(hero.cac.d.rule,/Unknown orders wait 7 UK calendar days/);
+ }
+ assert.equal(firstOrderCoverage([{date:olderDay,o:10,firstOrders:0,flaggedOrders:9}],'2026-10-26').firstOrders,0);
+});
+
+test('recent unknown flags retry sooner, can resolve, and old unknowns retain their slower retry',async t=>{
+ const db=await createTestDatabase();t.after(()=>db.close());const store=new ShopifyStore(db,'live'),raw=await rawOrder();
+ const recentId='gid://shopify/Order/989001',olderId='gid://shopify/Order/989002';
+ await store.orders([
+  {...raw,id:recentId,createdAt:'2026-10-25T01:30:00Z',updatedAt:now.toISOString(),customerJourneySummary:{customerOrderIndex:null}},
+  {...raw,id:olderId,createdAt:'2026-10-10T12:00:00Z',updatedAt:now.toISOString(),customerJourneySummary:{customerOrderIndex:0}},
+ ],now);
+ let clock=now;const calls:string[][]=[];
+ const reader:ShopifyReader=Object.assign(new SampleShopify(true),{firstOrderFlags:async(ids:string[])=>{
+  calls.push(ids);
+  return ids.map(id=>({id,firstOrder:calls.length===1?'unknown' as const:id===recentId?'first' as const:'repeat' as const}));
+ }});
+ await backfillFirstOrders(db,reader,()=>clock,()=>false);
+ assert.deepEqual(calls,[[recentId,olderId]]);
+ const timestamps=(await db.query('SELECT first_order_checked_at FROM pulse.shopify_records ORDER BY source_id')).rows;
+ assert.ok(timestamps.every(row=>new Date(row.first_order_checked_at as Date).getTime()===now.getTime()));
+ const retryMs=appConfig.shopify.firstOrderCoverage.recentRetryMinutes*60_000;
+ clock=new Date(now.getTime()+retryMs-1);
+ await backfillFirstOrders(db,reader,()=>clock,()=>false);assert.equal(calls.length,1);
+ clock=new Date(now.getTime()+retryMs);
+ await backfillFirstOrders(db,reader,()=>clock,()=>false);assert.deepEqual(calls[1],[recentId]);
+ assert.equal((await db.query("SELECT data->>'firstOrder' AS flag FROM pulse.shopify_records WHERE source_id=$1",[recentId])).rows[0]!.flag,'first');
+ assert.equal((await db.query("SELECT data->>'firstOrder' AS flag FROM pulse.shopify_records WHERE source_id=$1",[olderId])).rows[0]!.flag,'unknown');
+ clock=new Date(now.getTime()+appConfig.shopify.firstOrderCoverage.olderRetryHours*3_600_000);
+ await backfillFirstOrders(db,reader,()=>clock,()=>false);assert.deepEqual(calls[2],[olderId]);
+ assert.equal((await db.query("SELECT data->>'firstOrder' AS flag FROM pulse.shopify_records WHERE source_id=$1",[olderId])).rows[0]!.flag,'repeat');
 });
 
 

@@ -27,20 +27,24 @@ test('createApp and listen finish while the single background rebuild is blocked
   }};
   // Live mode avoids sample seeding and any real source calls (worker stays stopped).
   const env={SHOPIFY_CLIENT_ID:randomBytes(16).toString('hex'),SHOPIFY_CLIENT_SECRET:randomBytes(32).toString('hex')};
-  t.mock.method(ShopifyWorker.prototype,'start',()=>{});
+  let workerStarts = 0;
+  t.mock.method(ShopifyWorker.prototype,'start',()=>{workerStarts++;});
   let cleanupCalls = 0;
   t.mock.method(ShopifyWorker.prototype,'startOrderCleanup',async()=>{cleanupCalls++;});
   const app=await createApp(wrapped,config,env);
   t.after(async()=>{release();await app.close();await db.close();});
   assert.equal(reads,0,'createApp must not start the rebuild');
   assert.equal(cleanupCalls, 0, 'Order cleanup must not start in createApp');
+  assert.equal(workerStarts, 0, 'Shopify source work must not start in createApp');
   await app.listen({host:'127.0.0.1',port:0});
   assert.equal(cleanupCalls, 0, 'Order cleanup must wait for the post-listen hook');
+  assert.equal(workerStarts, 0, 'Shopify source work must wait for the post-listen hook');
   const logs:string[]=[];
   t.mock.method(console,'error',(message:string)=>logs.push(message));
   const run=app.startBackgroundWork();
   assert.equal(app.startBackgroundWork(),run);
   assert.equal(cleanupCalls, 1);
+  assert.equal(workerStarts, 1, 'The post-listen hook starts Shopify once');
   await entered;
   assert.equal((await app.inject('/health')).statusCode,200);
   release();await run;

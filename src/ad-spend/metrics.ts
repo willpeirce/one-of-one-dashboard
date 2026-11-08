@@ -13,6 +13,7 @@ import type { SpendFacts } from './store.js';
 import { SPEND_STALE_AFTER_MS } from './worker.js';
 import { spendMarket } from './placement.js';
 import { isTikTok } from '../shopify/order-market.js';
+import { firstOrderCoverage, firstOrderCoverageRule } from '../shopify/first-order-coverage.js';
 export interface AdHeroInputs {
   activity?: import('../meta-adsets/activity.js').MetaActivity[];
   spend: SpendFacts;
@@ -198,16 +199,19 @@ export function applySpend(
   const eligibleOrders = orders.filter(paidOrder);
   const countedOrders = eligibleOrders.filter(o => !isFreeOrder(o));
   const periodCounted = countedOrders.filter(o=>o.day>=from&&o.day<=to);
-  const known = periodCounted.filter(o=>o.firstOrder==='first'||o.firstOrder==='repeat');
-  const waitingFirst = Math.max(0,hero.orders.n-known.length);
-  const firstCount = known.filter(o=>o.firstOrder==='first').length;
-  const cacCount = waitingFirst ? hero.orders.n : firstCount;
-  const cacBasis = waitingFirst ? `all orders · ${formatNumber(waitingFirst)} waiting for first-order flags` : 'first orders';
+  const coverage = firstOrderCoverage([
+    ...periodCounted.map(o => ({ date: o.day, o: 1, firstOrders: Number(o.firstOrder === 'first'), flaggedOrders: Number(o.firstOrder === 'first' || o.firstOrder === 'repeat') })),
+    { date: to, o: Math.max(0, hero.orders.n - periodCounted.length), firstOrders: 0, flaggedOrders: 0 },
+  ], today);
+  const cacCount = coverage.useFirstOrders ? coverage.firstOrders : hero.orders.n;
+  const cacBasis = coverage.useFirstOrders
+    ? `first orders${coverage.unflagged ? ` · ${formatNumber(coverage.unflagged)} unflagged, excluded` : ''}`
+    : `all orders · ${formatNumber(coverage.unflagged)} waiting for first-order flags`;
   hero.cac = { ...hero.cac, n: cacCount ? total / cacCount : 0, dp: 2, mode: spend.mode, source: ['shopify', ...sourceIds],
     unavailable: !available || hero.orders.unavailable || !cacCount, state: gaps.length ? 'warn' : hero.cac.state,
     ss: `${cacBasis} · ${gaps.length ? dependentSubtitle : hero.cac.ss}`,
-    d: { ...hero.cac.d, why: `${formatPounds(total)} all placed ad spend ÷ ${formatNumber(cacCount)} ${waitingFirst?'counted orders':'counted first orders'} = ${formatPounds(cacCount ? total / cacCount : 0)}. ${cacBasis}.`,
-      rule:'First-order CAC once every counted order in the period is flagged. Until then use all counted orders and show the waiting count.',src:label } };
+    d: { ...hero.cac.d, why: `${formatPounds(total)} all placed ad spend ÷ ${formatNumber(cacCount)} ${coverage.useFirstOrders?'counted first orders':'counted orders'} = ${formatPounds(cacCount ? total / cacCount : 0)}. ${cacBasis}.`,
+      rule:firstOrderCoverageRule(),src:label } };
   const periodOrders = eligibleOrders.filter(
     (o) => o.day >= from && o.day <= to,
   );

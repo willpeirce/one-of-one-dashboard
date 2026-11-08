@@ -9,6 +9,7 @@ import { formatNumber, formatPounds } from './money.js';
 import { seriesPaceDates } from './series-pace/dates.js';
 import { paceDate } from './series-pace/model.js';
 import { creativeFeatureFlags } from './creatives/config.js';
+import type { ActorChoices } from './meta-adsets/activity.js';
 
 function escapeHtml(value: string | number): string {
   return String(value).replace(/[&<>"']/g, (character) => ({
@@ -29,6 +30,7 @@ type Field = {
   maxlength?: number;
   hint?: string;
   options?: readonly { value: string; label: string }[];
+  list?: string;
 };
 
 function field(definition: Field, value: unknown, prefix = ''): string {
@@ -37,7 +39,7 @@ function field(definition: Field, value: unknown, prefix = ''): string {
   const type = definition.type ?? 'text';
   const hint = definition.hint ? `<small id="${id}-help">${escapeHtml(definition.hint)}</small>` : '';
   const describedBy = definition.hint ? ` aria-describedby="${id}-help"` : '';
-  const attributes = `id="${id}" name="${path}" data-setting-path="${path}"${describedBy}`;
+  const attributes = `id="${id}" name="${path}" data-setting-path="${path}"${describedBy}${definition.list ? ` list="${escapeHtml(definition.list)}"` : ''}`;
   if (type === 'checkbox') {
     return `<div class="setting-field setting-check"><label for="${id}"><input ${attributes} type="checkbox"${value === true ? ' checked' : ''}><span>${escapeHtml(definition.label)}</span></label>${hint}</div>`;
   }
@@ -51,8 +53,8 @@ function fields(definitions: readonly Field[], values: object, prefix = ''): str
   return definitions.map((definition) => field(definition, (values as Record<string, unknown>)[definition.key], prefix)).join('');
 }
 
-function collection(key: string, label: string, definitions: readonly Field[], rows: readonly object[], note: string, costs?: Record<string, string>, options: { maxRows?: number; footer?: string; heading?: string } = {}): string {
-  const row = (value: Record<string, unknown>, index: number | string) => `<fieldset class="setting-row"><legend>${escapeHtml(label)} <span data-row-number>${typeof index === 'number' ? index + 1 : ''}</span></legend><div class="setting-row-fields">${fields(definitions, value, `${key}.${index}`)}</div>${costs ? `<p class="setting-help" data-shopify-cost>${escapeHtml(costs[String(value.sku)] ?? 'Not in Shopify')}</p>` : ''}<button class="btn setting-remove" type="button" data-remove-row aria-label="Remove ${escapeHtml(label.toLowerCase())}">Remove</button></fieldset>`;
+function collection(key: string, label: string, definitions: readonly Field[], rows: readonly object[], note: string, costs?: Record<string, string>, options: { maxRows?: number; footer?: string; heading?: string; rowHint?: (value: Record<string, unknown>) => string } = {}): string {
+  const row = (value: Record<string, unknown>, index: number | string) => `<fieldset class="setting-row"><legend>${escapeHtml(label)} <span data-row-number>${typeof index === 'number' ? index + 1 : ''}</span></legend><div class="setting-row-fields">${fields(definitions, value, `${key}.${index}`)}${options.rowHint ? `<p class="setting-help setting-warning" data-row-hint${options.rowHint(value) ? '' : ' hidden'}>${escapeHtml(options.rowHint(value))}</p>` : ''}</div>${costs ? `<p class="setting-help" data-shopify-cost>${escapeHtml(costs[String(value.sku)] ?? 'Not in Shopify')}</p>` : ''}<button class="btn setting-remove" type="button" data-remove-row aria-label="Remove ${escapeHtml(label.toLowerCase())}">Remove</button></fieldset>`;
   return `<section class="setting-collection" data-settings-list="${key}"${options.maxRows === undefined ? '' : ` data-list-max="${options.maxRows}"`} aria-labelledby="${key}-heading">
     <h3 id="${key}-heading">${escapeHtml(options.heading ?? label)} <span class="setting-count" data-list-count>${formatNumber(rows.length)}</span></h3>
     <p class="setting-help">${escapeHtml(note)}</p>
@@ -89,7 +91,15 @@ function campaignOwners(campaigns: readonly MetaCampaignView[], sync: CampaignSy
   return `<section class="setting-collection" aria-labelledby="metaOwners-heading"><h3 id="metaOwners-heading">Meta campaigns <span class="setting-count">${formatNumber(campaigns.length)}</span></h3><p class="setting-help" data-campaign-sync data-state="${sync.state}">${escapeHtml(campaignSyncText(sync))}</p><p class="setting-help">Campaigns appear automatically. New campaigns have no ad-set verdict until you save their owner. Save each row to confirm it; this saves a local rule and does not change Meta.</p><div class="setting-campaigns">${active.map(row).join('')}</div>${inactive.length ? `<details class="setting-campaign-inactive"><summary>Show ${formatNumber(inactive.length)} inactive</summary><div class="setting-campaigns">${inactive.map(row).join('')}</div></details>` : ''}</section>`;
 }
 
-export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly ShopifyCost[] = [], mode: 'sample' | 'live' = 'sample', now = new Date(), metaCampaigns: readonly MetaCampaignView[] = [], campaignSync: CampaignSyncState = { state: 'pending', at: null }, creativeFlags = creativeFeatureFlags()): string {
+function actorPicker(values: Settings, choices?: ActorChoices): string {
+  const actors = choices?.actors ?? [];
+  const hint = (value: Record<string, unknown>) => value.actorId && choices?.hasRead && !actors.some(actor => actor.id === value.actorId)
+    ? '⚠ Not seen in the last 7 UK days. Check this actor ID.' : '';
+  const footer = `<div data-actor-choices data-has-read="${!!choices?.hasRead}"><h4>Actors seen in the last 7 UK days</h4><p class="setting-help">${escapeHtml(choices?.line ?? 'Waiting for a live Meta activity read.')} ${choices?.hasRead ? 'Names come from Meta; only the actor ID is saved.' : 'Waiting for the first activity read to check actor IDs.'}</p><datalist id="recent-meta-actors">${actors.map(actor => `<option value="${escapeHtml(actor.id)}">${escapeHtml(actor.name)}</option>`).join('')}</datalist>${actors.length ? `<div class="setting-actors">${actors.map(actor => `<div class="setting-actor"><p>${escapeHtml(actor.name)}<small>${escapeHtml(actor.id)}</small></p><button class="btn setting-actor-pick" type="button" data-pick-actor="${escapeHtml(actor.id)}" aria-label="Use actor ${escapeHtml(actor.name)}">＋ Use actor</button></div>`).join('')}</div>` : '<p class="setting-help">No recent actors to choose from yet.</p>'}</div>`;
+  return collection('ourActors', 'Our actors', [{ key: 'actorId', label: 'Actor ID', list: 'recent-meta-actors' }], values.ourActors, 'Choose a recent actor or enter an ID. An empty list treats every change as not ours. Choose Save settings to keep edits.', undefined, { footer, rowHint: hint });
+}
+
+export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly ShopifyCost[] = [], mode: 'sample' | 'live' = 'sample', now = new Date(), metaCampaigns: readonly MetaCampaignView[] = [], campaignSync: CampaignSyncState = { state: 'pending', at: null }, creativeFlags = creativeFeatureFlags(), actorChoices?: ActorChoices): string {
   const values = snapshot.values;
   const costLabels: Record<string, string> = Object.create(null);
   for (const c of shopifyCosts) if (c.sku) {
@@ -179,7 +189,7 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     {key:'googleCustomerId',label:'Google customer ID',optional:true,hint:'Dashes are removed when saved.'},
     {key:'googleLoginCustomerId',label:'Google login customer ID (manager, optional)',optional:true},
     {key:'tiktokAdvertiserId',label:'TikTok advertiser ID',optional:true},
-  ], values)}</div>${campaignOwners(metaCampaigns, campaignSync, values)}${collection('metaSources', 'Meta sources', [{key:'source',label:'Last-visit source'}], values.metaSources, 'Matched case-insensitively alongside fbclid. Settle this list from the live Meta over-credit detail.')}${collection('ourActors', 'Our actors', [{key:'actorId',label:'Actor ID'}], values.ourActors, 'Enter actor IDs from the live activity log. An empty list treats every change as not ours.')}${creativeControls}${collection('expectedGoogleCampaigns', 'Google campaign', [
+  ], values)}</div>${campaignOwners(metaCampaigns, campaignSync, values)}${collection('metaSources', 'Meta sources', [{key:'source',label:'Last-visit source'}], values.metaSources, 'Matched case-insensitively alongside fbclid. Settle this list from the live Meta over-credit detail.')}${actorPicker(values, actorChoices)}${creativeControls}${collection('expectedGoogleCampaigns', 'Google campaign', [
     { key: 'campaignId', label: 'Campaign ID' },
   ], values.expectedGoogleCampaigns, 'Campaign IDs expected to report on complete days. This does not enable a campaign.')}`);
   const creators = section('Creator negotiation', 'Your rules for agreeing an asset and its usage.', `<div class="settings-grid">${fields([

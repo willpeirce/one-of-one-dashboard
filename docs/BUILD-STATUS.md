@@ -4,6 +4,7 @@ Updated in every pull request.
 
 | Stage | What | Code | Keys in Replit | Live check ("Done when") |
 |---|---|---|---|---|
+| Build 8 Nov · B | First-order coverage/retries, owner attribution, actor picker and creative latency | built on `build-8-nov`; additive migration 052 | none | Check resolved flags, owner estimates, actor matches and creative-sheet timing after Republish |
 | Build 8 Nov · A | Chart and Home follow-ups; activity/import/background carry fixes | built on `build-8-nov`; additive migration 051 | none | Live acceptance follows merge and Republish |
 | Home fold · 8 Nov | Remove health score, count pills and narrative; one review flag beside the market switch; pin hero-grid top | built on `hero-fold`; no migration | none | Check live Home at 390 and 1280 px against the pinned budgets after merge and Republish |
 | Home · 27 Oct | Compact ranked Decisions, stock grid, capped reviews/experiments/creatives, folded sample dials and actual source footer | built on `home-compact`; migration 050 (approved audit allowlist only); browser budgets pinned at phone/desktop widths | none | Claude checks live Home at 390 and 1280 px against the same budgets |
@@ -80,7 +81,7 @@ Updated in every pull request.
 
 ## Next step
 
-Review **build-8-nov**, based on the merged Home fold change. One PR contains separately validated lettered parts, as explicitly requested for this task. Part A tightens the hero-grid budgets to 500px at 390×844 and 410px at 1280×960 while preserving all existing section/count/control limits. Parts B–G are in progress and will be recorded here as they are completed or explicitly deferred.
+Review **build-8-nov**, based on the merged Home fold change. One PR contains separately validated lettered parts, as explicitly requested for this task. Part A tightens the hero-grid budgets to 500px at 390×844 and 410px at 1280×960 while preserving all existing section/count/control limits. Part B adds coverage-aware first-order CAC, owner estimates, actor choices and faster creative reads. Parts C–G remain in progress and will be recorded here as they are completed or explicitly deferred.
 
 After merge: run `npm run migrate`, Republish, supply live Settings values, and perform source and phone/desktop acceptance checks. Live source data is not available to the builder. The only requested new secret is `MAILCHIMP_API_KEY` when that source is wanted live; it is never entered in this repository.
 

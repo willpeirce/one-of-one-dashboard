@@ -18,6 +18,8 @@ export const appConfig = {
     storeDomain: '6q0g0j-fv.myshopify.com',
     // customerJourneySummary.customerOrderIndex is available with the existing read_orders scope.
     apiVersion: '2026-10',
+    // Invented coverage policy: allow a small, explicitly labelled unresolved remainder.
+    firstOrderCoverage: { graceDays: 7, maxUnknownShare: 0.1, recentRetryMinutes: 60, olderRetryHours: 24 },
     webhookPath: '/webhooks/shopify',
     sampleNow: '2026-09-30T12:00:00Z',
     sessionFallbackPath: 'ops/shopify-daily',
@@ -52,6 +54,10 @@ export const appConfig = {
     percentageDiscountsAllowed: false,
   },
   // Advertising account IDs and campaign mappings live in Settings.
+  adAttribution: {
+    // Below this share, campaign-ID tags are too sparse to represent an owner's orders.
+    ownerMatchMinimumShare: 0.5,
+  },
   mailchimp: {
     server: 'us2',
     audienceName: 'One of One',

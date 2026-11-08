@@ -12,7 +12,7 @@ import { buildCreativeSheet, buildCreativeView, registerCreatives } from '../src
 import { sampleCreativeData } from '../src/creatives/sample.js';
 import { adsManagerLink, creativeCardsHtml, creativePanelHtml, creativeSheetHtml, safeCreativeLink } from '../src/creatives/view.js';
 import { createTestDatabase } from './helpers/database.js';
-import { creativeAd, creativeGroup, creativeInsight } from './helpers/creatives.js';
+import { creativeAd, creativeData, creativeGroup, creativeInsight } from './helpers/creatives.js';
 import { saveCatalogue, saveInsights } from '../src/creatives/store.js';
 import { frequencyMembershipKey } from '../src/creatives/frequency.js';
 import { replaceSourceAttributes, toggleWillAttribute } from '../src/creatives/attribute-store.js';
@@ -42,11 +42,12 @@ async function harness(t: TestContext, live = false, scanOptions: Pick<ScanOptio
   let refused = false;
   let sourceReads = 0;
   let imageReads = 0;
+  let frameReads = 0;
   const inventedToken = randomBytes(24).toString('hex');
   const reader: CreativeReader = {
     async *readCatalogue() { yield []; }, async readInsights() { return []; },
     async videoSource() { sourceReads++; if (refused) throw new Error(`Refused ${inventedToken}`); return signedUrl; },
-    async imageBytes() { imageReads++; return storedImage; }, async videoFrames() { return []; },
+    async imageBytes() { imageReads++; return storedImage; }, async videoFrames() { frameReads++; return []; },
   };
   registerCreatives(app, db, auth, live ? { META_ACCESS_TOKEN: inventedToken } : {}, () => now,
     async () => ({ count: 9, mode: 'sample' as const }), async () => {}, reader, scanOptions);
@@ -54,8 +55,53 @@ async function harness(t: TestContext, live = false, scanOptions: Pick<ScanOptio
   const headers = { cookie: `__Host-pulse_session=${token}`, origin: config.origin, 'content-type': 'application/json' };
   return { app, db, headers, inventedToken, credential,
     setNow(value: Date) { now = value; }, refuse() { refused = true; }, setSignedUrl(value: string) { signedUrl = value; },
-    sourceReads: () => sourceReads, imageReads: () => imageReads };
+    sourceReads: () => sourceReads, imageReads: () => imageReads, frameReads: () => frameReads };
 }
+
+test('the creative sheet returns its data before any remote media read', async t => {
+  const h = await harness(t, true);
+  const group = creativeGroup('invented-evicted-video');
+  await saveCatalogue(h.db, account, [{ ad: creativeAd('invented-evicted-ad', group.id), media: {
+    ...group, thumbnail: null, poster: null, frames: [],
+  } }], new Date('2026-10-13T11:00:00Z'));
+  const response = await h.app.inject({ url: `/api/creatives/${group.id}`, headers: h.headers });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json<CreativeSheet>().group.group.id, group.id);
+  assert.equal(h.frameReads(), 0, 'Frame downloads cannot hold the JSON response open');
+  assert.equal(h.imageReads(), 0);
+  assert.equal(h.sourceReads(), 0);
+  const media = await h.app.inject({ url: `/media/${group.id}`, headers: h.headers });
+  assert.equal(media.statusCode, 200);
+  assert.equal(h.frameReads(), 1, 'The media request still hydrates an evicted video');
+  assert.deepEqual(media.rawPayload, storedImage);
+});
+
+test('sheet windows include merged descendants while the Shopify comparison keeps the whole account', async () => {
+  const data = creativeData(['invented-parent', 'invented-other']);
+  data.groups.push(creativeGroup('invented-crop', { mergedIntoId: 'invented-parent' }));
+  data.ads.push(creativeAd('invented-crop', 'invented-crop'));
+  data.insights = [
+    creativeInsight('invented-parent', { day: '2026-10-01', spend: 10, purchases: 1 }),
+    creativeInsight('invented-crop', { day: '2026-10-10', spend: 20, purchases: 2 }),
+    creativeInsight('invented-crop', { day: '2026-10-11', spend: 30, purchases: 3 }),
+    creativeInsight('invented-parent', { day: '2026-10-13', spend: 40, purchases: 4 }),
+    creativeInsight('invented-other', { day: '2026-10-13', spend: 90, purchases: 9 }),
+    creativeInsight('invented-parent', { day: '2026-10-14', spend: 900, purchases: 90 }),
+  ];
+  const read = () => buildCreativeSheet(data, defaultSettings(), '2026-10-13', 'invented-crop', {},
+    async () => ({ count: 17, mode: 'live' }));
+  const sample = await read();
+  assert.ok(sample);
+  assert.equal(sample.group.group.id, 'invented-parent');
+  assert.deepEqual(sample.windows.map(window => window.totals.spend), [40, 70, 90, 100]);
+  assert.equal(sample.comparison.purchases, 16);
+  assert.equal(sample.comparison.shopifyOrders, 17);
+  data.mode = 'live';
+  data.insights[3]!.spend = 45;
+  const live = await read();
+  assert.equal(live?.mode, 'live');
+  assert.deepEqual(live?.windows.map(window => window.totals.spend), [45, 75, 95, 105], 'A new read never reuses a sample index');
+});
 
 test('creative links are rendered only when buildable and never carry credentials', () => {
   assert.equal(adsManagerLink('', '101'), null);

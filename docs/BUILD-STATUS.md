@@ -4,6 +4,7 @@ Updated in every pull request.
 
 | Stage | What | Code | Keys in Replit | Live check ("Done when") |
 |---|---|---|---|---|
+| Build 8 Nov · D | Monthly scorecard, growth comparison and daily product stock | built on `build-8-nov`; additive migration 054 | none | Check closed-month/market totals and new daily stock rows; historical stock remains unknown |
 | Build 8 Nov · C | Inbound-stock Settings and UK-day stock gaps in Watch | built on `build-8-nov`; additive migration 053 | none | Fill inboundStock from shipment records, check product matches and dated/assumed arrivals |
 | Build 8 Nov · B | First-order coverage/retries, owner attribution, actor picker and creative latency | built on `build-8-nov`; additive migration 052 | none | Check resolved flags, owner estimates, actor matches and creative-sheet timing after Republish |
 | Build 8 Nov · A | Chart and Home follow-ups; activity/import/background carry fixes | built on `build-8-nov`; additive migration 051 | none | Live acceptance follows merge and Republish |
@@ -82,7 +83,7 @@ Updated in every pull request.
 
 ## Next step
 
-Review **build-8-nov**, based on the merged Home fold change. One PR contains separately validated lettered parts, as explicitly requested for this task. Part A tightens the hero-grid budgets to 500px at 390×844 and 410px at 1280×960 while preserving all existing section/count/control limits. Part B adds coverage-aware first-order CAC, owner estimates, actor choices and faster creative reads. Part C adds next-arrival stock gaps through the existing Watch list. Parts D–G remain in progress and will be recorded here as they are completed or explicitly deferred.
+Review **build-8-nov**, based on the merged Home fold change. One PR contains separately validated lettered parts, as explicitly requested for this task. Part A tightens the hero-grid budgets to 500px at 390×844 and 410px at 1280×960 while preserving all existing section/count/control limits. Part B adds coverage-aware first-order CAC, owner estimates, actor choices and faster creative reads. Part C adds next-arrival stock gaps through the existing Watch list. Part D adds the separate monthly scorecard and daily product stock history. Parts E–G remain in progress and will be recorded here as they are completed or explicitly deferred.
 
 After merge: run `npm run migrate`, Republish, supply live Settings values, and perform source and phone/desktop acceptance checks. Live source data is not available to the builder. The only requested new secret is `MAILCHIMP_API_KEY` when that source is wanted live; it is never entered in this repository.
 

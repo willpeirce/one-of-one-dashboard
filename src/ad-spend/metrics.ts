@@ -1,6 +1,6 @@
 import type {DashboardNeed} from '../shopify/dashboard.js';
 import type { HeroMarket, HeroPeriod } from '../dashboard-types.js';
-import { addDays, dayCount, ukToday, metaCostPerOrder } from '../hero-range.js';
+import { addDays, dayCount, ukToday, metaCostPerOrder, aggregateDays, type DailyMetrics } from '../hero-range.js';
 import type { Settings } from '../settings.js';
 import { costOrder, type ShopifyCost } from '../shopify/costs.js';
 import { isFreeOrder, paidOrder, type Order } from '../shopify/model.js';
@@ -14,6 +14,7 @@ import { SPEND_STALE_AFTER_MS } from './worker.js';
 import { spendMarket } from './placement.js';
 import { isTikTok } from '../shopify/order-market.js';
 import { firstOrderCoverage, firstOrderCoverageRule } from '../shopify/first-order-coverage.js';
+import { compareSpendAndSales } from '../scorecard/growth.js';
 export interface AdHeroInputs {
   activity?: import('../meta-adsets/activity.js').MetaActivity[];
   spend: SpendFacts;
@@ -22,6 +23,7 @@ export interface AdHeroInputs {
   now?: Date;
   orderDetailsFrom?: string;
   market?: 'all' | 'uk' | 'us';
+  comparisonDays?: readonly DailyMetrics[];
 }
 const pounds = (micros: bigint) => Number(micros) / 1_000_000;
 type SpendGap = { source: AdSource; excluded: boolean; spend: string; dependent: string };
@@ -179,6 +181,15 @@ export function applySpend(
       extra: split,
     },
   };
+  const previousTo = addDays(from, -1), previousFrom = addDays(from, -dayCount(from, to));
+  const comparisonPeriod = (start: string, end: string) => {
+    const days = (inputs.comparisonDays ?? []).filter(row => row.date >= start && row.date <= end);
+    const complete = days.length === dayCount(start, end), totals = aggregateDays(days);
+    return { netSales: complete && days.every(row => row.netKnown !== false) ? totals.net : null,
+      spend: complete && days.every(row => row.spendKnown !== false) ? totals.spend : null };
+  };
+  const growthLine = to === today ? 'Today is still in progress; growth comparison waits for complete UK days.'
+    : `${compareSpendAndSales(comparisonPeriod(from, to), comparisonPeriod(previousFrom, previousTo)).line} Compared with ${previousFrom}–${previousTo}, same market.`;
   hero.roas = {
     ...hero.roas,
     unavailableLabel: '—',
@@ -193,7 +204,7 @@ export function applySpend(
       why: 'Shopify net sales divided by all counted ad spend.',
       rule: 'No division when spend or sales is zero. A live numerator never uses sample spend.',
       src: label,
-      extra: split,
+      extra: [...split, ['Spend and sales growth', growthLine]],
     },
   };
   const eligibleOrders = orders.filter(paidOrder);

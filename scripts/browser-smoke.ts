@@ -1,6 +1,7 @@
 import { checkMetaAttribution } from './browser-meta-attribution.js';
 import { checkHourly } from './browser-hourly.js';
 import {checkAdSets} from './browser-adsets.js';
+import { checkScorecard } from './browser-scorecard.js';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import type { AuthenticationResponseJSON } from '@simplewebauthn/server';
@@ -1525,6 +1526,8 @@ async function run(): Promise<void> {
     await page.waitForURL('**/login');
     await page.goto('/settings');
     await page.waitForURL('**/login');
+    await page.goto('/scorecard');
+    await page.waitForURL('**/login');
     assert.equal((await context.request.get('/api/dashboard')).status(), 401);
     assert.equal((await context.request.get('/api/settings')).status(), 401);
     assert.equal((await context.request.get('/api/hero?from=2026-09-20&to=2026-09-24')).status(), 401);
@@ -1789,6 +1792,8 @@ async function run(): Promise<void> {
       const adsPage=await context.newPage();await adsPage.setViewportSize(viewport);await adsPage.emulateMedia({colorScheme});
       await checkAdSets(adsPage,origin);await adsPage.close();
     }
+    step = 'check monthly scorecard, source labels and market controls at phone and desktop widths';
+    await checkScorecard(context);
 
     step = 'check same-origin manifest and installation icons';
     await checkManifest(page, context, origin);

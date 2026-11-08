@@ -150,7 +150,10 @@ function marketHero(facts: Facts, today: string, from: string, to: string, setti
   hero.cr.d.why = `Orders divided by clean Shopify sessions. ${hero.cr.ss}. Only the specified /pages/inside desktop/Google/no-cart phantom traffic is removed. ${sessions.some(s => s.provenance === 'routine_daily') ? 'Routine daily fallback: conversion is daily, not live.' : ''}`;
   // Aggregate history has no market split; the contribution sheet must not present it as zero.
   if (market !== 'all' && from < data.from) hero.net.unavailable = true;
-  applySpend(hero,marketOrders,settings,today,{ ...inputs, market, orderDetailsFrom: data.from, now: inputs.now ?? now });
+  const olderSalesDays = new Set(facts.records.filter(row => row.kind === 'sales').map(row => row.data.day));
+  const comparisonDays = rows.map(row => ({...row, netKnown: data.ready && row.netKnown !== false
+    && (row.date >= data.from || olderSalesDays.has(row.date))}));
+  applySpend(hero,marketOrders,settings,today,{ ...inputs, market, comparisonDays, orderDetailsFrom: data.from, now: inputs.now ?? now });
   const empty = market !== 'all' && data.ready && from >= data.from && orders.length === 0;
   if (empty) {
     const message = `No ${market.toUpperCase()} orders in this period`;

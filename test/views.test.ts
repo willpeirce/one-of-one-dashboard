@@ -109,3 +109,21 @@ test('Source health starts with sources and modes, then the watchdog count, UK t
   assert.ok(html.indexOf('id="source-summary"') < html.indexOf('id="shopify-watchdogs"'));
   assert.ok(html.indexOf('id="shopify-watchdogs"') < html.indexOf('id="source-health"'));
 });
+
+test('daily product stock failures remain visible on Sources without changing primary Shopify health', () => {
+  const imports: NonNullable<Parameters<typeof sourceHealthPage>[1]> = {
+    mode: 'live', sample: false, counts: {}, notices: [], geoNotice: null, pendingWebhooks: 0,
+    jobs: [{name: 'stock_daily', last_success_at: null, failures: 2, state: {}}],
+  };
+  const health = source({mode: 'live', status: 'healthy'});
+  const html = sourceHealthPage([health], imports);
+  assert.match(html, /<td>Healthy<\/td>/);
+  assert.match(html, /data-stock-daily-health>Daily product stock: read failed · 2 consecutive failures/);
+  assert.match(html, /Missing days stay unknown; no backfill/);
+  imports.jobs[0]!.failures = 0;
+  imports.jobs[0]!.state = {waitingForInventory: true};
+  assert.match(sourceHealthPage([health], imports), /waiting for inventory fetched on the current UK day/);
+  imports.jobs[0]!.state = {day: '2026-10-25', freshRows: 7};
+  assert.match(sourceHealthPage([health], imports), /7 inventory rows captured for 2026-10-25/);
+  assert.doesNotMatch(sourceHealthPage([health], {...imports, mode: 'sample', sample: true}), /data-stock-daily-health/);
+});

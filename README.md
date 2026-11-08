@@ -36,6 +36,8 @@ Batch 4 adds attributes, tap-to-save tags, a tagging queue, attribute filters, m
 
 Stock planning Settings accepts inbound rows by product, UK/US market, quantity and expected date. Product labels match Stock and cover without case sensitivity; unmatched labels are flagged. Past arrivals stop counting. Live stock gaps appear in Watch; a supplier lead-time fallback explicitly says its arrival date is assumed.
 
+Open **Scorecard** from the account menu for the last full UK calendar month, or choose another completed month and market. It compares sales and spend, customer money mix, top-three product movers and estimated profit. Missing history remains unknown; product stock history starts with migration 054’s daily job and is never backfilled. Cost-per-order history waits for enough shipping uploads. Without Shopify keys the whole scorecard uses labelled invented data.
+
 ## Install and run locally
 
 Prerequisites: Node 24 (`.nvmrc`), npm and PostgreSQL 17. Install the pinned dependencies from the repository root:

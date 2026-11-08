@@ -1,5 +1,6 @@
 import { backfillFirstOrders, cleanLegacyOrders } from './first-order.js';
 import { missingSeriesPaceWindow, saveSeriesPaceSales, seriesPaceQuery, takeStockSnapshot } from '../series-pace/store.js';
+import { takeStockDaily } from '../scorecard/stock-daily.js';
 import { RoutineSessions, type DailySessionFallback } from './fallback.js';
 import { appConfig } from '../config.js';
 import type { Database } from '../db.js';
@@ -12,8 +13,8 @@ import { ShopifyStore } from './store.js';
 import { channelKey, channelOrder, cleanSales, reportRows } from './model.js';
 import { webhookTopics } from './webhooks.js';
 
-type Job = 'backfill' | 'poll' | 'inventory' | 'sessions' | 'subscriptions' | 'reconcile' | 'session_history' | 'stock_snapshot' | 'series_pace' | 'shipping_refunds' | 'gross_history';
-const intervals: Record<Job, number> = { backfill: 0, poll: 300_000, inventory: 300_000, sessions: 300_000, subscriptions: 3_600_000, reconcile: 86_400_000, session_history: 0, stock_snapshot: 0, series_pace: 3_600_000, shipping_refunds: 60_000, gross_history: 60_000 };
+type Job = 'backfill' | 'poll' | 'inventory' | 'sessions' | 'subscriptions' | 'reconcile' | 'session_history' | 'stock_snapshot' | 'stock_daily' | 'series_pace' | 'shipping_refunds' | 'gross_history';
+const intervals: Record<Job, number> = { backfill: 0, poll: 300_000, inventory: 300_000, sessions: 300_000, subscriptions: 3_600_000, reconcile: 86_400_000, session_history: 0, stock_snapshot: 0, stock_daily: 0, series_pace: 3_600_000, shipping_refunds: 60_000, gross_history: 60_000 };
 export function backfillWindow(now: Date, allOrders: boolean) {
   return { from: addDays(ukToday(now), -(allOrders ? 399 : 59)), olderFrom: addDays(ukToday(now), -399), olderTo: addDays(ukToday(now), -60) };
 }
@@ -33,7 +34,7 @@ export function nextNight(now: Date): Date {
   return new Date(value);
 }
 export function nextStockSnapshot(now: Date): Date { return new Date(nextNight(now).getTime() + 4 * 60_000); }
-const secondaryJob = (job: Job) => ['stock_snapshot', 'series_pace', 'shipping_refunds', 'gross_history'].includes(job);
+const secondaryJob = (job: Job) => ['stock_snapshot', 'stock_daily', 'series_pace', 'shipping_refunds', 'gross_history'].includes(job);
 export interface GrossHistoryBlock { from: string; to: string }
 export interface GrossHistoryState {
   first: string;
@@ -93,7 +94,7 @@ export class ShopifyWorker {
     const now = this.clock();
     for (const job of Object.keys(intervals) as Job[]) {
       if (this.mode === 'sample' && secondaryJob(job)) continue;
-      await this.db.query(`INSERT INTO pulse.shopify_jobs (mode, name, next_run_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, [this.mode, job, job === 'stock_snapshot' ? nextStockSnapshot(now) : now]);
+      await this.db.query(`INSERT INTO pulse.shopify_jobs (mode, name, next_run_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, [this.mode, job, ['stock_snapshot','stock_daily'].includes(job) ? nextStockSnapshot(now) : now]);
     }
     // A previously scheduled snapshot missed while down is taken only for today's UK day.
     if (this.mode === 'live') await this.db.query(`UPDATE pulse.shopify_jobs SET state = state || '{"caughtUp":true}'::jsonb WHERE mode = 'live' AND name = 'stock_snapshot' AND next_run_at <= $1`, [now]);
@@ -130,7 +131,9 @@ export class ShopifyWorker {
         if (job.name === 'series_pace') await this.db.query(`UPDATE pulse.shopify_jobs SET next_run_at = $3 WHERE mode = $1 AND name = $2`, [this.mode, job.name, new Date(this.clock().getTime() + intervals.series_pace)]);
         const state = await this.execute(job.name, job.state, job.last_success_at);
         const scheduledFrom = secondaryJob(job.name) ? this.clock() : now;
-        const next = state.continuing ? new Date(now.getTime() + 1000) : ['backfill', 'session_history'].includes(job.name) ? new Date('9999-01-01T00:00:00Z') : job.name === 'stock_snapshot' ? nextStockSnapshot(scheduledFrom) : job.name === 'reconcile' ? nextNight(now) : new Date(scheduledFrom.getTime() + ((job.name === 'shipping_refunds' || job.name === 'gross_history') && state.idle ? 3_600_000 : intervals[job.name]));
+        const next = state.continuing ? new Date(now.getTime() + 1000) : ['backfill', 'session_history'].includes(job.name) ? new Date('9999-01-01T00:00:00Z')
+          : job.name === 'stock_daily' && state.waitingForInventory ? new Date(scheduledFrom.getTime() + intervals.inventory)
+          : ['stock_snapshot','stock_daily'].includes(job.name) ? nextStockSnapshot(scheduledFrom) : job.name === 'reconcile' ? nextNight(now) : new Date(scheduledFrom.getTime() + ((job.name === 'shipping_refunds' || job.name === 'gross_history') && state.idle ? 3_600_000 : intervals[job.name]));
         const gross = job.name === 'gross_history';
         const failures = gross ? state.outcome === 'skipped' ? 3 : state.retry?.count ?? 0 : 0;
         await this.db.query(`UPDATE pulse.shopify_jobs SET state = $3, next_run_at = $4, last_success_at = CASE WHEN $7::boolean THEN $5 ELSE last_success_at END, failures = $6 WHERE mode = $1 AND name = $2`, [this.mode, job.name, JSON.stringify(state), next, now, failures, !gross || state.outcome === 'filled']);
@@ -187,7 +190,7 @@ export class ShopifyWorker {
     if (attempted) await this.health(failed);
   }
   private async health(failed: boolean): Promise<void> {
-    const remainingFailures = await this.db.query(`SELECT name FROM pulse.shopify_jobs WHERE mode = 'live' AND name NOT IN ('stock_snapshot', 'series_pace', 'shipping_refunds', 'gross_history') AND failures > 0 UNION ALL SELECT source_id FROM pulse.shopify_webhook_inbox WHERE processed_at IS NULL AND attempts > 0`);
+    const remainingFailures = await this.db.query(`SELECT name FROM pulse.shopify_jobs WHERE mode = 'live' AND name NOT IN ('stock_snapshot', 'stock_daily', 'series_pace', 'shipping_refunds', 'gross_history') AND failures > 0 UNION ALL SELECT source_id FROM pulse.shopify_webhook_inbox WHERE processed_at IS NULL AND attempts > 0`);
     failed ||= remainingFailures.rows.length > 0;
     await this.db.query(`UPDATE pulse.source_health SET status = $1, last_attempt_at = $2,
       last_success_at = CASE WHEN $1 = 'healthy' THEN $2 ELSE last_success_at END,
@@ -307,6 +310,11 @@ export class ShopifyWorker {
   private async execute(name: Job, state: any, lastSuccess: Date | null): Promise<any> {
     const now = this.clock(), day = ukToday(now);
     // Secondary reads never change the main Shopify money source state.
+    if (name === 'stock_daily') {
+      if (this.mode !== 'live') return { skipped: 'sample_mode' };
+      const capture = await takeStockDaily(this.db, this.mode, now);
+      return { ...capture, waitingForInventory: capture.freshRows === 0 };
+    }
     if (name === 'stock_snapshot') {
       if (this.mode !== 'live') return { skipped: 'sample_mode' };
       await takeStockSnapshot(this.db, await this.client.inventory('oneofone1'), this.clock(), state.caughtUp === true);

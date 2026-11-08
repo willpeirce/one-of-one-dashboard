@@ -159,3 +159,26 @@ test('shopifyHero keeps the configured freelancer label and measured spend split
   assert.ok(hero.spend.d.extra?.some(([label, value]) => label === 'Meta Invented partner' && value === '£5.00'));
   assert.doesNotMatch(hero.spend.d.why, /Meta freelancer/);
 });
+
+test('Overall ROAS adds one same-market spend and sales growth line for complete UK periods', async () => {
+  const current = await orders(), previousDay = addDays(date, -1);
+  const previous = current.map((order, index) => ({...order, id: `invented-growth-order-${index}`, day: previousDay,
+    createdAt: `${previousDay}T09:00:00Z`, itemsAfterDiscountsPence: order.itemsAfterDiscountsPence * 4, totalPence: order.itemsAfterDiscountsPence * 4}));
+  const ads = spend();
+  ads.rows.push({...ads.rows[0]!, campaignId: 'invented-growth-campaign', campaignName: 'Invented UK comparison',
+    adSetName: 'Invented UK comparison set', day: previousDay, amount: '78.000000'});
+  const input = {spend: ads, costs: [], estimates: [], now};
+  const hero = shopifyHero(facts([...current, ...previous]), today, date, date, settings, undefined, undefined, input);
+  const lines = hero.roas.d.extra!.filter(([label]) => label === 'Spend and sales growth');
+  assert.equal(lines.length, 1);
+  assert.match(lines[0]![1], /Spend grew faster than sales/);
+  assert.match(lines[0]![1], /Spend −50\.0% · Shopify net sales −75\.0%/);
+  assert.match(lines[0]![1], /Compared with 2026-10-07–2026-10-07, same market/);
+  assert.notEqual(hero.markets!.uk.roas.d.extra!.find(([label]) => label === 'Spend and sales growth')![1], lines[0]![1]);
+  const missing = shopifyHero(facts([...current, ...previous]), today, date, date, settings, undefined, undefined,
+    {...input, spend: {...ads, days: ads.days.filter(row => row.day !== previousDay)}});
+  const missingLine = missing.roas.d.extra!.find(([label]) => label === 'Spend and sales growth')![1];
+  assert.match(missingLine, /unavailable/i); assert.doesNotMatch(missingLine, /Spend grew faster/);
+  const partial = shopifyHero(facts(current), today, today, today, settings, undefined, undefined, input);
+  assert.match(partial.roas.d.extra!.find(([label]) => label === 'Spend and sales growth')![1], /waits for complete UK days/);
+});

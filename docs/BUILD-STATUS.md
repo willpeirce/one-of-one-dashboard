@@ -4,6 +4,7 @@ Updated in every pull request.
 
 | Stage | What | Code | Keys in Replit | Live check ("Done when") |
 |---|---|---|---|---|
+| Home fold · 8 Nov | Remove health score, count pills and narrative; one review flag beside the market switch; pin hero-grid top | built on `hero-fold`; no migration | none | Check live Home at 390 and 1280 px against the pinned budgets after merge and Republish |
 | Home · 27 Oct | Compact ranked Decisions, stock grid, capped reviews/experiments/creatives, folded sample dials and actual source footer | built on `home-compact`; migration 050 (approved audit allowlist only); browser budgets pinned at phone/desktop widths | none | Claude checks live Home at 390 and 1280 px against the same budgets |
 | 2 scan fix · 27 Oct | Restore four-field scan request, tolerant JSON parsing, bounded timeouts and latest-attempt diagnostics | built on `fix-creative-scan`; no new migration | none | Claude runs one live Scan now after Republish and checks `/sources` |
 | 2 startup fix · 27 Oct | Older Settings defaults, frozen-key guard, repeated order privacy cleanup and named settings failures | built on `fix-settings-defaults`; migration 049 | none | Republish passes startup, then stage 2 part B checks below |
@@ -186,6 +187,14 @@ Orders-flowing, US-cart, checkout, dispatch, refunds, webhook, geo and self-chec
 **Part 1c built (New reviews):** Judge.me v1 GET-only ingestion polls every five minutes after listen using the existing shop domain and `JUDGEME_API_TOKEN`. No token means three labelled invented reviews and Waiting for keys. Only unpublished, unhidden reviews appear, 1–3 stars first then newest; publication or hiding removes a row on the next clean poll. Rows and full-text sheets show product, known market, verified-buyer state, photo count and age, never reviewer identity. Greeting counts become All caught up after a clean empty poll; reviews never alter health, radar or tile states. Publish stays disabled behind the off config flag. Every Open/Read link uses `https://app.judge.me/index`, the final reviews dashboard URL; the unused template config is removed. Webhooks are deferred: poll only. No reviewer name, email, IP, media URL or token is stored; migration 014 also persists independent Meta campaign sync state, and migration 015 persists the unread-review count.
 
 **Deferred live checks:** three chosen UK days must match Shopify's orders and net sales to the penny, including an actual inclusive-tax partial refund with paid shipping; check refund-day treatment and store report filters. Compare orders per channel (including TikTok), matching channel names and the same completed UK dates. The live check decides whether marketplace orders need `read_marketplace_orders`; scopes are set in Shopify's Dev Dashboard, not in code. Verify a real order reaches the page within 10 seconds, a removed owned subscription returns within an hour and its repair notice clears on the next check, and the seven first-publication notices clear. Check 22/23 September and a synthetic Missouri guard; confirm warehouse holiday closures and dispatch cut-offs. Part 1c's live review appearance/removal checks remain there. Fixtures establish mechanics, not live agreement.
+
+## Home fold · 8 Nov
+
+Home uses the same sample/live source reads and hero metrics. The shared review flag renders on the server and follows browser snapshots; clear, pending and unavailable reviews remain described in the Reviews chapter. The health score, count pills, narrative line and their unused fields are removed. Dense invented browser fixtures check both widths, review visibility, 44px tap height, one-row alignment, overflow and a fixed hero-grid top: 530px at 390×844 and 440px at 1280×960 (measured 527.06px and 433.63px).
+
+Validation: typecheck, all 702 tests on PostgreSQL 17.6, production build, the full Chromium browser suite and secret scanning pass locally. The browser checks include review snapshot transitions and the pinned fold budgets. The CI test runner is pinned to Ubuntu 24.04 because Playwright 1.58.2 rejects the newer Ubuntu 26.04 image; all checks remain enabled.
+
+Next step after merge: Shell merge, `npm run migrate`, Republish, then check live Home at 390 and 1280 px against the same budgets. No new keys, Settings values, decisions or other user input are needed. Deployment and live acceptance remain outstanding.
 
 ## What runs
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { dropsHtml, droppedAreas, radarGaugeScore, radarMeasure, radarSummary, weakestRadarGauge, type RadarAdSource, type RadarArea } from '../src/radar.js';
+import { dropsHtml, droppedAreas, radarGaugeScore, radarMeasure, weakestRadarGauge, type RadarAdSource, type RadarArea } from '../src/radar.js';
 
 const source = (id: RadarAdSource['source'], overrides: Partial<RadarAdSource> = {}): RadarAdSource => ({
   source: id, live: true, status: 'live', fetchedAt: '2026-09-30T10:00:00Z', ...overrides,
@@ -24,14 +24,6 @@ test('unbuilt, unconfigured and pending radar areas have no measured score', () 
     assert.equal(radarMeasure(key, undefined, [source(id, { failures: 1 })]).score, 0);
     assert.equal(radarMeasure(key, undefined, [source(id, { failures: 1, fetchedAt: null })]).score, null);
   }
-});
-
-test('health averages measured areas equally and needs at least three', () => {
-  for (const scores of [[], [null, null], [1], [1, 0.5, null, null]]) {
-    assert.equal(radarSummary(areas(scores)).health, null);
-  }
-  assert.equal(radarSummary(areas([1, 0.5, 0, null, null, null])).health, 50);
-  assert.equal(radarSummary(areas([1, 1, 0.5, null, null, null])).health, 83);
 });
 
 test('weakest gauge follows performance state while neutral decisions and information do not lower health', () => {

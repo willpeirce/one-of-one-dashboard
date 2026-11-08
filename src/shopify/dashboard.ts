@@ -70,7 +70,7 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
     const display = metric.unavailable ? metric.unavailableLabel ?? 'No data' : formatMetricNumber(metric.n, metric);
     for (const [k, value] of [[rawKey,String(metric.n)],[displayKey,display],[subKey,metric.ss]]) snapshot.textValues[k!] = { source: metric.source, mode: metric.mode, value: value! };
   }
-  for (const [key, value] of [['t0032',initial.eyebrow],['t0033',greetingAt(greetingNow)],['t0034',initial.sub1],['t0035',''],['t0002',initial.spark.join(',')]]) snapshot.textValues[key!] = { source: ['shopify'], mode: facts.mode, value: value! };
+  for (const [key, value] of [['t0032',initial.eyebrow],['t0033',greetingAt(greetingNow)],['t0002',initial.spark.join(',')]]) snapshot.textValues[key!] = { source: ['shopify'], mode: facts.mode, value: value! };
   snapshot.widgets.w001 = { source: initial.ukcpo.source, mode: initial.ukcpo.mode, kind: 'dial', value: initial.ukcpo };
   snapshot.widgets.w002 = { source: initial.uscpo.source, mode: initial.uscpo.mode, kind: 'dial', value: initial.uscpo };
   let pace = sampleSeriesPaceCard(appConfig.shopify.sampleNow);

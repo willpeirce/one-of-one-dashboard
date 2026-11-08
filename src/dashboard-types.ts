@@ -111,7 +111,6 @@ export interface HeroPeriod {
   short: string;
   spark: number[];
   eyebrow: string;
-  sub1: string;
   per: string;
   net: HeroMetric;
   gross: number;

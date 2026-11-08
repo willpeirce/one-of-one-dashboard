@@ -10,6 +10,13 @@ export function reviewsGreeting(panel: ReviewsPanel): string {
   if (!n) return panel.status === 'pending' ? 'Reviews: first sync pending' : panel.status === 'unavailable' ? 'Reviews unavailable' : 'All caught up';
   return `${count(n)} ${panel.mode === 'sample' ? 'sample' : 'new'} ${n === 1 ? 'review' : 'reviews'}${low ? `, ${count(low)} needs reading first` : ' to check'}`;
 }
+/** The Home flag only asks for attention while a review is waiting. */
+export function reviewsFlagLabel(panel: ReviewsPanel): string | null {
+  if (panel.status === 'pending' || panel.status === 'unavailable') return null;
+  const n = panel.rows.length;
+  if (!n) return panel.unreadCount > 0 ? 'Some reviews could not be read' : null;
+  return `★ ${count(n)} ${panel.mode === 'sample' ? 'sample' : 'new'} ${n === 1 ? 'review' : 'reviews'}`;
+}
 export function reviewAge(createdAt: string, asOf: string): string {
   const minutes = Math.max(0, Math.floor((Date.parse(asOf) - Date.parse(createdAt)) / 60_000));
   return minutes < 60 ? `${count(minutes)} min` : minutes < 1440 ? `${count(Math.floor(minutes / 60))} h` : `${count(Math.floor(minutes / 1440))} d`;

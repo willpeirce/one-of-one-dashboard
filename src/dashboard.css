@@ -98,12 +98,6 @@ svg.ic{width:1.1em;height:1.1em;fill:none;stroke:currentColor;stroke-width:2;str
   #pickbtn .ic{margin-right:0}
 }
 .greet h1{font-size:38px;font-weight:800;line-height:1.05;margin-top:6px}
-.sub{color:var(--ink-2);margin-top:10px;max-width:46ch;font-size:15.5px}
-.counts{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
-.pk{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:999px;background:var(--glass-2);border:1px solid var(--line);font-family:var(--disp);font-size:13px;font-weight:600;color:var(--ink-2)}
-.pk b{font-size:15px;color:var(--ink)}
-.pk i{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:50%;background:var(--c);color:var(--chip-ink);font-style:normal;font-size:10px;font-weight:800}
-.pk.health{background:var(--solid);color:var(--solid-ink)} .pk.health b{color:inherit}
 
 .four{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
 .four [data-k="net"]{justify-content:center}
@@ -370,7 +364,6 @@ td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
 .rv .rt .rec{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .rvm{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
 .rvm .age{font-size:12px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
-button.pk{cursor:pointer;font:inherit;font-family:var(--disp);font-size:13px;font-weight:600}
 @media (max-width:760px){.chapter-heading>.shm{flex-basis:100%;padding-left:42px}.rvhead>.act,.rvhead>.unbuilt-action{flex-basis:auto;margin-left:42px}
   .rvr{grid-template-columns:minmax(0,1fr)} .rvs{grid-auto-flow:column;justify-content:start;align-items:center;gap:10px}
   .rvm{flex-direction:row;align-items:center;justify-content:space-between;flex-wrap:wrap} .rvm .acts{margin-left:auto}}
@@ -434,6 +427,9 @@ button[disabled]{cursor:not-allowed}.act[disabled]{opacity:.5}
 .hero-controls{display:flex;flex-wrap:wrap;gap:8px;align-items:start;grid-column:1/-1}
 .hero-controls .seg{margin-bottom:12px}
 #market{flex-shrink:0}
+.hero-market-row{display:flex;align-items:center;gap:8px;min-width:0;margin-bottom:12px}
+.hero-market-row #market{margin-bottom:0}
+.review-flag{height:44px;min-width:0;padding:6px 11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:1px solid var(--line);border-radius:999px;background:var(--glass-2);color:var(--decide);font-family:var(--disp);font-size:13px;font-weight:600;cursor:pointer}
 .profit-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .profit-line{display:flex;flex-wrap:wrap;align-content:start;align-items:center;gap:8px;min-width:0;border:1px solid var(--line);border-radius:var(--r2);padding:10px 14px;background:var(--glass);color:var(--ink);cursor:pointer;text-align:left;overflow-wrap:anywhere}
 .profit-line .sv{font-size:20px}

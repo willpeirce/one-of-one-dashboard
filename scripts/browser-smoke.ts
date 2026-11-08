@@ -46,7 +46,6 @@ interface HeroPeriod {
   short: string;
   spark: number[];
   eyebrow: string;
-  sub1: string;
   [key: string]: HeroMetric | string | number[];
 }
 interface DashboardSnapshot {
@@ -107,7 +106,6 @@ async function assertHeroModel(page: Page, metrics: HeroPeriod): Promise<void> {
     return actual?.trim() === value;
   }), expected);
   assert.equal(await page.locator('#eyebrow').textContent(), metrics.eyebrow);
-  assert.equal(await page.locator('#sub1').textContent(), metrics.sub1);
   for (const key of ['t0267', 't0270']) assert.ok((await page.locator(`[data-sample-text="${key}"]`).textContent())?.startsWith(`${rangeLabel(metrics.from, metrics.to)} · Shopify `));
   for (const key of Object.keys(expected)) {
     assert.equal(await page.locator(`[data-k="${key}"]`).count(), 1);
@@ -343,13 +341,12 @@ async function checkReviews(context: BrowserContext): Promise<void> {
       const rows = page.locator('#reviews .rv[data-review-id]');
       assert.equal(await rows.count(), 3);
       assert.deepEqual(await rows.evaluateAll(elements => elements.map(element => element.getAttribute('data-review-id'))), ranked.map(review => review.id));
-      assert.match(await page.locator('#counts button[data-rv]').innerText(), /3.*sample.*reviews/is);
-      assert.equal((await page.locator('#subrv').innerText()).trim(), '3 sample reviews, 1 needs reading first.');
+      assert.match(await page.locator('#hero .review-flag').innerText(), /3.*sample.*reviews/is);
+      assert.equal(await page.locator('#hero .review-flag').getAttribute('aria-label'), '3 sample reviews, 1 needs reading first');
       assert.match(await page.locator('#reviews').innerText(), /sample/i);
       assert.doesNotMatch(await page.locator('#reviews').innerText(), /Flagged by Judge.me|Email request|Verified buyer|photos?/);
-      const health = await page.locator('#counts > span').allTextContents();
       const drops = await page.locator('#drops').innerText();
-      await page.locator('#counts button[data-rv]').click();
+      await page.locator('#hero .review-flag').click();
       await page.locator('#reviews').scrollIntoViewIfNeeded();
       assert.equal(await rows.first().isVisible(), true);
       assert.match(await rows.first().innerText(), /Read first/i);
@@ -389,7 +386,7 @@ async function checkReviews(context: BrowserContext): Promise<void> {
         if (index === 0 && process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/reviews-sheet-${viewport.width}.png` });
         await page.locator('#sh-x').click();
       }
-      step = `${scope}: unread review notice without changing health at ${viewport.width}px`;
+      step = `${scope}: unread review notice without changing drops at ${viewport.width}px`;
       fixture.reviews = { ...sample, unreadCount: 1 };
       await page.reload();
       await page.locator('html[data-dashboard-ready="true"]').waitFor();
@@ -397,7 +394,6 @@ async function checkReviews(context: BrowserContext): Promise<void> {
       assert.equal(await notice.count(), 1);
       assert.equal(await notice.innerText(), '1 reviews could not be read');
       assert.equal(await rows.count(), sample.rows.length, 'Readable reviews remain visible');
-      assert.deepEqual(await page.locator('#counts > span').allTextContents(), health);
       assert.equal(await page.locator('#drops').innerText(), drops);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
       fixture.reviews.rows = [];
@@ -405,16 +401,14 @@ async function checkReviews(context: BrowserContext): Promise<void> {
       await page.locator('html[data-dashboard-ready="true"]').waitFor();
       assert.equal(await notice.count(), 1);
       assert.doesNotMatch(await page.locator('#reviews').innerText(), /All caught up/);
-      step = `${scope}: all caught up without changing health at ${viewport.width}px`;
+      step = `${scope}: all caught up without changing drops at ${viewport.width}px`;
       fixture.reviews = { ...sample, mode: 'live', rows: [], status: 'live', unreadCount: 0 };
       await page.reload();
       await page.locator('html[data-dashboard-ready="true"]').waitFor();
       assert.equal(await notice.count(), 0, 'The next clean poll clears the notice');
       assert.equal(await rows.count(), 0);
-      assert.match(await page.locator('#counts button[data-rv]').innerText(), /All caught up/);
-      assert.match(await page.locator('#subrv').innerText(), /All caught up/);
+      assert.equal(await page.locator('#hero .review-flag').isVisible(), false);
       assert.match(await page.locator('#rvcount').innerText(), /All caught up/);
-      assert.deepEqual(await page.locator('#counts > span').allTextContents(), health);
       assert.equal(await page.locator('#drops').innerText(), drops);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     }
@@ -753,7 +747,6 @@ async function checkPartialAdSpend(context: BrowserContext): Promise<void> {
       await page.locator('#hero [data-k="spend"][data-state="warn"]').waitFor();
       assert.equal(await page.locator('#hourly-orders').isVisible(), true);
       assert.equal(await page.locator('#hero .greet h1').isVisible(), true);
-      assert.equal(await page.locator('#hero .greet .sub').isVisible(), true);
       assert.equal(await page.locator('#hero .four [data-k="spend"]').evaluate(el => getComputedStyle(el).order), '-1');
       await page.evaluate(() => window.scrollTo(0, 0));
       if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({

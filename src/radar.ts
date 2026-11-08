@@ -44,14 +44,6 @@ export function weakestRadarGauge<T>(gauges: readonly T[], state: (gauge: T) => 
   return weakest;
 }
 
-export function radarSummary(areas: readonly RadarArea[]): { health: number | null; weakest?: RadarArea } {
-  const measured = areas.filter(area => area.measure.score !== null);
-  const weakest = measured.reduce<RadarArea | undefined>((current, area) =>
-    !current || area.measure.score! < current.measure.score! ? area : current, undefined);
-  return { health: measured.length < 3 ? null : Math.round(100 * measured.reduce((sum, area) => sum + area.measure.score!, 0) / measured.length),
-    ...(weakest ? { weakest } : {}) };
-}
-
 const escapeHtml = (value: string): string => value.replace(/[&<>"']/g, character =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!);
 export interface DropArea extends RadarArea { alarms: number; title: string }

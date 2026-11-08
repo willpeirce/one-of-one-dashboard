@@ -76,7 +76,7 @@ export async function checkMarketHero(page: Page, snapshot: DashboardSnapshot, w
       assert.ok(marketBox.y >= greetingBox.y + greetingBox.height, 'The market switch sits below the greeting');
       assert.ok(heroBox.y >= marketBox.y + marketBox.height && heroBox.y - marketBox.y - marketBox.height < 32,
         'The market switch sits directly above the hero tiles');
-      assert.equal(await page.locator('#market').evaluate(element => element.nextElementSibling?.classList.contains('hero-grid')), true);
+      assert.equal(await page.locator('#market').evaluate(element => element.parentElement?.nextElementSibling?.classList.contains('hero-grid')), true);
       assert.equal(await page.locator('#hero .per').count(), 0);
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     }

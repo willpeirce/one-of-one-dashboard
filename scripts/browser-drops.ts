@@ -27,7 +27,7 @@ export async function checkDrops(context: BrowserContext): Promise<void> {
       await page.setViewportSize(viewport);
       await page.goto('/');
       await page.locator('html[data-dashboard-ready="true"]').waitFor();
-      await page.waitForFunction(() => document.querySelector('#counts .health')?.textContent === '83 health');
+      await page.locator('#drops [data-drop-key=google]').waitFor();
       assert.equal(await page.locator('#radar').count(), 0);
       assert.match(await page.locator('#drops').innerText(), /▼ Dropped:.*Google/s);
       assert.match(await page.locator('#drops').innerText(), new RegExp(google.value.l));
@@ -42,6 +42,6 @@ export async function checkDrops(context: BrowserContext): Promise<void> {
     store.mode = 'sample';
     await page.goto('/');
     await page.locator('html[data-dashboard-ready="true"]').waitFor();
-    await page.waitForFunction(() => document.querySelector('#counts .health')?.textContent === 'Not enough data');
+    await page.locator('#drops [data-drop-key=google]').waitFor();
   } finally { await page.close(); }
 }

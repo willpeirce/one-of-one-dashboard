@@ -9,7 +9,7 @@ import { liveHtml, storePanelsHtml } from './shopify/presentation.js';
 import { dashboardTemplate } from './dashboard-template.js';
 import { formatNumber, formatMetricNumber, formatPounds } from './money.js';
 import { seriesPaceCardHtml } from './series-pace/presentation.js';
-import { reviewsGreeting, reviewsPanelHtml } from './judgeme/presentation.js';
+import { reviewsFlagLabel, reviewsGreeting, reviewsPanelHtml } from './judgeme/presentation.js';
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({
@@ -40,9 +40,10 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
     content += creativeDialogHtml();
   }
   if (snapshot.reviews) {
+    const label = reviewsFlagLabel(snapshot.reviews);
+    content = content.replace('<button class="review-flag" type="button" data-rv hidden></button>',
+      `<button class="review-flag" type="button" data-rv aria-label="${escapeHtml(reviewsGreeting(snapshot.reviews))}"${label === null ? ' hidden' : ''}>${escapeHtml(label ?? '')}</button>`);
     content = content.replace(/(<section class="chapter revs" id="reviews"[^>]*>)[\s\S]*?<\/section>/, (_section, tag: string) => `${tag}${reviewsPanelHtml(snapshot.reviews!)}</section>`);
-    content = content.replace(/(<span id="subrv">)[\s\S]*?<\/span>/, (_span, tag: string) => `${tag}${escapeHtml(reviewsGreeting(snapshot.reviews!))}</span>`);
-    content = content.replace('<div class="counts" id="counts"></div>', `<div class="counts" id="counts"><button class="pk" type="button" data-rv>${escapeHtml(reviewsGreeting(snapshot.reviews))}</button></div>`);
   }
   if (pace?.kind === 'series-pace') content = content.replace(/<article\b[^>]*data-model-id="w017"[^>]*><\/article>/,
     `<article class="tile series-pace" data-source="shopify" data-mode="${pace.mode}" data-model-id="w017" aria-label="Series 1 sell-out pace">${seriesPaceCardHtml(pace.value, pace.mode)}</article>`);

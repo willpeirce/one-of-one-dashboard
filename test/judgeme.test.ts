@@ -6,7 +6,7 @@ import { JudgeMeClient, JudgeMeReadError } from '../src/judgeme/client.js';
 import { cleanReview, waitingReviews } from '../src/judgeme/model.js';
 import { readReviews, saveReviews, readReviewHealth } from '../src/judgeme/store.js';
 import { ReviewsWorker, REVIEW_POLL_MS } from '../src/judgeme/worker.js';
-import { reviewLink, reviewsGreeting, reviewsPanelHtml, reviewSheetHtml } from '../src/judgeme/presentation.js';
+import { reviewLink, reviewsFlagLabel, reviewsGreeting, reviewsPanelHtml, reviewSheetHtml } from '../src/judgeme/presentation.js';
 import { sampleReviews } from '../src/judgeme/sample.js';
 import { getSampleDashboard } from '../src/sample-dashboard.js';
 import { dashboardPage } from '../src/dashboard-view.js';
@@ -263,7 +263,36 @@ test('reviews share sample/live rendering, safely escape full text, disable Publ
   assert.equal(reviewsGreeting(live), '3 new reviews, 1 needs reading first');
   live.rows = []; assert.equal(reviewsGreeting(live), 'All caught up'); assert.doesNotMatch(reviewsPanelHtml(live), /class="rv"/);
   const dashboard = getSampleDashboard(); const rendered = dashboardPage(dashboard);
-  assert.match(rendered, /data-review-open="900101"/); assert.match(rendered, /data-rv>3 sample reviews, 1 needs reading first/);
+  assert.match(rendered, /data-review-open="900101"/); assert.match(rendered, /class="review-flag"[^>]*data-rv aria-label="3 sample reviews, 1 needs reading first">★ 3 sample reviews/);
+});
+
+test('Home review flag has short waiting labels and hides clear or unavailable states', () => {
+  const panel = sampleReviews();
+  assert.equal(reviewsFlagLabel(panel), '★ 3 sample reviews');
+  panel.rows = panel.rows.slice(0, 1);
+  assert.equal(reviewsFlagLabel(panel), '★ 1 sample review');
+  panel.mode = 'live';
+  assert.equal(reviewsFlagLabel(panel), '★ 1 new review');
+  panel.rows.push(structuredClone(panel.rows[0]!));
+  assert.equal(reviewsFlagLabel(panel), '★ 2 new reviews');
+  for (const status of ['pending', 'unavailable'] as const) {
+    assert.equal(reviewsFlagLabel({ ...panel, status, unreadCount: 2 }), null);
+  }
+  panel.rows = [];
+  assert.equal(reviewsFlagLabel(panel), null);
+  panel.unreadCount = 2;
+  assert.equal(reviewsFlagLabel(panel), 'Some reviews could not be read');
+  for (const status of ['live', 'pending', 'unavailable'] as const) {
+    for (const unreadCount of [0, 2]) {
+      const snapshot = getSampleDashboard();
+      snapshot.reviews = { ...panel, status, unreadCount };
+      const html = dashboardPage(snapshot);
+      const flag = html.match(/<button class="review-flag"[^>]*>[\s\S]*?<\/button>/)?.[0];
+      assert.ok(flag);
+      assert.equal(flag.includes(' hidden'), reviewsFlagLabel(snapshot.reviews) === null);
+      assert.ok(flag.includes(`aria-label="${reviewsGreeting(snapshot.reviews)}"`));
+    }
+  }
 });
 
 test('empty reviews use only the title chip and preserve pending, unavailable and unreadable states', () => {

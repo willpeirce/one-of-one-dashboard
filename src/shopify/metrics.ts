@@ -129,14 +129,12 @@ function marketHero(facts: Facts, today: string, from: string, to: string, setti
   const kitOrders = orders.filter(isKit);
   hero.orders.d.extra = [...(hero.orders.d.extra ?? []), ['Orders by market', breakdown], ['Average order', ratio(hero.net.n, hero.orders.n) === null ? 'No paid orders' : formatPounds(hero.net.n / hero.orders.n)], ['Upgrade rate', kitOrders.length ? `${formatNumber(100 * orders.filter(isUpgrade).length / kitOrders.length, 1)}% · tiers from ordered products` : 'No kit orders'], ['Markets', 'EU and other orders, including unknown and TikTok, show under All only; UK plus US does not add up to All.'], ['Free orders', `${formatNumber(freeCount)} in this period. Free orders (replacements and marketing send-outs at £0) are left out.${marketOrders.some(o => o.tags === undefined) ? ' Some earlier replacement tags are still being refreshed; £0 orders are excluded immediately.' : ''}`], ['Coverage', `Order details from ${data.from}. Earlier sales are store-wide ShopifyQL only; no invented market split.`]];
   const orderLabel = `${formatNumber(hero.orders.n)} ${hero.orders.n === 1 ? 'order' : 'orders'}`;
-  hero.sub1 = `${orderLabel}${to === today ? ' so far' : ''}.`;
   if (from === today && to === today) {
     hero.hourly = hourlyOrders(facts, today, market, now);
     const currentTime = ukClock.format(new Date(facts.jobs.find(j => j.name === 'poll')?.last_success_at ?? `${today}T00:00:00Z`));
     const yesterday = addDays(today, -1);
     const byNow = marketOrders.filter(o => countedOrder(o, market) && o.day === yesterday && ukClock.format(new Date(o.createdAt)) <= currentTime).length;
     hero.orders.ss = data.ready && data.from <= yesterday ? `vs ${formatNumber(byNow)} by this time yesterday` : 'Yesterday comparison unavailable';
-    hero.sub1 += data.ready && data.from <= yesterday ? ` ${formatNumber(byNow)} by ${currentTime} UK yesterday (last order poll).` : ' Yesterday comparison unavailable.';
   }
   if (market !== 'all') hero.eyebrow = `${market.toUpperCase()} · ${hero.eyebrow}`;
   if (from < data.from) hero.orders.ss = `${orderLabel} · older market detail unavailable`;

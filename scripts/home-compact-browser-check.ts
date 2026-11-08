@@ -122,7 +122,30 @@ async function assertPrimaryLiveDials(page: Page): Promise<void> {
   }
 }
 
-async function budget(page: Page, width: number): Promise<void> {
+async function budget(page: Page, width: number, waiting = true): Promise<void> {
+  assert.equal(await page.locator('#counts, #sub').count(), 0);
+  assert.equal(await page.locator('#hero .pk').count(), 0);
+  const flag = page.locator('#hero .review-flag');
+  assert.equal(await flag.isVisible(), waiting);
+  if (waiting) {
+    const flagBox = await flag.boundingBox(), marketBox = await page.locator('#market').boundingBox();
+    const rowBox = await page.locator('.hero-market-row').boundingBox();
+    assert.ok(flagBox && marketBox && rowBox);
+    assert.ok(flagBox.height >= 44);
+    assert.ok(rowBox.height <= 44, 'The review flag cannot make another row');
+    assert.equal(await page.locator('.hero-market-row').evaluate(el => getComputedStyle(el).marginBottom), '12px');
+    assert.ok(flagBox.x >= marketBox.x + marketBox.width, 'The flag is right of the market switch');
+    assert.ok(Math.abs(flagBox.y + flagBox.height / 2 - marketBox.y - marketBox.height / 2) < 1);
+    assert.equal(await flag.evaluate(el => getComputedStyle(el).textOverflow), 'ellipsis');
+  }
+  const top = await page.locator('.hero-grid').evaluate(el => el.getBoundingClientRect().top + scrollY);
+  // Hard Home fold budgets: never raise these numbers to accommodate a regression.
+  const heroTop = width === 390 ? 530 : 440;
+  assert.ok(top <= heroTop, `${width}px hero-grid top ${top} exceeds ${heroTop}`);
+  console.log('HERO FOLD', width, {top, maximum: heroTop});
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  if (!waiting) return;
+
   const heights = width === 390 ? {table:1610,reviews:455,tests:680,dials:1800,foot:90} : {table:800,reviews:360,tests:380,dials:1000,foot:70};
   const controls = {table:16,reviews:6,tests:6,dials:24,foot:3};
   for (const id of ['table','reviews','tests','dials','foot'] as const) {
@@ -174,9 +197,6 @@ async function budget(page: Page, width: number): Promise<void> {
   assert.equal(await page.locator('#deck [data-state="warn"]').count(),13);
   assert.equal(await page.locator('#watch .amber-dials').innerText(),'1 dials in amber');
   assert.match(await page.locator('#deckcount').innerText(),/2 alarms · 4 decisions/);
-  assert.match((await page.locator('#counts').innerText()).replace(/\s+/g,' '),/14 to watch/);
-  assert.match((await page.locator('#counts').innerText()).replace(/\s+/g,' '),/2 alarms/);
-  assert.match((await page.locator('#counts').innerText()).replace(/\s+/g,' '),/4 decisions/);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,`${width}px has no horizontal overflow`);
 }
 
@@ -205,6 +225,30 @@ export async function checkHomeCompact(context: BrowserContext): Promise<void> {
       await page.evaluate(async () => { await document.fonts.ready; });
       console.log('COMPACT GEOMETRY', viewport.width, await page.locator('#table,#reviews,#tests,#dials,#foot').evaluateAll(rows=>rows.map(r=>({id:r.id,height:r.getBoundingClientRect().height}))));
       await budget(page,viewport.width);
+      const waitingReviews = fixture.reviews!;
+      const replay = async () => {
+        fixture.generatedAt = new Date(Date.parse(fixture.generatedAt) + 1000).toISOString();
+        await page.evaluate(next => (window as unknown as {pulseMarketStream: EventSource}).pulseMarketStream
+          .dispatchEvent(new MessageEvent('dashboard', {data: JSON.stringify(next)})), fixture);
+        await page.waitForFunction(stamp => document.documentElement.dataset.updatedAt === stamp, fixture.generatedAt);
+      };
+      for (const status of ['live', 'pending', 'unavailable'] as const) {
+        fixture.reviews = {...waitingReviews, rows: [], unreadCount: 0, status};
+        await replay();
+        await budget(page, viewport.width, false);
+      }
+      fixture.reviews = {...waitingReviews, rows: [], unreadCount: 2};
+      await replay();
+      assert.equal(await page.locator('#hero .review-flag').innerText(), 'Some reviews could not be read');
+      const unreadFlag = page.locator('#hero .review-flag');
+      assert.equal(await unreadFlag.isVisible(), true);
+      assert.equal(await unreadFlag.getAttribute('aria-label'), 'Some reviews could not be read');
+      assert.equal(await unreadFlag.evaluate(el => getComputedStyle(el).textOverflow), 'ellipsis');
+      if (viewport.width === 390) assert.equal(await unreadFlag.evaluate(el => el.scrollWidth > el.clientWidth), true);
+      assert.ok((await unreadFlag.boundingBox())!.height >= 44);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      fixture.reviews = waitingReviews;
+      await replay();
       await checkHomeChapters(page);
       if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({path:`${process.env.PULSE_SCREENSHOT_DIR}/home-compact-${viewport.width}.png`,fullPage:true});
       // A real market update causes all three state paths to re-render their Home controls.

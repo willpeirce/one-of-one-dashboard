@@ -4,7 +4,7 @@ import {arrangeHomeDials} from './home-layout-browser.js';
 import { hourLabel, hourlyTop, monotoneSegments } from './hourly-orders.js';
 import {updateAdSets} from './meta-adsets/browser.js';
 import { metricSign } from './metric-sign.js';
-import { dropsHtml, radarMeasure, radarSummary, weakestRadarGauge, type DropArea } from './radar.js';
+import { dropsHtml, radarMeasure, weakestRadarGauge, type DropArea } from './radar.js';
 import { glance } from './fulfilment/view.js';
 import { updateCreativeSnapshot } from './creatives/browser.js';
 import { liveHtml, storePanelsHtml } from './shopify/presentation.js';
@@ -16,7 +16,7 @@ import { greetingAt } from './greeting.js';
 import { formatLike, formatMetricNumber, formatNumber, formatPounds } from './money.js';
 import { paceState, seriesPaceCardHtml, seriesPaceDial, seriesPaceFacts, seriesPaceSheetHtml, type SeriesPaceCard } from './series-pace/presentation.js';
 import type { SeriesPaceMarket } from './series-pace/model.js';
-import { reviewsGreeting, reviewsPanelHtml, reviewSheetHtml } from './judgeme/presentation.js';
+import { reviewsFlagLabel, reviewsGreeting, reviewsPanelHtml, reviewSheetHtml } from './judgeme/presentation.js';
 
 const states: Record<State, [string, string]> = {
   good: ['Good', '✓'], warn: ['Watch', '△'], decide: ['Decide', '◆'], alarm: ['Alarm', '✕'],
@@ -292,7 +292,6 @@ function renderHero(hero: HeroPeriod, animate = false): void {
   get('#pickbtn').setAttribute('aria-label', period === 'pick' ? `Dates, showing ${hero.short}` : 'Pick a day or dates');
   get('#hero').dataset.from = hero.from; get('#hero').dataset.to = hero.to;
   get('#eyebrow').textContent = hero.eyebrow;
-  get('#sub1').textContent = hero.sub1;
   for (const key of ['net', 'orders', 'aov', 'cac', 'cr', 'spend', 'roas', 'margin', 'contribution', 'profit'] as const) {
     const element = get(`#hero [data-k="${key}"]`), metric = hero[key];
     element.dataset.mode = metric.mode;
@@ -384,19 +383,18 @@ function radarGroup(element: HTMLElement): string | undefined {
 }
 document.addEventListener('pulse:decisions-rendered',()=>renderHealth());
 function renderHealth(): void {
-  const total = emptyTally(), byGroup: Record<string, Tally> = {};
+  const byGroup: Record<string, Tally> = {};
   const gauges: Record<string, HTMLElement[]> = {};
   radarTargets.clear();
   all('.tile[data-state],.dcard[data-state],.tcard[data-state],#deck [data-state]').forEach((element) => {
     const state = element.dataset.state ?? '';
-    if (!(state in total)) return;
+    if (!(state in emptyTally())) return;
     const group = radarGroup(element);
     if (group && group !== 'hero' && element.matches('.tile') && details.has(element)
       && !(element.hidden && (element.dataset.k === 'ukcpo' || element.dataset.k === 'uscpo'))) {
       (gauges[group] ??= []).push(element);
     }
     if (snapshot.shopify && element.dataset.mode === 'sample' && !element.hasAttribute('data-ingested-shopify') && !element.closest('#deck') && !element.closest('#hero')) return;
-    total[state as keyof Tally] += 1;
     if (!group || group === 'hero' || element.dataset.mode !== 'live' || !element.matches('.tile')) return;
     byGroup[group] ??= emptyTally();
     byGroup[group][state as keyof Tally] += 1;
@@ -412,11 +410,11 @@ function renderHealth(): void {
     }
     return { key, name, measure, alarms: byGroup[key]?.alarm ?? 0, title: weakest ? details.get(weakest)?.title ?? measure.label : measure.label, ...(weakest ? { target: weakest.id } : {}) };
   });
-  const { health } = radarSummary(areas), healthLabel = health === null ? 'Not enough data' : `${formatNumber(health)} health`;
   const rows = all('#deck [data-state]'), alarmCount = rows.filter((row) => row.dataset.state === 'alarm').length, decisions = rows.filter((row) => row.dataset.state === 'decide').length;
-  const reviewCount = snapshot.reviews?.rows.length ?? 0;
-  get('#counts').innerHTML = `<span class="pk health">${health === null ? healthLabel : `<b>${formatNumber(health)}</b> health`}</span>` + ([['alarm', alarmCount, alarmCount === 1 ? 'alarm' : 'alarms'], ['decide', decisions, decisions === 1 ? 'decision' : 'decisions'], ['warn', total.warn, 'to watch'], ['good', total.good, 'good']] as const).map(([state, count, label]) => `<span class="pk" style="--c:${colour[state]}"><i>${states[state][1]}</i><b>${formatNumber(count)}</b> ${label}</span>`).join('') + `<button class="pk" type="button" data-rv style="--c:var(--decide)"><i>★</i>${reviewCount ? `<b>${formatNumber(reviewCount)}</b> ${snapshot.reviews?.mode === 'sample' ? 'sample ' : 'new '}${reviewCount === 1 ? 'review' : 'reviews'}` : esc(snapshot.reviews ? reviewsGreeting(snapshot.reviews) : 'All caught up')}</button>`;
-  get('#subrv').textContent = snapshot.reviews ? ` ${reviewsGreeting(snapshot.reviews)}.` : '';
+  const flag = get('#hero [data-rv]'), label = snapshot.reviews ? reviewsFlagLabel(snapshot.reviews) : null;
+  flag.hidden = label === null;
+  flag.textContent = label ?? '';
+  flag.setAttribute('aria-label', snapshot.reviews ? reviewsGreeting(snapshot.reviews) : '');
   get('#deckcount').textContent = `${formatNumber(alarmCount)} ${alarmCount === 1 ? 'alarm' : 'alarms'} · ${formatNumber(decisions)} ${decisions === 1 ? 'decision' : 'decisions'}`;
   const html = dropsHtml(areas), drops = get('#drops');
   if (drops.dataset.content !== html) { drops.innerHTML = html; drops.dataset.content = html; }

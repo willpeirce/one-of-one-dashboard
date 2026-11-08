@@ -239,7 +239,6 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
   return {
     market: options.market ?? 'all', from, to, short: label, gross: selected.reduce((sum, row) => sum + (row.gross ?? row.net), 0), grossUnavailable: selected.some(row => row.grossKnown === false), spark: history('net'),
     eyebrow: one ? `${weekday} · ${partial ? 'today so far' : 'one day'}` : `${label} · ${options.name ?? `${n} days`}${partial ? ', today so far' : ''}`,
-    sub1: one ? `${integer(t.o)} orders on ${weekday}${partial ? ' so far' : ''}.` : `${integer(t.o)} orders over ${label}${partial ? ' so far' : ''}, avg ${integer(t.o / n)} a day.`,
     per: options.name ?? (one ? weekday : label),
     net: metric({ n: Math.round(t.net), state: state(t.net, cNet), pre: '£',
       ss: one ? cNet === null ? 'no earlier days to compare' : `7-day avg ${money(cNet)}${cNet && !partial ? ` · ${t.net >= cNet ? '+' : '−'}${percent(t.net, cNet)}%` : ''}`

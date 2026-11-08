@@ -264,8 +264,10 @@ test('integrated live dashboard has no example Shopify values; mode changes cann
   const snap=await applyShopifyDashboard(getSampleDashboard(),db,facts([o]),settings,[],now,undefined,new Date('2026-10-09T17:00:00Z'));
   assert.equal(snap.textValues.t0026!.value, 'Wed 30 Sept, 13:00 UK');
   assert.equal(snap.textValues.t0033!.value, 'Evening, Will.');
-  assert.equal(snap.textValues.t0035!.value, '');
-  assert.match(snap.hero.today.sub1, /^1 order so far\./);
+  assert.equal('t0034' in snap.textValues, false);
+  assert.equal('t0035' in snap.textValues, false);
+  assert.equal('sub1' in snap.hero.today, false);
+  assert.equal(snap.hero.today.orders.n, 1);
   assert.equal(snap.hero.today.net.mode,'live');assert.equal(snap.hero.today.net.n,66.62);assert.equal(snap.hero.today.spend.unavailable,true);
   assert.equal(snap.widgets.w037!.mode,'live');assert.match(snap.banner!,/Ad spend uses separately labelled source connections/);
   const html=dashboardPage(snap);assert.match(html,/£66.62/);assert.ok(!html.includes('£296'));assert.match(html,/New reviews/);

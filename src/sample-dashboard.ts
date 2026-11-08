@@ -1839,20 +1839,6 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       ],
       "mode": "sample"
     },
-    "t0034": {
-      "value": "6 orders so far, 4 by this time yesterday.",
-      "source": [
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
-    "t0035": {
-      "value": " One alarm and five decisions are on the table.",
-      "source": [
-        "github-hq"
-      ],
-      "mode": "sample"
-    },
     "t0036": {
       "value": "Net sales · ",
       "source": [
@@ -3951,7 +3937,6 @@ export function getSampleHero(from: string, to: string, settings?: Settings, mar
       todayDay: SAMPLE_TODAY, yesterdayDay: addDays(SAMPLE_TODAY, -1), nowHour: 14, ready: true };
     // The intraday comparison is a supplied sample observation, not a fabricated
     // daily-rate extrapolation: four orders at this time yesterday.
-    hero.sub1 = `${formatNumber(hero.orders.n)} orders so far, 4 by this time yesterday.`;
     hero.orders.ss = 'UK 2 · US 4 · 4 by this time yesterday';
     hero.orders.d.why = `${hero.orders.d.why} 4 orders by this time yesterday.`;
     hero.net.d.why = `${hero.net.d.why} 4 orders by this time yesterday.`;

@@ -79,12 +79,13 @@ test('server-rendered hero has independent market control, eight ordered cards a
   assert.deepEqual([...grid.matchAll(/data-k="([a-z]+)"/g)].map(match => match[1]), ['net', 'orders', 'aov', 'cac', 'cr', 'spend', 'roas', 'margin']);
   assert.doesNotMatch(grid, /class="per"/); assert.match(html, /class="profit-line" data-k="profit"/); assert.ok(html.indexOf('id="p-ads"') < html.indexOf('data-k="ukcpo"'));
 });
-test('the market switch follows the hourly chart directly before the hero tiles while periods stay above it', () => {
+test('the market and review row follows the hourly chart directly before the hero tiles while periods stay above it', () => {
   const html = dashboardPage(getSampleDashboard());
   const period = html.indexOf('id="period"'), chart = html.indexOf('id="hourly-orders"');
   const market = html.indexOf('id="market"'), grid = html.indexOf('<div class="four hero-grid">');
   assert.ok(period >= 0 && period < chart && chart < market && market < grid);
-  assert.match(html.slice(market, grid), /data-market="us">US<\/button><\/div>\s*$/);
+  assert.match(html.slice(market, grid), /data-market="us">US<\/button><\/div>\s*<button class="review-flag"[^>]*data-rv[^>]*>★ 3 sample reviews<\/button>\s*<\/div>\s*$/);
+  assert.match(html.slice(0, market), /<div class="hero-market-row">\s*<div class="seg" role="tablist" $/);
   assert.equal((html.match(/id="market"/g) ?? []).length, 1);
 });
 test('guarded comparison/chart days never supply market conversion and aggregate history never hides omitted costs', async () => {

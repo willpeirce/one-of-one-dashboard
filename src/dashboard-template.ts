@@ -53,14 +53,15 @@ export const dashboardTemplate = `
       <div>
         <span class="eyebrow" id="eyebrow"><span data-sample-text="t0032">{{sample:t0032}}</span></span>
         <h1><span id="greeting" data-sample-text="t0033">{{sample:t0033}}</span></h1>
-        <p class="sub" id="sub"><span id="sub1"><span data-sample-text="t0034">{{sample:t0034}}</span></span><span id="subrv"></span></p>
-        <div class="counts" id="counts"></div>
         <div class="drops" id="drops" aria-live="polite"></div>
       </div>
       <div class="hourly" id="hourly-orders"></div>
     </div>
 
-    <div class="seg" role="tablist" id="market" aria-label="Market"><button role="tab" type="button" aria-selected="true" data-market="all">All</button><button role="tab" type="button" aria-selected="false" data-market="uk">UK</button><button role="tab" type="button" aria-selected="false" data-market="us">US</button></div>
+    <div class="hero-market-row">
+      <div class="seg" role="tablist" id="market" aria-label="Market"><button role="tab" type="button" aria-selected="true" data-market="all">All</button><button role="tab" type="button" aria-selected="false" data-market="uk">UK</button><button role="tab" type="button" aria-selected="false" data-market="us">US</button></div>
+      <button class="review-flag" type="button" data-rv hidden></button>
+    </div>
     <div class="four hero-grid">
       <button type="button" class="tile coral stat" data-k="net" data-g="hero" data-src="shopify" data-state="info" data-source="shopify" data-mode="sample"><span class="sl">Net sales</span><span class="sv big"></span><span class="spark" aria-hidden="true"></span><span class="ss"></span></button>
       <button type="button" class="tile stat" data-k="orders" data-g="hero" data-src="shopify" data-state="info" data-source="shopify" data-mode="sample"><span class="sl">Orders</span><span class="sv"></span><span class="ss"></span></button>

@@ -14,12 +14,27 @@ import { readStockDaily } from './stock-daily.js';
 
 export interface ScorecardView { scorecard: ScorecardModel; latestMonth: string; sourceNotes: string[] }
 
+function completedPollUntil(poll: Facts['jobs'][number] | undefined): number {
+  if (!poll?.last_success_at || poll.state.continuing) return NaN;
+  // Pagination may finish after midnight; only the query's fixed upper bound was read.
+  if (!Object.hasOwn(poll.state,'query')) return new Date(poll.last_success_at).getTime();
+  if (typeof poll.state.query !== 'string') return NaN;
+  const query = /^updated_at:>=([^\s]+)\s+updated_at:<=([^\s]+)$/.exec(poll.state.query);
+  if (!query) return NaN;
+  const bounds = query.slice(1).map(value=>{
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value)) return NaN;
+    const parsed=Date.parse(value),canonical=value.includes('.')?value:value.replace('Z','.000Z');
+    return Number.isFinite(parsed)&&new Date(parsed).toISOString()===canonical?parsed:NaN;
+  });
+  return bounds.every(Number.isFinite)&&bounds[0]!<=bounds[1]!?bounds[1]!:NaN;
+}
+
 /** Actual report rows cover older days; an absent aggregate day must never become a measured zero. */
 export function scorecardCoverage(facts: Facts, from: string, to: string, market: ScorecardInput['market']): { salesCoverage: string[]; orderCoverage: string[] } {
   const backfill = facts.jobs.find(job => job.name === 'backfill');
   const poll = facts.jobs.find(job => job.name === 'poll');
   const backfillUntil = backfill?.state.ordersDone && typeof backfill.state.until === 'string' ? Date.parse(backfill.state.until) : NaN;
-  const pollUntil = poll?.last_success_at && !poll.state.continuing ? new Date(poll.last_success_at).getTime() : NaN;
+  const pollUntil = completedPollUntil(poll);
   const through = Math.max(Number.isFinite(backfillUntil) ? backfillUntil : 0, Number.isFinite(pollUntil) ? pollUntil : 0);
   const lastFull = through ? addDays(ukToday(new Date(through)), -1) : '';
   const first = backfill?.state.ordersDone && typeof backfill.state.from === 'string' ? backfill.state.from : null;

@@ -198,6 +198,8 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     {key:'metaAdAccountId',label:'Meta ad account ID',optional:true,hint:'Digits only, without act_. Blank waits for keys and account setup.'},
     {key:'googleCustomerId',label:'Google customer ID',optional:true,hint:'Dashes are removed when saved.'},
     {key:'googleLoginCustomerId',label:'Google login customer ID (manager, optional)',optional:true},
+    number('googleNetworkSpendFloorGbp', 'Google network spend floor (£, 7 days)', { max: 100_000, hint: 'Each campaign and network slice must reach this spend before its ROAS is judged.' }),
+    number('googleNetworkRoasFloor', 'Google network ROAS floor', { max: 1_000, hint: 'A qualifying slice below this return raises a Watch item. YouTube share alone is information.' }),
     {key:'tiktokAdvertiserId',label:'TikTok advertiser ID',optional:true},
   ], values)}</div>${campaignOwners(metaCampaigns, campaignSync, values)}${collection('metaSources', 'Meta sources', [{key:'source',label:'Last-visit source'}], values.metaSources, 'Matched case-insensitively alongside fbclid. Settle this list from the live Meta over-credit detail.')}${actorPicker(values, actorChoices)}${creativeControls}${collection('expectedGoogleCampaigns', 'Google campaign', [
     { key: 'campaignId', label: 'Campaign ID' },

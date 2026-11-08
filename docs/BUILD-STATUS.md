@@ -4,6 +4,7 @@ Updated in every pull request.
 
 | Stage | What | Code | Keys in Replit | Live check ("Done when") |
 |---|---|---|---|---|
+| Build 8 Nov · E | Remaining Google Ads reads, risks, live dials and GMT reconciliation | built on `build-8-nov`; additive migrations 055–056 | existing Google OAuth keys; no new key | Check seven GMT days on Sources, UK rebucketing, expected campaigns, network slices and live/sample dial placement |
 | Build 8 Nov · D | Monthly scorecard, growth comparison and daily product stock | built on `build-8-nov`; additive migration 054 | none | Check closed-month/market totals and new daily stock rows; historical stock remains unknown |
 | Build 8 Nov · C | Inbound-stock Settings and UK-day stock gaps in Watch | built on `build-8-nov`; additive migration 053 | none | Fill inboundStock from shipment records, check product matches and dated/assumed arrivals |
 | Build 8 Nov · B | First-order coverage/retries, owner attribution, actor picker and creative latency | built on `build-8-nov`; additive migration 052 | none | Check resolved flags, owner estimates, actor matches and creative-sheet timing after Republish |
@@ -75,7 +76,7 @@ Updated in every pull request.
 | 2 fix | 16 Oct action-history, media-facts and ThruPlay backfills; flat budgets, set names, missing-purchase copy and ordered days | built on `fix-oct-16` after PR #32; migrations 027–030 | no new keys; local per-set flat-budget tick | next pass repairs recent actions and video history; media facts progress and unavailable reasons appear in Sources; Claude checks after Republish |
 | 2 fix | Creative passes run detached so long catalogues never starve hero spend | built on `fix-creative-blocking-spend` after catalogue timeout PR #26; one pass at a time, shutdown waits; no migration | no new keys or Settings | after Publish, Meta spend becomes fresh while the creative catalogue keeps growing |
 | 2 fix | Creative scan omits the deprecated temperature parameter rejected by the model | built on `scan-no-temperature`; text-only response parsing retained; no migration | no new Settings or secrets | after Publish, confirm an eligible scan completes without the temperature-related HTTP 400 |
-| 3 | Google Ads | spend built; conversions, ad-set dials and kill/step rules remain | needs three existing Google keys + account Settings | spend comparison pending |
+| 3 | Google Ads | spend, campaigns, networks, conversions, changes and read-only needs built | three existing Google keys + account Settings | live GMT/UK spend and conversion comparison pending |
 | 4 | Mailchimp | not started | no | no |
 | 5 | Workflow side (Handover) | not started | no | no |
 | 6 | Costs, uploads, planning | not started | no | no |
@@ -83,7 +84,7 @@ Updated in every pull request.
 
 ## Next step
 
-Review **build-8-nov**, based on the merged Home fold change. One PR contains separately validated lettered parts, as explicitly requested for this task. Part A tightens the hero-grid budgets to 500px at 390×844 and 410px at 1280×960 while preserving all existing section/count/control limits. Part B adds coverage-aware first-order CAC, owner estimates, actor choices and faster creative reads. Part C adds next-arrival stock gaps through the existing Watch list. Part D adds the separate monthly scorecard and daily product stock history. Parts E–G remain in progress and will be recorded here as they are completed or explicitly deferred.
+Review **build-8-nov**, based on the merged Home fold change. One PR contains separately validated lettered parts, as explicitly requested for this task. Part A tightens the hero-grid budgets to 500px at 390×844 and 410px at 1280×960 while preserving all existing section/count/control limits. Part B adds coverage-aware first-order CAC, owner estimates, actor choices and faster creative reads. Part C adds next-arrival stock gaps through the existing Watch list. Part D adds the separate monthly scorecard and daily product stock history. Part E adds the remaining Google reads and source reconciliation. Parts F–G remain in progress and will be recorded here as they are completed or explicitly deferred.
 
 After merge: run `npm run migrate`, Republish, supply live Settings values, and perform source and phone/desktop acceptance checks. Live source data is not available to the builder. The only requested new secret is `MAILCHIMP_API_KEY` when that source is wanted live; it is never entered in this repository.
 

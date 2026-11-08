@@ -3,6 +3,8 @@ import test from 'node:test';
 import type { SourceHealth } from '../src/sources.js';
 import { auditPage, sourceHealthPage, loginPage } from '../src/views.js';
 import type { ShopifyDashboard } from '../src/shopify/dashboard.js';
+import { googleHealth } from '../src/google-ads/health.js';
+import { googleJobKinds, type GoogleFacts } from '../src/google-ads/model.js';
 
 function source(overrides: Partial<SourceHealth> = {}): SourceHealth {
   return {
@@ -13,6 +15,31 @@ function source(overrides: Partial<SourceHealth> = {}): SourceHealth {
     ...overrides,
   };
 }
+
+test('Google row expands its read health and seven GMT days, naming differences and escaping errors', () => {
+  const now = new Date('2026-10-27T12:00:00Z');
+  const facts: GoogleFacts = { mode: 'live', accountId: '9900000000', currency: 'GBP', campaigns: [], networks: [], conversions: [], changes: [],
+    hours: [{campaignId: '990001', day: '2026-10-25', hour: 1, spendMicros: '3200000', conversionValueMicros: '0', conversions: 0}],
+    daily: [{day: '2026-10-25', spendMicros: '3100000'}],
+    jobs: googleJobKinds.map(kind => ({kind, lastAttemptAt: now.toISOString(), lastSuccessAt: now.toISOString(),
+      error: kind === 'changes' ? '<script>example</script>' : null, failures: kind === 'changes' ? 1 : 0,
+      currency: 'GBP', coverage: {from: '2026-10-20', to: '2026-10-26', basis: 'gmt'}})),
+    quota: {day: '2026-10-27', operations: 200, historyOperations: 16, limit: 200, error: 'daily_cap'},
+  };
+  const html = sourceHealthPage([source({source: 'google-ads', name: 'Google Ads', mode: 'live'})], undefined, undefined, undefined, {
+    summary: 'Google live; other sources labelled separately.', google: googleHealth(facts, now), checkedAt: now.toISOString(),
+    shopify: {mode: 'sample', checks: [], stock: [], needs: [], detail: {}, live: {lastOrder: '', dispatch: '', carts: ''}},
+  });
+  const row = html.match(/<th scope="row">Google Ads<\/th>([\s\S]*?)<\/tr>/)![1]!;
+  assert.match(row, /data-google-read-health/);
+  assert.match(row, /reads paused by the operation budget/);
+  assert.match(row, /200 of 200 operations/);
+  assert.match(row, /&lt;script&gt;example&lt;\/script&gt;/);
+  assert.doesNotMatch(row, /<script>example/);
+  assert.equal((row.match(/<li>GMT 2026-/g) ?? []).length, 7);
+  assert.match(row, /GMT 2026-10-25 · hours summed GBP 3\.20 · Google daily GBP 3\.10 · hours minus Google daily: \+GBP 0\.100000 · difference/);
+  assert.match(row, /7 GMT days 2026-10-20–2026-10-26/);
+});
 
 test('the shared head and page wrappers reserve the safe area on sign-in, Source health and Audit', () => {
   for (const html of [loginPage(false), sourceHealthPage([source()]), auditPage([])]) {

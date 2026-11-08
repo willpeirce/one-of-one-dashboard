@@ -1,0 +1,10 @@
+[
+  {"results":[
+    {"segments":{"date":"2026-10-20"},"metrics":{"costMicros":"4000000"}},
+    {"segments":{"date":"2026-10-21"},"metrics":{"costMicros":"16000000"}},
+    {"segments":{"date":"2026-10-23"},"metrics":{"costMicros":"10000000"}},
+    {"segments":{"date":"2026-10-24"},"metrics":{"costMicros":"4500011"}},
+    {"segments":{"date":"2026-10-25"},"metrics":{"costMicros":"12499989"}},
+    {"segments":{"date":"2026-10-26"},"metrics":{"costMicros":"5000000"}}
+  ]}
+]

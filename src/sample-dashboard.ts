@@ -805,41 +805,31 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       ],
       "mode": "sample",
       "value": {
-        "v": 2.3,
+        "v": 7.4,
         "min": 0,
-        "max": 6,
-        "t": "2.3%",
-        "l": "Google junk share",
-        "s": "bar 2.5%",
+        "max": 100,
+        "t": "7.4%",
+        "l": "YouTube share",
+        "s": "Sample information only",
         "z": [
           [
             0,
-            2.25,
-            "good"
-          ],
-          [
-            2.25,
-            2.5,
-            "warn"
-          ],
-          [
-            2.5,
-            6,
-            "decide"
+            100,
+            "info"
           ]
         ],
         "d": {
-          "why": "YouTube, Gmail and Discover placements took 2.3% of Google spend. Display 0.0%.",
-          "rule": "Amber from 2.25%. Over 2.5% is a decision: add the placement exclusions.",
-          "src": "Google Ads, cost by network type, yesterday",
+          "why": "Invented example: explicit YouTube networks account for 7.4% of Google spend. Mixed and unrecognised networks remain separate.",
+          "rule": "Share is information only. Live Watch rules use each campaign and network slice’s spend and ROAS.",
+          "src": "Google Ads sample network report",
           "hist": [
-            1.9,
-            2.4,
-            2.1,
-            2.6,
-            2.2,
-            2.0,
-            2.3
+            6.2,
+            6.8,
+            7.1,
+            7.8,
+            7.5,
+            7.0,
+            7.4
           ]
         }
       }
@@ -852,44 +842,29 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       "mode": "sample",
       "value": {
         "v": 105,
-        "min": 50,
+        "min": 0,
         "max": 160,
         "t": "105%",
         "l": "Google spend vs plan",
-        "s": "£94.52 of £90 · row 3",
+        "s": "£126 of £120 · invented budget plan",
         "z": [
           [
-            50,
-            80,
-            "warn"
-          ],
-          [
-            80,
-            110,
-            "good"
-          ],
-          [
-            110,
-            125,
-            "warn"
-          ],
-          [
-            125,
+            0,
             160,
-            "decide"
+            "info"
           ]
         ],
         "d": {
-          "why": "£94.52 against the £90 agreed. The new £165 budget only applies from today; if Will accepts it on row 3, this dial re-bases.",
-          "rule": "Green 80-110% of the agreed budget, amber to 125%, then a decision.",
-          "src": "Google Ads spend ÷ agreed daily budget",
+          "why": "Invented example: £126 against a £120 daily budget plan. Live data uses the sum of currently enabled campaign budgets, labelled as an assumption.",
+          "rule": "Budget comparison is information; Pulse never changes a budget.",
+          "src": "Google Ads sample spend and enabled daily budgets",
           "hist": [
-            101,
+            96,
             98,
-            104,
-            97,
+            101,
             103,
             99,
+            102,
             105
           ]
         }
@@ -902,12 +877,12 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       ],
       "mode": "sample",
       "value": {
-        "v": 3.08,
+        "v": 2.84,
         "min": 0,
         "max": 6,
-        "t": "3.08",
+        "t": "2.84×",
         "l": "Google ROAS 7d",
-        "s": "set a bar",
+        "s": "Invented Google claim",
         "z": [
           [
             0,
@@ -916,17 +891,17 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
           ]
         ],
         "d": {
-          "why": "Google conversion value ÷ cost, 7 days. No bar yet: Will has not set a Google ROAS target.",
-          "rule": "Grey until a bar is set.",
-          "src": "Google Ads, 7 days",
+          "why": "Invented example of Google conversion value divided by cost across seven complete UK days. Live Google conversions sit beside Shopify last-visit Google paid orders.",
+          "rule": "An account return is information. Per-network Watch rules use the Settings spend and ROAS floors.",
+          "src": "Google Ads sample seven-day report",
           "hist": [
-            2.9,
-            3.1,
-            3.3,
+            2.4,
+            2.6,
             2.8,
+            2.7,
+            2.9,
             3.0,
-            3.2,
-            3.08
+            2.84
           ]
         }
       }
@@ -951,9 +926,9 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       ],
       "mode": "sample",
       "value": {
-        "why": "No changes made to our Meta account by anyone else in the last 24 h. Google: 2 changes by the freelancer (row 3).",
-        "rule": "Any change not made by us or logged in HQ is a decision.",
-        "src": "Meta activity log, Google change history"
+        "why": "Invented example: one Meta change outside the configured actor list and three Google changes by all actors. Google actor identity is not read.",
+        "rule": "Live counts need both activity feeds. Google changes never claim to identify who made them.",
+        "src": "Meta and Google sample change reports"
       }
     },
     "w029": {
@@ -2971,7 +2946,7 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       "mode": "sample"
     },
     "t0254": {
-      "value": "Changes not by us",
+      "value": "Account changes",
       "source": [
         "meta",
         "google-ads"
@@ -2979,7 +2954,7 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       "mode": "sample"
     },
     "t0255": {
-      "value": "0 · 2",
+      "value": "1 · 3",
       "source": [
         "meta",
         "google-ads"
@@ -2987,7 +2962,7 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       "mode": "sample"
     },
     "t0256": {
-      "value": "Meta · Google",
+      "value": "Meta not ours · Google all",
       "source": [
         "meta",
         "google-ads"

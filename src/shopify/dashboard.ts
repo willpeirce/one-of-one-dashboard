@@ -1,5 +1,5 @@
 import { attributionDial } from '../ad-spend/attribution.js';
-import { metaRisks } from '../ad-spend/risks.js';
+import { googleRisks, metaRisks } from '../ad-spend/risks.js';
 import { spendNeeds, type AdHeroInputs } from '../ad-spend/metrics.js';
 import type { Database } from '../db.js';
 import { addDays, ukToday } from '../hero-range.js';
@@ -149,7 +149,8 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
   for (const row of stock) if (row.available !== null && row.required !== null && row.available < row.required) needs.push({ source: 'shopify', id: `attach:${row.productId}:${row.locationId}`, state: 'warn', title: row.name, why: `${formatNumber(row.available)} available; ${formatNumber(Math.ceil(row.required))} needed at the measured attach rate for remaining kits. Source-owned stock only; TikTok gift stock awaits its source.`, link: `https://admin.shopify.com/store/${appConfig.shopify.storeDomain.split('.')[0]}/products/${row.productId.split('/').at(-1)}` });
   for (const n of facts.noticeDetails) if (['reports_unavailable', 'address_unavailable'].includes(n.kind)) needs.push({ source: 'shopify', id: n.source_id, state: 'warn', title: n.kind === 'reports_unavailable' ? 'Shopify reports unavailable' : 'Address access unavailable', why: n.kind === 'reports_unavailable' ? 'ShopifyQL was denied. Sessions may be daily routine data or unavailable; older order detail needs read_all_orders. Check granted Level 2 access.' : 'Order markets use currency/warehouse fallback. Check the app’s address permission; no personal address is stored.', link: `https://admin.shopify.com/store/${appConfig.shopify.storeDomain.split('.')[0]}/settings/apps` });
   needs.push(...stockGapNeeds(stock, settings.inboundStock, settings.supplierLeadTimes, today, facts.mode));
-  if(adInputs)needs.push(...spendNeeds(adInputs.spend,settings,today,now),...metaRisks(adInputs.spend,preparedRows,adInputs.activity??[],settings,today));
+  if(adInputs)needs.push(...spendNeeds(adInputs.spend,settings,today,now),...metaRisks(adInputs.spend,preparedRows,adInputs.activity??[],settings,today),
+    ...(facts.mode === 'live' && adInputs.google ? googleRisks(adInputs.google,settings,ukToday(adInputs.googleNow ?? now),adInputs.spend) : []));
   needs.sort((a, b) => Number(b.state === 'alarm') - Number(a.state === 'alarm'));
   // Direct Judge.me and advertising examples remain explicitly separate until their parts land.
   snapshot.banner = `${stamp}. Ad spend uses separately labelled source connections; reviews and other stages: sample data; fulfilment uses separately labelled J&J uploads.`;

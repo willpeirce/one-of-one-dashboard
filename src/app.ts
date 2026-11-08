@@ -41,6 +41,11 @@ import { seedCreativeSample } from './creatives/seed.js';
 import { creativeFeatureFlags } from './creatives/config.js';
 import { readScanHealth } from './creatives/scan-health.js';
 import { dailyRows } from './shopify/metrics.js';
+import { GoogleWorker } from './google-ads/worker.js';
+import { readGoogleFacts } from './google-ads/store.js';
+import { googleHealth } from './google-ads/health.js';
+import { applyGoogleDashboard } from './google-ads/dashboard.js';
+import { googleShopifyContext } from './google-ads/shopify-coverage.js';
 
 declare module 'fastify' {
   interface FastifyInstance { startBackgroundWork(): Promise<void> }
@@ -68,6 +73,8 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   }
   await seedFulfilment(db, shopify.mode, sourceNow());
   const ads=new SpendWorker(db,sourceEnv,adOptions);
+  const googleNow = () => adOptions.clock?.() ?? new Date();
+  const google = new GoogleWorker(db, sourceEnv, settings => ads.googleReader(settings), { clock: adOptions.clock });
   const creativeNow = () => adOptions.clock?.() ?? (sourceEnv.META_ACCESS_TOKEN ? new Date() : sourceNow());
   async function creativeSourceHealth(settings: Awaited<ReturnType<typeof readSettings>>['values']) {
     const live = !!sourceEnv.META_ACCESS_TOKEN && !!settings.metaAdAccountId;
@@ -92,6 +99,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     if (startupRun) return startupRun;
     shopify.start();
     ads.start();
+    google.start();
     reviews.start();
     void shopify.startOrderCleanup();
     observationTimer = setInterval(() => { void observe(); }, 60_000);
@@ -111,6 +119,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   }
   app.addHook('onClose', async () => {
     if (observationTimer) clearInterval(observationTimer);
+    await google.stop();
     await ads.stop();
     await reviews.stop();
     await startupRun;
@@ -159,8 +168,10 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     return reply.type('text/html; charset=utf-8').send(loginPage(Boolean(config.setupCode)));
   });
   async function heroInputs(facts:Awaited<ReturnType<typeof shopify.store.facts>>,settings:Awaited<ReturnType<typeof readSettings>>['values']) {
-    const now=sourceNow(), today=ukToday(now);
-    return {activity:shopify.mode==='live' ? (await readActivity(db,settings.metaAdAccountId,settings,now)).events : [],spend:await spendFacts(db,settings,sourceEnv,shopify.mode,dataset(facts,today).min,today,now),costs:await shopify.store.costHistory(),estimates:await readEstimates(db,shopify.mode),now};
+    const now=sourceNow(), today=ukToday(now), googleAt=googleNow();
+    const metaLive = !!settings.metaAdAccountId && getSourceStates(sourceEnv).some(source => source.source === 'meta' && source.mode === 'live');
+    const metaActivity = metaLive ? await readActivity(db,settings.metaAdAccountId,settings,creativeNow()) : undefined;
+    return {activity:shopify.mode==='live' ? metaActivity?.events ?? [] : [],metaActivity,googleNow:googleAt,google:await readGoogleFacts(db,settings,sourceEnv,googleAt),spend:await spendFacts(db,settings,sourceEnv,shopify.mode,dataset(facts,today).min,today,now),costs:await shopify.store.costHistory(),estimates:await readEstimates(db,shopify.mode),now};
   }
   let unconfirmedCampaigns: { scope: string; count: number } | undefined;
   async function snapshot() {
@@ -169,12 +180,13 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     const facts=await shopify.store.facts(sourceNow());
     const adInputs=await heroInputs(facts,settings.values);
     const result = await applyShopifyDashboard({ ...getSampleDashboard(settings.values), generatedAt: new Date().toISOString(), sourceHealth }, db, facts, settings.values, sourceHealth, sourceNow(), adInputs, shopifyOptions.clock?.() ?? new Date());
+    applyGoogleDashboard(result, adInputs.google, googleShopifyContext(facts,adInputs.now), settings.values, adInputs.metaActivity, adInputs.googleNow, adInputs.spend);
     // Radar describes actual ad connections even when Shopify numbers use sample data.
     result.adSources = await spendHealth(db, sourceEnv, settings.values, adOptions.clock?.() ?? new Date());
     result.reviews = reviews.mode === 'sample' ? sampleReviews() : await readReviews(db, reviewOptions.clock?.() ?? new Date());
     result.adSets = await readAdSetsView(db, settings.values, sourceEnv, creativeNow());
     result.creatives = await readCreativeView(db, settings.values, sourceEnv, creativeNow());
-    result.banner = result.banner?.replace('reviews and other stages: sample data', `reviews: ${reviews.mode === 'sample' ? 'sample data' : 'live Judge.me'}; other stages: sample data`);
+    result.banner = result.banner?.replace('reviews and other stages: sample data', `reviews: ${reviews.mode === 'sample' ? 'sample data' : 'live Judge.me'}; Google: ${adInputs.google.mode === 'sample' ? 'sample data' : 'supported tiles use live reads, remaining examples stay labelled sample'}; other stages: sample data`);
     const campaignScope = JSON.stringify([settings.values.metaAdAccountId, getSourceStates(sourceEnv).find(source => source.source === 'meta')!.mode]);
     try {
       unconfirmedCampaigns = { scope: campaignScope, count: (await readMetaCampaigns(db, settings.values, sourceEnv)).filter(campaign => !campaign.confirmed).length };
@@ -215,9 +227,11 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   });
   app.get('/sources', async (request, reply) => {
     if (!await auth.session(request)) return reply.redirect('/login');
+    const googleAt = googleNow();
     const [dashboard, imports, costs, settings] = await Promise.all([snapshot(), shopify.store.summary(sourceNow()), shopify.store.costSummary(), readSettings(db)]);
     return reply.type('text/html; charset=utf-8').send(sourceHealthPage(dashboard.sourceHealth ?? [], imports, costs, await spendHealth(db, sourceEnv, settings.values, sourceNow()), {
       channelExclusions: await shopify.store.channelExclusions(),
+      google: googleHealth(await readGoogleFacts(db,settings.values,sourceEnv,googleAt),googleAt),
       reviewHealth: reviews.mode === 'live' ? await readReviewHealth(db) : {read:dashboard.reviews!.rows.length,waiting:dashboard.reviews!.rows.length,flagged:dashboard.reviews!.rows.filter(r=>r.flagged).length,last:null,mode:'sample'},
       summary: dashboard.banner ?? '', shopify: dashboard.shopify!, checkedAt: sourceNow().toISOString(), adSets: dashboard.adSets, campaigns: await readCampaignSync(db, settings.values, sourceEnv), creatives: await creativeHealth(db, settings.values, sourceEnv, creativeNow()),
     }));

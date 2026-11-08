@@ -23,6 +23,7 @@ import { metricSign } from '../src/metric-sign.js';
 import { checkCreatives } from './browser-creatives.js';
 import { checkCreativeSettings } from './browser-creative-settings.js';
 import { checkActorSettings } from './browser-actor-settings.js';
+import { checkGoogleWidgets } from './browser-google.js';
 import { checkInboundSettings } from './browser-inbound-settings.js';
 
 let step = 'read test configuration';
@@ -1784,6 +1785,8 @@ async function run(): Promise<void> {
 
     step = 'check compact Home budgets and re-rendered actions on the dense fixture';
     await checkHomeCompact(context);
+    step = 'check Google tiles, independent live promotion and market choices';
+    await checkGoogleWidgets(context);
 
     step = 'check creative pictures, playing media, windows and gallery filters at phone and desktop widths';
     await checkCreatives(context);

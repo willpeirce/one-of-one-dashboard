@@ -63,6 +63,8 @@ export interface Settings {
   ourActors: { actorId: string }[];
   metaOwners: { campaignId: string; owner: 'ours' | 'freelancer'; test?: boolean }[];
   expectedGoogleCampaigns: { campaignId: string }[];
+  googleNetworkSpendFloorGbp: number;
+  googleNetworkRoasFloor: number;
   blendedMetaTripwireGbp: number;
   creatorRules: {
     assetCapGbp: number;
@@ -152,6 +154,8 @@ export function defaultSettings(): Settings {
     freelancerLabel: 'Freelancer',
     metaAdAccountId: '', googleCustomerId: '', googleLoginCustomerId: '', tiktokAdvertiserId: '',
     metaSources: ['facebook','fb','instagram','ig','meta','an','msg'].map(source=>({source})), ourActors: [], metaOwners: [], expectedGoogleCampaigns: [],
+    // Invented starting rules; live values are set after review.
+    googleNetworkSpendFloorGbp: 40, googleNetworkRoasFloor: 1.2,
     blendedMetaTripwireGbp: 28,
     creatorRules: {
       assetCapGbp: 200, minimumUsageMonths: 3, pushPriceBeforeExtendingUsage: true,
@@ -353,6 +357,8 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
     })(),
     googleCustomerId: accountId(value.googleCustomerId, 'googleCustomerId', true),
     googleLoginCustomerId: accountId(value.googleLoginCustomerId, 'googleLoginCustomerId', true),
+    googleNetworkSpendFloorGbp: requiredNumber(value.googleNetworkSpendFloorGbp, 'googleNetworkSpendFloorGbp', 100_000),
+    googleNetworkRoasFloor: requiredNumber(value.googleNetworkRoasFloor, 'googleNetworkRoasFloor', 1_000),
     tiktokAdvertiserId: accountId(value.tiktokAdvertiserId, 'tiktokAdvertiserId'),
     metaSources: list(value.metaSources, 'metaSources', (row,path) => {
       const parsed=object(row,['source'],path);
@@ -447,6 +453,8 @@ function storedSettings(input: unknown): Settings {
     ourActors: defaults.ourActors,
     freelancerLabel: defaults.freelancerLabel,
     inboundStock: defaults.inboundStock,
+    googleNetworkSpendFloorGbp: defaults.googleNetworkSpendFloorGbp,
+    googleNetworkRoasFloor: defaults.googleNetworkRoasFloor,
     ...input as Record<string, unknown>,
   };
   if (!Object.hasOwn(stored, 'overheads') && !Object.hasOwn(stored, 'monthlyOverheadsGbp')) return validateSettings(stored);

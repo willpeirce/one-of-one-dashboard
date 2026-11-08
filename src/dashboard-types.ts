@@ -138,7 +138,7 @@ export type DashboardWidget = SampleProvenance & (
   | { kind: 'dial'; value: DialModel; markets?: Record<HeroMarket,DialModel> }
   | { kind: 'series-pace'; value: import('./series-pace/presentation.js').SeriesPaceCard }
   | { kind: 'ring'; value: RingModel }
-  | { kind: 'detail'; value: Detail }
+  | { kind: 'detail'; value: Detail; state?: State }
   | { kind: 'sheet'; value: SheetModel }
   | { kind: 'test'; value: TestModel }
 );

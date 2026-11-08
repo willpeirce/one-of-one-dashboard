@@ -16,6 +16,9 @@ import { isTikTok } from '../shopify/order-market.js';
 import { firstOrderCoverage, firstOrderCoverageRule } from '../shopify/first-order-coverage.js';
 import { compareSpendAndSales } from '../scorecard/growth.js';
 export interface AdHeroInputs {
+  google?: import('../google-ads/model.js').GoogleFacts;
+  googleNow?: Date;
+  metaActivity?: import('../meta-adsets/activity.js').ActivityView;
   activity?: import('../meta-adsets/activity.js').MetaActivity[];
   spend: SpendFacts;
   costs: ShopifyCost[];
@@ -414,7 +417,7 @@ export function spendNeeds(facts: SpendFacts, settings: Settings, today: string,
         '/sources');
   }
   for (const row of facts.rows.filter(row => row.day >= addDays(today, -13) && row.day <= today)) {
-    if (row.market === 'unknown')
+    if (spendMarket(row) === 'unknown')
       add(
         row.source, `ad-market:${row.source}:${row.campaignId}`,
         `${adNames[row.source]} campaign market unknown`,

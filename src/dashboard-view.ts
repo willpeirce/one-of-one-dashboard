@@ -63,7 +63,7 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
     content = content.replace(/data-model-id="(w029|w030|w031|w032|w033|w034|w035|w036|w037|w039|w046|w047|w048)"/g, `$& data-ingested-shopify`);
     content = content.replace(/<button\b[^>]*data-model-id="([^"]+)"[^>]*>/g, (tag, key: string) => {
       const widget = snapshot.widgets[key];
-      return widget ? tag.replace(/data-mode="[^"]+"/, `data-mode="${widget.mode}"`).replace(/data-source="[^"]+"/, `data-source="${widget.source.join(' ')}"`) : tag;
+      return widget ? tag.replace(/data-mode="[^"]+"/, `data-mode="${widget.mode}"`).replace(/data-source="[^"]+"/, `data-source="${widget.source.join(' ')}"`).replace(/data-state="[^"]+"/, `data-state="${widget.kind === 'detail' && widget.state ? widget.state : /data-state="([^"]+)"/.exec(tag)?.[1] ?? 'info'}"`) : tag;
     });
     content = content.replace(/<button\b[^>]*data-k="(net|orders|aov|cac|cr|spend|roas|margin|contribution|profit)"[^>]*>/g, (tag, key: 'net'|'orders'|'aov'|'cac'|'cr'|'spend'|'roas'|'margin'|'contribution'|'profit') => tag.replace(/data-mode="[^"]+"/, `data-mode="${snapshot.hero.today[key].mode}"`).replace(/data-source="[^"]+"/, `data-source="${snapshot.hero.today[key].source.join(' ')}"`).replace(/data-state="[^"]+"/, `data-state="${snapshot.hero.today[key].state}"`));
     // Label surviving mockup examples individually when a live source sits beside them.

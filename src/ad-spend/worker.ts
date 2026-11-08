@@ -1,3 +1,5 @@
+import { consumeGoogleOperation } from '../google-ads/quota.js';
+import { GoogleQuotaError, type GoogleReader } from '../google-ads/model.js';
 import { syncActivity } from '../meta-adsets/activity.js';
 import { backfillMetaSpend } from './backfill.js';
 import { readAdSets, saveAdSets } from '../meta-adsets/catalogue.js';
@@ -6,7 +8,7 @@ import { addDays, ukToday } from '../hero-range.js';
 import { readSettings, type Settings } from '../settings.js';
 import { getSourceStates } from '../sources.js';
 import { AdError, adErrorCode, accountFor, adSources, type AdSource } from './model.js';
-import { liveReader, MetaSpend, type SpendReader } from './clients.js';
+import { liveReader, MetaSpend, GoogleSpend, type SpendReader } from './clients.js';
 import { MetaCreativeClient } from '../creatives/client.js';
 import { CreativeWorker } from '../creatives/worker.js';
 import type { CreativeReader } from '../creatives/model.js';
@@ -17,7 +19,7 @@ export const SPEND_POLL_INTERVAL_MS = 30 * 60_000;
 export const SPEND_STALE_AFTER_MS = 3 * SPEND_POLL_INTERVAL_MS;
 export interface SpendWorkerOptions extends AdTransportOptions {
   clock?: () => Date;
-  readers?: Partial<Record<AdSource, SpendReader>>;
+  readers?: Partial<Record<AdSource, SpendReader & Partial<GoogleReader>>>;
   creativeReader?: CreativeReader;
   creativeScan?: Pick<ScanOptions, 'fetch' | 'clock' | 'sleep'>;
 }
@@ -98,6 +100,25 @@ export class SpendWorker {
     this.runs.set(source, run);
     return run;
   }
+  private readerFor(source: AdSource, account: string, settings: Settings): SpendReader {
+    const scope = JSON.stringify([source, account, settings.googleLoginCustomerId]);
+    const reader = this.options.readers?.[source] ?? this.readers.get(scope) ?? liveReader(source, this.env, {
+      ...this.options,
+      now: this.options.now ?? (() => (this.options.clock?.() ?? new Date()).getTime()),
+      log: this.options.log ?? ((entry) => console.info(adRequestLogLine(entry))),
+      beforeGoogleRead: context => consumeGoogleOperation(this.db, account, this.options.clock?.() ?? new Date(), context),
+    });
+    this.readers.set(scope, reader);
+    return reader;
+  }
+  /** The report worker borrows this exact cached read-only client and its durable counter. */
+  async googleReader(settings: Settings): Promise<GoogleReader | null> {
+    if (!settings.googleCustomerId || getSourceStates(this.env).find(s => s.source === 'google-ads')!.mode !== 'live') return null;
+    await this.db.query("INSERT INTO pulse.ad_spend_jobs(source,account_id) VALUES('google-ads',$1) ON CONFLICT DO NOTHING", [settings.googleCustomerId]);
+    const reader = this.readerFor('google-ads', settings.googleCustomerId, settings) as SpendReader & Partial<GoogleReader>;
+    return ['readGoogleCampaigns','readGoogleNetworks','readGoogleConversions','readGoogleChanges','readGoogleDaily']
+      .every(key => typeof reader[key as keyof GoogleReader] === 'function') ? reader as GoogleReader : null;
+  }
   private async run(source: AdSource): Promise<void> {
     // Spend runs first and alone sets source health and spend rows.
     // Every later read (campaigns or future extras) needs its own try/catch:
@@ -124,23 +145,7 @@ export class SpendWorker {
       (j) => j.source === source && j.account_id === account,
     )!;
     const readerScope = JSON.stringify([source, account, settings.googleLoginCustomerId]);
-    const reader =
-      this.options.readers?.[source] ??
-      this.readers.get(readerScope) ??
-      liveReader(source, this.env, {
-        ...this.options,
-        log:
-          this.options.log ??
-          ((entry) => console.info(adRequestLogLine(entry))),
-        beforeGoogleRead: async () => {
-          const quota = await this.db.query<{ operations: number }>(
-            `UPDATE pulse.ad_spend_jobs SET operations=CASE WHEN operations_day=$3::date THEN operations+1 ELSE 1 END,operations_day=$3 WHERE source=$1 AND account_id=$2 AND (operations_day IS DISTINCT FROM $3::date OR operations<200) RETURNING operations`,
-            [source, account, (this.options.clock?.() ?? new Date()).toISOString().slice(0, 10)],
-          );
-          if (!quota.rows.length) throw new AdError('rate_limit');
-        },
-      });
-    this.readers.set(readerScope, reader);
+    const reader = this.readerFor(source, account, settings);
     if (reader instanceof MetaSpend) reader.setTargetCountries(await readAdSets(this.db,account,settings));
     if (job.last_poll_at && now.getTime() - new Date(job.last_poll_at).getTime() < SPEND_POLL_INTERVAL_MS) {
       // A fresh migration can leave repair work due even when spend polled just before restart.
@@ -174,16 +179,18 @@ export class SpendWorker {
         chunk++
       ) {
         const end = [addDays(cursor, 13), addDays(today, -2)].sort()[0]!;
-        await saveSpend(
-          this.db,
-          source,
-          account,
-          cursor,
-          end,
-          await reader.read(account, cursor, end, settings, now),
-          now,
-          addDays(end, 1),
-        );
+        let historical;
+        try {
+          historical = reader instanceof GoogleSpend ? await reader.readHistory(account, cursor, end, settings)
+            : await reader.read(account, cursor, end, settings, now);
+          await saveSpend(this.db, source, account, cursor, end, historical, now, addDays(end, 1));
+        } catch (error) {
+          if (source !== 'google-ads') throw error;
+          const code = error instanceof GoogleQuotaError ? error.reason : adErrorCode(error, source);
+          await this.db.query("UPDATE pulse.ad_spend_jobs SET backfill_error=$2 WHERE source='google-ads' AND account_id=$1", [account, code]).catch(() => {});
+          console.error(`Google spend history paused (${code}).`);
+          break; // Current spend was committed; history never changes its health.
+        }
         cursor = addDays(end, 1);
       }
       await this.db.query(

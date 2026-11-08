@@ -56,7 +56,7 @@ export function parseActivityRows(rows: readonly unknown[]): ActivityRead {
 export function activityObjectType(value: string): string {
   return value === 'CAMPAIGN' || value === 'AD_SET' ? 'Ad set' : value === 'CAMPAIGN_GROUP' ? 'Campaign' : value;
 }
-export interface ActivityView { hasRead: boolean; events: (MetaActivity & { ours: boolean; ukTime: string })[]; notOurs: number; line: string }
+export interface ActivityView { hasRead: boolean; lastRead: string | null; error: string | null; events: (MetaActivity & { ours: boolean; ukTime: string })[]; notOurs: number; line: string }
 export interface ActorChoices { hasRead: boolean; line: string; actors: { id: string; name: string }[] }
 /** Activity rows arrive newest first; a renamed actor keeps their latest label. */
 export function activityActors(activity: ActivityView): ActorChoices {
@@ -91,6 +91,6 @@ export async function readActivity(db: Database, account: string, settings: Sett
   ]);
   const events = rows.rows.map(({data})=>({...data,objectType:activityObjectType(data.objectType),ours:settings.ourActors.some(a=>a.actorId===data.actorId),ukTime:formatUkTime(data.time)}));
   const state=sync.rows[0];
-  return {hasRead:!!state?.last_success,events,notOurs:events.filter(e=>!e.ours).length,line:(state?.error ? `Meta activity: read refused · ${state.error}`
+  return {hasRead:!!state?.last_success,lastRead:state?.last_success ? new Date(state.last_success).toISOString() : null,error:state?.error ?? null,events,notOurs:events.filter(e=>!e.ours).length,line:(state?.error ? `Meta activity: read refused · ${state.error}`
     : state?.last_success ? `Meta activity: last read ${formatUkTime(state.last_success)}` : 'Meta activity: waiting for first read') + (state?.skipped_rows ? ` · ${state.skipped_rows} malformed ${state.skipped_rows === 1 ? 'event' : 'events'} skipped` : '')};
 }

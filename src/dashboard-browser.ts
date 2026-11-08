@@ -543,6 +543,7 @@ function updateSnapshot(next: DashboardSnapshot, initial = false): void {
     if (!widget) return;
     element.dataset.mode = widget.mode;
     element.dataset.source = widget.source.join(' ');
+    if (widget.mode === 'live') element.querySelector('.sample-label')?.remove();
     if (element.hasAttribute('data-ingested-shopify')) element.querySelector('.sample-label')?.remove();
     if (element.hasAttribute('data-ingested-shopify') && element.dataset.src !== 'stock') element.dataset.src = 'shopify';
     element.setAttribute(`data-${widget.kind}`, JSON.stringify(widget.value));
@@ -554,7 +555,7 @@ function updateSnapshot(next: DashboardSnapshot, initial = false): void {
       const data: SheetModel = widget.value;
       details.set(element, { state: data.state, title: data.title, detail: data, mode: widget.mode });
     } else if (widget.kind === 'detail') {
-      const state = element.hasAttribute('data-ingested-shopify') ? 'info' : (element.dataset.state ?? 'info') as State;
+      const state = widget.state ?? (element.hasAttribute('data-ingested-shopify') ? 'info' : (element.dataset.state ?? 'info') as State);
       element.dataset.state = state;
       details.set(element, { state, title: element.querySelector('.sl')?.textContent ?? '', detail: widget.value, mode: widget.mode });
       statChip(element, state);
@@ -693,7 +694,9 @@ function boot(): void {
     const element = target.closest<HTMLElement>('[data-series-market],.tile,.profit-line,.rt[data-sheet]');
     if (element && details.has(element)) { showDetail(element); return; }
     const market = target.closest<HTMLElement>('#market [data-market]')?.dataset.market;
-    if (market === 'all' || market === 'uk' || market === 'us') { selectedMarket = market; const attribution=snapshot.widgets.w019; const tile=document.querySelector<HTMLElement>('[data-model-id="w019"]'); if(tile&&attribution?.kind==='dial')renderDial(tile,attribution.markets?.[selectedMarket]??attribution.value,attribution.mode); if(snapshot.adSets)updateAdSets(snapshot.adSets,selectedMarket); renderHero(activeHero()); filterDials(); return; }
+    if (market === 'all' || market === 'uk' || market === 'us') { selectedMarket = market;
+      all('[data-model-id]').forEach(tile => { const widget=snapshot.widgets[tile.dataset.modelId ?? '']; if(widget?.kind==='dial' && widget.markets)renderDial(tile,widget.markets[selectedMarket],widget.mode); });
+      if(snapshot.adSets)updateAdSets(snapshot.adSets,selectedMarket); renderHero(activeHero()); filterDials(); return; }
     const period = target.closest<HTMLElement>('[data-period]')?.dataset.period;
     if (period === 'pick') { dates.open(); return; }
     if (period === 'today' || period === 'yday' || period === '7d' || period === '30d') { setPeriod(period); return; }

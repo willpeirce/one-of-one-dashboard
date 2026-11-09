@@ -4,6 +4,9 @@ Updated in every pull request.
 
 | Stage | What | Code | Keys in Replit | Live check ("Done when") |
 |---|---|---|---|---|
+| Build 9 Nov · C | Shared Next up strip and Coming up list, keyDates Settings, persisted Next/Undo/Put back and audited local state | built on `build-9-nov`; additive migration 061; unchanged Home budgets | none | Populate live keyDates after merge, then check persistence and phone/desktop display |
+| Build 9 Nov · B | Mailchimp sample/key/probe fixes, private table grants, source warnings, capital Google markets and campaign coverage, honest stock arrivals and inbound sheet rows | built on `build-9-nov`; additive migration 060 | none | Check Sources warnings, actual inbound rows and expected campaign coverage after merge |
+| Build 9 Nov · A | Capped webhook retries and skipped truncated creative scans; terminal failures remain visible without blocking Self-check | built on `build-9-nov`; additive migration 059 | none | Check terminal warnings and a changed creative after merge and Republish |
 | Build 8 Nov · G | Exact Playwright 1.65.0 pin and supported current Ubuntu runner | built on `build-8-nov`; CI timeout stays 15 minutes | none | Check the complete CI run before merge; revert the upgrade if it cannot pass |
 | Build 8 Nov · F | Mailchimp GET client, safe probe, audience worker/billing Watch and Shopify email pounds | standalone portion built on `build-8-nov`; migrations 057–058; per-flow ingestion deferred | optional MAILCHIMP_API_KEY | Run the probe after the key exists; check audience/Settings and separately attributed Shopify pounds |
 | Build 8 Nov · E | Remaining Google Ads reads, risks, live dials and GMT reconciliation | built on `build-8-nov`; additive migrations 055–056 | existing Google OAuth keys; no new key | Check seven GMT days on Sources, UK rebucketing, expected campaigns, network slices and live/sample dial placement |
@@ -86,17 +89,15 @@ Updated in every pull request.
 
 ## Next step
 
-Review **build-8-nov**, based on the merged Home fold change. One PR contains separately validated lettered parts, as explicitly requested for this task. Part A tightens the hero-grid budgets to 500px at 390×844 and 410px at 1280×960 while preserving all existing section/count/control limits. Part B adds coverage-aware first-order CAC, owner estimates, actor choices and faster creative reads. Part C adds next-arrival stock gaps through the existing Watch list. Part D adds the separate monthly scorecard and daily product stock history. Part E adds the remaining Google reads and source reconciliation. Part F adds the standalone Mailchimp client, probe, audience and billing warning, and clarifies Shopify email sales. Part G pins Playwright 1.65.0 and removes the Ubuntu 24.04 workaround; the upgraded package explicitly supports Ubuntu 26.04. Confirm CI before merge without extending the 15-minute test-job limit.
+Review **build-9-nov** as one pull request with separate lettered commits. Part A caps terminal webhook and creative-scan retries while retaining their warnings. Part B completes carries 31–34, 37, 39 and 42–45. Part C adds the shared Next up strip and gives Home's Coming up the same dates. All pinned Home counts, heights, controls and fold budgets remain in force.
 
-After merge: run `npm run migrate`, Republish, supply live Settings values, and perform source and phone/desktop acceptance checks. Live source data is not available to the builder. The only requested new secret is `MAILCHIMP_API_KEY` when that source is wanted live; it is never entered in this repository.
+After an approved merge, the deployment maintainer runs the Shell merge, `npm run migrate` (059–061), Republish, populates live `keyDates`, and runs live acceptance. The builder used invented fixtures, PostgreSQL and browser checks; no live source access or deployment was performed.
 
-**Not done or known gaps:** No live source validation or Mailchimp probe was possible without source credentials. Mailchimp's per-flow API coverage is unverified, so w043–w045 and the refill funnel remain labelled sample; only its w038 audience is ingested automatically, while w039 remains Shopify's view. Google w024 (YouTube share) and w026 (ROAS) need complete seven-day GBP reports and a stored campaign catalogue; w025 (spend versus plan) needs today's GBP report and fresh enabled daily budgets. Unsupported tiles stay labelled sample. The combined changes tile w028 needs healthy readings from both platforms covering the same 24 hours; w033 Shopify sessions is unchanged. Campaign-specific Shopify matches use campaign-ID UTMs; gclid-only or readable-name credit can remain unmatched by campaign while staying in the aggregate Shopify view. Daily product stock has no backfill; cost-per-order history deliberately remains “not enough data yet”.
+**Not done or known gaps:** No in-scope part is omitted. Sample dates move with the UK day, so a sample pass can reset when its date moves. Historical passed keys with no matching Settings row are ignored. The task-provided Mailchimp observation confirms flow-email reports answer, but matching them to the report page and automatic per-flow ingestion remain outside this build. Existing unavailable-source and historical-stock limitations continue to apply.
 
 ## Needs from Will
 
-- `MAILCHIMP_API_KEY` in Replit Secrets when Mailchimp should become live.
-
-Claude handles migrations, Republish, live Settings values (including inboundStock, expectedGoogleCampaigns and googleLoginCustomerId), the probe and live acceptance after merge.
+None for this build: no new keys or pre-merge Settings values are required. Live key dates and acceptance belong to the post-merge deployment handover.
 
 The existing source-mode boundaries and labelled samples remain. No new Home section, automatic budget change or source write is introduced. The spec, AGENTS.md, replit.md and key handling remain unchanged.
 

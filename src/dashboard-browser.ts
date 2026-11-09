@@ -730,7 +730,6 @@ function boot(): void {
     }
   });
   get('#livesets').addEventListener('click', () => showTemplate('#t-livesets', 'Sample live sets, ours'));
-  get('#alldates').addEventListener('click', () => showTemplate('#t-dates', 'Sample dates'));
   document.addEventListener('input', event => {
     const form = event.target instanceof Element ? event.target.closest<HTMLFormElement>('#series-target-form') : null;
     if (form) form.dataset.dirty = 'true';

@@ -4,6 +4,8 @@ import { calculateStockGaps, inboundProductWarning, stockGapNeeds, type InboundS
 import type { StockCover } from '../src/shopify/metrics.js';
 import { decisionsHtml } from '../src/decisions/view.js';
 import { ukToday } from '../src/hero-range.js';
+import { defaultSettings } from '../src/settings.js';
+import { settingsPage } from '../src/settings-view.js';
 
 const stock = (market: 'uk' | 'us' = 'uk', cover: number | null = 3): StockCover => ({
   product: 'Invented Starter', productId: 'invented-starter', locationId: `invented-${market}`, market,
@@ -16,20 +18,27 @@ const arrival = (expectedDate: string, market: 'uk' | 'us' = 'uk', quantity = 11
 test('stock gap matches product without case, separates markets and chooses the first future arrival', () => {
   const rows = calculateStockGaps([stock(), stock('us')], [arrival('2026-11-20'), arrival('2026-11-10'), arrival('2026-11-10', 'uk', 7), arrival('2026-11-12', 'us')], [], '2026-11-05');
   assert.equal(rows[0]!.coverDays, 3);
-  assert.deepEqual(rows[0]!.nextArrival, { date: '2026-11-10', quantity: 18, assumed: false });
+  assert.deepEqual(rows[0]!.nextArrival, { date: '2026-11-10', quantity: 18 });
   assert.equal(rows[0]!.daysToArrival, 5); assert.equal(rows[0]!.gapDays, 2);
-  assert.deepEqual(rows[1]!.nextArrival, { date: '2026-11-12', quantity: 11, assumed: false });
+  assert.deepEqual(rows[1]!.nextArrival, { date: '2026-11-12', quantity: 11 });
   assert.equal(rows[1]!.gapDays, 4);
 });
 
-test('past arrivals stop counting and the shortest non-null supplier lead time becomes an explicit assumption', () => {
+test('past arrivals stop counting; missing arrivals stay unknown and warn only below the shortest lead time', () => {
   const leadTimes = [{ days: null }, { days: 12 }, { days: 5 }];
   const rows = calculateStockGaps([stock()], [arrival('2026-11-04')], leadTimes, '2026-11-05');
-  assert.deepEqual(rows[0]!.nextArrival, { date: '2026-11-10', quantity: null, assumed: true });
+  assert.equal(rows[0]!.nextArrival, null);
+  assert.equal(rows[0]!.daysToArrival, null);
+  assert.equal(rows[0]!.leadTimeDays, 5);
   assert.equal(rows[0]!.gapDays, 2);
   const need = stockGapNeeds([stock()], [], leadTimes, '2026-11-05', 'live')[0]!;
-  assert.match(need.why, /Assumed arrival 2026-11-10: shortest supplier lead time, 5 days/);
-  assert.match(need.why, /no upcoming inbound row/);
+  assert.match(need.title, /no arrival listed/);
+  assert.match(need.why, /3\.0 days of cover\. No arrival listed; shortest supplier lead time is 5 days/);
+  assert.doesNotMatch(need.why, /\d{4}-\d{2}-\d{2}|assumed/i);
+  assert.deepEqual(need.figure, {value: '2', label: 'days short of lead time · rounded up'});
+  assert.deepEqual(stockGapNeeds([stock('uk', 5)], [], leadTimes, '2026-11-05', 'live'), []);
+  assert.deepEqual(stockGapNeeds([stock('uk', 6)], [], leadTimes, '2026-11-05', 'live'), []);
+  assert.deepEqual(stockGapNeeds([stock('uk', null)], [], leadTimes, '2026-11-05', 'live'), []);
   assert.equal(calculateStockGaps([stock()], [], [{ days: 0 }, { days: 5 }], '2026-11-05')[0]!.gapDays, 0);
 });
 
@@ -67,4 +76,7 @@ test('Settings warn about an unmatched product without rejecting a future planne
   assert.equal(inboundProductWarning('INVENTED STARTER', ['Invented Starter']), '');
   assert.equal(inboundProductWarning('', ['Invented Starter']), '');
   assert.match(inboundProductWarning('Invented Future', ['Invented Starter']), /Product not found in Stock and cover/);
+  const html = settingsPage({version: 0, values: defaultSettings()});
+  assert.match(html, /pack rows are listed but cannot raise a gap until packs have a cover/);
+  assert.match(html, /no arrival date is assumed/);
 });

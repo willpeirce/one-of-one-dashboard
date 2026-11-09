@@ -13,7 +13,7 @@ const settings = { ...defaultSettings(), paymentFeePercent: 0, startingCogs: [{ 
 function facts(orders: Order[], reliable = true): Facts {
   const sessions: Sessions[] = [];
   for (let day = '2026-09-01'; day <= today; day = addDays(day, 1)) sessions.push({ day, sessions: 100, uk: 25, us: 50, marketReliable: reliable, carts: 0, checkouts: 0, completed: 0, missouri: 0, ukCarts: 0, usCarts: 0, ukCheckouts: 0, usCheckouts: 0, ukCompleted: 0, usCompleted: 0 });
-  return { mode: 'live', sample: false, counts: {}, pendingWebhooks: 0, geoNotice: null, notices: [], noticeDetails: [], jobs: [{ name: 'backfill', state: { from: '2026-09-01', allOrders: true, ordersDone: true }, last_success_at: now, failures: 0 }, { name: 'poll', state: {}, last_success_at: now, failures: 0 }], records: [...orders.map(data => ({ kind: 'order', data, fetched_at: now })), ...sessions.map(data => ({ kind: 'sessions', data, fetched_at: now }))] };
+  return { mode: 'live', sample: false, counts: {}, pendingWebhooks: 0, failedWebhooks: [], geoNotice: null, notices: [], noticeDetails: [], jobs: [{ name: 'backfill', state: { from: '2026-09-01', allOrders: true, ordersDone: true }, last_success_at: now, failures: 0 }, { name: 'poll', state: {}, last_success_at: now, failures: 0 }], records: [...orders.map(data => ({ kind: 'order', data, fetched_at: now })), ...sessions.map(data => ({ kind: 'sessions', data, fetched_at: now }))] };
 }
 async function orders(): Promise<Order[]> {
   const base = cleanOrder((await fixture('order')).data.order);

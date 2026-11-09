@@ -1,6 +1,6 @@
 import type { StockCover } from './metrics.js';
 import type { DashboardNeed } from './dashboard.js';
-import { addDays, dayCount } from '../hero-range.js';
+import { dayCount } from '../hero-range.js';
 import { formatNumber } from '../money.js';
 
 export interface InboundStock {
@@ -15,8 +15,9 @@ export interface StockGap {
   productId: string;
   market: StockCover['market'];
   coverDays: number | null;
-  nextArrival: { date: string; quantity: number | null; assumed: boolean } | null;
+  nextArrival: { date: string; quantity: number } | null;
   daysToArrival: number | null;
+  leadTimeDays: number | null;
   gapDays: number | null;
 }
 
@@ -36,25 +37,26 @@ export function calculateStockGaps(stock: readonly StockCover[], inbound: readon
       && arrival.market === row.market && arrival.expectedDate >= today);
     const first = upcoming.map(arrival => arrival.expectedDate).sort()[0];
     const nextArrival = first
-      ? { date: first, quantity: upcoming.filter(arrival => arrival.expectedDate === first).reduce((sum, arrival) => sum + arrival.quantity, 0), assumed: false }
-      : fallbackDays === null ? null : { date: addDays(today, fallbackDays), quantity: null, assumed: true };
+      ? { date: first, quantity: upcoming.filter(arrival => arrival.expectedDate === first).reduce((sum, arrival) => sum + arrival.quantity, 0) }
+      : null;
     const coverDays = row.cover === null ? null : Math.max(0, row.cover);
     const daysToArrival = nextArrival ? dayCount(today, nextArrival.date) - 1 : null;
-    return { product: row.product, productId: row.productId, market: row.market, coverDays, nextArrival, daysToArrival,
-      gapDays: coverDays === null || daysToArrival === null ? null : Math.max(0, daysToArrival - coverDays) };
+    const timingDays = daysToArrival ?? fallbackDays;
+    return { product: row.product, productId: row.productId, market: row.market, coverDays, nextArrival, daysToArrival, leadTimeDays: fallbackDays,
+      gapDays: coverDays === null || timingDays === null ? null : Math.max(0, timingDays - coverDays) };
   });
 }
 
 export function stockGapNeeds(stock: readonly StockCover[], inbound: readonly InboundStock[], supplierLeadTimes: readonly { days: number | null }[], today: string, mode: 'sample' | 'live'): DashboardNeed[] {
   if (mode !== 'live') return [];
   return calculateStockGaps(stock, inbound, supplierLeadTimes, today).flatMap(row => {
-    if (row.gapDays === null || row.gapDays <= 0 || !row.nextArrival) return [];
-    const arrival = row.nextArrival.assumed
-      ? `Assumed arrival ${row.nextArrival.date}: shortest supplier lead time, ${formatNumber(row.daysToArrival!)} days; no upcoming inbound row.`
-      : `${formatNumber(row.nextArrival.quantity!)} units expected ${row.nextArrival.date}.`;
+    if (row.gapDays === null || row.gapDays <= 0) return [];
+    const arrival = row.nextArrival
+      ? `${formatNumber(row.nextArrival.quantity)} units expected ${row.nextArrival.date}.`
+      : `No arrival listed; shortest supplier lead time is ${formatNumber(row.leadTimeDays!)} days.`;
     return [{ id: `stock-gap:${row.productId}:${row.market}`, source: 'shopify', state: 'warn', link: '/settings',
-      title: `${row.product} · ${row.market.toUpperCase()}: stock may run out before arrival`,
+      title: `${row.product} · ${row.market.toUpperCase()}: ${row.nextArrival ? 'stock may run out before arrival' : 'no arrival listed'}`,
       why: `${formatNumber(row.coverDays!, 1)} days of cover. ${arrival} Gap rounded up to whole days.`,
-      figure: { value: formatNumber(Math.ceil(row.gapDays)), label: 'days gap · rounded up' } } satisfies DashboardNeed];
+      figure: { value: formatNumber(Math.ceil(row.gapDays)), label: row.nextArrival ? 'days gap · rounded up' : 'days short of lead time · rounded up' } } satisfies DashboardNeed];
   });
 }

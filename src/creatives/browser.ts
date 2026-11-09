@@ -155,7 +155,7 @@ async function scanNow(button: HTMLButtonElement): Promise<void> {
     }
     const control = element('#creative-scan-control'); if (control) control.outerHTML = creativeScanControlHtml(sheet.scan);
     const status = element('#creative-scan-result');
-    if (status) status.textContent = result.result.message ?? ({ done: 'Scan complete. Attributes updated.', failed: 'Scan failed. See Source health for the reason.',
+    if (status) status.textContent = sheet.scan.groupSkipped ? '↷ Skipped · repeated output limit; a changed image or ad gets a fresh try.' : result.result.message ?? ({ done: 'Scan complete. Attributes updated.', failed: 'Scan failed. See Source health for the reason.',
       off: 'Creative scanning is off.', busy: 'A scan is already running. Try again shortly.', cooldown: 'This creative is waiting until its next retry.',
       idle: 'No creative is ready to scan.', cap: 'Daily scan cap reached; try again next UK day', prices: 'Set the scan prices in Settings' }[result.result.state]);
     void refresh();

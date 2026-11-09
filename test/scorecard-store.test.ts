@@ -5,7 +5,7 @@ import { scorecardCoverage } from '../src/scorecard/store.js';
 
 function facts(overrides: Partial<Facts> = {}): Facts {
   return { mode: 'live', sample: false, counts: {}, jobs: [{ name: 'backfill', state: { ordersDone: true, from: '2026-10-01', until: '2026-11-01T00:00:00Z' }, last_success_at: new Date('2026-11-01T00:00:00Z'), failures: 0 }],
-    records: [{ kind: 'sales', data: { day: '2026-09-29', netSalesPence: 12500 }, fetched_at: new Date('2026-11-01T00:00:00Z') }], notices: [], noticeDetails: [], geoNotice: null, pendingWebhooks: 0, ...overrides };
+    records: [{ kind: 'sales', data: { day: '2026-09-29', netSalesPence: 12500 }, fetched_at: new Date('2026-11-01T00:00:00Z') }], notices: [], noticeDetails: [], geoNotice: null, pendingWebhooks: 0, failedWebhooks: [], ...overrides };
 }
 
 test('scorecard coverage requires actual aggregate rows and keeps unknown market history separate', () => {

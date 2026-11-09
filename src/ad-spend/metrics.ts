@@ -431,10 +431,13 @@ export function spendNeeds(facts: SpendFacts, settings: Settings, today: string,
       );
   }
   for (const expected of settings.expectedGoogleCampaigns) {
+    const firstDay = facts.rows.filter(row => row.source === 'google-ads' && row.campaignId === expected.campaignId)
+      .map(row => row.day).sort()[0];
     const missing = facts.days.filter(
       (d) =>
         d.source === 'google-ads' &&
         d.day <= addDays(today, -2) &&
+        (!firstDay || d.day >= firstDay) &&
         !facts.rows.some(
           (r) =>
             r.source === 'google-ads' && r.campaignId === expected.campaignId && r.day === d.day,

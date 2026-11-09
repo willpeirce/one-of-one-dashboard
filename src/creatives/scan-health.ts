@@ -1,4 +1,5 @@
 import { scoredMediaCte } from './scored-media.js';
+import { readScanContent } from './scan-content.js';
 import type { Database } from '../db.js';
 import type { Settings } from '../settings.js';
 import type { SourceMode, SourceStatus } from '../sources.js';
@@ -9,9 +10,9 @@ export type ScanFailure = 'rejected' | 'refused' | 'malformed' | 'timeout' | 'ca
 export interface ScanScope { accountId: string; mode: SourceMode }
 export interface ScanHealth {
   enabled: boolean; line: string; message: string | null;
-  waiting: number; scanned: number; failed: number; spentGbp: number; capGbp: number; model: string;
+  waiting: number; scanned: number; failed: number; skipped: number; skippedGroupIds: string[]; spentGbp: number; capGbp: number; model: string;
   status: SourceStatus; reason: ScanFailure | null; httpStatus: number | null; providerCode?: string | null; providerMessage?: string | null;
-  lastAttemptAt: string | null; lastAttemptStatus: 'done' | 'failed' | null; lastAttemptSeconds: number | null; lastSuccessAt: string | null; consecutiveFailures: number;
+  lastAttemptAt: string | null; lastAttemptStatus: 'done' | 'failed' | 'skipped' | null; lastAttemptSeconds: number | null; lastSuccessAt: string | null; consecutiveFailures: number;
 }
 export const scanPricesReady = (settings: Settings): boolean =>
   settings.creativeScanInputPrice > 0 && Number.isFinite(settings.creativeScanInputPrice)
@@ -30,33 +31,45 @@ export async function scanSpendToday(db: Database, scope: ScanScope, now: Date):
 /** Current-model parent results count once; cap/prices stops never replace provider health. */
 export async function readScanHealth(db: Database, settings: Settings, scope: ScanScope & { now?: Date }): Promise<ScanHealth> {
   const now = scope.now ?? new Date(), enabled = scanEnabled(scope.mode);
-  const [results, summary, last, control, spentGbp, eligible] = await Promise.all([
-    db.query<{ media_group_id: string; status: 'done' | 'failed'; failure_reason: ScanFailure | null; http_status: number | null; provider_code: string | null; provider_message: string | null }>(`SELECT DISTINCT ON(s.media_group_id) s.media_group_id,s.status,s.failure_reason,s.http_status,s.provider_code,s.provider_message
-      FROM pulse.creative_scans s JOIN pulse.media_groups g
-        ON g.id=s.media_group_id AND g.mode=s.mode AND g.account_id=s.account_id
-      WHERE s.mode=$1 AND s.account_id=$2 AND s.model_id=$3 AND g.merged_into_id IS NULL
-        AND (s.failure_reason IS NULL OR s.failure_reason NOT IN ('cap','prices'))
-      ORDER BY s.media_group_id,(s.status='done') DESC,s.sequence DESC`, [scope.mode, scope.accountId, settings.creativeScanModel]),
-    db.query<any>(`SELECT max(requested_at) AS attempted,max(finished_at) FILTER(WHERE status='done') AS succeeded,
-      count(*) FILTER(WHERE status='failed' AND sequence>COALESCE((SELECT max(sequence)
-        FROM pulse.creative_scans WHERE mode=$1 AND account_id=$2 AND status='done'),0)) AS failures
-      FROM pulse.creative_scans WHERE mode=$1 AND account_id=$2
-        AND (failure_reason IS NULL OR failure_reason NOT IN ('cap','prices'))`, [scope.mode, scope.accountId]),
-    db.query<any>(`SELECT status,failure_reason,http_status,provider_code,provider_message,requested_at,finished_at FROM pulse.creative_scans
-      WHERE mode=$1 AND account_id=$2 AND model_id=$3 AND (failure_reason IS NULL OR failure_reason NOT IN ('cap','prices'))
-      ORDER BY sequence DESC LIMIT 1`, [scope.mode, scope.accountId, settings.creativeScanModel]),
+  const content = await readScanContent(db, scope);
+  const [attempts, summary, control, spentGbp, eligible] = await Promise.all([
+    db.query<any>(`WITH current_content AS (
+      SELECT s.*, count(*) FILTER(WHERE status='failed' AND sequence>COALESCE(
+        (SELECT max(sequence) FROM pulse.creative_scans WHERE mode=$1 AND account_id=$2 AND status='done'),0))
+        OVER(PARTITION BY media_group_id) AS failure_count
+      FROM pulse.creative_scans s JOIN jsonb_each_text($4::jsonb) c ON c.key=s.media_group_id
+      WHERE mode=$1 AND account_id=$2 AND model_id=$3
+        AND (content_fingerprint IS NULL OR content_fingerprint=c.value)
+        AND (failure_reason IS NULL OR failure_reason NOT IN ('cap','prices')))
+      SELECT DISTINCT ON(media_group_id,status) media_group_id,status,failure_reason,http_status,provider_code,provider_message,
+        requested_at,finished_at,sequence,skipped,failure_count FROM current_content
+      ORDER BY media_group_id,status,sequence DESC`,
+      [scope.mode, scope.accountId, settings.creativeScanModel, JSON.stringify(Object.fromEntries(content))]),
+    db.query<{ succeeded: Date | null }>(`SELECT max(finished_at) AS succeeded FROM pulse.creative_scans
+      WHERE mode=$1 AND account_id=$2 AND status='done'`, [scope.mode, scope.accountId]),
     db.query<any>(`SELECT 1 FROM pulse.creative_scans WHERE mode=$1 AND account_id=$2
       AND failure_reason='cap' AND retry_after>$3 LIMIT 1`, [scope.mode, scope.accountId, now]),
     scanSpendToday(db, scope, now),
     scope.mode === 'live' ? db.query<{parent:string}>(`${scoredMediaCte} SELECT parent FROM scored WHERE spend>$4`, [scope.accountId, '0000-01-01', ukToday(now), settings.creativeSpendFloorGbp]) : Promise.resolve({rows:[]}),
   ]);
-  const done = new Set(results.rows.filter(result => result.status === 'done').map(result => result.media_group_id));
-  const waiting = eligible.rows.filter(row => !done.has(row.parent)).length;
-  const row = summary.rows[0], latest = last.rows[0];
-  const scanned = results.rows.filter(result => result.status === 'done').length;
-  const failed = results.rows.filter(result => result.status === 'failed').length;
+  const current = attempts.rows.sort((a, b) => Number(b.sequence) - Number(a.sequence));
+  const skippedGroups = new Set<string>(current.filter(row => row.skipped).map(row => row.media_group_id));
+  const actionable = current.filter(row => !skippedGroups.has(row.media_group_id));
+  const byGroup = new Map<string, typeof current[number]>();
+  for (const row of actionable) {
+    if (!byGroup.has(row.media_group_id) || row.status === 'done') byGroup.set(row.media_group_id, row);
+  }
+  const results = [...byGroup.values()];
+  const done = new Set(results.filter(result => result.status === 'done').map(result => result.media_group_id));
+  const waiting = eligible.rows.filter(row => !done.has(row.parent) && !skippedGroups.has(row.parent)).length;
+  const providerLatest = actionable[0];
+  const latest = providerLatest?.status === 'failed' ? providerLatest : current[0];
+  const succeeded = summary.rows[0]?.succeeded;
+  const scanned = results.filter(result => result.status === 'done').length;
+  const failed = results.filter(result => result.status === 'failed').length;
+  const skipped = skippedGroups.size;
   const reasons = new Map<string,number>();
-  for (const failure of results.rows.filter(result => result.status === 'failed')) {
+  for (const failure of results.filter(result => result.status === 'failed')) {
     const reason = scanFailureLabel(failure.failure_reason, failure.http_status, failure.provider_code, failure.provider_message);
     reasons.set(reason,(reasons.get(reason) ?? 0)+1);
   }
@@ -65,17 +78,17 @@ export async function readScanHealth(db: Database, settings: Settings, scope: Sc
     : enabled && (spentGbp >= settings.creativeScanCapGbp || control.rows.length > 0)
       ? 'Daily scan cap reached; try again next UK day' : null;
   const line = enabled
-    ? `Scan: on · ${scanned} scanned · ${failed} failed${commonReason ? ` · ${commonReason}` : ''} · £${spentGbp.toFixed(2)} of £${settings.creativeScanCapGbp.toFixed(2)} today · ${settings.creativeScanModel}${message ? ` · ${message}` : ''}`
+    ? `Scan: on · ${scanned} scanned · ${failed} failed${skipped ? ` · ↷ ${skipped} skipped` : ''}${commonReason ? ` · ${commonReason}` : ''} · £${spentGbp.toFixed(2)} of £${settings.creativeScanCapGbp.toFixed(2)} today · ${settings.creativeScanModel}${message ? ` · ${message}` : ''}`
     : 'Scan: off';
-  return { enabled, line, message, waiting, scanned, failed, spentGbp, capGbp: settings.creativeScanCapGbp, model: settings.creativeScanModel,
+  return { enabled, line, message, waiting, scanned, failed, skipped, skippedGroupIds: [...skippedGroups], spentGbp, capGbp: settings.creativeScanCapGbp, model: settings.creativeScanModel,
     status: !process.env.ANTHROPIC_API_KEY?.trim() ? 'waiting_for_keys'
-      : latest?.status === 'done' ? 'healthy' : latest?.status === 'failed' ? 'error' : 'not_implemented',
+      : providerLatest?.status === 'done' ? 'healthy' : providerLatest?.status === 'failed' ? 'error' : skipped ? 'healthy' : 'not_implemented',
     reason: latest?.failure_reason ?? null, httpStatus: latest?.http_status ?? null, providerCode: latest?.provider_code ?? null, providerMessage: latest?.provider_message ?? null,
     lastAttemptAt: latest?.requested_at ? new Date(latest.requested_at).toISOString() : null,
-    lastAttemptStatus: latest?.status ?? null,
+    lastAttemptStatus: latest && skippedGroups.has(latest.media_group_id) ? 'skipped' : latest?.status ?? null,
     lastAttemptSeconds: latest?.finished_at ? Math.round((new Date(latest.finished_at).getTime() - new Date(latest.requested_at).getTime()) / 1000) : null,
-    lastSuccessAt: row?.succeeded ? new Date(row.succeeded).toISOString() : null,
-    consecutiveFailures: Number(row?.failures ?? 0) };
+    lastSuccessAt: succeeded ? new Date(succeeded).toISOString() : null,
+    consecutiveFailures: providerLatest?.status === 'failed' ? results.reduce((total, row) => total + Number(row.failure_count), 0) : 0 };
 }
 
 export function scanFailureLabel(reason: ScanFailure | null, status: number | null, code?: string | null, message?: string | null): string {

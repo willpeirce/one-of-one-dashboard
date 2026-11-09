@@ -27,7 +27,7 @@ import { deriveCreativeLiftPresentation, makeCreativeBrief } from './lift-presen
 
 class CreativeInputError extends Error { readonly statusCode = 400; constructor() { super('Invalid creative request.'); } }
 const accountFor = (data: CreativeData, settings: Settings) => data.mode === 'sample' ? SAMPLE_CREATIVE_ACCOUNT : settings.metaAdAccountId;
-const scanView = (scan: CreativeScanView): CreativeScanView => ({ enabled: scan.enabled, line: scan.line, message: scan.message });
+const scanView = (scan: CreativeScanView): CreativeScanView => ({ enabled: scan.enabled, line: scan.line, message: scan.message, skippedGroupIds: scan.skippedGroupIds });
 const unscannedView = (settings: Settings): CreativeScanView => ({ enabled: false, line: 'Scan: off', message: scanPricesReady(settings) ? null : 'Set the scan prices in Settings' });
 type ShopifyOrders = (from: string, to: string) => Promise<{ count: number | null; mode: SourceMode }>;
 function sampleAttributeRows(data: CreativeData): AttributeRow[] {
@@ -152,6 +152,7 @@ export function registerCreatives(app: FastifyInstance, db: Database, auth: Auth
     sheet.attributes = await readGroupAttributes(db, data.mode, accountFor(data, settings), sheet.group.group.id, sheet.group.group.kind);
     sheet.note = await readWillNote(db, data.mode, accountFor(data, settings), sheet.group.group.id);
     sheet.scan = scanView(await readScanHealth(db, settings, { mode: data.mode, accountId: accountFor(data, settings), now: clock() }));
+    sheet.scan.groupSkipped = sheet.scan.skippedGroupIds?.includes(sheet.group.group.id) ?? false;
     // Media loads independently through /media; remote frame downloads must not delay the sheet.
     return sheet;
   });
@@ -185,6 +186,7 @@ export function registerCreatives(app: FastifyInstance, db: Database, auth: Auth
       accountId, mode: data.mode, groupId: group.id, reader: client });
     if (result.done) await refreshSavedLifts(db, accountId, data, settings, clock());
     const scan = scanView(await readScanHealth(db, settings, { accountId, mode: data.mode, now: clock() }));
+    scan.groupSkipped = scan.skippedGroupIds?.includes(group.id) ?? false;
     const attributes = await readGroupAttributes(db, data.mode, accountId, group.id, group.kind);
     await publish();
     return { groupId: group.id, result, scan, attributes };

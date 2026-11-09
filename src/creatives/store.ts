@@ -1,7 +1,7 @@
 import { formatPounds } from '../money.js';
 import {thruPlayHealth,type ThruPlayHealth} from './thruplay-repair.js';
 import {mediaFactHealth,type MediaFactHealth} from './media-facts.js';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { Database } from '../db.js';
 import { addDays, ukToday } from '../hero-range.js';
 import type { Settings } from '../settings.js';
@@ -31,6 +31,15 @@ function storedInsight(row: Record<string, any>): AdInsight {
     addsToCart: Number(row.addsToCart), purchases: Number(row.purchases), purchaseValue: Number(row.purchaseValue) };
 }
 
+/** Retain source-content identity when cached media is evicted or hydrated later. */
+function sourceMediaFingerprint(media: NonNullable<CatalogueRead['media']>): string | null {
+  const bytes = [media.thumbnail, media.poster, ...media.frames].filter((value): value is Uint8Array => !!value?.length);
+  if (!bytes.length) return null;
+  const digest = createHash('sha256').update(JSON.stringify([media.kind, media.key]));
+  for (const value of bytes) digest.update(String(value.byteLength)).update(':').update(value);
+  return digest.digest('hex');
+}
+
 export async function saveCatalogue(db: Database, account: string, entries: CatalogueRead[], now: Date, mode: SourceMode = 'live'): Promise<void> {
   await db.transaction(async tx => {
     // Catalogue and insights download independently, but their brief writes share ad rows.
@@ -50,6 +59,7 @@ export async function saveCatalogue(db: Database, account: string, entries: Cata
         continue;
       }
       const { ad, media } = entry;
+      const mediaFingerprint = sourceMediaFingerprint(media);
       expandedIds.push(ad.id);
       const existing = (await tx.query<any>('SELECT id FROM pulse.media_groups WHERE mode=$1 AND account_id=$2 AND kind=$3 AND media_key=$4', [mode, account, media.kind, media.key])).rows[0];
       const id = entry.retryGroupId ?? existing?.id ?? media.id ?? randomUUID();
@@ -66,18 +76,22 @@ export async function saveCatalogue(db: Database, account: string, entries: Cata
           facts_attempts=CASE WHEN $15 AND media_key IS DISTINCT FROM $14 THEN 0 ELSE facts_attempts END,
           facts_retry_after=CASE WHEN $15 AND media_key IS DISTINCT FROM $14 THEN NULL ELSE facts_retry_after END,
           kind=CASE WHEN $15 THEN $13 ELSE kind END,media_key=CASE WHEN $15 THEN $14 ELSE media_key END,
-          source_id=CASE WHEN $15 THEN $14 ELSE source_id END
+          source_id=CASE WHEN $15 THEN $14 ELSE source_id END,
+          full_image=CASE WHEN $16::text IS NOT NULL AND scan_media_fingerprint IS DISTINCT FROM $16 THEN NULL ELSE full_image END,
+          scan_media_fingerprint=COALESCE($16,scan_media_fingerprint)
           WHERE mode=$1 AND account_id=$2 AND id=$3`,
         [mode, account, id, media.title, media.lengthSeconds, media.width, media.height, media.thumbnail, media.poster,
-          media.frames, JSON.stringify(media.alternates), now, media.kind, media.key, !existing || existing.id === id]);
+          media.frames, JSON.stringify(media.alternates), now, media.kind, media.key, !existing || existing.id === id, mediaFingerprint]);
         if (!changed.rowCount) throw new AdError('invalid');
-      } else await tx.query(`INSERT INTO pulse.media_groups(id,mode,account_id,source_id,kind,media_key,title,length_seconds,width,height,first_seen,fetched_at,thumbnail,poster,frames,alternates,detail_reduced_at,detail_retry_after)
-        VALUES($1,$2,$3,$4,$5,$4,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+      } else await tx.query(`INSERT INTO pulse.media_groups(id,mode,account_id,source_id,kind,media_key,title,length_seconds,width,height,first_seen,fetched_at,thumbnail,poster,frames,alternates,detail_reduced_at,detail_retry_after,scan_media_fingerprint)
+        VALUES($1,$2,$3,$4,$5,$4,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$19)
         ON CONFLICT(mode,account_id,kind,media_key) DO UPDATE SET title=EXCLUDED.title,length_seconds=COALESCE(EXCLUDED.length_seconds,pulse.media_groups.length_seconds),width=COALESCE(EXCLUDED.width,pulse.media_groups.width),height=COALESCE(EXCLUDED.height,pulse.media_groups.height),fetched_at=EXCLUDED.fetched_at,thumbnail=COALESCE(EXCLUDED.thumbnail,pulse.media_groups.thumbnail),poster=COALESCE(EXCLUDED.poster,pulse.media_groups.poster),frames=CASE WHEN cardinality(EXCLUDED.frames)>0 THEN EXCLUDED.frames ELSE pulse.media_groups.frames END,alternates=EXCLUDED.alternates,
           detail_reduced_at=CASE WHEN $18 THEN CASE WHEN EXCLUDED.detail_reduced_at IS NULL THEN NULL ELSE COALESCE(pulse.media_groups.detail_reduced_at,EXCLUDED.detail_reduced_at) END ELSE pulse.media_groups.detail_reduced_at END,
-          detail_retry_after=CASE WHEN $18 THEN EXCLUDED.detail_retry_after ELSE pulse.media_groups.detail_retry_after END`,
+          detail_retry_after=CASE WHEN $18 THEN EXCLUDED.detail_retry_after ELSE pulse.media_groups.detail_retry_after END,
+          full_image=CASE WHEN EXCLUDED.scan_media_fingerprint IS NOT NULL AND pulse.media_groups.scan_media_fingerprint IS DISTINCT FROM EXCLUDED.scan_media_fingerprint THEN NULL ELSE pulse.media_groups.full_image END,
+          scan_media_fingerprint=COALESCE(EXCLUDED.scan_media_fingerprint,pulse.media_groups.scan_media_fingerprint)`,
       [id, mode, account, media.key, media.kind, media.title, media.lengthSeconds, media.width, media.height, media.firstSeen, now, media.thumbnail, media.poster, media.frames, JSON.stringify(media.alternates), media.detailReducedAt ?? null,
-        media.detailReducedAt ? new Date(now.getTime() + 86_400_000) : null, media.detailReducedAt !== undefined]);
+        media.detailReducedAt ? new Date(now.getTime() + 86_400_000) : null, media.detailReducedAt !== undefined, mediaFingerprint]);
       if (!existing && !entry.retryGroupId && media.kind === 'video') {
         const others = (await tx.query<any>("SELECT id,title,length_seconds FROM pulse.media_groups WHERE mode=$1 AND account_id=$2 AND kind='video' AND id<>$3 AND merged_into_id IS NULL ORDER BY first_seen,id", [mode, account, id])).rows;
         const title = canonicalVideoTitle(media.title);

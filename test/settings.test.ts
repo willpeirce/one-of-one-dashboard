@@ -15,6 +15,44 @@ test('Meta ownership retains more campaigns than the bounded manual collections'
   assert.throws(() => validateSettings({ ...defaultSettings(), overheads: Array.from({ length: 51 }, (_, index) => ({ name: `Invented overhead ${index}`, monthlyGbp: 0, startMonth: '', endMonth: '' })) }), SettingsValidationError);
 });
 
+test('key dates default empty, validate calendar dates and kinds, allow empty notes and deduplicate normalised names/dates', () => {
+  const defaults = defaultSettings();
+  const event = {name: 'Invented launch', date: '2032-04-07', note: '', kind: 'spark'};
+  assert.deepEqual(defaults.keyDates, []);
+  assert.deepEqual(validateSettings({...defaults, keyDates: [event]}).keyDates, [event]);
+  for (const keyDates of [
+    [{...event, name: ''}], [{...event, name: ' Invented launch'}], [{...event, name: 'x'.repeat(101)}],
+    [{...event, date: '2032-02-30'}], [{...event, kind: 'unknown'}], [{...event, note: null}],
+    [{...event, note: '<script>invented</script>'}], [{...event, extra: true}],
+    [event, {...event, name: 'INVENTED   launch'}],
+  ]) assert.throws(() => validateSettings({...defaults, keyDates}), SettingsValidationError);
+  assert.equal(validateSettings({...defaults, keyDates: [event, {...event, date: '2032-04-08'}]}).keyDates.length, 2);
+  const html = settingsPage({version: 0, values: defaults});
+  assert.match(html, /<details id="keyDates"[^>]* open>/);
+  assert.match(html, /data-settings-list="keyDates"/);
+  assert.match(html, /name="keyDates\.__index__\.date"[^>]*type="date"/);
+  assert.match(html, /Hard deadlines and launches only\. Each shows in the Next up strip and in Coming up on Home\./);
+});
+
+test('key dates fill older Settings without writing them and migration replay retains one audited key', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const initial = await readSettings(db);
+  const {keyDates: _keyDates, ...older} = initial.values;
+  await db.query('UPDATE pulse.settings SET values=$1', [JSON.stringify(older)]);
+  const filled = await readSettings(db);
+  assert.deepEqual(filled.values.keyDates, []); assert.equal(filled.version, initial.version);
+  assert.deepEqual((await db.query<{values: object}>('SELECT values FROM pulse.settings')).rows[0]!.values, older);
+  assert.equal((await db.query('SELECT 1 FROM pulse.audit_log')).rows.length, 0);
+  const migration = await readFile(new URL('../migrations/061_ticker.sql', import.meta.url), 'utf8');
+  await db.query(migration);
+  const check = (await db.query<{definition: string}>(`SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
+    WHERE conrelid='pulse.settings_changes'::regclass AND contype='c' AND pg_get_constraintdef(oid) LIKE '%goalOrdersPerDay%'`)).rows[0]!;
+  assert.equal((check.definition.match(/'keyDates'/g) ?? []).length, 1);
+  const permissions = await db.query(`SELECT 1 FROM pg_class c, LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl
+    WHERE c.oid='pulse.ticker_passed'::regclass AND acl.grantee=0`);
+  assert.equal(permissions.rows.length, 0);
+});
+
 test('settings initialize once with specified defaults, unknowns unset and no default-change audit', async (t) => {
   const db = await createTestDatabase();
   t.after(() => db.close());

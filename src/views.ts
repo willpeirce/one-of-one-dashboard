@@ -1,3 +1,4 @@
+import { tickerHead, tickerHtml } from './ticker/view.js';
 import { formatUkTime } from './uk-time.js';
 import {mediaFactLine,mediaFactPermissionLine} from './creatives/media-facts.js';
 import {thruPlayLine} from './creatives/thruplay-repair.js';
@@ -40,13 +41,13 @@ function page(title: string, content: string, signedIn: boolean): string {
   <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png">
   <link rel="icon" type="image/png" href="/assets/icon-192.png">
   <script type="module" src="/assets/browser.js"></script>
-</head>
+${signedIn ? tickerHead() : ''}</head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="top"><div class="hin">
     <a class="wordmark" href="/">One of One <span>Pulse</span></a>
     ${signedIn ? `<nav aria-label="Main"><a href="/">Home</a><a href="/scorecard">Scorecard</a><a href="/sources">Source health</a><a href="/settings">Settings</a><a href="/audit">Audit log</a><button id="sign-out" type="button" disabled>Sign out</button></nav>` : ''}
-  </div></header>
+  </div></header>${signedIn ? tickerHtml() : ''}
   <main class="wrap" id="main">${content}<p id="auth-message" role="status" aria-live="polite"></p></main>
   <noscript><div class="wrap"><p class="notice">Enable JavaScript to sign in or sign out with a passkey.</p></div></noscript>
 </body>
@@ -103,7 +104,8 @@ function googleReadDetails(health: ReturnType<typeof import('./google-ads/health
 }
 
 function mailchimpReadDetails(facts: import('./mailchimp/model.js').MailchimpFacts): string {
-  const state = facts.mode === 'sample' ? 'Sample data · waiting for MAILCHIMP_API_KEY'
+  const state = facts.mode === 'sample' ? facts.status === 'unavailable'
+    ? '○ Unavailable · Mailchimp sample data could not be read' : 'Sample data · waiting for MAILCHIMP_API_KEY'
     : facts.status === 'pending' ? 'Waiting for the first audience read'
     : facts.status === 'unavailable' ? 'Audience read unavailable or stale; any earlier observation is retained'
     : 'Live audience read';
@@ -116,7 +118,7 @@ function mailchimpReadDetails(facts: import('./mailchimp/model.js').MailchimpFac
   return `<details data-mailchimp-read-health><summary>ⓘ Mailchimp read details</summary><p>${escapeHtml(state)}</p><p>${escapeHtml(counts)}</p><p>Last audience read: ${timestamp(facts.fetchedAt)}. Audience reads run every three hours. Subscribers alone never substitute for total contacts.</p><p>${escapeHtml(flows)} Per-flow examples and the refill funnel remain labelled sample. Shopify email sales keep their own attribution and pounds.</p></details>`;
 }
 
-export function sourceHealthPage(rows: readonly SourceHealth[], shopify?: Awaited<ReturnType<ShopifyStore['summary']>>, costs?: Awaited<ReturnType<ShopifyStore['costSummary']>>, ads?:Awaited<ReturnType<typeof import('./ad-spend/store.js').spendHealth>>, status?: { mailchimp?: import('./mailchimp/model.js').MailchimpFacts; google?: ReturnType<typeof import('./google-ads/health.js').googleHealth>; channelExclusions?: {channel:string;orderNumbers:string[]}[]; reviewHealth?: import('./judgeme/store.js').ReviewHealth; summary: string; shopify: ShopifyDashboard; checkedAt: string; campaigns?: CampaignSyncState; creatives?: CreativeHealth; adSets?: import('./meta-adsets/presentation.js').AdSetsView }): string {
+export function sourceHealthPage(rows: readonly SourceHealth[], shopify?: Awaited<ReturnType<ShopifyStore['summary']>>, costs?: Awaited<ReturnType<ShopifyStore['costSummary']>>, ads?:Awaited<ReturnType<typeof import('./ad-spend/store.js').spendHealth>>, status?: { orderCleanupIncomplete?: boolean; mailchimp?: import('./mailchimp/model.js').MailchimpFacts; google?: ReturnType<typeof import('./google-ads/health.js').googleHealth>; channelExclusions?: {channel:string;orderNumbers:string[]}[]; reviewHealth?: import('./judgeme/store.js').ReviewHealth; summary: string; shopify: ShopifyDashboard; checkedAt: string; campaigns?: CampaignSyncState; creatives?: CreativeHealth; adSets?: import('./meta-adsets/presentation.js').AdSetsView }): string {
   const gross = shopify?.mode === 'live' ? shopify.jobs.find(job => job.name === 'gross_history')?.state : undefined;
   const days = typeof gross?.first === 'string' && typeof gross?.last === 'string' ? dayCount(gross.first, gross.last) : 0;
   const weeks = Number.isFinite(days) ? Math.max(0, Math.ceil(days / 7)) : 0;
@@ -127,6 +129,11 @@ export function sourceHealthPage(rows: readonly SourceHealth[], shopify?: Awaite
     : dailyStock.state.waitingForInventory ? 'waiting for inventory fetched on the current UK day'
     : dailyStock.state.day ? `${formatNumber(dailyStock.state.freshRows ?? 0)} inventory rows captured for ${dailyStock.state.day}`
     : 'first daily snapshot pending'}. Missing days stay unknown; no backfill.` : '';
+  const skippedOrders = Number(shopify?.jobs.find(job => job.name === 'shipping_refunds')?.state.skippedOrders ?? 0);
+  const shopifyReadWarnings = shopify?.mode === 'live' ? [
+    status?.orderCleanupIncomplete ? '△ Watch · First-order cleanup did not finish within its bound; legacy rows will be retried next start.' : '',
+    skippedOrders > 0 ? `△ Watch · ${formatNumber(skippedOrders)} old orders could not be read` : '',
+  ].filter(Boolean).map(line => `<br><small class="source-warning" data-shopify-read-warning>${escapeHtml(line)}</small>`).join('') : '';
   return page('Source health', `<h1>Source health</h1>
     <section id="source-summary" aria-label="Sources and modes"><h2>Sources and modes</h2><p class="sample-banner">${status ? escapeHtml(status.summary) : `<strong>sample data</strong> · ${shopify ? 'Shopify cards use ingested data; ad spend uses its own source connections; deferred examples remain labelled samples.' : 'No source data has been imported.'}`}</p></section>
     ${status ? `<section id="shopify-watchdogs" aria-label="Shopify watchdogs"><h2>Shopify watchdogs</h2><p>${formatNumber(status.shopify.checks.filter(check => check.status === 'pass').length)}/${formatNumber(status.shopify.checks.length)} checks passing · Shopify ${status.shopify.mode === 'live' ? 'live' : 'sample data'} · checked ${timestamp(status.checkedAt)}</p><ul>${status.shopify.checks.map(check => `<li><strong>${check.status === 'pass' ? '✓ Good' : check.status === 'tripped' ? '△ Watch' : '○ Unknown'} · ${escapeHtml(check.name)}</strong><p>${escapeHtml(check.why)}</p></li>`).join('')}</ul></section>` : ''}
@@ -146,7 +153,7 @@ export function sourceHealthPage(rows: readonly SourceHealth[], shopify?: Awaite
         <tbody>${rows.map((row) => { const ad = ads?.find(a => a.source === row.source); return `<tr>
           <th scope="row">${escapeHtml(row.name)}</th>
           <td>${(ad?.live??row.mode==='live') ? 'Live' : 'Sample'}</td>
-          <td>${escapeHtml(ad?.status??row.statusText??((row.source === 'shopify' || row.source === 'judgeme' || row.source === 'mailchimp') && row.status === 'not_implemented' ? 'First sync pending' : row.source === 'judgeme' && row.status === 'healthy' ? 'Live' : healthLabels[row.status]))}${ad?.failures ? ` · ${formatNumber(ad.failures)} consecutive failure${ad.failures === 1 ? '' : 's'}` : ''}${row.source === 'meta' && status?.campaigns ? `<br><small data-campaign-sync data-state="${status.campaigns.state}">${escapeHtml(campaignSyncText(status.campaigns))}</small>` : ''}${row.source === 'shopify' && grossHistory ? `<br><small data-gross-history>${grossHistory}</small>` : ''}${row.source === 'google-ads' && status?.google ? googleReadDetails(status.google) : ''}${row.source === 'mailchimp' && status?.mailchimp ? mailchimpReadDetails(status.mailchimp) : ''}</td>
+          <td>${escapeHtml(ad?.status??row.statusText??((row.source === 'shopify' || row.source === 'judgeme' || row.source === 'mailchimp') && row.status === 'not_implemented' ? 'First sync pending' : row.source === 'judgeme' && row.status === 'healthy' ? 'Live' : healthLabels[row.status]))}${row.source === 'anthropic' && row.scanSkipped ? `<br><small data-scan-skipped>↷ Skipped · ${formatNumber(row.scanSkipped)} creative${row.scanSkipped === 1 ? '' : 's'}</small>` : ''}${ad?.failures ? ` · ${formatNumber(ad.failures)} consecutive failure${ad.failures === 1 ? '' : 's'}` : ''}${row.source === 'meta' && status?.campaigns ? `<br><small data-campaign-sync data-state="${status.campaigns.state}">${escapeHtml(campaignSyncText(status.campaigns))}</small>` : ''}${row.source === 'shopify' && shopify?.mode === 'live' ? (shopify.failedWebhooks ?? []).map(event => `<br><small class="source-warning" data-webhook-failed>△ Watch · ${escapeHtml(event.topic)} · ${escapeHtml(event.sourceId)}</small>`).join('') : ''}${row.source === 'shopify' ? shopifyReadWarnings : ''}${row.source === 'shopify' && grossHistory ? `<br><small data-gross-history>${grossHistory}</small>` : ''}${row.source === 'google-ads' && status?.google ? googleReadDetails(status.google) : ''}${row.source === 'mailchimp' && status?.mailchimp ? mailchimpReadDetails(status.mailchimp) : ''}</td>
           <td>${timestamp(ad ? ad.fetchedAt : row.lastSuccessAt)}${row.scanAttempt ? `<br><small data-scan-attempt>${escapeHtml(row.scanAttempt)}</small>` : ''}${row.source === 'shopify' && dailyStockLine ? `<br><small data-stock-daily-health>${escapeHtml(dailyStockLine)}</small>` : ''}</td>
           <td class="key-names">${row.requiredKeys.map((key) => `<code>${escapeHtml(key)}</code>`).join('<br>')}</td>
         </tr>`; }).join('')}</tbody>

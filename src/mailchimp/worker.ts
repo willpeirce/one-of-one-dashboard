@@ -14,8 +14,9 @@ export class MailchimpWorker {
   #next = 0;
   #restoredHealth = false;
   constructor(private readonly db: Database, env: NodeJS.ProcessEnv, private readonly options: MailchimpWorkerOptions = {}) {
-    this.mode = env.MAILCHIMP_API_KEY?.trim() ? 'live' : 'sample';
-    if (this.mode === 'live') this.#client = new MailchimpClient(env.MAILCHIMP_API_KEY!, {...options,
+    const key = env.MAILCHIMP_API_KEY?.trim();
+    this.mode = key ? 'live' : 'sample';
+    if (key) this.#client = new MailchimpClient(key, {...options,
       now: options.now ?? (options.clock ? () => options.clock!().getTime() : Date.now)});
   }
   // Only start after listen. Source failures are contained here and never reject a worker tick.

@@ -45,7 +45,9 @@ test('rendered sample strings cannot inject HTML, attributes or an executable in
   const page = dashboardPage(snapshot);
   assert.ok(!page.includes(payload));
   assert.ok(page.includes('&lt;img src=x onerror=alert(1)&gt;'));
-  assert.equal((page.match(/<script\b/g) ?? []).length, 2);
+  assert.equal((page.match(/<script\b/g) ?? []).length, 3);
+  assert.deepEqual([...page.matchAll(/<script\b[^>]*src="([^"]+)"/g)].map(match => match[1]).sort(),
+    ['/assets/browser.js', '/assets/dashboard.js', '/assets/ticker.js']);
   assert.ok(!/<script\b(?![^>]*\bsrc=)/.test(page));
 });
 

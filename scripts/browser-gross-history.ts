@@ -15,7 +15,7 @@ export async function checkGrossHistoryProgress(context: BrowserContext): Promis
     lastSuccessAt: null, lastAttemptAt: null, consecutiveFailures: 0, updatedAt: new Date('2026-03-18T12:00:00Z'),
   };
   const imports: NonNullable<Parameters<typeof sourceHealthPage>[1]> = {
-    mode: 'live', sample: false, counts: {}, notices: [], geoNotice: null, pendingWebhooks: 0,
+    mode: 'live', sample: false, counts: {}, notices: [], geoNotice: null, pendingWebhooks: 0, failedWebhooks: [],
     jobs: [{ name: 'gross_history', state, failures: 0, last_success_at: null }],
   };
   const page = await context.newPage();

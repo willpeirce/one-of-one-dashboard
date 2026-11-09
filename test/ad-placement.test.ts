@@ -35,13 +35,13 @@ test('Meta freelancer and unassigned campaigns ignore all set markers', () => {
   assert.equal(metaSpendMarket('Invented campaign UK', 'Invented — UK — US — Discovery', 'ours'), 'unknown');
 });
 
-test('Google uses whole market words anywhere and leaves ambiguous or unmatched names unknown', () => {
+test('Google uses capital whole market words and leaves lower-case, ambiguous or unmatched names unknown', () => {
   assert.equal(googleSpendMarket('Invented search UK'), 'uk');
   assert.equal(googleSpendMarket('Invented search US'), 'us');
-  assert.equal(googleSpendMarket('Invented search uk  '), 'uk');
+  assert.equal(googleSpendMarket('Invented search uk  '), 'unknown');
   assert.equal(googleSpendMarket('UK invented discovery'), 'uk');
   assert.equal(googleSpendMarket('Invented UK discovery'), 'uk');
-  assert.equal(googleSpendMarket('Invented discovery us video'), 'us');
+  assert.equal(googleSpendMarket('Invented discovery us video'), 'unknown');
   assert.equal(googleSpendMarket('Invented UK-search UK'), 'uk');
   assert.equal(googleSpendMarket('Invented bonus'), 'unknown');
   assert.equal(googleSpendMarket('Invented UKulele discovery'), 'unknown');

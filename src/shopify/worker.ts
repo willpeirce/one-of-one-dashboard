@@ -14,6 +14,7 @@ import { channelKey, channelOrder, cleanSales, reportRows } from './model.js';
 import { webhookTopics } from './webhooks.js';
 
 type Job = 'backfill' | 'poll' | 'inventory' | 'sessions' | 'subscriptions' | 'reconcile' | 'session_history' | 'stock_snapshot' | 'stock_daily' | 'series_pace' | 'shipping_refunds' | 'gross_history';
+export const WEBHOOK_MAX_ATTEMPTS = 5;
 const intervals: Record<Job, number> = { backfill: 0, poll: 300_000, inventory: 300_000, sessions: 300_000, subscriptions: 3_600_000, reconcile: 86_400_000, session_history: 0, stock_snapshot: 0, stock_daily: 0, series_pace: 3_600_000, shipping_refunds: 60_000, gross_history: 60_000 };
 export function backfillWindow(now: Date, allOrders: boolean) {
   return { from: addDays(ukToday(now), -(allOrders ? 399 : 59)), olderFrom: addDays(ukToday(now), -399), olderTo: addDays(ukToday(now), -60) };
@@ -61,10 +62,15 @@ export class ShopifyWorker {
   readonly client: ShopifyReader;
   readonly mode: SourceMode;
   private orderCleanup?: Promise<void>;
+  private cleanupIncomplete = false;
+  get orderCleanupIncomplete(): boolean { return this.cleanupIncomplete; }
   /** Called only by the post-listen startup hook; repeated calls share one attempt. */
   startOrderCleanup(): Promise<void> {
     if (!this.orderCleanup) this.orderCleanup = this.mode === 'live' && !this.closing
-      ? cleanLegacyOrders(this.db).catch(() => console.error('Startup Shopify order cleanup could not finish.'))
+      ? cleanLegacyOrders(this.db).catch(() => {
+        this.cleanupIncomplete = true;
+        console.error('Startup Shopify order cleanup could not finish.');
+      })
       : Promise.resolve();
     return this.orderCleanup;
   }
@@ -164,9 +170,14 @@ export class ShopifyWorker {
   }
   private async processInbox(): Promise<void> {
     const now = this.clock(); let failed = false;
-    const inbox = await this.db.query<{ source_id: string; topic: string; payload: any }>(`SELECT source_id, topic, payload FROM pulse.shopify_webhook_inbox WHERE processed_at IS NULL AND next_attempt_at <= $1 ORDER BY fetched_at LIMIT 25`, [now]);
+    const inbox = await this.db.query<{ source_id: string; topic: string; payload: any; attempts: number }>(`SELECT source_id, topic, payload, attempts FROM pulse.shopify_webhook_inbox WHERE processed_at IS NULL AND failed_at IS NULL AND next_attempt_at <= $1 ORDER BY fetched_at LIMIT 25`, [now]);
     const attempted = inbox.rows.length > 0;
     for (const event of inbox.rows) {
+      // Old inbox rows can already be past the cap when this policy is first deployed.
+      if (event.attempts >= WEBHOOK_MAX_ATTEMPTS) {
+        await this.db.query('UPDATE pulse.shopify_webhook_inbox SET failed_at = $2 WHERE source_id = $1', [event.source_id, now]);
+        continue;
+      }
       try {
         if (event.topic === 'inventory_levels/update') await this.store.inventory(await this.client.inventory(), this.clock());
         else {
@@ -182,15 +193,19 @@ export class ShopifyWorker {
           await this.store.orders([raw], this.clock());
         }
         await this.db.query('UPDATE pulse.shopify_webhook_inbox SET processed_at = $2, attempts = attempts + 1 WHERE source_id = $1', [event.source_id, this.clock()]);
-      } catch {
-        failed = true;
-        await this.db.query(`UPDATE pulse.shopify_webhook_inbox SET attempts = attempts + 1, next_attempt_at = $2 WHERE source_id = $1`, [event.source_id, new Date(now.getTime() + 60_000)]);
+      } catch (error) {
+        const code = error instanceof ShopifyError ? error.code : 'unknown';
+        console.error(JSON.stringify({ source: 'shopify', code, topic: event.topic, sourceId: event.source_id }));
+        failed ||= event.attempts + 1 < WEBHOOK_MAX_ATTEMPTS;
+        await this.db.query(`UPDATE pulse.shopify_webhook_inbox SET attempts = attempts + 1, next_attempt_at = $2,
+          failed_at = CASE WHEN attempts + 1 >= $4 THEN $3::timestamptz ELSE NULL END WHERE source_id = $1`,
+        [event.source_id, new Date(now.getTime() + 60_000), now, WEBHOOK_MAX_ATTEMPTS]);
       }
     }
     if (attempted) await this.health(failed);
   }
   private async health(failed: boolean): Promise<void> {
-    const remainingFailures = await this.db.query(`SELECT name FROM pulse.shopify_jobs WHERE mode = 'live' AND name NOT IN ('stock_snapshot', 'stock_daily', 'series_pace', 'shipping_refunds', 'gross_history') AND failures > 0 UNION ALL SELECT source_id FROM pulse.shopify_webhook_inbox WHERE processed_at IS NULL AND attempts > 0`);
+    const remainingFailures = await this.db.query(`SELECT name FROM pulse.shopify_jobs WHERE mode = 'live' AND name NOT IN ('stock_snapshot', 'stock_daily', 'series_pace', 'shipping_refunds', 'gross_history') AND failures > 0 UNION ALL SELECT source_id FROM pulse.shopify_webhook_inbox WHERE processed_at IS NULL AND failed_at IS NULL AND attempts > 0`);
     failed ||= remainingFailures.rows.length > 0;
     await this.db.query(`UPDATE pulse.source_health SET status = $1, last_attempt_at = $2,
       last_success_at = CASE WHEN $1 = 'healthy' THEN $2 ELSE last_success_at END,
@@ -339,26 +354,39 @@ export class ShopifyWorker {
     }
     if (name === 'shipping_refunds') {
       if (this.mode !== 'live') return { skipped: 'sample_mode' };
+      // Keep distinct unresolved IDs across cursor sweeps; retrying one order is not another skipped order.
+      const skippedOrderIds = new Set<string>(Array.isArray(state.skippedOrderIds)
+        ? state.skippedOrderIds.filter((id: unknown): id is string => typeof id === 'string') : []);
+      const skippedState = () => ({ skippedOrders: skippedOrderIds.size, skippedOrderIds: [...skippedOrderIds] });
       // One legacy order per run enriches totals, replacement tags and shipping refunds without blocking startup.
       const legacy = await this.db.query<{ source_id: string }>(`SELECT source_id FROM pulse.shopify_records
         WHERE mode = 'live' AND kind = 'order' AND source_id > $1 AND data->>'day' >= $2
           AND (NOT (data ? 'totalPence') OR NOT (data ? 'tags') OR EXISTS (SELECT 1 FROM jsonb_array_elements(data->'refunds') AS refund WHERE NOT (refund ? 'shippingNetPence') OR NOT (refund ? 'totalPence')))
         ORDER BY source_id LIMIT 1`, [state.after ?? '', checkpoint.rows[0]?.state.from ?? day]);
       const id = legacy.rows[0]?.source_id;
-      if (!id) return { after: null, idle: true };
+      if (!id) return { after: null, idle: true, ...skippedState() };
       // Advance durably before the read: an inaccessible old order cannot block the rest.
-      const nextState = { after: id };
+      const nextState = { after: id, ...skippedState() };
       await this.db.query(`UPDATE pulse.shopify_jobs SET state = $1, next_run_at = $2 WHERE mode = 'live' AND name = 'shipping_refunds'`, [JSON.stringify(nextState), new Date(now.getTime() + intervals.shipping_refunds)]);
       let raw;
-      try { raw = await this.client.order(id, address); }
-      catch (error) {
-        if (!address || !(error instanceof ShopifyError) || error.code !== 'denied') throw error;
-        raw = await this.client.order(id, false);
+      try {
+        try { raw = await this.client.order(id, address); }
+        catch (error) {
+          if (!address || !(error instanceof ShopifyError) || error.code !== 'denied') throw error;
+          raw = await this.client.order(id, false);
+        }
+        if (!raw) throw new ShopifyError('denied');
       }
-      if (!raw) throw new ShopifyError('denied');
+      catch (error) {
+        skippedOrderIds.add(id);
+        await this.db.query(`UPDATE pulse.shopify_jobs SET state = $1 WHERE mode = 'live' AND name = 'shipping_refunds'`,
+          [JSON.stringify({ after: id, ...skippedState() })]);
+        throw error;
+      }
       if (raw.refunds.some((refund: any) => !refund.refundShippingLines)) throw new ShopifyError('invalid');
       await this.store.orders([raw], this.clock());
-      return nextState;
+      skippedOrderIds.delete(id);
+      return { after: id, ...skippedState() };
     }
     if (name === 'backfill') {
       if (!state.from) {

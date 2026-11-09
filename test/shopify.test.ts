@@ -12,7 +12,7 @@ import { TokenManager } from '../src/shopify/token.js';
 import { cleanOrder, cleanInventory, cleanSessions } from '../src/shopify/model.js';
 import { fixture, SampleShopify } from '../src/shopify/sample.js';
 import { ShopifyStore } from '../src/shopify/store.js';
-import { backfillWindow, nextNight, ShopifyWorker, sessionQuery, ukDayStart } from '../src/shopify/worker.js';
+import { backfillWindow, nextNight, ShopifyWorker, sessionQuery, ukDayStart, WEBHOOK_MAX_ATTEMPTS } from '../src/shopify/worker.js';
 import { replayPayload, validSignature, webhookTopics } from '../src/shopify/webhooks.js';
 import { createTestDatabase } from './helpers/database.js';
 const credentials = () => ({ SHOPIFY_CLIENT_ID: randomUUID(), SHOPIFY_CLIENT_SECRET: randomUUID() });
@@ -287,6 +287,70 @@ test('real app webhook boundary accepts no Origin, deduplicates safely and repla
   const restarted = new ShopifyWorker(db, env, config.origin, { reader, clock: () => new Date(now.getTime() + 60_000) }); await restarted.drainInbox();
   assert.ok((await db.query('SELECT processed_at FROM pulse.shopify_webhook_inbox')).rows[0]!.processed_at);
   assert.equal((await restarted.store.summary()).counts.order, 1);
+});
+
+test('webhook retries stop at the cap, keep safe diagnostics and restore healthy source status', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const env = credentials(); await syncSourceHealth(db, env);
+  let clock = new Date('2032-04-06T10:00:00Z'), calls = 0;
+  const sourceId = 'sample-inbox-capped', topic = 'orders/create';
+  const privatePayload = 'sample-payload-must-not-leak';
+  const logs: string[] = []; t.mock.method(console, 'error', (line: string) => logs.push(line));
+  const reader = new Reader(); reader.order = async () => { calls++; throw new ShopifyError('timeout'); };
+  const worker = new ShopifyWorker(db, env, 'https://pulse.example.test', { reader, clock: () => clock });
+  await db.query(`INSERT INTO pulse.shopify_webhook_inbox (source_id,topic,payload,next_attempt_at)
+    VALUES ($1,$2,$3,$4)`, [sourceId, topic, JSON.stringify({ orderId: 'sample-order-replay', diagnostic: privatePayload }), clock]);
+  for (let attempt = 1; attempt <= WEBHOOK_MAX_ATTEMPTS; attempt++) {
+    await worker.drainInbox();
+    assert.equal((await readSourceHealth(db)).find(row => row.source === 'shopify')!.status,
+      attempt < WEBHOOK_MAX_ATTEMPTS ? 'error' : 'healthy');
+    clock = new Date(clock.getTime() + 60_000);
+  }
+  const row = (await db.query('SELECT attempts, processed_at, failed_at FROM pulse.shopify_webhook_inbox')).rows[0]!;
+  assert.equal(row.attempts, WEBHOOK_MAX_ATTEMPTS); assert.equal(row.processed_at, null); assert.ok(row.failed_at);
+  await worker.drainInbox(); assert.equal(calls, WEBHOOK_MAX_ATTEMPTS);
+  assert.deepEqual(logs.map(line => JSON.parse(line)), Array.from({ length: WEBHOOK_MAX_ATTEMPTS }, () => ({ source: 'shopify', code: 'timeout', topic, sourceId })));
+  assert.ok(!logs.join('').includes(privatePayload)); assert.ok(!logs.join('').includes('sample-order-replay'));
+  const summary = await worker.store.summary();
+  assert.equal(summary.pendingWebhooks, 0);
+  assert.deepEqual(summary.failedWebhooks, [{ topic, sourceId }]);
+  assert.deepEqual((await new ShopifyStore(db, 'sample').summary()).failedWebhooks, []);
+});
+
+test('missing webhook orders count toward the cap and legacy exhausted events never call the source', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const env = credentials(); await syncSourceHealth(db, env);
+  const clock = new Date('2032-04-06T10:00:00Z'); let calls = 0;
+  const logs: string[] = []; t.mock.method(console, 'error', (line: string) => logs.push(line));
+  const reader = new Reader(); reader.order = async () => { calls++; return null; };
+  const worker = new ShopifyWorker(db, env, 'https://pulse.example.test', { reader, clock: () => clock });
+  await db.query(`INSERT INTO pulse.shopify_webhook_inbox (source_id,topic,payload,attempts,next_attempt_at)
+    VALUES ('sample-inbox-null','orders/create','{"orderId":"sample-missing"}',$1,$3),
+      ('sample-inbox-legacy','orders/create','{"orderId":"sample-old"}',$2,$3)`, [WEBHOOK_MAX_ATTEMPTS - 1, WEBHOOK_MAX_ATTEMPTS + 2, clock]);
+  await worker.drainInbox();
+  assert.equal(calls, 1); assert.equal(JSON.parse(logs[0]!).code, 'invalid');
+  assert.equal((await db.query('SELECT source_id FROM pulse.shopify_webhook_inbox WHERE failed_at IS NOT NULL')).rows.length, 2);
+  assert.equal((await readSourceHealth(db)).find(row => row.source === 'shopify')!.status, 'healthy');
+  await worker.drainInbox(); assert.equal(calls, 1);
+});
+
+test('a webhook can recover before the retry cap and unknown failures never log their message', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const env = credentials(); await syncSourceHealth(db, env);
+  let clock = new Date('2032-04-06T10:00:00Z'), failed = true;
+  const raw = (await fixture('order')).data.order;
+  const logs: string[] = []; t.mock.method(console, 'error', (line: string) => logs.push(line));
+  const reader = new Reader(); reader.order = async () => { if (failed) throw new Error('sample-private-message'); return raw; };
+  const worker = new ShopifyWorker(db, env, 'https://pulse.example.test', { reader, clock: () => clock });
+  await db.query(`INSERT INTO pulse.shopify_webhook_inbox (source_id,topic,payload,next_attempt_at)
+    VALUES ('sample-inbox-recovery','orders/create','{"orderId":"sample-recovery"}',$1)`, [clock]);
+  await worker.drainInbox(); assert.equal((await readSourceHealth(db)).find(row => row.source === 'shopify')!.status, 'error');
+  assert.equal(JSON.parse(logs[0]!).code, 'unknown'); assert.ok(!logs.join('').includes('sample-private-message'));
+  failed = false; clock = new Date(clock.getTime() + 60_000); await worker.drainInbox();
+  const row = (await db.query('SELECT attempts, processed_at, failed_at FROM pulse.shopify_webhook_inbox')).rows[0]!;
+  assert.equal(row.attempts, 2); assert.ok(row.processed_at); assert.equal(row.failed_at, null);
+  assert.equal((await readSourceHealth(db)).find(row => row.source === 'shopify')!.status, 'healthy');
+  assert.equal((await worker.store.summary()).counts.order, 1);
 });
 
 test('sample mode uses real API fixtures without network/subscriptions; source health stays waiting for keys', async t => {

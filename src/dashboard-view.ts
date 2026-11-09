@@ -1,3 +1,4 @@
+import { tickerHead } from './ticker/view.js';
 import { decisionsHtml } from './decisions/view.js';
 import { footerChipHtml, homeDialsHtml } from './home-layout.js';
 import {adSetSummary,adSetsDialog} from './meta-adsets/view.js';
@@ -110,7 +111,7 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
   <link rel="stylesheet" href="/assets/home-compact.css"><link rel="stylesheet" href="/assets/home-panels.css"><link rel="stylesheet" href="/assets/decisions.css">
   <script type="module" src="/assets/browser.js"></script>
   <script type="module" src="/assets/dashboard.js"></script>
-</head>
+${tickerHead()}</head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   ${content}

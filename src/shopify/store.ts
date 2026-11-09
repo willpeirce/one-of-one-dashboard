@@ -111,10 +111,13 @@ export class ShopifyStore {
     const counts = await this.db.query<{ kind: string; count: string }>('SELECT kind, count(*)::text AS count FROM pulse.shopify_records WHERE mode = $1 GROUP BY kind', [this.mode]);
     const jobs = await this.db.query<{ name: string; state: any; last_success_at: Date | null; failures: number }>('SELECT name, state, last_success_at, failures FROM pulse.shopify_jobs WHERE mode = $1 ORDER BY name', [this.mode]);
     const notices = await this.db.query<{ kind: string }>('SELECT kind FROM pulse.shopify_notices WHERE mode = $1 ORDER BY source_id', [this.mode]);
-    const pending = await this.db.query<{ count: string }>('SELECT count(*)::text AS count FROM pulse.shopify_webhook_inbox WHERE processed_at IS NULL');
+    const pending = await this.db.query<{ count: string }>('SELECT count(*)::text AS count FROM pulse.shopify_webhook_inbox WHERE processed_at IS NULL AND failed_at IS NULL');
+    const failedWebhooks = this.mode === 'live' ? (await this.db.query<{ topic: string; source_id: string }>(
+      'SELECT topic, source_id FROM pulse.shopify_webhook_inbox WHERE failed_at IS NOT NULL ORDER BY failed_at DESC, source_id')).rows
+      .map(row => ({ topic: row.topic, sourceId: row.source_id })) : [];
     const geo = await this.currentGeoNotice(now);
     return { mode: this.mode, sample: this.mode === 'sample', counts: Object.fromEntries(counts.rows.map(r => [r.kind, Number(r.count)])), jobs: jobs.rows,
       notices: [...notices.rows.filter(row => row.kind !== 'geo_unreliable').map(row => row.kind), ...(geo ? ['geo_unreliable'] : [])],
-      geoNotice: geo?.why ?? null, pendingWebhooks: this.mode === 'live' ? Number(pending.rows[0]!.count) : 0 };
+      geoNotice: geo?.why ?? null, pendingWebhooks: this.mode === 'live' ? Number(pending.rows[0]!.count) : 0, failedWebhooks };
   }
 }

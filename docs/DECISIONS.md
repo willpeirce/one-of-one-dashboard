@@ -714,3 +714,40 @@ On restart, Mailchimp restores its own persisted health after listen before resp
 Upgrade only Playwright and its matching core package from 1.58.2 to exact version 1.65.0. This release explicitly supports Ubuntu 26.04, including its browser dependency names and Chromium download mapping, so the test job returns to ubuntu-latest. Keep every check and the 15-minute timeout. The earlier Ubuntu 24.04 pin was needed for the old package; it is not a permanent runner requirement. If the upgraded CI run cannot pass, revert this final part and retain the old runner pin.
 
 Local browser verification uses the installed Chromium via the documented executable override; CI must separately verify Playwright's bundled Chromium and runner dependencies. No source API version changes in this part: Google remains v24 and Mailchimp remains 3.0.
+
+
+## 2026-11-09, build A–C: one pull request for this task
+
+The explicit instruction for this build overrides the usual one-part-per-PR rule for this task only. Parts A, B and C share `build-9-nov`, in that order, with separate lettered commits and typecheck, tests, build and browser checks passing before each part is pushed. The spec, source write boundaries and pinned Home budgets stay unchanged.
+
+## 2026-11-09, Part A: terminal retries and Self-check
+
+Stop Shopify inbox retries at the named five-attempt cap, including missing orders. Add `failed_at` in migration 059 and retain exhausted rows for inspection. Log only the safe failure code, topic and inbox source ID. Exhausted events no longer hold source health in error; Sources shows their topic and ID as an amber Watch line. Recoverable events retain the existing retry behaviour.
+
+Retain the 1,500 output-token limit and existing per-call reserve guard. After three `max_tokens` replies for unchanged creative content, retain the scan history but mark that creative skipped. Sources and Creatives name the skip without keeping Anthropic or Self-check in error. A content fingerprint grants a fresh try after the ad or image changes. Increasing output tokens would increase the maximum per-call cost without guaranteeing a complete answer; a bounded skip is the chosen policy.
+
+The media digest is saved during catalogue ingestion and survives lazy hydration and cache eviction. Health reads small signatures, not image blobs. The combined regression proves Self-check passes with an exhausted webhook and a skipped creative. Migration 059 took 0.89ms on disposable PostgreSQL 17.6; browser checks preserve the existing 499.0625px phone and 405.625px desktop dense-fixture hero tops.
+
+
+## 2026-11-09, Part B: carry fixes
+
+Trim the Mailchimp key once before selecting its worker mode and constructing the read-only client. Load invented sample facts once per process, clone them for each consumer, and retain an unavailable result after a read or parse failure so Home, the hero API and Sources continue serving. Migration 060 revokes PUBLIC access to the two existing Mailchimp tables.
+
+Keep the one bounded startup cleanup attempt, and expose an amber Sources warning when it cannot finish. Shipping-refund enrichment counts distinct unreadable old orders in its existing job state across cursor sweeps and restarts, removing an order after a later successful read. Both remain outside source health and Self-check.
+
+Google campaign names match capital UK and US only: the ordinary lower-case word “us” no longer claims the US market. Meta and TikTok retain their existing `campaignMarket` rules. Expected Google campaign coverage begins at its first stored row; subsequent gaps and a campaign with no rows still warn.
+
+An unlisted stock arrival is unknown, never a date inferred from a supplier lead time. Compare known cover with the shortest known lead time only to raise a “no arrival listed” need, naming both durations. The existing stock sheet lists upcoming inbound products, markets, quantities and dates. Pack rows remain listed but cannot raise a gap until packs have a cover; Settings says so.
+
+Prefer `automation-email` campaigns in the Mailchimp probe, preserving explicit campaign selection and the existing fallback when no flow emails appear. The task-provided 9 November check established that the campaign list includes flow emails and their reports return sent and order counts; those counts have not yet been matched to the report page. The links do not carry `tracking.google_analytics` values, so the Email card matches on Shopify session values, never that field. This records the supplied live observation; the builder's verification uses invented fixtures.
+
+
+## 2026-11-09, Part C: shared Next up dates
+
+Use one `keyDates` Settings collection for hard deadlines and launches, empty by default. The shared strip appears immediately after the top bar on all seven signed-in shells and uses the same response as Home's Coming up. Sample mode supplies clearly invented dates relative to the current UK day, separately from live Settings. The mode follows the app's Shopify-backed sample/live boundary; the ticker clock is the real UK day, independent of the fixed Shopify sample clock.
+
+Migration 061 adds `pulse.ticker_passed`, keyed by mode and normalized name/date, revokes PUBLIC access and extends the Settings audit CHECK only when the key is absent. Next and Put back write only this local table and the audit log in a sequential transaction. Next is the explicitly approved one-tap exception to confirmation: it changes nothing in a source and has an eight-second Undo stack plus persistent Put back. Keep Next available beside Undo so several passes can be undone last-first. A changed name or date comes back; orphan passed keys are ignored.
+
+Use the dashboard's existing Decide token (`#7fd8ff`) and dark fonts across both shell stylesheets. Late dates are amber, real save failures use Alarm, and coral stays decorative. Reduced motion uses a static line; the modal uses the native top layer, Escape and focus restoration. Failed reads preserve the reserved height, and failed saves preserve the list. Only page load and a return to visible trigger reads.
+
+Reclaim the strip's 40px desktop/44px phone height from Home's wrap, greeting and control/column gaps, leaving chart height and the market-row's 12px margin untouched. Dense-fixture hero tops remain 499.0625px at 390px and 405.625px at 1280px, within the unchanged 500px/410px budgets. Migration 060 took 0.24ms and 061 took 3.29ms on disposable PostgreSQL 17.6. No dependency, source-client write method, spec refresh or extra Home section was introduced.

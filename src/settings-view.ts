@@ -1,3 +1,4 @@
+import { tickerHead, tickerHtml } from './ticker/view.js';
 import { SETTINGS_KEY_NAMES, type SettingsSnapshot, type Settings } from './settings.js';
 import type { ShopifyCost } from './shopify/costs.js';
 import { ukToday } from './hero-range.js';
@@ -219,6 +220,15 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     checkbox('offerCreatorLink', 'Offer to create the creator’s link'),
     checkbox('useAffiliateWording', 'Use the word “affiliate”'),
   ], values.creatorRules, 'creatorRules')}</div>`);
+  const keyDates = section('Next up dates', 'Hard deadlines and launches.', collection('keyDates', 'Key date', [
+    { key: 'name', label: 'Name', maxlength: 100 }, { key: 'date', label: 'Date', type: 'date' },
+    { key: 'note', label: 'Note', optional: true, maxlength: 240 },
+    { key: 'kind', label: 'Kind', options: [
+      { value: 'flag', label: 'Flag' }, { value: 'spark', label: 'Launch' }, { value: 'box', label: 'Box' },
+      { value: 'signpost', label: 'Decide' }, { value: 'truck', label: 'Arrival' }, { value: 'pen', label: 'Artwork' },
+    ] },
+  ], values.keyDates, 'Hard deadlines and launches only. Each shows in the Next up strip and in Coming up on Home.'), true)
+    .replace('<details ', '<details id="keyDates" ');
   const dates = section('Contacts & dates', 'Waiting-on contacts, deadlines and key expiry dates.', `${collection('waitingContacts', 'Waiting-on contact', [
     { key: 'business', label: 'Business' }, { key: 'role', label: 'Role' },
   ], values.waitingContacts, 'Business names and roles only. Keep customer details, email addresses and phone numbers out of this list.')}${collection('deadlines', 'Deadline', [
@@ -246,19 +256,19 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
   <link rel="stylesheet" href="/assets/settings.css">
   <script type="module" src="/assets/browser.js"></script>
   <script type="module" src="/assets/settings.js"></script>
-</head>
+${tickerHead()}</head>
 <body class="settings-page">
   <div class="sky" aria-hidden="true"></div>
   <a class="settings-skip" href="#main">Skip to settings</a>
   <header class="top"><div class="hin settings-header">
     <a class="settings-wordmark" href="/" aria-label="One of One Pulse home"><img src="/assets/logo.png" width="55" height="34" alt="One of One"><span>Pulse</span></a>
     <nav class="settings-nav" aria-label="Main"><a class="btn" href="/">Dashboard</a><a class="btn" href="/audit">Audit log</a><button class="btn" id="sign-out" type="button" disabled>Sign out</button></nav>
-  </div></header>
+  </div></header>${tickerHtml()}
   <main class="wrap settings-wrap" id="main">
     <div class="settings-intro"><p class="eyebrow">Your business, your rules</p><h1>Settings</h1><p>Real business settings, saved in Pulse. Dashboard figures remain labelled sample data while source feeds are being built.</p></div>
     <form id="settings-form" data-version="${snapshot.version}" method="post" action="/api/settings">
       <input type="hidden" id="saved-meta-owner-rules" value="${escapeHtml(JSON.stringify(values.metaOwners))}">
-      <fieldset id="settings-fields"><legend class="settings-sr-only">Business settings</legend>${goals}${advertising}${costs}${stock}${pace}${campaigns}${email}${creators}${dates}${preferences}</fieldset>
+      <fieldset id="settings-fields"><legend class="settings-sr-only">Business settings</legend>${goals}${advertising}${costs}${stock}${pace}${campaigns}${email}${creators}${keyDates}${dates}${preferences}</fieldset>
       <div class="settings-savebar glass"><div><p id="settings-message" role="status" aria-live="polite">Choose Save settings for these fields, or Save beside a campaign owner.</p><p class="setting-help">Unknown costs can stay blank. Saving adds an audit entry.</p></div><button class="btn settings-save" id="settings-save" type="submit" disabled>Save settings</button></div>
     </form>
     <p id="auth-message" role="status" aria-live="polite"></p>

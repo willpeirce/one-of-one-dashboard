@@ -1,3 +1,4 @@
+import { registerTicker } from './ticker/routes.js';
 import { activityActors, readActivity } from './meta-adsets/activity.js';
 import {readMetaActions} from './meta-adsets/actions.js';
 import {registerAdSets} from './meta-adsets/routes.js';
@@ -284,8 +285,8 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   });
   // Fixed paths only; the server never exposes repository or environment files.
   const assets = [
-    ...['browser.js', 'dashboard.js', 'settings.js', 'fulfilment.js', 'creatives.js', 'adsets.js'].map(name => [name, 'text/javascript; charset=utf-8'] as const),
-    ...['styles.css', 'dashboard.css', 'settings.css', 'fulfilment.css', 'creatives.css', 'fonts.css', 'pull-refresh.css', 'adsets.css', 'scorecard.css', 'home-compact.css', 'home-panels.css', 'decisions.css'].map(name => [name, 'text/css; charset=utf-8'] as const),
+    ...['browser.js', 'dashboard.js', 'settings.js', 'fulfilment.js', 'creatives.js', 'adsets.js', 'ticker.js'].map(name => [name, 'text/javascript; charset=utf-8'] as const),
+    ...['styles.css', 'dashboard.css', 'settings.css', 'fulfilment.css', 'creatives.css', 'fonts.css', 'pull-refresh.css', 'adsets.css', 'scorecard.css', 'home-compact.css', 'home-panels.css', 'decisions.css', 'ticker.css'].map(name => [name, 'text/css; charset=utf-8'] as const),
     ...['logo.png', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'].map(name => [name, 'image/png'] as const),
     ...['outfit', 'plus-jakarta-sans'].flatMap(name => [
       [`fonts/${name}-latin-wght-normal.woff2`, 'font/woff2'] as const,
@@ -299,6 +300,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   app.get('/manifest.webmanifest', async (_request, reply) => reply.type('application/manifest+json').send(
     await readFile(new URL('../dist/public/manifest.webmanifest', import.meta.url)),
   ));
+  registerTicker(app, db, auth, shopify.mode, () => new Date());
   auth.registerRoutes(app);
   const cleanup = setInterval(() => { void auth.cleanup().catch(() => {}); }, 60 * 60 * 1000);
   cleanup.unref();

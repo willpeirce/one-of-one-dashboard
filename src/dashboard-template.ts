@@ -1,3 +1,4 @@
+import { tickerHtml } from './ticker/view.js';
 /**
  * Port of docs/spec/mockup.html: the original body structure and SVG geometry.
  * Numeric and business copy is bound to server-only sample-dashboard.ts fixtures.
@@ -43,6 +44,7 @@ export const dashboardTemplate = `
     </div>
   </div>
 </header>
+${tickerHtml()}
 
 <main class="wrap">
 
@@ -99,13 +101,8 @@ export const dashboardTemplate = `
       <div class="srow win" data-source="github-hq" data-mode="sample"><span class="v"><span data-sample-text="t0095">{{sample:t0095}}</span></span><span class="l"><span data-sample-text="t0096">{{sample:t0096}}</span><small><span data-sample-text="t0097">{{sample:t0097}}</span></small></span><svg class="star" aria-hidden="true"><use href="#i-star"></use></svg></div>
     </div>
     <div class="srows" data-sp="soon" hidden>
-      <div class="srow soon" data-source="github-hq" data-mode="sample"><span class="td"><span data-sample-text="t0098">{{sample:t0098}}</span></span><span class="l"><span data-sample-text="t0099">{{sample:t0099}}</span><small><span data-sample-text="t0100">{{sample:t0100}}</span></small></span><span class="d"><span data-sample-text="t0101">{{sample:t0101}}</span></span></div>
-      <div class="srow" data-source="github-hq" data-mode="sample"><span class="td"><span data-sample-text="t0102">{{sample:t0102}}</span></span><span class="l"><span data-sample-text="t0103">{{sample:t0103}}</span><small><span data-sample-text="t0104">{{sample:t0104}}</span></small></span><span class="d"><span data-sample-text="t0105">{{sample:t0105}}</span></span></div>
-      <div class="srow" data-source="github-hq" data-mode="sample"><span class="td"><span data-sample-text="t0106">{{sample:t0106}}</span></span><span class="l"><span data-sample-text="t0107">{{sample:t0107}}</span><small><span data-sample-text="t0108">{{sample:t0108}}</span></small></span><span class="d"><span data-sample-text="t0109">{{sample:t0109}}</span></span></div>
-      <div class="srow" data-source="github-hq" data-mode="sample"><span class="td"><span data-sample-text="t0110">{{sample:t0110}}</span></span><span class="l"><span data-sample-text="t0111">{{sample:t0111}}</span><small><span data-sample-text="t0112">{{sample:t0112}}</span></small></span><span class="d"><span data-sample-text="t0113">{{sample:t0113}}</span></span></div>
-      <div class="srow" data-source="github-hq" data-mode="sample"><span class="td"><span data-sample-text="t0114">{{sample:t0114}}</span></span><span class="l"><span data-sample-text="t0115">{{sample:t0115}}</span><small><span data-sample-text="t0116">{{sample:t0116}}</span></small></span><span class="d"><span data-sample-text="t0117">{{sample:t0117}}</span></span></div>
-      <div class="srow" data-source="github-hq" data-mode="sample"><span class="td"><span data-sample-text="t0118">{{sample:t0118}}</span></span><span class="l"><span data-sample-text="t0119">{{sample:t0119}}</span><small><span data-sample-text="t0120">{{sample:t0120}}</span></small></span><span class="d"><span data-sample-text="t0121">{{sample:t0121}}</span></span></div>
-      <div class="sfoot"><button class="btn" type="button" id="alldates"><span data-sample-text="t0122">{{sample:t0122}}</span></button></div>
+      <div class="tk-home-dates" data-tk-home-dates><p class="tk-home-empty">ⓘ Loading dates</p></div>
+      <div class="sfoot"><button class="btn" type="button" id="alldates">All dates</button></div>
     </div>
   </aside>
 </section>
@@ -284,20 +281,5 @@ export const dashboardTemplate = `
   <p class="note" style="margin-top:10px"><span data-sample-text="t0354">{{sample:t0354}}</span></p>
 </template>
 
-<template id="t-dates">
-  <div class="timeline">
-    <div class="tl"><span class="td"><span data-sample-text="t0355">{{sample:t0355}}</span></span><span><span data-sample-text="t0356">{{sample:t0356}}</span></span><span class="tin"><span data-sample-text="t0357">{{sample:t0357}}</span></span></div>
-    <div class="tl"><span class="td"><span data-sample-text="t0358">{{sample:t0358}}</span></span><span><span data-sample-text="t0359">{{sample:t0359}}</span></span><span class="tin"><span data-sample-text="t0360">{{sample:t0360}}</span></span></div>
-    <div class="tl"><span class="td"><span data-sample-text="t0361">{{sample:t0361}}</span></span><span><span data-sample-text="t0362">{{sample:t0362}}</span></span><span class="tin"><span data-sample-text="t0363">{{sample:t0363}}</span></span></div>
-    <div class="tl"><span class="td"><span data-sample-text="t0364">{{sample:t0364}}</span></span><span><span data-sample-text="t0365">{{sample:t0365}}</span></span><span class="tin"><span data-sample-text="t0366">{{sample:t0366}}</span></span></div>
-    <div class="tl"><span class="td"><span data-sample-text="t0367">{{sample:t0367}}</span></span><span><span data-sample-text="t0368">{{sample:t0368}}</span></span><span class="tin"><span data-sample-text="t0369">{{sample:t0369}}</span></span></div>
-    <div class="tl"><span class="td"><span data-sample-text="t0370">{{sample:t0370}}</span></span><span><span data-sample-text="t0371">{{sample:t0371}}</span></span><span class="tin"><span data-sample-text="t0372">{{sample:t0372}}</span></span></div>
-    <div class="tl"><span class="td"><span data-sample-text="t0373">{{sample:t0373}}</span></span><span><span data-sample-text="t0374">{{sample:t0374}}</span></span><span class="tin"><span data-sample-text="t0375">{{sample:t0375}}</span></span></div>
-    <div class="tl"><span class="td"><span data-sample-text="t0376">{{sample:t0376}}</span></span><span><span data-sample-text="t0377">{{sample:t0377}}</span></span><span class="tin"><span data-sample-text="t0378">{{sample:t0378}}</span></span></div>
-    <div class="tl"><span class="td"><span data-sample-text="t0379">{{sample:t0379}}</span></span><span><span data-sample-text="t0380">{{sample:t0380}}</span></span><span class="tin"><span data-sample-text="t0381">{{sample:t0381}}</span></span></div>
-    <div class="tl"><span class="td"><span data-sample-text="t0382">{{sample:t0382}}</span></span><span><span data-sample-text="t0383">{{sample:t0383}}</span></span><span class="tin"><span data-sample-text="t0384">{{sample:t0384}}</span></span></div>
-    <div class="tl"><span class="td"><span data-sample-text="t0385">{{sample:t0385}}</span></span><span><span data-sample-text="t0386">{{sample:t0386}}</span></span><span class="tin"><span data-sample-text="t0387">{{sample:t0387}}</span></span></div>
-    <div class="tl"><span class="td"><span data-sample-text="t0388">{{sample:t0388}}</span></span><span><span data-sample-text="t0389">{{sample:t0389}}</span></span><span class="tin"><span data-sample-text="t0390">{{sample:t0390}}</span></span></div>
-  </div>
-</template>
+
 `;

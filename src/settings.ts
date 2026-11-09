@@ -6,6 +6,7 @@ import type { OverheadItem } from './overheads.js';
 import { sourceDefinitions } from './sources.js';
 import { isSeriesDate, seriesPaceDates } from './series-pace/dates.js';
 import type { InboundStock } from './shopify/stock-gap.js';
+import { tickerEventKey, tickerKinds, type KeyDate } from './ticker/model.js';
 
 export const SETTINGS_KEY_NAMES = Object.freeze(sourceDefinitions.flatMap((source) => [...source.requiredKeys]));
 type KeyName = (typeof SETTINGS_KEY_NAMES)[number];
@@ -28,6 +29,7 @@ export interface Settings {
   dispatchCutoffUs: string;
   supplierLeadTimes: { supplier: string; days: number | null }[];
   inboundStock: InboundStock[];
+  keyDates: KeyDate[];
   safetyWeeks: number;
   seasonalMultiplier: number | null;
   markersPerKit: number | null;
@@ -143,6 +145,7 @@ export function defaultSettings(): Settings {
       { supplier: 'Shanghai Joan', days: null }, { supplier: 'Freight forwarder', days: null },
     ],
     inboundStock: [],
+    keyDates: [],
     safetyWeeks: 3,
     seasonalMultiplier: null,
     markersPerKit: null,
@@ -321,6 +324,11 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
       return { product: text(parsed.product, `${path}.product`), market: choice(parsed.market, `${path}.market`, ['uk', 'us'] as const),
         quantity: requiredNumber(parsed.quantity, `${path}.quantity`, 1_000_000, true, 1), expectedDate: seriesDate(parsed.expectedDate, `${path}.expectedDate`) };
     }, (row) => `${row.product}:${row.market}:${row.expectedDate}`),
+    keyDates: list(value.keyDates, 'keyDates', (row, path) => {
+      const parsed = object(row, ['name', 'date', 'note', 'kind'], path);
+      return { name: text(parsed.name, `${path}.name`), date: seriesDate(parsed.date, `${path}.date`),
+        note: parsed.note === '' ? '' : text(parsed.note, `${path}.note`, 240), kind: choice(parsed.kind, `${path}.kind`, tickerKinds) };
+    }, tickerEventKey),
     safetyWeeks: requiredNumber(value.safetyWeeks, 'safetyWeeks', 104),
     seasonalMultiplier: number(value.seasonalMultiplier, 'seasonalMultiplier', 100, true, false, 0.01),
     markersPerKit: number(value.markersPerKit, 'markersPerKit', 1_000, true, true),
@@ -458,6 +466,7 @@ function storedSettings(input: unknown): Settings {
     ourActors: defaults.ourActors,
     freelancerLabel: defaults.freelancerLabel,
     inboundStock: defaults.inboundStock,
+    keyDates: defaults.keyDates,
     googleNetworkSpendFloorGbp: defaults.googleNetworkSpendFloorGbp,
     googleNetworkRoasFloor: defaults.googleNetworkRoasFloor,
     mailchimpPlanLimit: defaults.mailchimpPlanLimit,
@@ -481,9 +490,10 @@ async function ensureSettings(db: Database): Promise<void> {
   await db.query('INSERT INTO pulse.settings (values) VALUES ($1) ON CONFLICT (singleton) DO NOTHING', [JSON.stringify(defaultSettings())]);
 }
 
-export async function readSettings(db: Database): Promise<SettingsSnapshot> {
-  await ensureSettings(db);
+export async function readSettings(db: Database, options: { seed?: boolean } = {}): Promise<SettingsSnapshot> {
+  if (options.seed !== false) await ensureSettings(db);
   const { rows } = await db.query<{ version: number; values: Settings }>('SELECT version, values FROM pulse.settings WHERE singleton = true');
+  if (!rows[0] && options.seed === false) return { version: 0, values: defaultSettings() };
   if (!rows[0]) throw new Error('Settings are unavailable');
   return { version: rows[0].version, values: storedSettings(rows[0].values) };
 }

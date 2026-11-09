@@ -26,6 +26,7 @@ import { checkActorSettings } from './browser-actor-settings.js';
 import { checkGoogleWidgets } from './browser-google.js';
 import { checkMailchimpWidgets } from './browser-mailchimp.js';
 import { checkInboundSettings } from './browser-inbound-settings.js';
+import { checkTicker } from './ticker-browser-check.js';
 
 let step = 'read test configuration';
 
@@ -1800,6 +1801,8 @@ async function run(): Promise<void> {
     }
     step = 'check monthly scorecard, source labels and market controls at phone and desktop widths';
     await checkScorecard(context);
+    step = 'check shared Next up strip, local persistence and accessible modal at phone and desktop widths';
+    await checkTicker(context);
 
     step = 'check same-origin manifest and installation icons';
     await checkManifest(page, context, origin);

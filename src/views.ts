@@ -1,3 +1,4 @@
+import { tickerHead, tickerHtml } from './ticker/view.js';
 import { formatUkTime } from './uk-time.js';
 import {mediaFactLine,mediaFactPermissionLine} from './creatives/media-facts.js';
 import {thruPlayLine} from './creatives/thruplay-repair.js';
@@ -40,13 +41,13 @@ function page(title: string, content: string, signedIn: boolean): string {
   <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png">
   <link rel="icon" type="image/png" href="/assets/icon-192.png">
   <script type="module" src="/assets/browser.js"></script>
-</head>
+${signedIn ? tickerHead() : ''}</head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="top"><div class="hin">
     <a class="wordmark" href="/">One of One <span>Pulse</span></a>
     ${signedIn ? `<nav aria-label="Main"><a href="/">Home</a><a href="/scorecard">Scorecard</a><a href="/sources">Source health</a><a href="/settings">Settings</a><a href="/audit">Audit log</a><button id="sign-out" type="button" disabled>Sign out</button></nav>` : ''}
-  </div></header>
+  </div></header>${signedIn ? tickerHtml() : ''}
   <main class="wrap" id="main">${content}<p id="auth-message" role="status" aria-live="polite"></p></main>
   <noscript><div class="wrap"><p class="notice">Enable JavaScript to sign in or sign out with a passkey.</p></div></noscript>
 </body>

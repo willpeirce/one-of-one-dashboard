@@ -466,3 +466,17 @@ button[disabled]{cursor:not-allowed}.act[disabled]{opacity:.5}
 .hourly-tooltip strong{color:var(--ink)}
 .hourly-unavailable{height:112px;display:flex;align-items:center;color:var(--muted);font-size:12px}
 .visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+/* Reserve the shared strip's height by reclaiming Home spacing; chart and market margins stay pinned. */
+.wrap:has(>.hero){padding-top:10px}
+.wrap:has(>.hero) .greet{padding-block:14px;gap:12px}
+.wrap:has(>.hero) .left{gap:10px}
+.wrap:has(>.hero) .hero-controls .seg{margin-bottom:8px}
+.wrap:has(>.hero) .tk-home-dates{min-width:0}
+.wrap:has(>.hero) .tk-home-row{display:grid;grid-template-columns:84px minmax(0,1fr);gap:10px;padding:10px 12px;align-items:center;border-radius:14px;background:rgba(255,255,255,.06);margin-bottom:6px}
+.wrap:has(>.hero) .tk-home-row strong{font:700 13px var(--disp);overflow-wrap:anywhere}
+.wrap:has(>.hero) .tk-home-row small{display:block;font-size:11px;color:var(--ink-2);overflow-wrap:anywhere}
+.wrap:has(>.hero) .tk-home-date{font:600 12px var(--disp);color:var(--ink-2)}
+.wrap:has(>.hero) .tk-home-empty{padding:10px 12px;color:var(--ink-2);font-size:13px}
+@media(max-width:760px){.wrap:has(>.hero) .greet{padding-block:10px}}
+.wrap:has(>.hero) .tk-home-sample{margin:4px 12px;font:600 11px var(--disp);color:var(--ink-2)}

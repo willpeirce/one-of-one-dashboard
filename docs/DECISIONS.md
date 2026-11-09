@@ -708,3 +708,9 @@ Keep Shopify's email view separate and in pounds, using only last-visit medium=e
 Migrations 057 and 058 took 2.6ms and 1.7ms respectively on local PostgreSQL 17.6. The fixture probe reached all five endpoint types while correctly retaining unknown flow coverage; the no-key command made no requests.
 
 On restart, Mailchimp restores its own persisted health after listen before respecting the next scheduled poll. A fresh held audience or a recorded failure therefore retains its health and timestamps without an early source call.
+
+## 2026-11-08, Part G: pinned Playwright upgrade
+
+Upgrade only Playwright and its matching core package from 1.58.2 to exact version 1.65.0. This release explicitly supports Ubuntu 26.04, including its browser dependency names and Chromium download mapping, so the test job returns to ubuntu-latest. Keep every check and the 15-minute timeout. The earlier Ubuntu 24.04 pin was needed for the old package; it is not a permanent runner requirement. If the upgraded CI run cannot pass, revert this final part and retain the old runner pin.
+
+Local browser verification uses the installed Chromium via the documented executable override; CI must separately verify Playwright's bundled Chromium and runner dependencies. No source API version changes in this part: Google remains v24 and Mailchimp remains 3.0.

@@ -727,3 +727,16 @@ Stop Shopify inbox retries at the named five-attempt cap, including missing orde
 Retain the 1,500 output-token limit and existing per-call reserve guard. After three `max_tokens` replies for unchanged creative content, retain the scan history but mark that creative skipped. Sources and Creatives name the skip without keeping Anthropic or Self-check in error. A content fingerprint grants a fresh try after the ad or image changes. Increasing output tokens would increase the maximum per-call cost without guaranteeing a complete answer; a bounded skip is the chosen policy.
 
 The media digest is saved during catalogue ingestion and survives lazy hydration and cache eviction. Health reads small signatures, not image blobs. The combined regression proves Self-check passes with an exhausted webhook and a skipped creative. Migration 059 took 0.89ms on disposable PostgreSQL 17.6; browser checks preserve the existing 499.0625px phone and 405.625px desktop dense-fixture hero tops.
+
+
+## 2026-11-09, Part B: carry fixes
+
+Trim the Mailchimp key once before selecting its worker mode and constructing the read-only client. Load invented sample facts once per process, clone them for each consumer, and retain an unavailable result after a read or parse failure so Home, the hero API and Sources continue serving. Migration 060 revokes PUBLIC access to the two existing Mailchimp tables.
+
+Keep the one bounded startup cleanup attempt, and expose an amber Sources warning when it cannot finish. Shipping-refund enrichment counts distinct unreadable old orders in its existing job state across cursor sweeps and restarts, removing an order after a later successful read. Both remain outside source health and Self-check.
+
+Google campaign names match capital UK and US only: the ordinary lower-case word “us” no longer claims the US market. Meta and TikTok retain their existing `campaignMarket` rules. Expected Google campaign coverage begins at its first stored row; subsequent gaps and a campaign with no rows still warn.
+
+An unlisted stock arrival is unknown, never a date inferred from a supplier lead time. Compare known cover with the shortest known lead time only to raise a “no arrival listed” need, naming both durations. The existing stock sheet lists upcoming inbound products, markets, quantities and dates. Pack rows remain listed but cannot raise a gap until packs have a cover; Settings says so.
+
+Prefer `automation-email` campaigns in the Mailchimp probe, preserving explicit campaign selection and the existing fallback when no flow emails appear. The task-provided 9 November check established that the campaign list includes flow emails and their reports return sent and order counts; those counts have not yet been matched to the report page. The links do not carry `tracking.google_analytics` values, so the Email card matches on Shopify session values, never that field. This records the supplied live observation; the builder's verification uses invented fixtures.

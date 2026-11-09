@@ -29,7 +29,7 @@ export function googleSpendMarket(campaignName: string): Market {
 }
 function googleNameMarkets(name: string): Set<string> {
   // Underscores are separators in campaign names, but letters/numbers must not match substrings.
-  return new Set([...name.matchAll(/(?:^|[^\p{L}\p{N}])(UK|US)(?=$|[^\p{L}\p{N}])/giu)].map(match => match[1]!.toUpperCase()));
+  return new Set([...name.matchAll(/(?:^|[^\p{L}\p{N}])(UK|US)(?=$|[^\p{L}\p{N}])/gu)].map(match => match[1]!));
 }
 
 export function tiktokSpendMarket(campaignName: string): Market {

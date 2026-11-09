@@ -4,6 +4,7 @@ Updated in every pull request.
 
 | Stage | What | Code | Keys in Replit | Live check ("Done when") |
 |---|---|---|---|---|
+| Build 9 Nov · B | Mailchimp sample/key/probe fixes, private table grants, source warnings, capital Google markets and campaign coverage, honest stock arrivals and inbound sheet rows | built on `build-9-nov`; additive migration 060 | none | Check Sources warnings, actual inbound rows and expected campaign coverage after merge |
 | Build 9 Nov · A | Capped webhook retries and skipped truncated creative scans; terminal failures remain visible without blocking Self-check | built on `build-9-nov`; additive migration 059 | none | Check terminal warnings and a changed creative after merge and Republish |
 | Build 8 Nov · G | Exact Playwright 1.65.0 pin and supported current Ubuntu runner | built on `build-8-nov`; CI timeout stays 15 minutes | none | Check the complete CI run before merge; revert the upgrade if it cannot pass |
 | Build 8 Nov · F | Mailchimp GET client, safe probe, audience worker/billing Watch and Shopify email pounds | standalone portion built on `build-8-nov`; migrations 057–058; per-flow ingestion deferred | optional MAILCHIMP_API_KEY | Run the probe after the key exists; check audience/Settings and separately attributed Shopify pounds |
@@ -87,7 +88,7 @@ Updated in every pull request.
 
 ## Next step
 
-Review **build-9-nov** as one pull request with separate lettered parts. Part A ends repeated terminal webhook and creative-scan failures while preserving their warnings. Continue with the carry fixes in Part B, then the shared Next up strip in Part C; retain every existing check and Home budget.
+Review **build-9-nov** as one pull request with separate lettered parts. Part A ends repeated terminal webhook and creative-scan failures while preserving their warnings. Part B completes the carry fixes. Continue with the shared Next up strip in Part C; retain every existing check and Home budget.
 
 After merge: run `npm run migrate`, Republish, supply live Settings values, and perform source and phone/desktop acceptance checks. Live source data is not available to the builder. The only requested new secret is `MAILCHIMP_API_KEY` when that source is wanted live; it is never entered in this repository.
 

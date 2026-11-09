@@ -1,15 +1,26 @@
-import { readFile } from 'node:fs/promises';
+import { promises as fs } from 'node:fs';
 import type { Database } from '../db.js';
 import { appConfig } from '../config.js';
 import { MAILCHIMP_FRESH_MS, parseMailchimpAudience, parseMailchimpCampaign, parseMailchimpOrder, parseMailchimpReport,
   type MailchimpAudience, type MailchimpFacts } from './model.js';
 
-async function sampleFacts(): Promise<MailchimpFacts> {
-  const fixture = async (name: string) => JSON.parse(await readFile(new URL(`../../test/fixtures/mailchimp/${name}.json`, import.meta.url), 'utf8')) as Record<string, unknown>;
+async function loadSampleFacts(): Promise<MailchimpFacts> {
+  const fixture = async (name: string) => JSON.parse(await fs.readFile(new URL(`../../test/fixtures/mailchimp/${name}.json`, import.meta.url), 'utf8')) as Record<string, unknown>;
   const [audience, campaigns, report, orders] = await Promise.all([fixture('audience'), fixture('campaigns'), fixture('report'), fixture('orders')]);
   return {mode: 'sample', status: 'sample', fetchedAt: '2026-11-05T12:00:00.000Z', audience: parseMailchimpAudience(audience), flowCoverage: 'unknown',
     campaigns: (campaigns.campaigns as unknown[]).map(parseMailchimpCampaign), reports: [parseMailchimpReport(report)],
     orders: (orders.orders as unknown[]).map(parseMailchimpOrder)};
+}
+
+let sample: Promise<MailchimpFacts> | undefined;
+async function sampleFacts(): Promise<MailchimpFacts> {
+  // Share the first read, including concurrent requests and a failed fixture load.
+  sample ??= loadSampleFacts().catch(() => {
+    console.error('Mailchimp sample data unavailable (code: fixture).');
+    return {mode: 'sample', status: 'unavailable', fetchedAt: null, audience: null,
+      flowCoverage: 'unknown', campaigns: [], reports: [], orders: []};
+  });
+  return structuredClone(await sample);
 }
 
 export async function readMailchimpFacts(db: Database, mode: 'sample' | 'live', now: Date): Promise<MailchimpFacts> {

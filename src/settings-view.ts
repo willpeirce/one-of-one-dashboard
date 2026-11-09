@@ -152,12 +152,12 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     number('pencilsPerKit', 'Pencils per kit', { nullable: true, integer: true }),
   ], values)}</div>${collection('supplierLeadTimes', 'Supplier lead time', [
     { key: 'supplier', label: 'Supplier business' }, number('days', 'Lead time (days)', { nullable: true, integer: true }),
-  ], values.supplierLeadTimes, 'Starting supplier lead times. Without an upcoming inbound row, the shortest known lead time is an assumed arrival date.')}${collection('inboundStock', 'Inbound stock', [
+  ], values.supplierLeadTimes, 'Starting supplier lead times. With no arrival listed, cover below the shortest known lead time raises a warning; no arrival date is assumed.')}${collection('inboundStock', 'Inbound stock', [
     { key: 'product', label: 'Product', list: 'inbound-stock-products', hint: 'Use the product name shown in Stock and cover.' },
     { key: 'market', label: 'Market', options: [{ value: 'uk', label: 'UK' }, { value: 'us', label: 'US' }] },
     number('quantity', 'Quantity', { integer: true, min: 1, max: 1_000_000 }),
     { key: 'expectedDate', label: 'Expected arrival (UK date)', type: 'date' },
-  ], values.inboundStock, 'Confirmed arrivals by product and market. Dates before today no longer count as the next arrival. Saving changes only the local stock plan.', undefined, {
+  ], values.inboundStock, 'Confirmed arrivals by product and market; pack rows are listed but cannot raise a gap until packs have a cover. Dates before today no longer count as the next arrival. Saving changes only the local stock plan.', undefined, {
     rowHint: row => inboundProductWarning(row.product, stockProductNames),
     footer: `<datalist id="inbound-stock-products">${stockProductNames.map(product => `<option value="${escapeHtml(product)}"></option>`).join('')}</datalist>`,
   })}`);

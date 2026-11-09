@@ -62,10 +62,15 @@ export class ShopifyWorker {
   readonly client: ShopifyReader;
   readonly mode: SourceMode;
   private orderCleanup?: Promise<void>;
+  private cleanupIncomplete = false;
+  get orderCleanupIncomplete(): boolean { return this.cleanupIncomplete; }
   /** Called only by the post-listen startup hook; repeated calls share one attempt. */
   startOrderCleanup(): Promise<void> {
     if (!this.orderCleanup) this.orderCleanup = this.mode === 'live' && !this.closing
-      ? cleanLegacyOrders(this.db).catch(() => console.error('Startup Shopify order cleanup could not finish.'))
+      ? cleanLegacyOrders(this.db).catch(() => {
+        this.cleanupIncomplete = true;
+        console.error('Startup Shopify order cleanup could not finish.');
+      })
       : Promise.resolve();
     return this.orderCleanup;
   }
@@ -349,26 +354,39 @@ export class ShopifyWorker {
     }
     if (name === 'shipping_refunds') {
       if (this.mode !== 'live') return { skipped: 'sample_mode' };
+      // Keep distinct unresolved IDs across cursor sweeps; retrying one order is not another skipped order.
+      const skippedOrderIds = new Set<string>(Array.isArray(state.skippedOrderIds)
+        ? state.skippedOrderIds.filter((id: unknown): id is string => typeof id === 'string') : []);
+      const skippedState = () => ({ skippedOrders: skippedOrderIds.size, skippedOrderIds: [...skippedOrderIds] });
       // One legacy order per run enriches totals, replacement tags and shipping refunds without blocking startup.
       const legacy = await this.db.query<{ source_id: string }>(`SELECT source_id FROM pulse.shopify_records
         WHERE mode = 'live' AND kind = 'order' AND source_id > $1 AND data->>'day' >= $2
           AND (NOT (data ? 'totalPence') OR NOT (data ? 'tags') OR EXISTS (SELECT 1 FROM jsonb_array_elements(data->'refunds') AS refund WHERE NOT (refund ? 'shippingNetPence') OR NOT (refund ? 'totalPence')))
         ORDER BY source_id LIMIT 1`, [state.after ?? '', checkpoint.rows[0]?.state.from ?? day]);
       const id = legacy.rows[0]?.source_id;
-      if (!id) return { after: null, idle: true };
+      if (!id) return { after: null, idle: true, ...skippedState() };
       // Advance durably before the read: an inaccessible old order cannot block the rest.
-      const nextState = { after: id };
+      const nextState = { after: id, ...skippedState() };
       await this.db.query(`UPDATE pulse.shopify_jobs SET state = $1, next_run_at = $2 WHERE mode = 'live' AND name = 'shipping_refunds'`, [JSON.stringify(nextState), new Date(now.getTime() + intervals.shipping_refunds)]);
       let raw;
-      try { raw = await this.client.order(id, address); }
-      catch (error) {
-        if (!address || !(error instanceof ShopifyError) || error.code !== 'denied') throw error;
-        raw = await this.client.order(id, false);
+      try {
+        try { raw = await this.client.order(id, address); }
+        catch (error) {
+          if (!address || !(error instanceof ShopifyError) || error.code !== 'denied') throw error;
+          raw = await this.client.order(id, false);
+        }
+        if (!raw) throw new ShopifyError('denied');
       }
-      if (!raw) throw new ShopifyError('denied');
+      catch (error) {
+        skippedOrderIds.add(id);
+        await this.db.query(`UPDATE pulse.shopify_jobs SET state = $1 WHERE mode = 'live' AND name = 'shipping_refunds'`,
+          [JSON.stringify({ after: id, ...skippedState() })]);
+        throw error;
+      }
       if (raw.refunds.some((refund: any) => !refund.refundShippingLines)) throw new ShopifyError('invalid');
       await this.store.orders([raw], this.clock());
-      return nextState;
+      skippedOrderIds.delete(id);
+      return { after: id, ...skippedState() };
     }
     if (name === 'backfill') {
       if (!state.from) {

@@ -63,6 +63,13 @@ test('probe bounds API-discovered campaign checks, removes duplicate ids and nev
   assert.equal(calls.filter(call=>call.startsWith('report:')).length,1);
 });
 
+test('explicit probe campaign ids take precedence over discovered automation emails', async () => {
+  const calls: string[] = [], reader = fakeReader(calls);
+  reader.campaigns = async () => read([{...campaign('invented_flow_email'), type: 'automation-email'}], ['campaigns.id', 'campaigns.type']);
+  await runMailchimpProbe(reader, {campaignIds: ['invented_explicit']});
+  assert.deepEqual(calls.filter(call => call.startsWith('report:')), ['report:invented_explicit']);
+});
+
 test('rate-limit deferment and malformed schema paths are reported safely without response values',async()=>{
   const reader=fakeReader(),lines:string[]=[],secret=randomBytes(24).toString('hex');
   reader.report=async()=>{throw new MailchimpReadError('rate_limit',429,Date.parse('2026-11-09T12:00:00Z'));};
@@ -116,6 +123,10 @@ test('fixture probe runs through the real GET-only client with limited ecommerce
   const result=await runMailchimpProbe(client,{line:line=>lines.push(line)});
   assert.equal(result.complete,true);assert.equal(result.flowCoverage,'unknown');
   assert.ok(paths.some(path=>path.endsWith('/ecommerce/orders')));
+  assert.deepEqual(paths.filter(path=>path.includes('/reports/')), [
+    `/${MAILCHIMP_API_VERSION}/reports/invented-flow-email-a`,
+    `/${MAILCHIMP_API_VERSION}/reports/invented-flow-email-b`,
+  ], 'automation emails are selected even when a regular campaign is first in the API list');
   const output=lines.join('\n');assert.ok(!output.includes(token));assert.ok(!output.includes('invented-probe-request'));
   const campaignRows=fixtures.campaigns.campaigns as {id:string;settings?:{title?:string;subject_line?:string}}[];
   for(const row of campaignRows)for(const value of [row.id,row.settings?.title,row.settings?.subject_line])if(value)assert.ok(!output.includes(value));

@@ -133,6 +133,38 @@ test('stock arrival gaps join live DashboardNeeds without entering sample Home',
   assert.equal(sample.shopify!.needs.filter(need => need.id.startsWith('stock-gap:')).length, 0);
 });
 
+test('existing stock sheets list upcoming kit and pack arrivals without adding Home controls', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const instant = new Date('2032-04-06T10:00:00Z');
+  const values = {...settings, supplierLeadTimes: [{supplier: 'Invented supplier', days: 8}], inboundStock: [
+    {product: 'Invented pack', market: 'us' as const, quantity: 17, expectedDate: '2032-04-09'},
+    {product: 'Invented kit', market: 'uk' as const, quantity: 13, expectedDate: '2032-04-06'},
+    {product: 'Invented past pack', market: 'uk' as const, quantity: 11, expectedDate: '2032-04-05'},
+  ]};
+  const snapshot = await applyShopifyDashboard(getSampleDashboard(), db, facts([]), values, [], instant);
+  const extra = snapshot.shopify!.detail.stock!.extra!;
+  const heading = extra.findIndex(([label]) => label === 'Upcoming inbound');
+  assert.ok(heading > 0);
+  assert.match(extra[heading]![1], /Pack rows are listed but cannot raise a gap until packs have a cover/);
+  assert.deepEqual(extra.slice(heading + 1), [
+    ['Invented kit · UK', '13 units · expected 2032-04-06'],
+    ['Invented pack · US', '17 units · expected 2032-04-09'],
+  ]);
+  assert.ok(extra.slice(0, heading).every(([, line]) => line.endsWith('no arrival listed')));
+  assert.equal(snapshot.shopify!.needs.filter(need => need.id.startsWith('stock-gap:')).length, 0, 'Unknown cover never guesses a gap');
+  for (const key of ['w046', 'w047', 'w048']) {
+    const widget = snapshot.widgets[key]!;
+    assert.equal(widget.kind, 'ring');
+    if (widget.kind === 'ring') assert.deepEqual(widget.value.d.extra, extra, 'The current stock dial opens the inbound detail');
+  }
+  const before = decisionsHtml({shopify: snapshot.shopify});
+  const withoutInbound = await applyShopifyDashboard(getSampleDashboard(), db, facts([]), {...values, inboundStock: []}, [], instant);
+  const after = decisionsHtml({shopify: withoutInbound.shopify});
+  assert.equal((before.match(/data-stock-market=/g) ?? []).length, (after.match(/data-stock-market=/g) ?? []).length);
+  assert.equal((before.match(/<button\b/g) ?? []).length, (after.match(/<button\b/g) ?? []).length);
+  assert.equal(withoutInbound.shopify!.detail.stock!.extra!.at(-1)![1], 'No arrival listed.');
+});
+
 test('email explanations use human weekday dates for one day, a range and a year boundary', async () => {
   const o = await order();
   const oneDay = shopifyHero(facts([o]), '2026-09-30', '2026-09-30', '2026-09-30', settings).business!.email.detail.why;

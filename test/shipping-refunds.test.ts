@@ -139,9 +139,75 @@ test('denied historical refund reads keep unknowns and back off without changing
   await worker.tick(); await worker.tick(); assert.equal(calls, 1);
   assert.deepEqual(logs, ['Shopify shipping_refunds failed (denied, http 403).']);
   assert.equal((await readSourceHealth(db)).find(row => row.source === 'shopify')!.status, 'healthy');
-  const job = (await db.query<{ next_run_at: Date }>("SELECT next_run_at FROM pulse.shopify_jobs WHERE name='shipping_refunds'")).rows[0]!;
+  const job = (await db.query<{ next_run_at: Date; state: {skippedOrders: number; skippedOrderIds: string[]} }>("SELECT next_run_at,state FROM pulse.shopify_jobs WHERE name='shipping_refunds'")).rows[0]!;
   assert.equal(new Date(job.next_run_at).getTime() - now.getTime(), 3_600_000);
+  assert.equal(job.state.skippedOrders, 1);
+  assert.deepEqual(job.state.skippedOrderIds, [legacy.id]);
   const stored = (await db.query<{ data: Order }>("SELECT data FROM pulse.shopify_records WHERE source_id=$1", [legacy.id])).rows[0]!.data;
   assert.equal(stored.refunds[0]!.shippingNetPence, undefined);
   assert.match(margin([stored]).margin.ss, /older shipping refund detail/);
+});
+
+test('unreadable old-order counts survive idle and restart, deduplicate retries, and clear after recovery', async t => {
+  const db = await createTestDatabase();
+  const credentials = {SHOPIFY_CLIENT_ID: randomUUID(), SHOPIFY_CLIENT_SECRET: randomUUID()};
+  let clock = now, readable = false, calls = 0;
+  const raw = {...await rawOrder(), id: 'gid://shopify/Order/990051'};
+  class Reader extends SampleShopify {
+    override async order() { calls++; if (!readable) throw new ShopifyError('denied', 403); return raw; }
+  }
+  const reader = new Reader();
+  let worker = new ShopifyWorker(db, credentials, 'https://pulse.example.test', {reader, clock: () => clock});
+  t.after(async () => { await worker.stop(); await db.close(); });
+  t.mock.method(console, 'error', () => {});
+  await syncSourceHealth(db, credentials);
+  await db.query("UPDATE pulse.source_health SET status='healthy',last_success_at=$1 WHERE source='shopify'", [now]);
+  await worker.initialize();
+  await db.query("UPDATE pulse.shopify_jobs SET next_run_at='9999-01-01' WHERE name <> 'shipping_refunds'");
+  await db.query("UPDATE pulse.shopify_jobs SET state=$1 WHERE name='backfill'", [JSON.stringify({from: '2026-09-01', address: false})]);
+  const legacy = cleanOrder(raw); delete legacy.refunds[0]!.shippingNetPence;
+  await worker.store.put('order', legacy.id, legacy, now);
+  const state = async () => (await db.query<{state: {after: string | null; idle?: boolean; skippedOrders: number; skippedOrderIds: string[]}}>(
+    "SELECT state FROM pulse.shopify_jobs WHERE name='shipping_refunds' AND mode='live'")).rows[0]!.state;
+  await worker.tick(); assert.equal((await state()).skippedOrders, 1);
+  clock = new Date(clock.getTime() + 3_600_000); await worker.tick();
+  assert.equal((await state()).idle, true); assert.equal((await state()).skippedOrders, 1);
+  await worker.stop();
+  worker = new ShopifyWorker(db, credentials, 'https://pulse.example.test', {reader, clock: () => clock});
+  await worker.initialize();
+  clock = new Date(clock.getTime() + 3_600_000); await worker.tick();
+  assert.equal((await state()).skippedOrders, 1); assert.deepEqual((await state()).skippedOrderIds, [legacy.id]);
+  clock = new Date(clock.getTime() + 3_600_000); await worker.tick();
+  readable = true; clock = new Date(clock.getTime() + 3_600_000); await worker.tick();
+  assert.equal(calls, 3); assert.equal((await state()).skippedOrders, 0); assert.deepEqual((await state()).skippedOrderIds, []);
+  assert.equal((await readSourceHealth(db)).find(row => row.source === 'shopify')!.status, 'healthy');
+});
+
+test('null old-order reads count as unreadable, while malformed readable refunds do not', async t => {
+  const db = await createTestDatabase();
+  const credentials = {SHOPIFY_CLIENT_ID: randomUUID(), SHOPIFY_CLIENT_SECRET: randomUUID()};
+  let clock = now;
+  const raw = await rawOrder();
+  class Reader extends SampleShopify {
+    override async order(id: string) {
+      if (id.endsWith('990061')) return null;
+      const result = structuredClone({...raw, id}); delete result.refunds[0].refundShippingLines;
+      return result;
+    }
+  }
+  const worker = new ShopifyWorker(db, credentials, 'https://pulse.example.test', {reader: new Reader(), clock: () => clock});
+  t.after(async () => { await worker.stop(); await db.close(); });
+  t.mock.method(console, 'error', () => {});
+  await worker.initialize();
+  await db.query("UPDATE pulse.shopify_jobs SET next_run_at='9999-01-01' WHERE name <> 'shipping_refunds'");
+  await db.query("UPDATE pulse.shopify_jobs SET state=$1 WHERE name='backfill'", [JSON.stringify({from: '2026-09-01', address: false})]);
+  for (const id of ['gid://shopify/Order/990061', 'gid://shopify/Order/990062']) {
+    const legacy = cleanOrder({...raw, id}); delete legacy.refunds[0]!.shippingNetPence;
+    await worker.store.put('order', id, legacy, now);
+  }
+  await worker.tick();
+  clock = new Date(clock.getTime() + 3_600_000); await worker.tick();
+  const state = (await db.query<{state: {skippedOrders: number; skippedOrderIds: string[]}}>(
+    "SELECT state FROM pulse.shopify_jobs WHERE name='shipping_refunds'")).rows[0]!.state;
+  assert.equal(state.skippedOrders, 1); assert.deepEqual(state.skippedOrderIds, ['gid://shopify/Order/990061']);
 });

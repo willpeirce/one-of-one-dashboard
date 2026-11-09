@@ -27,6 +27,7 @@ import {
   TikTokSpend,
   type SpendReader,
 } from '../src/ad-spend/clients.js';
+import { googleSpendMarket, metaSpendMarket, tiktokSpendMarket } from '../src/ad-spend/placement.js';
 import { AdTransport } from '../src/ad-spend/http.js';
 import { saveSpend, spendFacts, sampleSpend, readJobs } from '../src/ad-spend/store.js';
 import { applySpend, spendNeeds } from '../src/ad-spend/metrics.js';
@@ -913,4 +914,32 @@ test('non-London Meta hourly rows and omitted Google protobuf zero fields are va
   delete google[0].results[0].segments.hour;
   google[0].results[0].metrics = {};
   assert.equal(parseGoogle(google, s.googleCustomerId, 'GBP', s)[0]!.amount, '0.000000');
+});
+
+
+test('Google name placement requires capital UK or US while Meta and TikTok retain their matching rules', () => {
+  assert.equal(googleSpendMarket('Invented shop with us'), 'unknown');
+  assert.equal(googleSpendMarket('Invented uk collection'), 'unknown');
+  assert.equal(googleSpendMarket('Invented_UK_launch'), 'uk');
+  assert.equal(googleSpendMarket('Invented US launch'), 'us');
+  assert.equal(googleSpendMarket('Invented UK and US launch'), 'unknown');
+  assert.equal(metaSpendMarket('Invented us collection', null, 'freelancer'), 'us');
+  assert.equal(tiktokSpendMarket('Invented uk collection'), 'uk');
+});
+
+test('expected Google campaigns start missing-day checks at their first row, with no-row campaigns still warned', () => {
+  const id = 'invented-later-campaign';
+  const config = {...defaultSettings(), expectedGoogleCampaigns: [{campaignId: id, market: 'uk' as const}]};
+  const row: SpendRow = {source: 'google-ads', accountId: 'invented-google-account', campaignId: id,
+    campaignName: 'Invented UK launch', adSetId: null, adSetName: null, market: 'uk', owner: 'unassigned',
+    day: '2030-04-04', amount: '1.000000', currency: 'GBP'};
+  const facts = {...sampleSpend('2030-04-01','2030-04-06'), mode: 'live' as const,
+    days: ['01','02','03','04','05','06'].map(day => ({source: 'google-ads' as const, day: `2030-04-${day}`})),
+    rows: ['04','05','06'].map(day => ({...row, day: `2030-04-${day}`}))};
+  const expected = () => spendNeeds(facts,config,'2030-04-08').filter(need => need.id.startsWith('ad-expected:'));
+  assert.deepEqual(expected(), [], 'Days before the first row do not warn');
+  facts.rows = facts.rows.filter(item => item.day !== '2030-04-05');
+  assert.equal(expected().length, 1); assert.match(expected()[0]!.why, /2030-04-05/);
+  facts.rows = [];
+  assert.equal(expected().length, 1); assert.match(expected()[0]!.why, /2030-04-01/);
 });

@@ -168,6 +168,7 @@ test('post-listen cleanup runs once, is bounded and leaves scheduled flag backfi
  const cleanup = worker.startOrderCleanup();
  assert.equal(worker.startOrderCleanup(), cleanup);
  await cleanup;
+ assert.equal(worker.orderCleanupIncomplete, false);
  await checkLegacyRows(db, true);
  assert.equal(statements[0], "SET LOCAL statement_timeout = '5s'");
  assert.equal(statements[1], "SET LOCAL lock_timeout = '1s'");
@@ -192,11 +193,13 @@ test('post-listen order cleanup failure is non-fatal, logged safely and never re
  let attempts = 0;
  const logs: string[] = [];
  t.mock.method(console, 'error', (line: string) => logs.push(line));
- const failing: typeof db = {...db, transaction: async () => {attempts++; throw new Error('invented-private-error');}};
+ const failing: typeof db = {...db, transaction: async () => {attempts++; throw Object.assign(new Error('invented-private-error'), {code: '57014'});}};
  const worker = new ShopifyWorker(failing, {SHOPIFY_CLIENT_ID: randomBytes(16).toString('hex'), SHOPIFY_CLIENT_SECRET: randomBytes(32).toString('hex')}, 'https://example.test', {reader: new SampleShopify(true)});
+ assert.equal(worker.orderCleanupIncomplete, false);
  await worker.startOrderCleanup();
  await worker.startOrderCleanup();
  assert.equal(attempts, 1);
  assert.deepEqual(logs, ['Startup Shopify order cleanup could not finish.']);
+ assert.equal(worker.orderCleanupIncomplete, true);
  await worker.stop();
 });

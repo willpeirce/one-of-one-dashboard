@@ -243,6 +243,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     const mailchimpAt = mailchimpNow();
     const [dashboard, imports, costs, settings] = await Promise.all([snapshot(), shopify.store.summary(sourceNow()), shopify.store.costSummary(), readSettings(db)]);
     return reply.type('text/html; charset=utf-8').send(sourceHealthPage(dashboard.sourceHealth ?? [], imports, costs, await spendHealth(db, sourceEnv, settings.values, sourceNow()), {
+      orderCleanupIncomplete: shopify.orderCleanupIncomplete,
       channelExclusions: await shopify.store.channelExclusions(),
       google: googleHealth(await readGoogleFacts(db,settings.values,sourceEnv,googleAt),googleAt),
       mailchimp: await readMailchimpFacts(db,mailchimp.mode,mailchimpAt),

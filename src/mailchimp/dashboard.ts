@@ -5,7 +5,8 @@ import { formatUkTime } from '../uk-time.js';
 import { MAILCHIMP_FRESH_MS, type MailchimpFacts } from './model.js';
 
 export function mailchimpFlowNote(facts: MailchimpFacts): string {
-  return facts.flowCoverage === 'unavailable' ? 'Mailchimp’s per-flow figures are not available by API.'
+  return facts.mode === 'sample' && facts.status === 'unavailable' ? '○ Unavailable · Mailchimp sample data could not be read.'
+    : facts.flowCoverage === 'unavailable' ? 'Mailchimp’s per-flow figures are not available by API.'
     : facts.flowCoverage === 'available' ? 'Flow reporting was found; verified campaign-to-flow mappings are still needed.'
       : 'Mailchimp’s per-flow figures await the read-only probe.';
 }

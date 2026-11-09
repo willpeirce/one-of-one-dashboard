@@ -189,3 +189,20 @@ test('terminal webhooks show only escaped topic and inbox id as a Shopify warnin
   assert.doesNotMatch(html, /<script>invented|<img src=x>|payload|customer|attempts/);
   assert.match(html, /Healthy<br><small data-scan-skipped>↷ Skipped · 1 creative/);
 });
+
+
+test('secondary Shopify cleanup and unreadable-order warnings retain healthy source status', () => {
+  const imports: NonNullable<Parameters<typeof sourceHealthPage>[1]> = {
+    mode: 'live', sample: false, counts: {}, notices: [], geoNotice: null, pendingWebhooks: 0, failedWebhooks: [],
+    jobs: [{name: 'shipping_refunds', last_success_at: null, failures: 4, state: {skippedOrders: 2,
+      skippedOrderIds: ['invented-old-order-a','invented-old-order-b']}}],
+  };
+  const status: NonNullable<Parameters<typeof sourceHealthPage>[4]> = {orderCleanupIncomplete: true,
+    summary: 'Invented source state', checkedAt: '2030-04-08T12:00:00Z',
+    shopify: {mode: 'live', stock: [], needs: [], checks: [], detail: {}, live: {lastOrder: '', dispatch: '', carts: ''}}};
+  const html = sourceHealthPage([source({mode:'live',status:'healthy'})],imports,undefined,undefined,status);
+  assert.match(html, /Healthy<br><small class="source-warning" data-shopify-read-warning>△ Watch · First-order cleanup/);
+  assert.match(html, /△ Watch · 2 old orders could not be read/);
+  assert.doesNotMatch(html, /invented-old-order/);
+  assert.doesNotMatch(sourceHealthPage([source()],{...imports,mode:'sample'},undefined,undefined,status), /data-shopify-read-warning/);
+});

@@ -17,7 +17,7 @@ import { dailyRows, dataset, emailFlow, isLastVisitEmail, isRefill, isUpgrade, i
 import { blankObservation, evaluateWatchdogs, type Check, type Observation } from './watchdogs.js';
 import { isFreeOrder } from './model.js';
 import { emailCoverageKnown } from './email-coverage.js';
-import { stockGapNeeds } from './stock-gap.js';
+import { calculateStockGaps, stockGapNeeds } from './stock-gap.js';
 
 export interface DashboardNeed {
   id: string; state: State; title: string; why: string; link: string;
@@ -136,7 +136,15 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
     snapshot.textValues[valueKey] = { source: ['shopify'], mode: facts.mode, value };
     snapshot.textValues[subKey] = { source: ['shopify'], mode: facts.mode, value: stamp + (key === 'w039' ? ` · GBP${emailPartial ? ' · attribution partial' : ''}` : '') };
   }
-  const stockDetails: [string, string][] = stock.map(s => [s.name, `Available ${s.available === null ? 'unknown' : formatNumber(s.available)} · cover ${s.cover === null ? 'unknown' : formatNumber(Math.floor(s.cover)) + ' days'} · ${s.basis}`]);
+  const stockGaps = calculateStockGaps(stock, settings.inboundStock, settings.supplierLeadTimes, today);
+  const stockDetails: [string, string][] = stock.map((s, index) => {
+    const arrival = stockGaps[index]!.nextArrival;
+    return [s.name, `Available ${s.available === null ? 'unknown' : formatNumber(s.available)} · cover ${s.cover === null ? 'unknown' : formatNumber(Math.floor(s.cover)) + ' days'} · ${s.basis} · ${arrival ? `next arrival ${arrival.date}, ${formatNumber(arrival.quantity)} units` : 'no arrival listed'}`];
+  });
+  const inbound = settings.inboundStock.filter(row => row.expectedDate >= today)
+    .sort((a, b) => a.expectedDate.localeCompare(b.expectedDate) || a.product.localeCompare(b.product) || a.market.localeCompare(b.market));
+  stockDetails.push(['Upcoming inbound', inbound.length ? 'Confirmed arrivals from Settings. Pack rows are listed but cannot raise a gap until packs have a cover.' : 'No arrival listed.']);
+  for (const row of inbound) stockDetails.push([`${row.product} · ${row.market.toUpperCase()}`, `${formatNumber(row.quantity)} units · expected ${row.expectedDate}`]);
   for (const [key, productId, location] of [['w046', kitIds[0], appConfig.shopify.locations.us.id], ['w047', kitIds[0], appConfig.shopify.locations.uk.id], ['w048', 'gid://shopify/Product/10892913574222', appConfig.shopify.locations.us.id]] as const) {
     const row = stock.find(s => s.productId === productId && s.locationId === location)!;
     snapshot.widgets[key] = { source: ['shopify'], mode: facts.mode, kind: 'ring', value: { v: row.cover ?? 0, max: 180,

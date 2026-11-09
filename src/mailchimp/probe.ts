@@ -43,8 +43,10 @@ export async function runMailchimpProbe(client: MailchimpReader, options: Mailch
     }
   }
   const campaigns = await read('/campaigns', () => client.campaigns());
+  const flowEmails = campaigns?.filter(row => row.type === 'automation-email') ?? [];
+  const discovered = flowEmails.length ? flowEmails : campaigns ?? [];
   // Flow ids and UTM prefixes in appConfig are not campaign ids. Only API ids or explicit arguments qualify.
-  const selected = [...new Set((options.campaignIds?.length ? options.campaignIds : campaigns?.map(row => row.id) ?? [])
+  const selected = [...new Set((options.campaignIds?.length ? options.campaignIds : discovered.map(row => row.id))
     .filter(campaignId))].slice(0, MAILCHIMP_PROBE_CAMPAIGN_LIMIT);
   if (!selected.length) {
     for (const path of ['/reports/{id}', '/campaigns/{id}', '/ecommerce/orders?campaign_id={id}'])

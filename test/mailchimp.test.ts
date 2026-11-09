@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { promises as fs } from 'node:fs';
 import { appConfig } from '../src/config.js';
 import { MailchimpClient, MailchimpReadError, MAILCHIMP_ORDER_FIELDS, type MailchimpRequestLog } from '../src/mailchimp/client.js';
 import { MAILCHIMP_FRESH_MS, MAILCHIMP_POLL_MS, parseMailchimpAudience, parseMailchimpReport } from '../src/mailchimp/model.js';
@@ -119,6 +120,26 @@ test('missing audience totals stay unknown and report dollars require an explici
   assert.throws(() => parseMailchimpAudience({...raw, stats: {...raw.stats, member_count: -1}}));
 });
 
+test('sample fixtures load once across concurrent requests and cached facts cannot be mutated by a caller', async t => {
+  const originalRead = fs.readFile;
+  let reads = 0;
+  t.mock.method(fs, 'readFile', (path: unknown, ...args: unknown[]) => {
+    if (path instanceof URL && path.pathname.includes('/fixtures/mailchimp/')) reads++;
+    return Reflect.apply(originalRead, fs, [path, ...args]);
+  });
+  const unusedDb = {query: async () => assert.fail('Sample facts must not query the database')} as unknown as Database;
+  const results = await Promise.all(Array.from({length: 6}, () => readMailchimpFacts(unusedDb, 'sample', now)));
+  assert.equal(reads, 4);
+  for (const result of results) assert.equal(result.status, 'sample');
+  const contacts = results[0]!.audience!.contacts;
+  results[0]!.audience!.contacts = 0;
+  results[0]!.campaigns.length = 0;
+  const again = await readMailchimpFacts(unusedDb, 'sample', now);
+  assert.equal(reads, 4);
+  assert.equal(again.audience!.contacts, contacts);
+  assert.ok(again.campaigns.length > 0);
+});
+
 test('audience upserts preserve source provenance, isolate sample/live and mark stale or failed facts unavailable', async t => {
   const db = await createTestDatabase(); t.after(() => db.close());
   const token = key(); await syncSourceHealth(db, {MAILCHIMP_API_KEY: token});
@@ -155,6 +176,24 @@ test('audience worker starts without IO, runs once at a time and polls independe
   clock += MAILCHIMP_POLL_MS; await worker.tick(); assert.equal(calls, 2);
   const health = (await db.query<{status: string; consecutive_failures: number}>("SELECT status,consecutive_failures FROM pulse.source_health WHERE source='mailchimp'")).rows[0]!;
   assert.deepEqual(health, {status: 'healthy', consecutive_failures: 0});
+});
+
+test('audience worker trims the environment key before constructing its GET client', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const token = key(), env = {MAILCHIMP_API_KEY: ` \n\t${token} \t\n`};
+  await syncSourceHealth(db, env);
+  let calls = 0;
+  const worker = new MailchimpWorker(db, env, {clock: () => now, log: () => {}, fetch: async (_input, init) => {
+    calls++;
+    const authorization = new Headers(init?.headers).get('authorization')!;
+    assert.equal(Buffer.from(authorization.slice('Basic '.length), 'base64').toString(), `pulse:${token}`);
+    return Response.json({...await fixture('audience'), id: appConfig.mailchimp.listId});
+  }});
+  t.after(() => worker.stop());
+  assert.equal(worker.mode, 'live');
+  await worker.tick();
+  assert.equal(calls, 1);
+  assert.equal((await readMailchimpFacts(db, 'live', now)).status, 'live');
 });
 
 test('worker persists long rate-limit deferrals through restart and a later success recovers health', async t => {

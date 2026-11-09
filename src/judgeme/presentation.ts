@@ -3,6 +3,10 @@ import type { Review, ReviewsPanel } from './model.js';
 
 const esc = (text: string): string => text.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const count = formatNumber;
+/** Normalize stored provider titles at presentation time, including older rows. */
+export function reviewProductTitle(title: string): string {
+  return /^(Judge\.me Shop Reviews|Store review)$/i.test(title.trim()) ? 'Shop review' : title;
+}
 export function reviewLink(): string { return 'https://app.judge.me/index'; }
 export function reviewsGreeting(panel: ReviewsPanel): string {
   const n = panel.rows.length, low = panel.rows.filter(row => row.rating <= 3).length;
@@ -12,10 +16,10 @@ export function reviewsGreeting(panel: ReviewsPanel): string {
 }
 /** The Home flag only asks for attention while a review is waiting. */
 export function reviewsFlagLabel(panel: ReviewsPanel): string | null {
-  if (panel.status === 'pending' || panel.status === 'unavailable') return null;
   const n = panel.rows.length;
-  if (!n) return panel.unreadCount > 0 ? 'Some reviews could not be read' : null;
-  return `★ ${count(n)} ${panel.mode === 'sample' ? 'sample' : 'new'} ${n === 1 ? 'review' : 'reviews'}`;
+  if (n) return `★ ${count(n)} ${panel.mode === 'sample' ? 'sample' : 'new'} ${n === 1 ? 'review' : 'reviews'}`;
+  if (panel.status === 'pending' || panel.status === 'unavailable') return null;
+  return panel.unreadCount > 0 ? 'Some reviews could not be read' : null;
 }
 export function reviewAge(createdAt: string, asOf: string): string {
   const minutes = Math.max(0, Math.floor((Date.parse(asOf) - Date.parse(createdAt)) / 60_000));
@@ -39,7 +43,7 @@ export function reviewsPanelHtml(panel: ReviewsPanel): string {
   const rows = [...panel.rows].sort((a, b) => Number(b.rating <= 3) - Number(a.rating <= 3) || Date.parse(b.createdAt) - Date.parse(a.createdAt));
   const rowHtml = (row: Review) => `<button class="rt rv" type="button" data-review-open="${esc(row.id)}" data-review-id="${esc(row.id)}" data-state="${row.rating <= 3 ? 'warn' : 'decide'}" data-source="judgeme" data-mode="${panel.mode}">
     <span class="chip ${row.rating <= 3 ? 'warn' : 'decide'}">${row.rating <= 3 ? '△ Read first' : '◆ New'}</span>
-    <span class="review-subject"><span class="review-rating" aria-label="${row.rating} out of 5 stars">★ ${row.rating}</span> <span class="review-product">${esc(row.productTitle)}${row.market ? ` · ${esc(row.market)}` : ''}</span></span>
+    <span class="review-subject"><span class="review-rating" aria-label="${row.rating} out of 5 stars">★ ${row.rating}</span> <span class="review-product">${esc(reviewProductTitle(row.productTitle))}${row.market ? ` · ${esc(row.market)}` : ''}</span></span>
     <span class="rec">${esc(row.body)}</span><span class="age">${reviewAge(row.createdAt, panel.asOf)}</span><span class="review-chevron" aria-hidden="true">›</span></button>`;
   return `<header class="chapter-heading rvhead"><span class="chapter-number" aria-hidden="true">2</span>
     <div class="chapter-copy"><p class="chapter-eyebrow">Customers</p><h2 class="chapter-title" id="reviews-title">New reviews <span class="chip info" id="rvcount">${rows.length ? `${count(rows.length)} waiting` : esc(reviewsGreeting(panel))}</span></h2><span class="shm">${esc(status)}</span></div>
@@ -49,5 +53,5 @@ export function reviewsPanelHtml(panel: ReviewsPanel): string {
 }
 export function reviewSheetHtml(review: Review, panel: ReviewsPanel): string {
   const posted = new Date(review.createdAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/London' });
-  return `${reviewChips(review)}<p class="review-body">${esc(review.body)}</p><dl class="xdl"><dt>Product</dt><dd>${esc(review.productTitle)}</dd><dt>Market</dt><dd>${esc(review.market ?? 'Unknown: not supplied by the review API')}</dd><dt>Posted</dt><dd>${esc(posted)} UK</dd><dt>Review</dt><dd>${esc(review.id)}</dd>${review.verifiedBuyer ? '<dt>Verified buyer</dt><dd>Yes</dd>' : ''}<dt>Photos</dt><dd>${count(review.photoCount)} ${review.photoCount === 1 ? 'photo' : 'photos'}</dd></dl><div class="acts review-links">${links(review)}</div><p class="note">${panel.mode === 'sample' ? 'Sample data · invented review. ' : ''}Publishing from Pulse is disabled. Manage this review in Judge.me.</p>`;
+  return `${reviewChips(review)}<p class="review-body">${esc(review.body)}</p><dl class="xdl"><dt>Product</dt><dd>${esc(reviewProductTitle(review.productTitle))}</dd><dt>Market</dt><dd>${esc(review.market ?? 'Unknown: not supplied by the review API')}</dd><dt>Posted</dt><dd>${esc(posted)} UK</dd><dt>Review</dt><dd>${esc(review.id)}</dd>${review.verifiedBuyer ? '<dt>Verified buyer</dt><dd>Yes</dd>' : ''}<dt>Photos</dt><dd>${count(review.photoCount)} ${review.photoCount === 1 ? 'photo' : 'photos'}</dd></dl><div class="acts review-links">${links(review)}</div><p class="note">${panel.mode === 'sample' ? 'Sample data · invented review. ' : ''}Publishing from Pulse is disabled. Manage this review in Judge.me.</p>`;
 }

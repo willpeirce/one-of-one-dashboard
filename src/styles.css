@@ -38,6 +38,7 @@ nav button { background: var(--surface); border-color: var(--line); color: var(-
 .muted { color: var(--muted); font-size: 0.9rem; }
 details { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line); }
 summary { cursor: pointer; padding-block: 0.5rem; }
+#source-health summary { min-height: 44px; display: flex; align-items: center; }
 form { margin-top: 1rem; }
 label { display: block; margin-bottom: 0.5rem; }
 input { width: 100%; padding: 0.7rem; min-height: 44px; border: 1px solid var(--line); border-radius: 0.4rem; background: var(--surface); color: var(--text); }

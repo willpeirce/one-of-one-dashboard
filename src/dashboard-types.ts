@@ -64,6 +64,7 @@ export interface TestModel {
     state: State;
     chipText: string;
     say: string;
+    homeSay: string;
     small: string;
     progress: string;
     buttonText: string;
@@ -127,7 +128,7 @@ export interface HeroPeriod {
   ukcpo: DialModel & SampleProvenance;
   uscpo: DialModel & SampleProvenance;
   business?: {
-    email: { count: number; detail: Detail };
+    email: { count: number; value: string; partial: boolean; detail: Detail };
     refill: { count: number; detail: Detail };
     orderDays: { day: string; UK: number; US: number; EU: number; TikTok: number; unknown: number; total: number; detailAvailable: boolean }[];
   };
@@ -137,7 +138,7 @@ export type DashboardWidget = SampleProvenance & (
   | { kind: 'dial'; value: DialModel; markets?: Record<HeroMarket,DialModel> }
   | { kind: 'series-pace'; value: import('./series-pace/presentation.js').SeriesPaceCard }
   | { kind: 'ring'; value: RingModel }
-  | { kind: 'detail'; value: Detail }
+  | { kind: 'detail'; value: Detail; state?: State }
   | { kind: 'sheet'; value: SheetModel }
   | { kind: 'test'; value: TestModel }
 );

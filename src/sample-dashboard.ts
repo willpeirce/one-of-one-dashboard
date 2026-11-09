@@ -260,6 +260,7 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
         "note": "B also collected 24 sign-ups",
         "presentation": {
           "sure": 61,
+          "homeSay": "Grey until 95% on two mornings · Rates unavailable",
           "state": "info",
           "chipText": "i Too early",
           "say": "A 36 orders, B 29. A is ahead by 24%, but a gap this size happens by chance about 4 times in 10. Too early to call.",
@@ -804,41 +805,31 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       ],
       "mode": "sample",
       "value": {
-        "v": 2.3,
+        "v": 7.4,
         "min": 0,
-        "max": 6,
-        "t": "2.3%",
-        "l": "Google junk share",
-        "s": "bar 2.5%",
+        "max": 100,
+        "t": "7.4%",
+        "l": "YouTube share",
+        "s": "Sample information only",
         "z": [
           [
             0,
-            2.25,
-            "good"
-          ],
-          [
-            2.25,
-            2.5,
-            "warn"
-          ],
-          [
-            2.5,
-            6,
-            "decide"
+            100,
+            "info"
           ]
         ],
         "d": {
-          "why": "YouTube, Gmail and Discover placements took 2.3% of Google spend. Display 0.0%.",
-          "rule": "Amber from 2.25%. Over 2.5% is a decision: add the placement exclusions.",
-          "src": "Google Ads, cost by network type, yesterday",
+          "why": "Invented example: explicit YouTube networks account for 7.4% of Google spend. Mixed and unrecognised networks remain separate.",
+          "rule": "Share is information only. Live Watch rules use each campaign and network slice’s spend and ROAS.",
+          "src": "Google Ads sample network report",
           "hist": [
-            1.9,
-            2.4,
-            2.1,
-            2.6,
-            2.2,
-            2.0,
-            2.3
+            6.2,
+            6.8,
+            7.1,
+            7.8,
+            7.5,
+            7.0,
+            7.4
           ]
         }
       }
@@ -851,44 +842,29 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       "mode": "sample",
       "value": {
         "v": 105,
-        "min": 50,
+        "min": 0,
         "max": 160,
         "t": "105%",
         "l": "Google spend vs plan",
-        "s": "£94.52 of £90 · row 3",
+        "s": "£126 of £120 · invented budget plan",
         "z": [
           [
-            50,
-            80,
-            "warn"
-          ],
-          [
-            80,
-            110,
-            "good"
-          ],
-          [
-            110,
-            125,
-            "warn"
-          ],
-          [
-            125,
+            0,
             160,
-            "decide"
+            "info"
           ]
         ],
         "d": {
-          "why": "£94.52 against the £90 agreed. The new £165 budget only applies from today; if Will accepts it on row 3, this dial re-bases.",
-          "rule": "Green 80-110% of the agreed budget, amber to 125%, then a decision.",
-          "src": "Google Ads spend ÷ agreed daily budget",
+          "why": "Invented example: £126 against a £120 daily budget plan. Live data uses the sum of currently enabled campaign budgets, labelled as an assumption.",
+          "rule": "Budget comparison is information; Pulse never changes a budget.",
+          "src": "Google Ads sample spend and enabled daily budgets",
           "hist": [
-            101,
+            96,
             98,
-            104,
-            97,
+            101,
             103,
             99,
+            102,
             105
           ]
         }
@@ -901,12 +877,12 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       ],
       "mode": "sample",
       "value": {
-        "v": 3.08,
+        "v": 2.84,
         "min": 0,
         "max": 6,
-        "t": "3.08",
+        "t": "2.84×",
         "l": "Google ROAS 7d",
-        "s": "set a bar",
+        "s": "Invented Google claim",
         "z": [
           [
             0,
@@ -915,17 +891,17 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
           ]
         ],
         "d": {
-          "why": "Google conversion value ÷ cost, 7 days. No bar yet: Will has not set a Google ROAS target.",
-          "rule": "Grey until a bar is set.",
-          "src": "Google Ads, 7 days",
+          "why": "Invented example of Google conversion value divided by cost across seven complete UK days. Live Google conversions sit beside Shopify last-visit Google paid orders.",
+          "rule": "An account return is information. Per-network Watch rules use the Settings spend and ROAS floors.",
+          "src": "Google Ads sample seven-day report",
           "hist": [
-            2.9,
-            3.1,
-            3.3,
+            2.4,
+            2.6,
             2.8,
+            2.7,
+            2.9,
             3.0,
-            3.2,
-            3.08
+            2.84
           ]
         }
       }
@@ -950,9 +926,9 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       ],
       "mode": "sample",
       "value": {
-        "why": "No changes made to our Meta account by anyone else in the last 24 h. Google: 2 changes by the freelancer (row 3).",
-        "rule": "Any change not made by us or logged in HQ is a decision.",
-        "src": "Meta activity log, Google change history"
+        "why": "Invented example: one Meta change outside the configured actor list and three Google changes by all actors. Google actor identity is not read.",
+        "rule": "Live counts need both activity feeds. Google changes never claim to identify who made them.",
+        "src": "Meta and Google sample change reports"
       }
     },
     "w029": {
@@ -1275,65 +1251,36 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       ],
       "mode": "sample",
       "value": {
-        "v": 103,
-        "min": 60,
+        "v": 72,
+        "min": 0,
         "max": 130,
-        "t": "103%",
+        "t": "72%",
         "l": "Email audience",
-        "s": "5,151 of 5,000 · row 5",
+        "s": "Invented all-market audience",
         "z": [
           [
-            60,
-            90,
-            "good"
-          ],
-          [
-            90,
-            100,
-            "warn"
-          ],
-          [
-            100,
+            0,
             130,
-            "decide"
+            "info"
           ]
         ],
         "d": {
-          "why": "5,151 contacts on a 5,000 plan. The bill on 12 Oct charges for the overage.",
-          "rule": "Amber from 90% of plan. Over plan is a decision: contact blocks or a tier.",
-          "src": "Mailchimp audience count",
-          "hist": [
-            99,
-            100,
-            100,
-            101,
-            102,
-            103,
-            103
-          ]
+          "why": "Invented example: approximately 720 contacts across all contact states on a 1,000 contact plan. This provider estimate is not an exact billing count.",
+          "rule": "Live needs require a configured plan limit and billing day; no source changes.",
+          "src": "Mailchimp sample audience report"
         }
       }
     },
     "w039": {
       "kind": "detail",
       "source": [
-        "mailchimp",
         "shopify"
       ],
       "mode": "sample",
       "value": {
-        "why": "11 orders in 7 days carried a flow UTM: abandoned cart 6, welcome 3, D1 2.",
-        "rule": "Trend only. Amber if flow orders fall under half the 4-week average.",
-        "src": "Shopify orders with utm_medium=flow",
-        "hist": [
-          8,
-          9,
-          12,
-          10,
-          13,
-          9,
-          11
-        ]
+        "why": "Invented Shopify view: 3 last-visit email orders with £96.00 net sales. Mailchimp’s own count and dollar revenue are separate.",
+        "rule": "Only last-visit medium=email; before 27 Sep 2026 attribution is partial.",
+        "src": "Shopify sample email attribution"
       }
     },
     "w040": {
@@ -1413,14 +1360,13 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
     "w043": {
       "kind": "detail",
       "source": [
-        "mailchimp",
-        "shopify"
+        "mailchimp"
       ],
       "mode": "sample",
       "value": {
-        "why": "Abandoned-cart flow 3327 has emailed 0 buyers since the purchase checks went in on 30 Sep. Before: about 1 kit buyer in 5.",
-        "rule": "Any buyer emailed by a flow after buying is a decision.",
-        "src": "Mailchimp flow report cross-checked with Shopify orders"
+        "why": "Invented Mailchimp view: 4 credited orders and $64.00 USD revenue. Per-flow reporting awaits the read-only probe.",
+        "rule": "Sample data; never convert or substitute this claim for Shopify’s GBP sales.",
+        "src": "Mailchimp sample own-credit report"
       }
     },
     "w044": {
@@ -1430,22 +1376,21 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       ],
       "mode": "sample",
       "value": {
-        "why": "D1 UK-ROW flow 3350: 571 entries. D1 US flow 3349: 3 entries since the country fix on 27 Sep.",
-        "rule": "Trend only.",
-        "src": "Mailchimp flows 3350 and 3349"
+        "why": "Invented add-on flow example: 17 entries across all versions. Per-flow reporting awaits the probe.",
+        "rule": "Sample data; Mailchimp’s UK/US address filter is unreliable.",
+        "src": "Mailchimp sample flow report"
       }
     },
     "w045": {
       "kind": "detail",
       "source": [
-        "mailchimp",
-        "shopify"
+        "mailchimp"
       ],
       "mode": "sample",
       "value": {
-        "why": "Gift popup flow 3354: 10 contacts in flow, 3 buyers removed by hand on 30 Sep. Shopify Flow trigger for existing customers still to build.",
-        "rule": "Trend only until the trigger is built.",
-        "src": "Mailchimp flow 3354"
+        "why": "Invented popup flow example: 9 entries. No live flow count or refill funnel is inferred before the probe.",
+        "rule": "Sample data; the refill funnel stays sample until reporting coverage is known.",
+        "src": "Mailchimp sample flow report"
       }
     },
     "w046": {
@@ -2970,7 +2915,7 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       "mode": "sample"
     },
     "t0254": {
-      "value": "Changes not by us",
+      "value": "Account changes",
       "source": [
         "meta",
         "google-ads"
@@ -2978,7 +2923,7 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       "mode": "sample"
     },
     "t0255": {
-      "value": "0 · 2",
+      "value": "1 · 3",
       "source": [
         "meta",
         "google-ads"
@@ -2986,7 +2931,7 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       "mode": "sample"
     },
     "t0256": {
-      "value": "Meta · Google",
+      "value": "Meta not ours · Google all",
       "source": [
         "meta",
         "google-ads"
@@ -3071,25 +3016,22 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       "mode": "sample"
     },
     "t0268": {
-      "value": "Flow orders 7d",
+      "value": "Email sales · Shopify",
       "source": [
-        "mailchimp",
         "shopify"
       ],
       "mode": "sample"
     },
     "t0269": {
-      "value": "11",
+      "value": "£96.00",
       "source": [
-        "mailchimp",
         "shopify"
       ],
       "mode": "sample"
     },
     "t0270": {
-      "value": "cart 6 · welcome 3 · D1 2",
+      "value": "Sample Shopify view · GBP",
       "source": [
-        "mailchimp",
         "shopify"
       ],
       "mode": "sample"
@@ -3137,71 +3079,65 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       "mode": "sample"
     },
     "t0277": {
-      "value": "Flow leaks",
+      "value": "Email sales · Mailchimp",
       "source": [
-        "mailchimp",
-        "shopify"
+        "mailchimp"
       ],
       "mode": "sample"
     },
     "t0278": {
-      "value": "0",
+      "value": "$64.00",
       "source": [
-        "mailchimp",
-        "shopify"
+        "mailchimp"
       ],
       "mode": "sample"
     },
     "t0279": {
-      "value": "cart flow since the fix",
+      "value": "Sample own credit · USD",
       "source": [
-        "mailchimp",
-        "shopify"
+        "mailchimp"
       ],
       "mode": "sample"
     },
     "t0280": {
-      "value": "D1 flows",
+      "value": "Add-on flow · Mailchimp",
       "source": [
         "mailchimp"
       ],
       "mode": "sample"
     },
     "t0281": {
-      "value": "571 · 3",
+      "value": "Sample",
       "source": [
         "mailchimp"
       ],
       "mode": "sample"
     },
     "t0282": {
-      "value": "UK-ROW · US entries",
+      "value": "Per-flow reporting not connected",
       "source": [
         "mailchimp"
       ],
       "mode": "sample"
     },
     "t0283": {
-      "value": "Popup flow",
+      "value": "Popup flow · Mailchimp",
       "source": [
-        "mailchimp",
-        "shopify"
+        "mailchimp"
       ],
       "mode": "sample"
     },
     "t0284": {
-      "value": "10",
+      "value": "Sample",
       "source": [
-        "mailchimp",
-        "shopify"
+        "mailchimp"
       ],
       "mode": "sample"
     },
     "t0285": {
-      "value": "in flow · trigger to build",
+      "value": "Per-flow reporting not connected",
       "source": [
-        "mailchimp",
-        "shopify"
+        "mailchimp"
       ],
       "mode": "sample"
     },

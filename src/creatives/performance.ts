@@ -1,7 +1,7 @@
 import { addDays } from '../hero-range.js';
 import type { Settings } from '../settings.js';
-import type { CreativeData } from './model.js';
-import { aggregateCreativeGroups, creativeTotals, type CreativeFilter, type GroupPerformance } from './ranking.js';
+import type { AdInsight, CreativeData } from './model.js';
+import { aggregateCreativeGroups, creativeTotals, indexCreativeData, type CreativeFilter, type GroupPerformance } from './ranking.js';
 import { exactCreativeFrequency, hasFadingHistory } from './frequency.js';
 
 export type CreativePerformanceSettings = Pick<Settings, 'cppUkTargetGbp' | 'cppUsTargetGbp' | 'creativeWeeklyTarget'
@@ -10,9 +10,10 @@ export type CreativePerformanceSettings = Pick<Settings, 'cppUkTargetGbp' | 'cpp
 export type HitVerdict = 'winner' | 'killed' | 'testing';
 
 /** A parent running in both markets uses purchase-weighted targets; unplaced spend has no target. */
-export function creativeHitVerdict(row: GroupPerformance, data: CreativeData, settings: CreativePerformanceSettings, today: string): HitVerdict {
+export function creativeHitVerdict(row: GroupPerformance, data: CreativeData, settings: CreativePerformanceSettings, today: string,
+  history: readonly AdInsight[] = data.insights): HitVerdict {
   const ads = new Map(row.ads.map(ad => [ad.id, ad]));
-  const insights = data.insights.filter(insight => insight.day <= today && ads.has(insight.adId));
+  const insights = history.filter(insight => insight.day <= today && ads.has(insight.adId));
   if (insights.some(insight => (insight.spend > 0 || insight.purchases > 0)
     && ads.get(insight.adId)?.market === 'unknown')) return 'testing';
   const targetFor = (adId: string) => ads.get(adId)?.market === 'uk' ? settings.cppUkTargetGbp : settings.cppUsTargetGbp;
@@ -36,11 +37,11 @@ export interface FadingCreative {
 }
 
 export function creativePerformance(data: CreativeData, settings: CreativePerformanceSettings,
-  options: CreativeFilter & { today: string }) {
+  options: CreativeFilter & { today: string }, index = indexCreativeData(data)) {
   const { today } = options;
-  const groups = aggregateCreativeGroups(data, { ...options, to: today });
+  const groups = aggregateCreativeGroups(data, { ...options, to: today }, index);
   const cohort = groups.filter(row => row.firstSpendDay && row.firstSpendDay >= addDays(today, -29) && row.firstSpendDay <= today);
-  const verdicts = cohort.map(row => creativeHitVerdict(row, data, settings, today));
+  const verdicts = cohort.map(row => creativeHitVerdict(row, data, settings, today, index.rowsByGroup.get(row.group.id) ?? []));
   const winners = verdicts.filter(verdict => verdict === 'winner').length;
   const killed = verdicts.filter(verdict => verdict === 'killed').length;
   const newCount = groups.filter(row => row.firstSpendDay && row.firstSpendDay >= addDays(today, -6) && row.firstSpendDay <= today).length;
@@ -49,7 +50,7 @@ export function creativePerformance(data: CreativeData, settings: CreativePerfor
   for (const row of groups) {
     if (!hasFadingHistory(row, today)) continue;
     const ids = new Set(row.ads.map(ad => ad.id));
-    const history = data.insights.filter(insight => ids.has(insight.adId) && insight.day <= today);
+    const history = (index.rowsByGroup.get(row.group.id) ?? []).filter(insight => ids.has(insight.adId) && insight.day <= today);
     const recent = creativeTotals(history.filter(insight => insight.day >= addDays(today, -6)));
     const frequency = exactCreativeFrequency(data, [...ids], addDays(today, -6), today);
     if (frequency === null) frequencyUnavailable++;

@@ -9,7 +9,7 @@ import { MetaSpend } from '../ad-spend/clients.js';
 import { MetaCreativeClient } from './client.js';
 import type { CreativeData, CreativeReader } from './model.js';
 import type { CreativeView, CreativeSheet, CreativeSelection } from './presentation-types.js';
-import { aggregateCreativeGroups, creativeWindowRange, parentGroup, topCreatives } from './ranking.js';
+import { aggregateCreativeGroup, aggregateCreativeGroups, creativeWindowRange, indexCreativeData, parentGroup, topCreatives } from './ranking.js';
 import { creativePerformance } from './performance.js';
 import { exactCreativeFrequency, hasFadingHistory } from './frequency.js';
 import { readCreativeData, readMedia, ensureGroupMedia, mergeMediaGroups, splitMediaGroup, undoMediaMerge } from './store.js';
@@ -23,7 +23,7 @@ import { runCreativeScans, type ScanOptions } from './scan.js';
 import { readScanHealth, scanEnabled, scanPricesReady } from './scan-health.js';
 import type { CreativeScanView } from './scan-view.js';
 import { readCreativeLifts, recomputeCreativeLifts, type CreativeLift } from './lifts.js';
-import { deriveCreativeLiftPresentation } from './lift-presentation.js';
+import { deriveCreativeLiftPresentation, makeCreativeBrief } from './lift-presentation.js';
 
 class CreativeInputError extends Error { readonly statusCode = 400; constructor() { super('Invalid creative request.'); } }
 const accountFor = (data: CreativeData, settings: Settings) => data.mode === 'sample' ? SAMPLE_CREATIVE_ACCOUNT : settings.metaAdAccountId;
@@ -48,20 +48,21 @@ async function refreshSavedLifts(db: Database, account: string, data: CreativeDa
 }
 export function buildCreativeView(data: CreativeData, settings: Settings, today: string, selection: CreativeSelection = {}, attributes = sampleAttributeRows(data), lifts = sampleLifts(data, today)): CreativeView {
   const selected = { ...selection, window: selection.window ?? settings.creativeDefaultWindow };
-  const top = topCreatives(data, settings, { ...selected, today });
-  const performance = creativePerformance(data, settings, { ...selected, today });
-  const groups = filterCreativeAttributes(aggregateCreativeGroups(data, { ...selected, to: today }), attributes, selected.attribute, selected.value)
+  const index = indexCreativeData(data);
+  const top = topCreatives(data, settings, { ...selected, today }, index);
+  const performance = creativePerformance(data, settings, { ...selected, today }, index);
+  const groups = filterCreativeAttributes(aggregateCreativeGroups(data, { ...selected, to: today }, index), attributes, selected.attribute, selected.value)
     .sort((a, b) => b.group.firstSeen.localeCompare(a.group.firstSeen) || a.group.id.localeCompare(b.group.id));
   const cards: CreativeView['cards'] = performance.fading.map(row => ({
     id: `fading:${row.groupId}`, kind: 'watch', groupId: row.groupId,
-    picture: data.groups.find(group => group.id === row.groupId)?.thumbnailUrl ?? '',
+    picture: index.parentById.get(row.groupId)?.thumbnailUrl ?? '',
     title: `Fading: ${row.title}`, reason: row.reasons.join('; '), mode: data.mode,
   }));
-  const presentation = deriveCreativeLiftPresentation(lifts, data, { windowDays: selected.liftWindow ?? 7, market: selected.market ?? 'all', today });
-  const home = deriveCreativeLiftPresentation(lifts, data, { market: selected.market ?? 'all', today });
+  const presentation = deriveCreativeLiftPresentation(lifts, data, { windowDays: selected.liftWindow ?? 7, market: selected.market ?? 'all', today }, index);
+  const home = (selected.liftWindow ?? 7) === 7 ? presentation : deriveCreativeLiftPresentation(lifts, data, { market: selected.market ?? 'all', today }, index);
   cards.push(...home.cards);
   return { scan: unscannedView(settings), mode: data.mode, accountId: accountFor(data, settings), selection: selected, top, performance, groups, cards,
-    taggingQueue: creativeTaggingQueue(data, attributes, settings.creativeSpendFloorGbp, today), attributeFilters: creativeAttributeOptions(selected.kind),
+    taggingQueue: creativeTaggingQueue(data, attributes, settings.creativeSpendFloorGbp, today, index), attributeFilters: creativeAttributeOptions(selected.kind),
     lifts: lifts.filter(lift => lift.windowDays === (selected.liftWindow ?? 7) && lift.market === (selected.market ?? 'all')), homeMakeNext: home.makeNext, makeNext: presentation.makeNext,
     targets: { uk: settings.cppUkTargetGbp, us: settings.cppUsTargetGbp }, freelancerInitial: settings.creativeFreelancerInitial,
     merged: data.groups.filter(group => group.mergedIntoId).map(group => ({ id: group.id, title: group.title, parentId: group.mergedIntoId! })) };
@@ -95,8 +96,8 @@ function parseSelection(query: unknown, detail = false): CreativeSelection {
   return { ...values, ...(values.liftWindow ? { liftWindow: Number(values.liftWindow) } : {}), ...(values.live && values.live !== 'all' ? { live: values.live === 'true' } : {}) } as CreativeSelection;
 }
 export async function buildCreativeSheet(data: CreativeData, settings: Settings, today: string, id: string, selection: CreativeSelection, shopifyOrders: ShopifyOrders, lifts = sampleLifts(data, today)): Promise<CreativeSheet | null> {
-  const parent = parentGroup(id, data.groups);
-  const group = aggregateCreativeGroups(data, { to: today }).find(row => row.group.id === parent?.id);
+  const index = indexCreativeData(data);
+  const group = aggregateCreativeGroup(data, id, { to: today }, index);
   if (!group) return null;
   const range = creativeWindowRange(selection.window ?? settings.creativeDefaultWindow, today);
   const orders = await shopifyOrders(range.from, range.to);
@@ -108,9 +109,9 @@ export async function buildCreativeSheet(data: CreativeData, settings: Settings,
   for (const ad of group.ads) addLink('Instagram', ad.instagramUrl);
   for (const ad of group.ads) addLink('Facebook', ad.facebookUrl);
   for (const ad of group.ads) addLink('Ads Manager', adsManagerLink(accountFor(data, settings), ad.id));
-  const brief = deriveCreativeLiftPresentation(lifts, data, { today, windowDays: selection.liftWindow ?? 7, market: selection.market ?? 'all' }).makeNext[group.group.kind];
+  const brief = makeCreativeBrief(group.group.kind, lifts, data, selection.liftWindow ?? 7, selection.market ?? 'all', today, index);
   return { scan: unscannedView(settings), mode: data.mode, group,
-    windows: (['24h', '3d', '7d', 'lifetime'] as const).map(window => ({ window, totals: aggregateCreativeGroups(data, creativeWindowRange(window, today)).find(row => row.group.id === parent?.id)!.totals })),
+    windows: (['24h', '3d', '7d', 'lifetime'] as const).map(window => ({ window, totals: aggregateCreativeGroup(data, group.group.id, creativeWindowRange(window, today), index)!.totals })),
     comparison: { ...range, purchases: data.insights.filter(row => row.day >= range.from && row.day <= range.to).reduce((sum, row) => sum + row.purchases, 0), shopifyOrders: orders.count, shopifyMode: orders.mode },
     frequency: { value: exactCreativeFrequency(data, group.ads.map(ad => ad.id), addDays(today, -6), today), eligible: hasFadingHistory(group, today) },
     links, ads: group.ads, attributes: resolveAttributes(group.group.kind, sampleAttributeRows(data).filter(row => row.groupId === group.group.id)), note: '',
@@ -151,8 +152,7 @@ export function registerCreatives(app: FastifyInstance, db: Database, auth: Auth
     sheet.attributes = await readGroupAttributes(db, data.mode, accountFor(data, settings), sheet.group.group.id, sheet.group.group.kind);
     sheet.note = await readWillNote(db, data.mode, accountFor(data, settings), sheet.group.group.id);
     sheet.scan = scanView(await readScanHealth(db, settings, { mode: data.mode, accountId: accountFor(data, settings), now: clock() }));
-    // Opening an evicted video re-fetches its frames, without storing the video itself.
-    if (client && data.mode === 'live' && sheet.group.group.kind === 'video') await ensureGroupMedia(client, db, settings.metaAdAccountId, sheet.group.group.id, settings.creativeMediaCapMb).catch(() => null);
+    // Media loads independently through /media; remote frame downloads must not delay the sheet.
     return sheet;
   });
   app.post('/api/creatives/:groupId/attributes', { preHandler: localWrite }, async (request, reply) => {

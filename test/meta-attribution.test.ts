@@ -6,6 +6,7 @@ import {metaAttribution,attributionDial,attributionZone} from '../src/ad-spend/a
 import {defaultSettings} from '../src/settings.js';
 import {addDays} from '../src/hero-range.js';
 import type {SpendFacts} from '../src/ad-spend/store.js';
+import {appConfig} from '../src/config.js';
 const settings={...defaultSettings(),metaOwners:[{campaignId:'invented-owner-campaign',owner:'ours' as const}]},today='2026-10-26';
 const spend:SpendFacts={mode:'live',rows:[{source:'meta',accountId:'invented-ratio-account',campaignId:'invented-owner-campaign',campaignName:'Invented UK ratio',adSetId:'invented-ratio-set',adSetName:'Invented UK set',owner:'ours',market:'uk',day:'2026-10-25',amount:'60',currency:'GBP',purchases:3}],days:Array.from({length:14},(_,i)=>({source:'meta',day:addDays(today,i-14)})),sources:[{source:'meta',live:true,ready:true,status:'live',fetchedAt:'2026-10-26T12:00:00Z'}]};
 const order=(base:Order,source:string,extra:Record<string,unknown>={}):Order=>({...base,day:'2026-10-25',market:'UK' as const,lastVisit:{source,...extra}});
@@ -22,7 +23,39 @@ test('fourteen complete UK days use counted last-visit Meta orders, owner estima
  assert.ok(dial.d.extra!.some(([owner,value])=>owner==='ours' && value==='3 Meta purchases · 1 Shopify orders'));
  assert.ok(dial.d.extra!.some(([source,value])=>source==='Other lastVisit source: invented-other' && value==='1 order'));
  orders[0]!.lastVisit={source:'facebook'};
- assert.ok(attributionDial(spend,orders,settings,today,'all',true).d.extra!.some(([owner,value])=>owner==='ours' && value==='3 Meta purchases · 2.00 Shopify orders · estimated'));
+ assert.ok(attributionDial(spend,orders,settings,today,'all',true).d.extra!.some(([owner,value])=>owner==='ours' && value==='3 Meta purchases · 2.00 Shopify orders · estimated (0 campaign-ID matches)'));
  assert.equal(attributionDial({...spend,days:[]},orders,settings,today,'all',true).t,'No data');
  for(const [value,zone] of [[1.5,'good'],[1.5001,'warn'],[1.8,'warn'],[1.8001,'alarm']] as const)assert.equal(attributionZone(value),zone);
+});
+
+test('sparse campaign-ID matches retain the owner estimate and its Meta count',async()=>{
+ const raw=JSON.parse(await readFile(new URL('./fixtures/shopify/orders.json',import.meta.url),'utf8'));
+ const base=cleanOrder(raw.data.orders.nodes[0]);
+ const orders=Array.from({length:10},(_,i)=>({...order(base,'facebook',{campaign:i===0?'invented-owner-campaign':'Invented readable campaign'}),id:`invented-attribution-order-${i}`}));
+ const data=metaAttribution(spend,orders,settings,today,'uk'),owner=data.owners[0]!;
+ assert.equal(owner.matches,1);assert.equal(owner.orders,10);assert.equal(owner.estimated,true);assert.equal(owner.purchases,3);
+ const detail=attributionDial(spend,orders,settings,today,'uk',true).d.extra!;
+ assert.ok(detail.some(([label,value])=>label==='ours'&&value==='3 Meta purchases · 10.00 Shopify orders · estimated (1 campaign-ID match)'));
+ const threshold=Math.ceil(orders.length*appConfig.adAttribution.ownerMatchMinimumShare);
+ for(let i=0;i<threshold;i++)orders[i]!.lastVisit!.campaign='invented-owner-campaign';
+ const covered=metaAttribution(spend,orders,settings,today,'uk').owners[0]!;
+ assert.equal(covered.orders,threshold);assert.equal(covered.estimated,false);
+ const noClaims={...spend,rows:spend.rows.map(row=>({...row,purchases:0}))};
+ const zero=metaAttribution(noClaims,orders,settings,today,'uk').owners[0]!;
+ assert.equal(zero.orders,threshold);assert.equal(zero.estimated,false);assert.equal(zero.purchases,0);
+});
+
+test('unknown Meta purchases never become zero or supply an owner estimate',async()=>{
+ const raw=JSON.parse(await readFile(new URL('./fixtures/shopify/orders.json',import.meta.url),'utf8'));
+ const base=cleanOrder(raw.data.orders.nodes[0]);
+ const missing={...spend,rows:[...spend.rows,{...spend.rows[0]!,campaignId:'invented-missing-owner',purchases:null}]};
+ const mapped={...settings,metaOwners:[...settings.metaOwners,{campaignId:'invented-missing-owner',owner:'freelancer' as const}]};
+ const orders=[order(base,'facebook')],data=metaAttribution(missing,orders,mapped,today,'uk');
+ assert.equal(data.purchases,null);assert.equal(data.ratio,null);assert.equal(data.complete,false);
+ assert.equal(data.owners[0]!.orders,null);assert.equal(data.owners[1]!.purchases,null);assert.equal(data.owners[1]!.orders,null);
+ const dial=attributionDial(missing,orders,mapped,today,'uk',true);
+ assert.ok(dial.d.extra!.some(([label,value])=>label==='freelancer'&&value==='Meta purchases unavailable · unavailable Shopify orders'));
+ orders[0]!.lastVisit!.campaign='invented-missing-owner';
+ assert.equal(metaAttribution(missing,orders,mapped,today,'uk').owners[1]!.orders,1,'observed campaign matches stay visible');
+ assert.equal(metaAttribution({...spend,days:[]},orders,settings,today,'uk').ratio,null);
 });

@@ -39,7 +39,7 @@ export function compactHomeFixture(base: DashboardSnapshot): DashboardSnapshot {
   }))).flat() as NonNullable<DashboardSnapshot['shopify']>['stock'];
   fixture.reviews = {mode: 'live', status: 'live', publishEnabled: false, unreadCount: 6, asOf: instant, checkedAt: instant,
     rows: Array.from({length: 6}, (_, index) => ({id: `invented-review-${index}`, rating: index < 2 ? index + 1 : 5,
-      productTitle: `Invented product ${index}`, productHandle: `invented-product-${index}`, market: index % 2 ? 'UK' : null,
+      productTitle: index === 0 ? 'Judge.me Shop Reviews' : `Invented product ${index}`, productHandle: `invented-product-${index}`, market: index % 2 ? 'UK' : null,
       verifiedBuyer: true, photoCount: 1, body: long.repeat(3), createdAt: `2026-10-${String(26 - index).padStart(2,'0')}T12:00:00Z`,
       published: false, hidden: false, flagged: false, source: null, curated: 'ok'}))};
   fixture.reviews.rows.reverse(); // Deliberately out of presentation order: low stars and newest must win.
@@ -63,6 +63,7 @@ export function compactHomeFixture(base: DashboardSnapshot): DashboardSnapshot {
   }
   for (const widget of Object.values(fixture.widgets)) {
     widget.mode = 'sample';
+    if (widget.kind === 'test') widget.value.presentation.homeSay = 'Invented experiment summary from the model';
     if (widget.kind === 'dial') {widget.value.cap = 'good'; if (widget.markets) for (const dial of Object.values(widget.markets)) dial.cap = 'good';}
   }
   // Freeze every visible live dial: the real server's derived hero and earlier Settings checks
@@ -140,7 +141,7 @@ async function budget(page: Page, width: number, waiting = true): Promise<void> 
   }
   const top = await page.locator('.hero-grid').evaluate(el => el.getBoundingClientRect().top + scrollY);
   // Hard Home fold budgets: never raise these numbers to accommodate a regression.
-  const heroTop = width === 390 ? 530 : 440;
+  const heroTop = width === 390 ? 500 : 410;
   assert.ok(top <= heroTop, `${width}px hero-grid top ${top} exceeds ${heroTop}`);
   console.log('HERO FOLD', width, {top, maximum: heroTop});
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
@@ -179,6 +180,7 @@ async function budget(page: Page, width: number, waiting = true): Promise<void> 
     }
   }
   assert.ok(await page.locator('#tests .tcard,#tests .trow').count() >= 5);
+  assert.equal(await page.locator('#tests [data-say]').innerText(), 'Invented experiment summary from the model');
   assert.equal(await page.locator('#creative-panel .creative-top .creative-picture').count(),3);
   assert.equal(await page.locator('#reviews .rt[data-review-open]').count(),6);
   assert.equal(await page.locator('#watch .wrow').count(),10);
@@ -195,7 +197,7 @@ async function budget(page: Page, width: number, waiting = true): Promise<void> 
   assert.equal(await page.locator('#deck [data-state="alarm"]').count(),2);
   assert.equal(await page.locator('#deck [data-state="decide"]').count(),4);
   assert.equal(await page.locator('#deck [data-state="warn"]').count(),13);
-  assert.equal(await page.locator('#watch .amber-dials').innerText(),'1 dials in amber');
+  assert.equal(await page.locator('#watch .amber-dials').innerText(),'1 dial in amber');
   assert.match(await page.locator('#deckcount').innerText(),/2 alarms · 4 decisions/);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,`${width}px has no horizontal overflow`);
 }
@@ -273,6 +275,8 @@ export async function checkHomeCompact(context: BrowserContext): Promise<void> {
       await page.locator('#reviews .rt[data-review-open]').first().click();
       await page.locator('#sheet[open]').waitFor();
       assert.match(await page.locator('#sh-extra').innerText(),/Verified buyer/i);
+      assert.match(await page.locator('#sh-title').innerText(), /Shop review/);
+      assert.equal(await page.locator('#sh-extra dt:text-is("Product") + dd').innerText(), 'Shop review');
       await page.locator('#sh-x').click();
     }
   } finally {await page.close();}

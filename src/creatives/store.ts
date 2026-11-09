@@ -17,6 +17,20 @@ const day = (value: any): string | null => value == null ? null : typeof value =
 const adFields = { id: 'ad_id', accountId: 'account_id', name: 'name', status: 'status', effectiveStatus: 'effective_status', createdAt: 'created_at', adSetId: 'ad_set_id', adSetName: 'ad_set_name', campaignId: 'campaign_id', campaignName: 'campaign_name', owner: 'owner', market: 'market', creativeId: 'creative_id', creativeType: 'creative_type', mediaGroupId: 'media_group_id', body: 'body', title: 'title', callToAction: 'call_to_action', linkUrl: 'link_url', utmContent: 'utm_content', firstSpendDay: 'first_spend_day', lastSeen: 'last_seen', facebookUrl: 'facebook_url', instagramUrl: 'instagram_url', objectStoryId: 'object_story_id', instagramMediaId: 'instagram_media_id' } as const;
 const insightFields = { adId: 'ad_id', adSetId: 'ad_set_id', day: 'day', spend: 'spend', impressions: 'impressions', reach: 'reach', frequency: 'frequency', linkClicks: 'link_clicks', threeSecondPlays: 'three_second_plays', threeSecondSource: 'three_second_source', plays: 'plays', thruPlays: 'thru_plays', holdThreeSecondPlays: 'hold_three_second_plays', plays25: 'plays_25', plays50: 'plays_50', plays75: 'plays_75', plays100: 'plays_100', averagePlayTime: 'average_play_time', addsToCart: 'adds_to_cart', purchases: 'purchases', purchaseValue: 'purchase_value' } as const;
 
+// A catalogue can contain hundreds of thousands of daily rows. Convert its known
+// shape directly instead of allocating an entry array and testing every key per row.
+const nullableCount = (value: unknown): number | null => value == null ? null : Number(value);
+function storedInsight(row: Record<string, any>): AdInsight {
+  return { adId: row.adId, adSetId: row.adSetId, day: day(row.day)!, spend: Number(row.spend),
+    impressions: Number(row.impressions), reach: Number(row.reach), frequency: Number(row.frequency),
+    linkClicks: Number(row.linkClicks), threeSecondPlays: Number(row.threeSecondPlays), threeSecondSource: row.threeSecondSource,
+    plays: nullableCount(row.plays), thruPlays: nullableCount(row.thruPlays),
+    holdThreeSecondPlays: row.holdThreeSecondPlays == null ? undefined : Number(row.holdThreeSecondPlays),
+    plays25: nullableCount(row.plays25), plays50: nullableCount(row.plays50), plays75: nullableCount(row.plays75),
+    plays100: nullableCount(row.plays100), averagePlayTime: Number(row.averagePlayTime),
+    addsToCart: Number(row.addsToCart), purchases: Number(row.purchases), purchaseValue: Number(row.purchaseValue) };
+}
+
 export async function saveCatalogue(db: Database, account: string, entries: CatalogueRead[], now: Date, mode: SourceMode = 'live'): Promise<void> {
   await db.transaction(async tx => {
     // Catalogue and insights download independently, but their brief writes share ad rows.
@@ -124,7 +138,7 @@ export async function readLiveCreativeData(db: Database, settings: Settings): Pr
   ]);
   return { mode: 'live', frequencyReads: frequency.rows.map(r => ({adIds:r.ad_ids,from:r.from_day,to:r.to_day,frequency:r.frequency == null ? null : Number(r.frequency)})), ads: ads.rows.map(r => { const owner = settings.metaOwners.find(rule => rule.campaignId === r.campaignId)?.owner ?? 'unassigned'; return { ...r, owner, market: metaSpendMarket(r.campaignName, r.adSetName, owner), createdAt: iso(r.createdAt), lastSeen: iso(r.lastSeen), firstSpendDay: day(r.firstSpendDay) }; }),
     groups: groups.rows.map(r => ({ id:r.id, kind:r.kind, key:r.key, title:r.title, lengthSeconds:r.length_seconds == null ? null : Number(r.length_seconds), width:r.width, height:r.height, firstSeen:iso(r.first_seen), mergedIntoId:r.merged_into_id, alternates:r.alternates, thumbnailUrl:`/media/${encodeURIComponent(r.id)}` })),
-    insights: insights.rows.map(r => Object.fromEntries(Object.entries(r).map(([key,value]) => [key, key === 'day' ? day(value) : ['plays','thruPlays','plays25','plays50','plays75','plays100'].includes(key) && value == null ? null : key === 'holdThreeSecondPlays' && value == null ? undefined : ['adId','adSetId','threeSecondSource'].includes(key) ? value : Number(value)])) as unknown as AdInsight),
+    insights: insights.rows.map(storedInsight),
   };
 }
 

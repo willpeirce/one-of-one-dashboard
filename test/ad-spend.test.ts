@@ -283,6 +283,7 @@ test('transport retries throttles and reports only request ids/status; rejected 
   const delays: number[] = [],
     logs: unknown[] = [];
   const http = new AdTransport('tiktok', {
+    now: () => 0,
     sleep: async (ms) => {
       delays.push(ms);
     },

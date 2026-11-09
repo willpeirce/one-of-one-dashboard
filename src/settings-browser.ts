@@ -4,6 +4,7 @@ import { monthlyOverheadTotal, type OverheadItem } from './overheads.js';
 import { installPullToRefresh, reloadPageForRefresh } from './pull-refresh.js';
 import { seriesPaceDates } from './series-pace/dates.js';
 import { paceDate } from './series-pace/model.js';
+import { inboundProductWarning } from './shopify/stock-gap.js';
 
 type SettingInput = HTMLInputElement | HTMLSelectElement;
 type JsonObject = { [key: string]: unknown };
@@ -101,6 +102,31 @@ function initializeSettings(form: HTMLFormElement): void {
     }
   }
 
+  function showActorWarnings(): void {
+    const list = form.querySelector<HTMLElement>('[data-settings-list="ourActors"]');
+    if (!list) return;
+    const hasRead = list.querySelector<HTMLElement>('[data-actor-choices]')?.dataset.hasRead === 'true';
+    const seen = new Set(Array.from(list.querySelectorAll<HTMLOptionElement>('datalist option')).map(option => option.value));
+    for (const row of Array.from(list.querySelectorAll<HTMLElement>('[data-list-rows] > .setting-row'))) {
+      const id = row.querySelector<HTMLInputElement>('[data-setting-path$=".actorId"]')!.value;
+      const warning = row.querySelector<HTMLElement>('[data-row-hint]')!;
+      warning.hidden = !id || !hasRead || seen.has(id);
+      warning.textContent = warning.hidden ? '' : '⚠ Not seen in the last 7 UK days. Check this actor ID.';
+    }
+  }
+
+  function showInboundWarnings(): void {
+    const list = form.querySelector<HTMLElement>('[data-settings-list="inboundStock"]');
+    if (!list) return;
+    const products = Array.from(list.querySelectorAll<HTMLOptionElement>('#inbound-stock-products option'), option => option.value);
+    for (const row of Array.from(list.querySelectorAll<HTMLElement>('[data-list-rows] > .setting-row'))) {
+      const product = row.querySelector<HTMLInputElement>('[data-setting-path$=".product"]')!.value;
+      const warning = row.querySelector<HTMLElement>('[data-row-hint]')!;
+      warning.textContent = inboundProductWarning(product, products);
+      warning.hidden = !warning.textContent;
+    }
+  }
+
   function showSeriesPaceDates(): void {
     const input = (key: string) => form.querySelector<HTMLInputElement>(`[data-setting-path="${key}"]`)!;
     const orderDate = input('series1OrderDate').value;
@@ -123,6 +149,8 @@ function initializeSettings(form: HTMLFormElement): void {
     }
     updateDirty();
     showShopifyCosts();
+    showActorWarnings();
+    showInboundWarnings();
     showOverheadsTotal();
     showSeriesPaceDates();
     message.textContent = dirty ? 'You have unsaved changes.' : 'All changes saved.';
@@ -166,7 +194,23 @@ function initializeSettings(form: HTMLFormElement): void {
     const add = target.closest<HTMLButtonElement>('[data-add-row]');
     const remove = target.closest<HTMLButtonElement>('[data-remove-row]');
     const campaignSave = target.closest<HTMLButtonElement>('[data-save-campaign]');
-    if (campaignSave) {
+    const pickActor = target.closest<HTMLButtonElement>('[data-pick-actor]');
+    if (pickActor) {
+      if (pending) return;
+      const list = pickActor.closest<HTMLElement>('[data-settings-list="ourActors"]')!;
+      const id = pickActor.dataset.pickActor!;
+      const inputs = Array.from(list.querySelectorAll<HTMLInputElement>('[data-list-rows] input[data-setting-path$=".actorId"]'));
+      const existing = inputs.find(input => input.value === id);
+      if (existing) { existing.focus(); return; }
+      let input = inputs.find(input => !input.value);
+      if (!input) {
+        if (!addRow(list)) return;
+        input = list.querySelector<HTMLInputElement>('[data-list-rows] > .setting-row:last-child input')!;
+      }
+      input.value = id;
+      input.focus();
+      markDirty();
+    } else if (campaignSave) {
       if (pending) return;
       const row = campaignSave.closest<HTMLElement>('[data-meta-campaign]')!;
       const campaignId = row.dataset.metaCampaign!;
@@ -241,6 +285,8 @@ function initializeSettings(form: HTMLFormElement): void {
       if(notice) notice.textContent=until ? `${until < ukToday() ? 'Expired' : 'override to'} ${until}` : 'No dated override';
     }
     showShopifyCosts();
+    showActorWarnings();
+    showInboundWarnings();
     showOverheadsTotal();
     showSeriesPaceDates();
   }
@@ -327,6 +373,8 @@ function initializeSettings(form: HTMLFormElement): void {
     numberRows(list);
   });
   showOverheadsTotal();
+  showActorWarnings();
+  showInboundWarnings();
   showSeriesPaceDates();
   savedValues = readValues();
   const canRefresh = () => dirty || pending ? 'Save or discard your changes first' : true;

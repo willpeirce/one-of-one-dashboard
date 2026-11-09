@@ -105,6 +105,7 @@ test('the database audit CHECK covers every Settings key plus named retired keys
   for (const key of [...settingsKeys, ...retiredSettingsKeys]) assert.equal((await insert(key)).rowCount, 1);
   assert.equal((await insert('overheads.0.monthlyGbp')).rowCount, 1);
   assert.equal((await insert('startingCogs.0.unitCostGbp')).rowCount, 1);
+  assert.equal((await insert('inboundStock.0.expectedDate')).rowCount, 1);
   assert.equal((await insert(`brand.${'a'.repeat(154)}`)).rowCount, 1);
   const auditCount = (await db.query('SELECT * FROM pulse.audit_log')).rowCount;
   for (const field of [
@@ -433,6 +434,50 @@ test('freelancer label defaults, trims, limits characters and falls back when bl
     assert.throws(() => validateSettings({...defaults, freelancerLabel: input}), (error: unknown) =>
       error instanceof SettingsValidationError && error.fields.includes('freelancerLabel'));
   }
+});
+
+test('inbound stock defaults empty and validates product, market, quantity and real arrival dates', () => {
+  const defaults = defaultSettings();
+  const arrival = { product: 'Invented Kit', market: 'uk' as const, quantity: 23, expectedDate: '2026-10-25' };
+  assert.deepEqual(defaults.inboundStock, []);
+  assert.deepEqual(validateSettings({...defaults, inboundStock: [arrival]}).inboundStock, [arrival]);
+  for (const row of [
+    {...arrival, product: ''}, {...arrival, market: 'eu'}, {...arrival, quantity: 0}, {...arrival, quantity: -1},
+    {...arrival, quantity: 1.5}, {...arrival, quantity: Infinity}, {...arrival, expectedDate: '2026-02-30'},
+    {...arrival, expectedDate: '2026-10-25T00:00:00Z'}, {...arrival, unexpected: true},
+  ]) assert.throws(() => validateSettings({...defaults, inboundStock: [row]}), SettingsValidationError);
+  assert.throws(() => validateSettings({...defaults, inboundStock: [arrival, {...arrival, product: 'invented kit'}]}), SettingsValidationError);
+  assert.equal(validateSettings({...defaults, inboundStock: [arrival, {...arrival, market: 'us'}]}).inboundStock.length, 2);
+  assert.equal(validateSettings({...defaults, inboundStock: [arrival, {...arrival, expectedDate: '2026-11-01'}]}).inboundStock.length, 2);
+});
+
+test('older Settings gain inbound stock without changing stored values or version; ordinary saves audit the field', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const initial = await readSettings(db);
+  const {inboundStock: _newKey, ...stored} = initial.values;
+  await db.query('UPDATE pulse.settings SET values = $1', [JSON.stringify(stored)]);
+  const read = await readSettings(db);
+  assert.deepEqual(read.values.inboundStock, []); assert.equal(read.version, initial.version);
+  assert.equal(Object.hasOwn((await db.query<{values: object}>('SELECT values FROM pulse.settings')).rows[0]!.values, 'inboundStock'), false);
+  assert.equal((await db.query('SELECT * FROM pulse.settings_changes')).rowCount, 0);
+  const inboundStock = [{product: 'Invented Kit', market: 'uk' as const, quantity: 23, expectedDate: '2026-10-25'}];
+  const saved = await saveSettings(db, {...read, values: {...read.values, inboundStock}}, randomUUID());
+  const fields = ['inboundStock.0.product', 'inboundStock.0.market', 'inboundStock.0.quantity', 'inboundStock.0.expectedDate'];
+  assert.deepEqual(saved.changedFields, fields);
+  assert.deepEqual((await readSettings(db)).values.inboundStock, inboundStock);
+  assert.deepEqual((await db.query('SELECT field FROM pulse.settings_changes')).rows, fields.map(field => ({field})));
+});
+
+test('inbound Settings sit beside supplier timing and flag unmatched product names', () => {
+  const inboundStock = [
+    { product: 'INVENTED KIT', market: 'uk' as const, quantity: 23, expectedDate: '2026-10-25' },
+    { product: 'Invented Future', market: 'us' as const, quantity: 17, expectedDate: '2026-11-01' },
+  ];
+  const html = settingsPage({version: 0, values: {...defaultSettings(), inboundStock}}, [], 'sample', new Date('2026-10-25T12:00:00Z'), [], undefined, undefined, undefined, ['Invented Kit']);
+  assert.ok(html.indexOf('data-settings-list="supplierLeadTimes"') < html.indexOf('data-settings-list="inboundStock"'));
+  assert.match(html, /name="inboundStock.0.expectedDate"[^>]*type="date"/);
+  assert.match(html, /name="inboundStock.0.quantity"[^>]*min="1" step="1"/);
+  assert.equal((html.match(/⚠ Product not found in Stock and cover/g) ?? []).length, 1);
 });
 
 test('older settings acquire freelancer label on read without a write, version change or audit', async t => {

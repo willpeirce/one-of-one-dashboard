@@ -1,6 +1,7 @@
 import { checkMetaAttribution } from './browser-meta-attribution.js';
 import { checkHourly } from './browser-hourly.js';
 import {checkAdSets} from './browser-adsets.js';
+import { checkScorecard } from './browser-scorecard.js';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import type { AuthenticationResponseJSON } from '@simplewebauthn/server';
@@ -21,6 +22,10 @@ import { checkGrossHistoryProgress } from './browser-gross-history.js';
 import { metricSign } from '../src/metric-sign.js';
 import { checkCreatives } from './browser-creatives.js';
 import { checkCreativeSettings } from './browser-creative-settings.js';
+import { checkActorSettings } from './browser-actor-settings.js';
+import { checkGoogleWidgets } from './browser-google.js';
+import { checkMailchimpWidgets } from './browser-mailchimp.js';
+import { checkInboundSettings } from './browser-inbound-settings.js';
 
 let step = 'read test configuration';
 
@@ -1523,6 +1528,8 @@ async function run(): Promise<void> {
     await page.waitForURL('**/login');
     await page.goto('/settings');
     await page.waitForURL('**/login');
+    await page.goto('/scorecard');
+    await page.waitForURL('**/login');
     assert.equal((await context.request.get('/api/dashboard')).status(), 401);
     assert.equal((await context.request.get('/api/settings')).status(), 401);
     assert.equal((await context.request.get('/api/hero?from=2026-09-20&to=2026-09-24')).status(), 401);
@@ -1625,7 +1632,7 @@ async function run(): Promise<void> {
         await page.locator('#hero [data-k="spend"]').click();
         step = 'check ad spend detail split';
         const spendSheet = (await page.locator('#sheet').textContent()) ?? '';
-        for (const split of ['Meta ours', 'Meta freelancer', 'Google', 'TikTok', 'Unknown market']) assert.ok(spendSheet.includes(split));
+        for (const split of ['Meta ours', 'Meta Freelancer', 'Google', 'TikTok', 'Unknown market']) assert.ok(spendSheet.includes(split));
         step = 'check hourly realignment in spend sheet';
         assert.match(spendSheet, /hours re-aligned to UK time/);
         step = 'check Google lag in spend sheet';
@@ -1779,6 +1786,10 @@ async function run(): Promise<void> {
 
     step = 'check compact Home budgets and re-rendered actions on the dense fixture';
     await checkHomeCompact(context);
+    step = 'check Google tiles, independent live promotion and market choices';
+    await checkGoogleWidgets(context);
+    step = 'check separate Shopify and Mailchimp views, sample flow labels and audience promotion';
+    await checkMailchimpWidgets(context);
 
     step = 'check creative pictures, playing media, windows and gallery filters at phone and desktop widths';
     await checkCreatives(context);
@@ -1787,6 +1798,8 @@ async function run(): Promise<void> {
       const adsPage=await context.newPage();await adsPage.setViewportSize(viewport);await adsPage.emulateMedia({colorScheme});
       await checkAdSets(adsPage,origin);await adsPage.close();
     }
+    step = 'check monthly scorecard, source labels and market controls at phone and desktop widths';
+    await checkScorecard(context);
 
     step = 'check same-origin manifest and installation icons';
     await checkManifest(page, context, origin);
@@ -1798,6 +1811,9 @@ async function run(): Promise<void> {
     await hideAccountMenu(page);
     assert.ok(eventStreams > 0);
     const beforeUpdate = { url: page.url(), scroll: await page.evaluate(() => window.scrollY), fetches: dashboardFetches };
+    step = 'check recent actor choices and local-only edits';
+    await checkActorSettings(context);
+    await checkInboundSettings(context);
     const settingsPage = await context.newPage();
     step = 'load the Settings form';
     await settingsPage.goto('/settings');

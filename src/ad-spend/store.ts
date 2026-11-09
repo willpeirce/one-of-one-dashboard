@@ -224,8 +224,13 @@ export async function spendFacts(
       `SELECT campaign_id,campaign_name,ad_set_id,ad_set_name,uk_day::text,spend_amount::text,currency,day_basis,target_countries,purchases FROM pulse.ad_spend WHERE mode='live' AND source=$1 AND account_id=$2 AND uk_day BETWEEN $3 AND $4`,
       [source.source, account, from, to],
     );
+    const googleTargets = source.source === 'google-ads'
+      ? new Map((await db.query<{source_id:string;data:{targetCountries:string[]}}>(
+        "SELECT source_id,data FROM pulse.google_rows WHERE mode='live' AND account_id=$1 AND kind='campaigns'", [account])).rows.map(row => [row.source_id, row.data.targetCountries]))
+      : new Map<string, string[]>();
     rows.push(
       ...stored.rows.map((r) => {
+        const targetCountries = googleTargets.get(r.campaign_id) ?? r.target_countries;
         const owner = ownerFor(source.source, r.campaign_id, settings);
         return {
           source: source.source,
@@ -234,8 +239,8 @@ export async function spendFacts(
           campaignName: r.campaign_name,
           adSetId: r.ad_set_id,
           adSetName: r.ad_set_name,
-          market: spendMarket({ source: source.source, campaignName: r.campaign_name, adSetName: r.ad_set_name, owner, targetCountries:r.target_countries }),
-          owner, targetCountries:r.target_countries,
+          market: spendMarket({ source: source.source, campaignName: r.campaign_name, adSetName: r.ad_set_name, owner, targetCountries }),
+          owner, targetCountries,
           day: r.uk_day,
           amount: r.spend_amount,
           currency: r.currency,

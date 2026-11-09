@@ -1,3 +1,4 @@
+import type { GoogleBudgetContext } from '../google-ads/model.js';
 import { AdError, type AdSource } from './model.js';
 export type AdRequestLogEntry = {
   source: AdSource; requestId: string | null; status: number;
@@ -21,7 +22,7 @@ export interface AdTransportOptions {
   fetch?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
-  beforeGoogleRead?: () => Promise<void>;
+  beforeGoogleRead?: (context?: GoogleBudgetContext) => Promise<void>;
   timeoutSignal?: (timeoutMs: number) => AbortSignal;
   log?: (entry: AdRequestLogEntry) => void;
 }
@@ -38,18 +39,18 @@ export class AdTransport {
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   }
   // Kept inside the spend adapters. They expose only their fixed read operations.
-  request(url: string, init: RequestInit = {}, timeoutMs = 10_000): Promise<any> {
-    const run = this.pending.then(() => this.send(url, init, timeoutMs));
+  request(url: string, init: RequestInit = {}, timeoutMs = 10_000, googleBudget: GoogleBudgetContext = {}): Promise<any> {
+    const run = this.pending.then(() => this.send(url, init, timeoutMs, googleBudget));
     this.pending = run.catch(() => {});
     return run;
   }
-  private async send(url: string, init: RequestInit, timeoutMs: number): Promise<any> {
+  private async send(url: string, init: RequestInit, timeoutMs: number, googleBudget: GoogleBudgetContext): Promise<any> {
     for (let attempt = 0; attempt <= 3; attempt++) {
       const now = this.options.now ?? Date.now;
       await this.sleep(Math.max(0, this.next - now()));
       try {
         if (this.source === 'google-ads' && url.startsWith('https://googleads.googleapis.com/'))
-          await this.options.beforeGoogleRead?.();
+          await this.options.beforeGoogleRead?.({ ...googleBudget, retry: googleBudget.retry || attempt > 0 });
         const signal = this.options.timeoutSignal?.(timeoutMs) ?? AbortSignal.timeout(timeoutMs);
         const logTimeout = () => this.options.log?.({ source: this.source, requestId: null,
           status: 0, timeoutMs, attempt: attempt + 1, maxAttempts: 4 });

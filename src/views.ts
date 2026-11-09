@@ -45,7 +45,7 @@ function page(title: string, content: string, signedIn: boolean): string {
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="top"><div class="hin">
     <a class="wordmark" href="/">One of One <span>Pulse</span></a>
-    ${signedIn ? `<nav aria-label="Main"><a href="/">Home</a><a href="/sources">Source health</a><a href="/settings">Settings</a><a href="/audit">Audit log</a><button id="sign-out" type="button" disabled>Sign out</button></nav>` : ''}
+    ${signedIn ? `<nav aria-label="Main"><a href="/">Home</a><a href="/scorecard">Scorecard</a><a href="/sources">Source health</a><a href="/settings">Settings</a><a href="/audit">Audit log</a><button id="sign-out" type="button" disabled>Sign out</button></nav>` : ''}
   </div></header>
   <main class="wrap" id="main">${content}<p id="auth-message" role="status" aria-live="polite"></p></main>
   <noscript><div class="wrap"><p class="notice">Enable JavaScript to sign in or sign out with a passkey.</p></div></noscript>
@@ -97,11 +97,36 @@ export function creativeHealthDetails(health: CreativeHealth): string {
     <p>Ad-level comparisons use days read by both imports. The hero keeps the ad-set spend figure.</p></section>`;
 }
 
-export function sourceHealthPage(rows: readonly SourceHealth[], shopify?: Awaited<ReturnType<ShopifyStore['summary']>>, costs?: Awaited<ReturnType<ShopifyStore['costSummary']>>, ads?:Awaited<ReturnType<typeof import('./ad-spend/store.js').spendHealth>>, status?: { channelExclusions?: {channel:string;orderNumbers:string[]}[]; reviewHealth?: import('./judgeme/store.js').ReviewHealth; summary: string; shopify: ShopifyDashboard; checkedAt: string; campaigns?: CampaignSyncState; creatives?: CreativeHealth; adSets?: import('./meta-adsets/presentation.js').AdSetsView }): string {
+
+function googleReadDetails(health: ReturnType<typeof import('./google-ads/health.js').googleHealth>): string {
+  return `<details data-google-read-health><summary>ⓘ Google read details</summary><p>${escapeHtml(health.line)}</p><p>${escapeHtml(health.quota)}</p><ul>${health.jobs.map(line => `<li>${escapeHtml(line)}</li>`).join('')}</ul><h3>Last seven complete GMT days</h3><p>Hours keep Google's GMT dates here. Home re-buckets them into UK days. Google can lag about 3 hours.</p><ul data-google-reconciliation>${health.audit.map(line => `<li>${escapeHtml(line)}</li>`).join('')}</ul></details>`;
+}
+
+function mailchimpReadDetails(facts: import('./mailchimp/model.js').MailchimpFacts): string {
+  const state = facts.mode === 'sample' ? 'Sample data · waiting for MAILCHIMP_API_KEY'
+    : facts.status === 'pending' ? 'Waiting for the first audience read'
+    : facts.status === 'unavailable' ? 'Audience read unavailable or stale; any earlier observation is retained'
+    : 'Live audience read';
+  const audience = facts.audience;
+  const counts = audience ? `${audience.contacts === null ? 'Total contacts not provided by the API' : `${formatNumber(audience.contacts)} approximate total contacts`} · ${formatNumber(audience.subscribers)} subscribed · ${formatNumber(audience.unsubscribed)} unsubscribed · ${formatNumber(audience.cleaned)} cleaned`
+    : 'No audience observation yet';
+  const flows = facts.flowCoverage === 'unavailable' ? 'Mailchimp’s per-flow figures are not available by API.'
+    : facts.flowCoverage === 'available' ? 'Per-flow coverage has been identified; automated per-flow ingestion is not enabled in this build.'
+    : 'The probe has not established per-flow API coverage.';
+  return `<details data-mailchimp-read-health><summary>ⓘ Mailchimp read details</summary><p>${escapeHtml(state)}</p><p>${escapeHtml(counts)}</p><p>Last audience read: ${timestamp(facts.fetchedAt)}. Audience reads run every three hours. Subscribers alone never substitute for total contacts.</p><p>${escapeHtml(flows)} Per-flow examples and the refill funnel remain labelled sample. Shopify email sales keep their own attribution and pounds.</p></details>`;
+}
+
+export function sourceHealthPage(rows: readonly SourceHealth[], shopify?: Awaited<ReturnType<ShopifyStore['summary']>>, costs?: Awaited<ReturnType<ShopifyStore['costSummary']>>, ads?:Awaited<ReturnType<typeof import('./ad-spend/store.js').spendHealth>>, status?: { mailchimp?: import('./mailchimp/model.js').MailchimpFacts; google?: ReturnType<typeof import('./google-ads/health.js').googleHealth>; channelExclusions?: {channel:string;orderNumbers:string[]}[]; reviewHealth?: import('./judgeme/store.js').ReviewHealth; summary: string; shopify: ShopifyDashboard; checkedAt: string; campaigns?: CampaignSyncState; creatives?: CreativeHealth; adSets?: import('./meta-adsets/presentation.js').AdSetsView }): string {
   const gross = shopify?.mode === 'live' ? shopify.jobs.find(job => job.name === 'gross_history')?.state : undefined;
   const days = typeof gross?.first === 'string' && typeof gross?.last === 'string' ? dayCount(gross.first, gross.last) : 0;
   const weeks = Number.isFinite(days) ? Math.max(0, Math.ceil(days / 7)) : 0;
   const grossHistory = gross ? `Total sales history: ${formatNumber(Array.isArray(gross.filled) ? gross.filled.length : 0)} of ${formatNumber(weeks)} weeks filled, ${formatNumber(Array.isArray(gross.skipped) ? gross.skipped.length : 0)} skipped` : '';
+  const dailyStock = shopify?.mode === 'live' ? shopify.jobs.find(job => job.name === 'stock_daily') : undefined;
+  const dailyStockLine = dailyStock ? `Daily product stock: ${dailyStock.failures
+    ? `read failed · ${formatNumber(dailyStock.failures)} consecutive ${dailyStock.failures === 1 ? 'failure' : 'failures'}; stored observations retained`
+    : dailyStock.state.waitingForInventory ? 'waiting for inventory fetched on the current UK day'
+    : dailyStock.state.day ? `${formatNumber(dailyStock.state.freshRows ?? 0)} inventory rows captured for ${dailyStock.state.day}`
+    : 'first daily snapshot pending'}. Missing days stay unknown; no backfill.` : '';
   return page('Source health', `<h1>Source health</h1>
     <section id="source-summary" aria-label="Sources and modes"><h2>Sources and modes</h2><p class="sample-banner">${status ? escapeHtml(status.summary) : `<strong>sample data</strong> · ${shopify ? 'Shopify cards use ingested data; ad spend uses its own source connections; deferred examples remain labelled samples.' : 'No source data has been imported.'}`}</p></section>
     ${status ? `<section id="shopify-watchdogs" aria-label="Shopify watchdogs"><h2>Shopify watchdogs</h2><p>${formatNumber(status.shopify.checks.filter(check => check.status === 'pass').length)}/${formatNumber(status.shopify.checks.length)} checks passing · Shopify ${status.shopify.mode === 'live' ? 'live' : 'sample data'} · checked ${timestamp(status.checkedAt)}</p><ul>${status.shopify.checks.map(check => `<li><strong>${check.status === 'pass' ? '✓ Good' : check.status === 'tripped' ? '△ Watch' : '○ Unknown'} · ${escapeHtml(check.name)}</strong><p>${escapeHtml(check.why)}</p></li>`).join('')}</ul></section>` : ''}
@@ -121,8 +146,8 @@ export function sourceHealthPage(rows: readonly SourceHealth[], shopify?: Awaite
         <tbody>${rows.map((row) => { const ad = ads?.find(a => a.source === row.source); return `<tr>
           <th scope="row">${escapeHtml(row.name)}</th>
           <td>${(ad?.live??row.mode==='live') ? 'Live' : 'Sample'}</td>
-          <td>${escapeHtml(ad?.status??row.statusText??((row.source === 'shopify' || row.source === 'judgeme') && row.status === 'not_implemented' ? 'First sync pending' : row.source === 'judgeme' && row.status === 'healthy' ? 'Live' : healthLabels[row.status]))}${ad?.failures ? ` · ${formatNumber(ad.failures)} consecutive failure${ad.failures === 1 ? '' : 's'}` : ''}${row.source === 'meta' && status?.campaigns ? `<br><small data-campaign-sync data-state="${status.campaigns.state}">${escapeHtml(campaignSyncText(status.campaigns))}</small>` : ''}${row.source === 'shopify' && grossHistory ? `<br><small data-gross-history>${grossHistory}</small>` : ''}</td>
-          <td>${timestamp(ad ? ad.fetchedAt : row.lastSuccessAt)}${row.scanAttempt ? `<br><small data-scan-attempt>${escapeHtml(row.scanAttempt)}</small>` : ''}</td>
+          <td>${escapeHtml(ad?.status??row.statusText??((row.source === 'shopify' || row.source === 'judgeme' || row.source === 'mailchimp') && row.status === 'not_implemented' ? 'First sync pending' : row.source === 'judgeme' && row.status === 'healthy' ? 'Live' : healthLabels[row.status]))}${ad?.failures ? ` · ${formatNumber(ad.failures)} consecutive failure${ad.failures === 1 ? '' : 's'}` : ''}${row.source === 'meta' && status?.campaigns ? `<br><small data-campaign-sync data-state="${status.campaigns.state}">${escapeHtml(campaignSyncText(status.campaigns))}</small>` : ''}${row.source === 'shopify' && grossHistory ? `<br><small data-gross-history>${grossHistory}</small>` : ''}${row.source === 'google-ads' && status?.google ? googleReadDetails(status.google) : ''}${row.source === 'mailchimp' && status?.mailchimp ? mailchimpReadDetails(status.mailchimp) : ''}</td>
+          <td>${timestamp(ad ? ad.fetchedAt : row.lastSuccessAt)}${row.scanAttempt ? `<br><small data-scan-attempt>${escapeHtml(row.scanAttempt)}</small>` : ''}${row.source === 'shopify' && dailyStockLine ? `<br><small data-stock-daily-health>${escapeHtml(dailyStockLine)}</small>` : ''}</td>
           <td class="key-names">${row.requiredKeys.map((key) => `<code>${escapeHtml(key)}</code>`).join('<br>')}</td>
         </tr>`; }).join('')}</tbody>
       </table>

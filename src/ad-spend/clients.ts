@@ -1,4 +1,6 @@
-import { ACTIVITY_FIELDS, parseActivity, type MetaActivity } from '../meta-adsets/activity.js';
+import { GOOGLE_API_VERSION, GOOGLE_OPERATION_LIMIT, type GoogleReader, type GoogleBudgetContext } from '../google-ads/model.js';
+import { googleId, googleRange, googleInstant, parseGoogleCampaigns, parseGoogleNetworks, parseGoogleHours, parseGoogleChanges, parseGoogleDaily } from '../google-ads/parsers.js';
+import { ACTIVITY_FIELDS, parseActivityRows, type ActivityRead } from '../meta-adsets/activity.js';
 import { fetchAdSets, type AdSet } from '../meta-adsets/catalogue.js';
 import { addDays, ukToday } from '../hero-range.js';
 import type { Settings } from '../settings.js';
@@ -19,7 +21,7 @@ import { metaAction, META_PURCHASE, META_ADD_TO_CART } from './meta-actions.js';
 import { spendMarket } from './placement.js';
 export interface SpendReader {
   read(account: string, from: string, to: string, settings: Settings, now?: Date): Promise<SpendRead>;
-  readActivities?(account: string, since: number): Promise<MetaActivity[]>;
+  readActivities?(account: string, since: number): Promise<ActivityRead>;
   readCampaigns?(account: string): Promise<MetaCampaign[]>;
   readAdSets?(account: string, settings: Settings): Promise<AdSet[]>;
 }
@@ -42,7 +44,7 @@ const list = (value: unknown): any[] => {
   if (!Array.isArray(value)) throw new AdError('invalid');
   return value;
 };
-const apiVersions = { meta: 'v25.0', google: 'v24', tiktok: 'v1.3' } as const;
+const apiVersions = { meta: 'v25.0', google: GOOGLE_API_VERSION, tiktok: 'v1.3' } as const;
 const campaignStatuses = new Set(['ACTIVE', 'PAUSED', 'ARCHIVED', 'DELETED', 'IN_PROCESS', 'WITH_ISSUES']);
 function campaignCreatedAt(value: unknown): string {
   const text = label(value), date = new Date(text);
@@ -220,9 +222,9 @@ export class MetaSpend implements SpendReader {
     for await (const page of this.readPages(path, params, timeoutMs, { resumeRateLimit })) rows.push(...page);
     return rows;
   }
-  async readActivities(account: string, since: number): Promise<MetaActivity[]> {
+  async readActivities(account: string, since: number): Promise<ActivityRead> {
     const rows = await this.readAllPages(`act_${identifier(account)}/activities`, {fields:ACTIVITY_FIELDS,since:String(since),limit:'100'});
-    return rows.map(parseActivity).filter((row): row is MetaActivity => row !== null);
+    return parseActivityRows(rows);
   }
   readAdSets(account: string, settings: Settings): Promise<AdSet[]> {
     return fetchAdSets(this, account, settings);
@@ -299,7 +301,7 @@ export class MetaSpend implements SpendReader {
     return result;
   }
 }
-export class GoogleSpend implements SpendReader {
+export class GoogleSpend implements SpendReader, GoogleReader {
   private readonly http: AdTransport;
   private accessToken: string | undefined;
   private expires = 0;
@@ -314,7 +316,13 @@ export class GoogleSpend implements SpendReader {
     private readonly env: NodeJS.ProcessEnv,
     private readonly options: AdTransportOptions = {},
   ) {
-    this.http = new AdTransport('google-ads', options);
+    this.http = new AdTransport('google-ads', { ...options, beforeGoogleRead: async context => {
+      if (options.beforeGoogleRead) { await options.beforeGoogleRead(context); return; }
+      const day = new Date(options.now?.() ?? Date.now()).toISOString().slice(0, 10);
+      if (day !== this.operationsDay) { this.operationsDay = day; this.operations = 0; }
+      if (this.operations >= GOOGLE_OPERATION_LIMIT) throw new AdError('rate_limit');
+      this.operations++;
+    } });
   }
   private async token(): Promise<string> {
     const now = this.options.now?.() ?? Date.now();
@@ -333,18 +341,16 @@ export class GoogleSpend implements SpendReader {
     this.expires = now + Math.max(0, Number(body.expires_in) - 60) * 1000;
     return this.accessToken;
   }
+  private metadataRun?: Promise<string>;
   private async query(
     account: string,
     settings: Settings,
     query: string,
     retry = true,
+    budget: GoogleBudgetContext = {},
   ): Promise<any[]> {
-    const day = new Date(this.options.now?.() ?? Date.now()).toISOString().slice(0, 10);
-    if (day !== this.operationsDay) {
-      this.operationsDay = day;
-      this.operations = 0;
-    }
-    if (++this.operations > 200) throw new AdError('rate_limit');
+    googleId(account);
+    if (!/^SELECT\s/i.test(query) || /;|\b(?:MUTATE|INSERT|UPDATE|DELETE)\b/i.test(query)) throw new AdError('invalid');
     try {
       const body = await this.http.request(
         `https://googleads.googleapis.com/${apiVersions.google}/customers/${account}/googleAds:searchStream`,
@@ -359,41 +365,84 @@ export class GoogleSpend implements SpendReader {
           },
           body: JSON.stringify({ query }),
         },
+        10_000, { ...budget, retry: budget.retry || !retry },
       );
       return list(body).flatMap((chunk) => list(chunk.results ?? []));
     } catch (error) {
       if (error instanceof AdError && error.status === 401 && retry) {
         this.accessToken = undefined;
-        return this.query(account, settings, query, false);
+        return this.query(account, settings, query, false, { ...budget, retry: true });
       }
       throw error;
     }
   }
-  async read(account: string, from: string, to: string, settings: Settings): Promise<SpendRow[]> {
+  private async readCurrency(account: string, settings: Settings, budget: GoogleBudgetContext = {}): Promise<string> {
     const now = this.options.now?.() ?? Date.now();
-    if (!this.metadata || this.metadata.account !== account || now - this.metadata.at > 86400000) {
-      const info = await this.query(
-        account,
-        settings,
-        'SELECT customer.currency_code FROM customer',
-      );
-      this.metadata = {
-        account,
-        currency: currency(info[0]?.customer?.currencyCode),
-        at: now,
-      };
-    }
-    const results = await this.query(
-      account,
-      settings,
-      `SELECT campaign.id, campaign.name, segments.date, segments.hour, metrics.cost_micros FROM campaign WHERE segments.date BETWEEN '${addDays(from, -1)}' AND '${to}'`,
-    );
-    return aggregateHours(
-      parseGoogle([{ results }], account, this.metadata.currency, settings),
-      from,
-      to,
-    );
+    if (this.metadata?.account === account && now - this.metadata.at <= 86400000) return this.metadata.currency;
+    if (!this.metadataRun) this.metadataRun = (async () => {
+      const info = await this.query(account, settings, 'SELECT customer.currency_code FROM customer', true, budget);
+      this.metadata = { account, currency: currency(info[0]?.customer?.currencyCode), at: now };
+      return this.metadata.currency;
+    })().finally(() => { this.metadataRun = undefined; });
+    return this.metadataRun;
   }
+  private async spendRead(account: string, from: string, to: string, settings: Settings, budget: GoogleBudgetContext): Promise<SpendRow[]> {
+    googleRange(from, to);
+    const curr = await this.readCurrency(account, settings, budget);
+    const results = await this.query(account, settings,
+      `SELECT campaign.id, campaign.name, segments.date, segments.hour, metrics.cost_micros FROM campaign WHERE segments.date BETWEEN '${addDays(from, -1)}' AND '${to}'`, true, budget);
+    return aggregateHours(parseGoogle([{ results }], account, curr, settings), from, to);
+  }
+  read(account: string, from: string, to: string, settings: Settings): Promise<SpendRow[]> {
+    return this.spendRead(account, from, to, settings, {});
+  }
+  readHistory(account: string, from: string, to: string, settings: Settings): Promise<SpendRow[]> {
+    return this.spendRead(account, from, to, settings, { history: true });
+  }
+  async readGoogleCampaigns(account: string, settings: Settings) {
+    const curr = await this.readCurrency(account, settings);
+    const campaigns = await this.query(account, settings, 'SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign.bidding_strategy_type, campaign.maximize_conversion_value.target_roas, campaign.target_roas.target_roas, campaign_budget.amount_micros FROM campaign');
+    const locations = await this.query(account, settings, "SELECT campaign.id, campaign_criterion.location.geo_target_constant FROM campaign_criterion WHERE campaign_criterion.type = 'LOCATION' AND campaign_criterion.negative = FALSE");
+    const targets = [...new Set(locations.map(row => {
+      const target = String(row.campaignCriterion?.location?.geoTargetConstant ?? '');
+      if (!/^geoTargetConstants\/\d{1,30}$/.test(target)) throw new AdError('invalid');
+      return target;
+    }))];
+    if (targets.length > 10_000) throw new AdError('invalid');
+    const geo = targets.length ? await this.query(account, settings,
+      `SELECT geo_target_constant.id, geo_target_constant.country_code FROM geo_target_constant WHERE geo_target_constant.resource_name IN (${targets.map(id => `'${id}'`).join(',')})`) : [];
+    return { currency: curr, rows: parseGoogleCampaigns(campaigns, locations, geo) };
+  }
+  async readGoogleNetworks(account: string, from: string, to: string, settings: Settings) {
+    googleRange(from, to);
+    const curr = await this.readCurrency(account, settings);
+    const rows = await this.query(account, settings,
+      `SELECT campaign.id, segments.date, segments.hour, segments.ad_network_type, metrics.cost_micros, metrics.conversions, metrics.conversions_value FROM campaign WHERE segments.date BETWEEN '${addDays(from, -1)}' AND '${to}'`);
+    return { currency: curr, rows: parseGoogleNetworks(rows, from, to) };
+  }
+  async readGoogleConversions(account: string, from: string, to: string, settings: Settings) {
+    googleRange(from, to);
+    const curr = await this.readCurrency(account, settings);
+    const rows = await this.query(account, settings,
+      `SELECT campaign.id, segments.date, segments.hour, metrics.cost_micros, metrics.conversions, metrics.conversions_value FROM campaign WHERE segments.date BETWEEN '${from}' AND '${to}'`);
+    return { currency: curr, rows: parseGoogleHours(rows) };
+  }
+  async readGoogleChanges(account: string, from: string, to: string, settings: Settings) {
+    const first = googleInstant(from), last = googleInstant(to);
+    if (first > last || Date.parse(to) - Date.parse(from) > 7 * 86400000) throw new AdError('invalid');
+    const curr = await this.readCurrency(account, settings);
+    const rows = await this.query(account, settings,
+      `SELECT change_event.resource_name, change_event.change_date_time, change_event.change_resource_type, change_event.resource_change_operation, change_event.campaign FROM change_event WHERE change_event.change_date_time >= '${first}' AND change_event.change_date_time <= '${last}' ORDER BY change_event.change_date_time DESC LIMIT 10000`);
+    return { currency: curr, rows: parseGoogleChanges(rows) };
+  }
+  async readGoogleDaily(account: string, from: string, to: string, settings: Settings) {
+    googleRange(from, to);
+    const curr = await this.readCurrency(account, settings);
+    const rows = await this.query(account, settings,
+      `SELECT segments.date, metrics.cost_micros FROM customer WHERE segments.date BETWEEN '${from}' AND '${to}'`);
+    return { currency: curr, rows: parseGoogleDaily(rows, from, to) };
+  }
+
 }
 export class TikTokSpend implements SpendReader {
   private readonly http: AdTransport;

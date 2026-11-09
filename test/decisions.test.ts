@@ -51,3 +51,18 @@ test('stock uses product/market metadata, folds fine products and retains all al
  assert.match(html,/data-stock-market="uk" data-state="alarm"/);assert.doesNotMatch(html,/Never parse this/);
  assert.match(html,/✓ 0 of 0 checks passing/);
 });
+
+
+test('amber dial links use singular and plural words', () => {
+ assert.match(decisionsHtml({amberDials:1}), />1 dial in amber</);
+ assert.match(decisionsHtml({amberDials:2}), />2 dials in amber</);
+});
+
+test('ad-set market metadata is escaped in decision attributes', () => {
+ const adSets={...sampleAdSetsView(defaultSettings()),mode:'live' as const};
+ const row=adSets.rows.find(row=>row.verdict?.verdict==='Kill')!;
+ row.set.market='uk" data-invented="attribute' as 'uk';
+ const html=decisionsHtml({adSets});
+ assert.match(html,/data-market="uk&quot; data-invented=&quot;attribute"/);
+ assert.doesNotMatch(html,/data-market="uk" data-invented="attribute"/);
+});

@@ -35,6 +35,7 @@ const assets = [
   ['src/fulfilment/style.css', 'fulfilment.css'],
   ['src/creatives/style.css', 'creatives.css'],
   ['src/meta-adsets/style.css', 'adsets.css'],
+  ['src/scorecard/style.css', 'scorecard.css'],
   ['docs/spec/logo.png', 'logo.png'],
   ['public/fonts.css', 'fonts.css'],
   ['public/manifest.webmanifest', 'manifest.webmanifest'],

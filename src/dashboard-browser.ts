@@ -16,7 +16,7 @@ import { greetingAt } from './greeting.js';
 import { formatLike, formatMetricNumber, formatNumber, formatPounds } from './money.js';
 import { paceState, seriesPaceCardHtml, seriesPaceDial, seriesPaceFacts, seriesPaceSheetHtml, type SeriesPaceCard } from './series-pace/presentation.js';
 import type { SeriesPaceMarket } from './series-pace/model.js';
-import { reviewsFlagLabel, reviewsGreeting, reviewsPanelHtml, reviewSheetHtml } from './judgeme/presentation.js';
+import { reviewProductTitle, reviewsFlagLabel, reviewsGreeting, reviewsPanelHtml, reviewSheetHtml } from './judgeme/presentation.js';
 
 const states: Record<State, [string, string]> = {
   good: ['Good', '✓'], warn: ['Watch', '△'], decide: ['Decide', '◆'], alarm: ['Alarm', '✕'],
@@ -229,7 +229,7 @@ function renderHourlyOrders(): void {
   const width = Math.max(260, host.clientWidth), left = 24, right = width - 8;
   const x = (hour: number): number => left + hour * (right - left) / 23;
   const top = hourlyTop([...data.today.map(n => n ?? 0), ...data.yesterday]);
-  const y = (count: number): number => 100 - 96 * count / top;
+  const y = (count: number): number => 72 - 68 * count / top;
   const today = data.today.slice(0, data.nowHour + 1).map(n => n ?? 0);
   const segments = monotoneSegments(today, x, y), previous = monotoneSegments(data.yesterday, x, y);
   const sum = (values: readonly number[]): number => values.reduce((n, value) => n + value, 0);
@@ -240,14 +240,14 @@ function renderHourlyOrders(): void {
   const drawing = document.createElement('div');
   drawing.innerHTML = `<p class="hourly-heading">Orders by hour <span>UK time${hero.orders.mode === 'sample' ? ' · Sample data' : ''}</span></p>
     <div class="hourly-plot" tabindex="0" role="img" aria-label="${esc(summary)}">
-    <svg viewBox="0 0 ${width} 112" aria-hidden="true">
+    <svg viewBox="0 0 ${width} 84" aria-hidden="true">
       ${[0, top / 2, top].map(tick => `<line x1="${left}" y1="${y(tick)}" x2="${right}" y2="${y(tick)}" stroke="var(--line)" stroke-width="1"/><text x="${left - 6}" y="${y(tick) + 3}" text-anchor="end" fill="var(--muted)" font-size="10">${tick}</text>`).join('')}
-      ${[0, 6, 12, 18].map(hour => `<text x="${x(hour)}" y="112" text-anchor="middle" fill="var(--muted)" font-size="10">${hourLabel(hour)}</text>`).join('')}
+      ${[0, 6, 12, 18].map(hour => `<text x="${x(hour)}" y="84" text-anchor="middle" fill="var(--muted)" font-size="10">${hourLabel(hour)}</text>`).join('')}
       <path data-hourly-yesterday d="M${x(0)} ${y(data.yesterday[0]!)}${previous.join('')}" ${stroke} stroke="var(--muted)" stroke-dasharray="6 4"/>
       <path data-hourly-today d="M${x(0)} ${y(today[0]!)}${segments.slice(0, -1).join('')}" ${stroke} stroke="var(--accent)"/>
       ${data.nowHour > 0 ? `<path data-hourly-partial d="M${x(data.nowHour - 1)} ${y(today[data.nowHour - 1]!)}${segments.at(-1)}" ${stroke} stroke="var(--accent)" stroke-dasharray="2 4"/>` : ''}
       <circle cx="${x(data.nowHour)}" cy="${y(today.at(-1)!)}" r="4" fill="var(--accent)" stroke="var(--glass)" stroke-width="2"/>
-      <g data-hourly-hover visibility="hidden"><line y1="4" y2="100" stroke="var(--muted)" stroke-width="1"/><circle data-today-dot r="3" fill="var(--accent)"/><circle data-yesterday-dot r="3" fill="var(--muted)"/></g>
+      <g data-hourly-hover visibility="hidden"><line y1="4" y2="72" stroke="var(--muted)" stroke-width="1"/><circle data-today-dot r="3" fill="var(--accent)"/><circle data-yesterday-dot r="3" fill="var(--muted)"/></g>
     </svg><div class="hourly-tooltip" hidden></div></div>
     <div class="hourly-legend"><span>${key(false)}Today, ${esc(date(data.todayDay))}</span><span>${key(true)}Yesterday, ${esc(date(data.yesterdayDay))}</span></div>
     <table class="visually-hidden"><caption>Hourly orders, UK time</caption><thead><tr><th>Hour</th><th>Today</th><th>Yesterday</th></tr></thead><tbody>${data.today.map((value, hour) => `<tr><th>${hourLabel(hour)}</th><td>${value === null ? 'Not yet' : value}</td><td>${data.yesterday[hour]}</td></tr>`).join('')}</tbody></table>`;
@@ -322,8 +322,8 @@ function renderHero(hero: HeroPeriod, animate = false): void {
   }
   if (hero.business) for (const [kind, widgetId, valueKey, subKey] of [['email','w039','t0269','t0270'], ['refill','w037','t0266','t0267']] as const) {
     const model = hero.business[kind], element = document.querySelector<HTMLElement>(`[data-model-id="${widgetId}"]`);
-    all(`[data-sample-text="${valueKey}"]`).forEach(e => { e.textContent = formatNumber(model.count); });
-    all(`[data-sample-text="${subKey}"]`).forEach(e => { e.textContent = `${rangeLabel(hero.from, hero.to)} · Shopify ${hero.net.mode}`; });
+    all(`[data-sample-text="${valueKey}"]`).forEach(e => { e.textContent = kind === 'email' ? hero.business!.email.value : formatNumber(model.count); });
+    all(`[data-sample-text="${subKey}"]`).forEach(e => { e.textContent = `${rangeLabel(hero.from, hero.to)} · Shopify ${hero.net.mode}${kind === 'email' ? ` · GBP${hero.business!.email.partial ? ' · partial' : ''}` : ''}`; });
     if (element) details.set(element, { state: 'info', title: kind === 'email' ? 'Email · Shopify' : 'Refill Pack', detail: model.detail, mode: hero.net.mode });
   }
   setDecisions({amberDials:all('#dials .tile[data-state=warn][data-mode=live]').length});
@@ -367,7 +367,7 @@ function renderTest(card: HTMLElement, data: TestModel): void {
   const badge = get('[data-tchip]', card);
   badge.className = `chip ${result.state}`;
   badge.textContent = result.chipText;
-  get('[data-say]', card).innerHTML = card.closest('#tests') ? 'Grey until 95% on two mornings · Rates unavailable' : `${esc(result.say)}<small>${esc(result.small)}</small>`;
+  get('[data-say]', card).innerHTML = card.closest('#tests') ? esc(result.homeSay) : `${esc(result.say)}<small>${esc(result.small)}</small>`;
   get('[data-prog]', card).textContent = result.progress;
   const call = card.querySelector<HTMLButtonElement>('[data-call]');
   if (call) call.disabled = true;
@@ -446,7 +446,7 @@ function showDetail(element: HTMLElement, reopen = true): void {
   if (reviewId && snapshot.reviews) {
     const review = snapshot.reviews.rows.find(row => row.id === reviewId);
     openDetail = element; openTemplateId = undefined;
-    get('#sh-title').textContent = review ? `${review.rating}★ · ${review.productTitle}` : 'Review no longer waiting';
+    get('#sh-title').textContent = review ? `${review.rating}★ · ${reviewProductTitle(review.productTitle)}` : 'Review no longer waiting';
     get('#sh-dot').className = `dot ${review && review.rating <= 3 ? 'warn' : 'decide'}`;
     get('#sh-dot').textContent = review && review.rating <= 3 ? '△' : '◆';
     get('#sh-dl').hidden = true;
@@ -543,6 +543,7 @@ function updateSnapshot(next: DashboardSnapshot, initial = false): void {
     if (!widget) return;
     element.dataset.mode = widget.mode;
     element.dataset.source = widget.source.join(' ');
+    if (widget.mode === 'live') element.querySelector('.sample-label')?.remove();
     if (element.hasAttribute('data-ingested-shopify')) element.querySelector('.sample-label')?.remove();
     if (element.hasAttribute('data-ingested-shopify') && element.dataset.src !== 'stock') element.dataset.src = 'shopify';
     element.setAttribute(`data-${widget.kind}`, JSON.stringify(widget.value));
@@ -554,14 +555,13 @@ function updateSnapshot(next: DashboardSnapshot, initial = false): void {
       const data: SheetModel = widget.value;
       details.set(element, { state: data.state, title: data.title, detail: data, mode: widget.mode });
     } else if (widget.kind === 'detail') {
-      const state = element.hasAttribute('data-ingested-shopify') ? 'info' : (element.dataset.state ?? 'info') as State;
+      const state = widget.state ?? (element.hasAttribute('data-ingested-shopify') ? 'info' : (element.dataset.state ?? 'info') as State);
       element.dataset.state = state;
       details.set(element, { state, title: element.querySelector('.sl')?.textContent ?? '', detail: widget.value, mode: widget.mode });
       statChip(element, state);
     }
   });
   if (snapshot.shopify) {
-
     if (snapshot.fulfilment) { get('#fulfilment-glance').innerHTML = glance(snapshot.fulfilment); }
     get('[data-sp="live"]').innerHTML = liveHtml(snapshot.shopify);
     get('#shopify-panels').innerHTML = storePanelsHtml(snapshot.shopify);
@@ -694,7 +694,9 @@ function boot(): void {
     const element = target.closest<HTMLElement>('[data-series-market],.tile,.profit-line,.rt[data-sheet]');
     if (element && details.has(element)) { showDetail(element); return; }
     const market = target.closest<HTMLElement>('#market [data-market]')?.dataset.market;
-    if (market === 'all' || market === 'uk' || market === 'us') { selectedMarket = market; const attribution=snapshot.widgets.w019; const tile=document.querySelector<HTMLElement>('[data-model-id="w019"]'); if(tile&&attribution?.kind==='dial')renderDial(tile,attribution.markets?.[selectedMarket]??attribution.value,attribution.mode); if(snapshot.adSets)updateAdSets(snapshot.adSets,selectedMarket); renderHero(activeHero()); filterDials(); return; }
+    if (market === 'all' || market === 'uk' || market === 'us') { selectedMarket = market;
+      all('[data-model-id]').forEach(tile => { const widget=snapshot.widgets[tile.dataset.modelId ?? '']; if(widget?.kind==='dial' && widget.markets)renderDial(tile,widget.markets[selectedMarket],widget.mode); });
+      if(snapshot.adSets)updateAdSets(snapshot.adSets,selectedMarket); renderHero(activeHero()); filterDials(); return; }
     const period = target.closest<HTMLElement>('[data-period]')?.dataset.period;
     if (period === 'pick') { dates.open(); return; }
     if (period === 'today' || period === 'yday' || period === '7d' || period === '30d') { setPeriod(period); return; }

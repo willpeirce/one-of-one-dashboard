@@ -1,6 +1,6 @@
 import type {DashboardNeed} from '../shopify/dashboard.js';
 import type { HeroMarket, HeroPeriod } from '../dashboard-types.js';
-import { addDays, dayCount, ukToday, metaCostPerOrder } from '../hero-range.js';
+import { addDays, dayCount, ukToday, metaCostPerOrder, aggregateDays, type DailyMetrics } from '../hero-range.js';
 import type { Settings } from '../settings.js';
 import { costOrder, type ShopifyCost } from '../shopify/costs.js';
 import { isFreeOrder, paidOrder, type Order } from '../shopify/model.js';
@@ -13,7 +13,12 @@ import type { SpendFacts } from './store.js';
 import { SPEND_STALE_AFTER_MS } from './worker.js';
 import { spendMarket } from './placement.js';
 import { isTikTok } from '../shopify/order-market.js';
+import { firstOrderCoverage, firstOrderCoverageRule } from '../shopify/first-order-coverage.js';
+import { compareSpendAndSales } from '../scorecard/growth.js';
 export interface AdHeroInputs {
+  google?: import('../google-ads/model.js').GoogleFacts;
+  googleNow?: Date;
+  metaActivity?: import('../meta-adsets/activity.js').ActivityView;
   activity?: import('../meta-adsets/activity.js').MetaActivity[];
   spend: SpendFacts;
   costs: ShopifyCost[];
@@ -21,6 +26,7 @@ export interface AdHeroInputs {
   now?: Date;
   orderDetailsFrom?: string;
   market?: 'all' | 'uk' | 'us';
+  comparisonDays?: readonly DailyMetrics[];
 }
 const pounds = (micros: bigint) => Number(micros) / 1_000_000;
 type SpendGap = { source: AdSource; excluded: boolean; spend: string; dependent: string };
@@ -144,7 +150,7 @@ export function applySpend(
   const split: [string, string][] = (
     [
       ['Meta ours', pounds(sum((r) => r.source === 'meta' && r.owner === 'ours'))],
-      ['Meta freelancer', pounds(sum((r) => r.source === 'meta' && r.owner === 'freelancer'))],
+      [`Meta ${settings.freelancerLabel}`, pounds(sum((r) => r.source === 'meta' && r.owner === 'freelancer'))],
       ['Meta unassigned', pounds(sum((r) => r.source === 'meta' && r.owner === 'unassigned'))],
       ['Google', pounds(sum((r) => r.source === 'google-ads'))],
       ['TikTok', pounds(sum((r) => r.source === 'tiktok'))],
@@ -172,12 +178,21 @@ export function applySpend(
     state: gaps.length ? 'warn' : to === today ? 'sofar' : 'info',
     ss: `${spendSubtitle}${inputs.market && inputs.market !== 'all' && unknown ? ' · store-wide spend stays under All' : ''}`,
     d: {
-      why: `Total spend ${formatPounds(total)}. ${label}.`,
+      why: `Total spend ${formatPounds(total)}. ${split.slice(0, 5).map(([name, value]) => `${name} ${value}`).join(" · ")}. ${label}.`,
       rule: 'GBP spend only. Re-fetches replace daily rows. Ad sets/campaign names place spend by market; unplaceable spend is store-wide under All only and is never shared out.',
       src: label,
       extra: split,
     },
   };
+  const previousTo = addDays(from, -1), previousFrom = addDays(from, -dayCount(from, to));
+  const comparisonPeriod = (start: string, end: string) => {
+    const days = (inputs.comparisonDays ?? []).filter(row => row.date >= start && row.date <= end);
+    const complete = days.length === dayCount(start, end), totals = aggregateDays(days);
+    return { netSales: complete && days.every(row => row.netKnown !== false) ? totals.net : null,
+      spend: complete && days.every(row => row.spendKnown !== false) ? totals.spend : null };
+  };
+  const growthLine = to === today ? 'Today is still in progress; growth comparison waits for complete UK days.'
+    : `${compareSpendAndSales(comparisonPeriod(from, to), comparisonPeriod(previousFrom, previousTo)).line} Compared with ${previousFrom}–${previousTo}, same market.`;
   hero.roas = {
     ...hero.roas,
     unavailableLabel: '—',
@@ -192,22 +207,25 @@ export function applySpend(
       why: 'Shopify net sales divided by all counted ad spend.',
       rule: 'No division when spend or sales is zero. A live numerator never uses sample spend.',
       src: label,
-      extra: split,
+      extra: [...split, ['Spend and sales growth', growthLine]],
     },
   };
   const eligibleOrders = orders.filter(paidOrder);
   const countedOrders = eligibleOrders.filter(o => !isFreeOrder(o));
   const periodCounted = countedOrders.filter(o=>o.day>=from&&o.day<=to);
-  const known = periodCounted.filter(o=>o.firstOrder==='first'||o.firstOrder==='repeat');
-  const waitingFirst = Math.max(0,hero.orders.n-known.length);
-  const firstCount = known.filter(o=>o.firstOrder==='first').length;
-  const cacCount = waitingFirst ? hero.orders.n : firstCount;
-  const cacBasis = waitingFirst ? `all orders · ${formatNumber(waitingFirst)} waiting for first-order flags` : 'first orders';
+  const coverage = firstOrderCoverage([
+    ...periodCounted.map(o => ({ date: o.day, o: 1, firstOrders: Number(o.firstOrder === 'first'), flaggedOrders: Number(o.firstOrder === 'first' || o.firstOrder === 'repeat') })),
+    { date: to, o: Math.max(0, hero.orders.n - periodCounted.length), firstOrders: 0, flaggedOrders: 0 },
+  ], today);
+  const cacCount = coverage.useFirstOrders ? coverage.firstOrders : hero.orders.n;
+  const cacBasis = coverage.useFirstOrders
+    ? `first orders${coverage.unflagged ? ` · ${formatNumber(coverage.unflagged)} unflagged, excluded` : ''}`
+    : `all orders · ${formatNumber(coverage.unflagged)} waiting for first-order flags`;
   hero.cac = { ...hero.cac, n: cacCount ? total / cacCount : 0, dp: 2, mode: spend.mode, source: ['shopify', ...sourceIds],
     unavailable: !available || hero.orders.unavailable || !cacCount, state: gaps.length ? 'warn' : hero.cac.state,
     ss: `${cacBasis} · ${gaps.length ? dependentSubtitle : hero.cac.ss}`,
-    d: { ...hero.cac.d, why: `${formatPounds(total)} all placed ad spend ÷ ${formatNumber(cacCount)} ${waitingFirst?'counted orders':'counted first orders'} = ${formatPounds(cacCount ? total / cacCount : 0)}. ${cacBasis}.`,
-      rule:'First-order CAC once every counted order in the period is flagged. Until then use all counted orders and show the waiting count.',src:label } };
+    d: { ...hero.cac.d, why: `${formatPounds(total)} all placed ad spend ÷ ${formatNumber(cacCount)} ${coverage.useFirstOrders?'counted first orders':'counted orders'} = ${formatPounds(cacCount ? total / cacCount : 0)}. ${cacBasis}.`,
+      rule:firstOrderCoverageRule(),src:label } };
   const periodOrders = eligibleOrders.filter(
     (o) => o.day >= from && o.day <= to,
   );
@@ -399,7 +417,7 @@ export function spendNeeds(facts: SpendFacts, settings: Settings, today: string,
         '/sources');
   }
   for (const row of facts.rows.filter(row => row.day >= addDays(today, -13) && row.day <= today)) {
-    if (row.market === 'unknown')
+    if (spendMarket(row) === 'unknown')
       add(
         row.source, `ad-market:${row.source}:${row.campaignId}`,
         `${adNames[row.source]} campaign market unknown`,

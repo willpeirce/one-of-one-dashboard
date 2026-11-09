@@ -106,7 +106,8 @@ test('an explicit old hourly refusal falls back to flagged GMT days, replaces th
 });
 
 test('unknown-market and currency notices count only the last fourteen UK days',()=>{
-  const facts={mode:'live' as const,rows:[{...row,market:'unknown' as const,currency:'USD'}],days:[],sources:[]};
+  // Unknown placement must also be unknown under the same current name/country rules as the hero.
+  const facts={mode:'live' as const,rows:[{...row,campaignName:'Invented unnamed market',adSetName:'Invented neutral set',targetCountries:[],market:'unknown' as const,currency:'USD'}],days:[],sources:[]};
   assert.equal(spendNeeds(facts,settings,'2026-10-26',now).length,0);
   facts.rows[0]!.day='2026-10-13';assert.equal(spendNeeds(facts,settings,'2026-10-26',now).length,2);
   facts.rows[0]!.day='2026-10-12';assert.equal(spendNeeds(facts,settings,'2026-10-26',now).length,0);

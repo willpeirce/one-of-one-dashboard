@@ -3,6 +3,8 @@ import test from 'node:test';
 import type { SourceHealth } from '../src/sources.js';
 import { auditPage, sourceHealthPage, loginPage } from '../src/views.js';
 import type { ShopifyDashboard } from '../src/shopify/dashboard.js';
+import { googleHealth } from '../src/google-ads/health.js';
+import { googleJobKinds, type GoogleFacts } from '../src/google-ads/model.js';
 
 function source(overrides: Partial<SourceHealth> = {}): SourceHealth {
   return {
@@ -13,6 +15,51 @@ function source(overrides: Partial<SourceHealth> = {}): SourceHealth {
     ...overrides,
   };
 }
+
+test('Google row expands its read health and seven GMT days, naming differences and escaping errors', () => {
+  const now = new Date('2026-10-27T12:00:00Z');
+  const facts: GoogleFacts = { mode: 'live', accountId: '9900000000', currency: 'GBP', campaigns: [], networks: [], conversions: [], changes: [],
+    hours: [{campaignId: '990001', day: '2026-10-25', hour: 1, spendMicros: '3200000', conversionValueMicros: '0', conversions: 0}],
+    daily: [{day: '2026-10-25', spendMicros: '3100000'}],
+    jobs: googleJobKinds.map(kind => ({kind, lastAttemptAt: now.toISOString(), lastSuccessAt: now.toISOString(),
+      error: kind === 'changes' ? '<script>example</script>' : null, failures: kind === 'changes' ? 1 : 0,
+      currency: 'GBP', coverage: {from: '2026-10-20', to: '2026-10-26', basis: 'gmt'}})),
+    quota: {day: '2026-10-27', operations: 200, historyOperations: 16, limit: 200, error: 'daily_cap'},
+  };
+  const html = sourceHealthPage([source({source: 'google-ads', name: 'Google Ads', mode: 'live'})], undefined, undefined, undefined, {
+    summary: 'Google live; other sources labelled separately.', google: googleHealth(facts, now), checkedAt: now.toISOString(),
+    shopify: {mode: 'sample', checks: [], stock: [], needs: [], detail: {}, live: {lastOrder: '', dispatch: '', carts: ''}},
+  });
+  const row = html.match(/<th scope="row">Google Ads<\/th>([\s\S]*?)<\/tr>/)![1]!;
+  assert.match(row, /data-google-read-health/);
+  assert.match(row, /reads paused by the operation budget/);
+  assert.match(row, /200 of 200 operations/);
+  assert.match(row, /&lt;script&gt;example&lt;\/script&gt;/);
+  assert.doesNotMatch(row, /<script>example/);
+  assert.equal((row.match(/<li>GMT 2026-/g) ?? []).length, 7);
+  assert.match(row, /GMT 2026-10-25 · hours summed GBP 3\.20 · Google daily GBP 3\.10 · hours minus Google daily: \+GBP 0\.100000 · difference/);
+  assert.match(row, /7 GMT days 2026-10-20–2026-10-26/);
+});
+
+test('Mailchimp health labels samples, missing contact totals and unknown flow coverage without claiming a live flow', () => {
+  const status: NonNullable<Parameters<typeof sourceHealthPage>[4]> = {
+    summary: 'Sources label their own data.', checkedAt: '2026-10-26T12:00:00Z',
+    shopify: {mode: 'sample', checks: [], stock: [], needs: [], detail: {}, live: {lastOrder: '', dispatch: '', carts: ''}},
+    mailchimp: {mode: 'sample', status: 'sample', fetchedAt: null, audience: {id: 'invented-audience', contacts: null, subscribers: 17, unsubscribed: 3, cleaned: 2},
+      flowCoverage: 'unknown', campaigns: [], reports: [], orders: []},
+  };
+  const sample = sourceHealthPage([source({source: 'mailchimp', name: 'Mailchimp'})], undefined, undefined, undefined, status);
+  assert.match(sample, /data-mailchimp-read-health/);
+  assert.match(sample, /Sample data · waiting for MAILCHIMP_API_KEY/);
+  assert.match(sample, /Total contacts not provided by the API · 17 subscribed/);
+  assert.match(sample, /probe has not established per-flow API coverage/);
+  assert.match(sample, /Per-flow examples and the refill funnel remain labelled sample/);
+  status.mailchimp = {...status.mailchimp!, mode: 'live', status: 'pending', audience: null};
+  const pending = sourceHealthPage([source({source: 'mailchimp', name: 'Mailchimp', mode: 'live', status: 'not_implemented'})], undefined, undefined, undefined, status);
+  assert.match(pending, /First sync pending/);
+  assert.match(pending, /Waiting for the first audience read/);
+  assert.doesNotMatch(pending, /Client not built|Live audience read/);
+});
 
 test('the shared head and page wrappers reserve the safe area on sign-in, Source health and Audit', () => {
   for (const html of [loginPage(false), sourceHealthPage([source()]), auditPage([])]) {
@@ -108,4 +155,22 @@ test('Source health starts with sources and modes, then the watchdog count, UK t
   assert.doesNotMatch(html, /<script>example|<img src=x>/);
   assert.ok(html.indexOf('id="source-summary"') < html.indexOf('id="shopify-watchdogs"'));
   assert.ok(html.indexOf('id="shopify-watchdogs"') < html.indexOf('id="source-health"'));
+});
+
+test('daily product stock failures remain visible on Sources without changing primary Shopify health', () => {
+  const imports: NonNullable<Parameters<typeof sourceHealthPage>[1]> = {
+    mode: 'live', sample: false, counts: {}, notices: [], geoNotice: null, pendingWebhooks: 0,
+    jobs: [{name: 'stock_daily', last_success_at: null, failures: 2, state: {}}],
+  };
+  const health = source({mode: 'live', status: 'healthy'});
+  const html = sourceHealthPage([health], imports);
+  assert.match(html, /<td>Healthy<\/td>/);
+  assert.match(html, /data-stock-daily-health>Daily product stock: read failed · 2 consecutive failures/);
+  assert.match(html, /Missing days stay unknown; no backfill/);
+  imports.jobs[0]!.failures = 0;
+  imports.jobs[0]!.state = {waitingForInventory: true};
+  assert.match(sourceHealthPage([health], imports), /waiting for inventory fetched on the current UK day/);
+  imports.jobs[0]!.state = {day: '2026-10-25', freshRows: 7};
+  assert.match(sourceHealthPage([health], imports), /7 inventory rows captured for 2026-10-25/);
+  assert.doesNotMatch(sourceHealthPage([health], {...imports, mode: 'sample', sample: true}), /data-stock-daily-health/);
 });

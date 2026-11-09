@@ -9,7 +9,7 @@ import { ShopifyStore } from '../src/shopify/store.js';
 import { fixture, SampleShopify } from '../src/shopify/sample.js';
 import { ShopifyWorker, channelQuery } from '../src/shopify/worker.js';
 import { orderFields } from '../src/shopify/client.js';
-import { dataset, dailyRows, emailFlow, shopifyHero, stockCover, type Facts } from '../src/shopify/metrics.js';
+import { dataset, dailyRows, emailFlow, shopifyHero, stockCover, stockMarket, type Facts } from '../src/shopify/metrics.js';
 import { blankObservation, dispatchLate, evaluateWatchdogs, observe, updateObservation } from '../src/shopify/watchdogs.js';
 import { applyShopifyDashboard } from '../src/shopify/dashboard.js';
 import { getSampleDashboard } from '../src/sample-dashboard.js';
@@ -114,6 +114,23 @@ test('stock uses allocated lines by warehouse, 60 complete days and Settings; mi
   assert.equal(stockCover(f,'2026-09-30',settings).find(s=>s.name===cover.name)!.cover,null);
   assert.equal(stockCover(facts([o],'2026-09-01',[{kind:'inventory',data:stock,fetched_at:now}]),'2026-09-30',{...settings,seasonalMultiplier:1}).find(s=>s.name===cover.name)!.cover,null);
   assert.ok(stockCover(f,'2026-09-30',settings).some(s=>s.available===null));
+});
+
+test('stock arrival gaps join live DashboardNeeds without entering sample Home', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const o = await order(); o.day = '2026-09-29';
+  const product = appConfig.shopify.stockProducts[0]!;
+  o.lines[0]!.productId = `gid://shopify/Product/${product.id}`;
+  o.fulfillments = [{id: 'invented-gap-fulfilment', status: 'SUCCESS', createdAt: now.toISOString(), updatedAt: now.toISOString(),
+    locationId: appConfig.shopify.locations.uk.id, lines: [{lineId: o.lines[0]!.id, quantity: 1}]}];
+  const inventory = {productId: o.lines[0]!.productId, locationId: appConfig.shopify.locations.uk.id, quantities: [{name: 'available', quantity: 1}]};
+  const f = facts([o], '2026-07-01', [{kind: 'inventory', data: inventory, fetched_at: now}]);
+  const values = {...settings, seasonalMultiplier: 60, supplierLeadTimes: [], inboundStock: [{product: product.name.toLowerCase(), market: 'uk' as const, quantity: 19, expectedDate: '2026-10-10'}]};
+  const live = await applyShopifyDashboard(getSampleDashboard(), db, f, values, [], now);
+  const needs = live.shopify!.needs.filter(need => need.id.startsWith('stock-gap:'));
+  assert.equal(needs.length, 1); assert.deepEqual(needs[0]!.figure, {value: '9', label: 'days gap · rounded up'});
+  const sample = await applyShopifyDashboard(getSampleDashboard(), db, {...f, mode: 'sample', sample: true}, values, [], now);
+  assert.equal(sample.shopify!.needs.filter(need => need.id.startsWith('stock-gap:')).length, 0);
 });
 
 test('email explanations use human weekday dates for one day, a range and a year boundary', async () => {
@@ -343,4 +360,11 @@ test('channel shortages name one day of seven even when another day offsets the 
   reader.equal = true;
   await db.query("UPDATE pulse.shopify_jobs SET next_run_at=$1 WHERE name='reconcile'", [now]); await worker.tick();
   assert.equal((await worker.store.facts()).noticeDetails.filter(n => n.kind === 'channel_short').length, 0);
+});
+
+
+test('stock market configuration accepts only supported country groups', () => {
+  assert.equal(stockMarket('uk'), 'uk');
+  assert.equal(stockMarket('us'), 'us');
+  for (const value of ['eu', 'UK', '', 'invented']) assert.throws(() => stockMarket(value), /Invalid configured stock market/);
 });

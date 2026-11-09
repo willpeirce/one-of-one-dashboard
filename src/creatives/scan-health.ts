@@ -73,7 +73,7 @@ export async function readScanHealth(db: Database, settings: Settings, scope: Sc
     reason: latest?.failure_reason ?? null, httpStatus: latest?.http_status ?? null, providerCode: latest?.provider_code ?? null, providerMessage: latest?.provider_message ?? null,
     lastAttemptAt: latest?.requested_at ? new Date(latest.requested_at).toISOString() : null,
     lastAttemptStatus: latest?.status ?? null,
-    lastAttemptSeconds: latest?.finished_at ? (new Date(latest.finished_at).getTime() - new Date(latest.requested_at).getTime()) / 1000 : null,
+    lastAttemptSeconds: latest?.finished_at ? Math.round((new Date(latest.finished_at).getTime() - new Date(latest.requested_at).getTime()) / 1000) : null,
     lastSuccessAt: row?.succeeded ? new Date(row.succeeded).toISOString() : null,
     consecutiveFailures: Number(row?.failures ?? 0) };
 }

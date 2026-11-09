@@ -70,7 +70,8 @@ test('AOV/CAC comparisons use summed facts and show seven-day averages or previo
   assert.match(one.aov.ss, /7-day avg/); assert.match(one.cac.ss, /7-day avg/); assert.equal(one.aov.state, 'good'); assert.equal(one.cac.state, 'warn');
   const range = buildHeroRange(rows, '2026-09-15', '2026-09-16', { today: '2026-09-17' });
   assert.match(range.aov.ss, /prev 2 days/); assert.match(range.cac.ss, /prev 2 days/); assert.equal(range.aov.n, 100); assert.equal(range.cac.n, 25);
-  assert.match(range.cac.d.rule, /Cost per order until first orders can be told apart; no bar of its own yet/);
+  assert.match(range.cac.d.rule, /First-order CAC uses only known first orders/);
+  assert.match(range.cac.d.rule, /No bar of its own yet; the Meta cost-per-order dials carry the bar/);
 });
 test('server-rendered hero has independent market control, eight ordered cards and a tappable profit strip', () => {
   const snapshot = getSampleDashboard(), html = dashboardPage(snapshot);
@@ -147,4 +148,37 @@ test('hourly orders share the tile rule for All, UK and US, leaving free and tes
     assert.equal(view.hourly!.ready, true);
   }
   assert.equal(hero.orders.n, 4); assert.equal(hero.markets!.uk.orders.n, 1); assert.equal(hero.markets!.us.orders.n, 1);
+});
+
+
+test('shopifyHero keeps the configured freelancer label and measured spend split in the live sheet', async () => {
+  const hero = shopifyHero(facts(await orders()), today, date, date,
+    {...settings, freelancerLabel: 'Invented partner'}, undefined, undefined,
+    {spend: spend(), costs: [], estimates: [], now});
+  assert.match(hero.spend.d.why, /Meta ours £16.00.*Meta Invented partner £5.00.*Google £7.00/);
+  assert.ok(hero.spend.d.extra?.some(([label, value]) => label === 'Meta Invented partner' && value === '£5.00'));
+  assert.doesNotMatch(hero.spend.d.why, /Meta freelancer/);
+});
+
+test('Overall ROAS adds one same-market spend and sales growth line for complete UK periods', async () => {
+  const current = await orders(), previousDay = addDays(date, -1);
+  const previous = current.map((order, index) => ({...order, id: `invented-growth-order-${index}`, day: previousDay,
+    createdAt: `${previousDay}T09:00:00Z`, itemsAfterDiscountsPence: order.itemsAfterDiscountsPence * 4, totalPence: order.itemsAfterDiscountsPence * 4}));
+  const ads = spend();
+  ads.rows.push({...ads.rows[0]!, campaignId: 'invented-growth-campaign', campaignName: 'Invented UK comparison',
+    adSetName: 'Invented UK comparison set', day: previousDay, amount: '78.000000'});
+  const input = {spend: ads, costs: [], estimates: [], now};
+  const hero = shopifyHero(facts([...current, ...previous]), today, date, date, settings, undefined, undefined, input);
+  const lines = hero.roas.d.extra!.filter(([label]) => label === 'Spend and sales growth');
+  assert.equal(lines.length, 1);
+  assert.match(lines[0]![1], /Spend grew faster than sales/);
+  assert.match(lines[0]![1], /Spend −50\.0% · Shopify net sales −75\.0%/);
+  assert.match(lines[0]![1], /Compared with 2026-10-07–2026-10-07, same market/);
+  assert.notEqual(hero.markets!.uk.roas.d.extra!.find(([label]) => label === 'Spend and sales growth')![1], lines[0]![1]);
+  const missing = shopifyHero(facts([...current, ...previous]), today, date, date, settings, undefined, undefined,
+    {...input, spend: {...ads, days: ads.days.filter(row => row.day !== previousDay)}});
+  const missingLine = missing.roas.d.extra!.find(([label]) => label === 'Spend and sales growth')![1];
+  assert.match(missingLine, /unavailable/i); assert.doesNotMatch(missingLine, /Spend grew faster/);
+  const partial = shopifyHero(facts(current), today, today, today, settings, undefined, undefined, input);
+  assert.match(partial.roas.d.extra!.find(([label]) => label === 'Spend and sales growth')![1], /waits for complete UK days/);
 });

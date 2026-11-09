@@ -90,7 +90,7 @@ test('profit equals the margin numerator for every period and All, UK and US', a
     assert.equal(waterfall[0]![0], 'Net sales');
     const start=waterfall.findIndex(([label])=>label==='Contribution'),after=waterfall.findIndex(([label])=>label==='After ad spend');
     assert.deepEqual(waterfall.slice(start,start+2),[['Contribution',formatPounds(contribution)],['Ad spend',formatPounds(hero.spend.n)]]);
-    assert.deepEqual(waterfall.slice(start+2,start+7).map(([label])=>label),['Meta ours','Meta freelancer','Meta unassigned','Google','TikTok']);
+    assert.deepEqual(waterfall.slice(start+2,start+7).map(([label])=>label),['Meta ours',`Meta ${settings.freelancerLabel}`,'Meta unassigned','Google','TikTok']);
     assert.ok(after>start+7);
     assert.deepEqual(waterfall[after],['After ad spend',formatPounds(contribution-hero.spend.n)]);
     assert.deepEqual(hero.profit.d.extra,waterfall);

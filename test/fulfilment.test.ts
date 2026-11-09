@@ -444,3 +444,16 @@ test('transaction reads are serial and one bulk update persists every parcel rev
   await new ShopifyStore(tracked,'live').orders([raw],now);
   assert.equal(updates,1);
 });
+
+
+test('parcel wall-clock timestamps survive reads and re-upload across the autumn clock change', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const rows = ['2026-10-24 23:30:00', '2026-10-25 01:30:00', '2026-10-26 00:15:00']
+    .map((time, index) => parseExport(csv({'Despatched': time, 'Reference': String(998100 + index)}))[0]!);
+  const first = await confirmImport(db, 'live', rows, 'invented-clock-change.csv', .754, now);
+  assert.equal(first.saved, 3);
+  assert.deepEqual((await readParcels(db, 'live')).map(row => row.despatchedAt), rows.map(row => row.despatchedAt));
+  const repeated = await confirmImport(db, 'live', rows, 'invented-clock-change.csv', .754, now);
+  assert.equal(repeated.saved, 0);
+  assert.equal((await readParcels(db, 'live')).length, 3);
+});

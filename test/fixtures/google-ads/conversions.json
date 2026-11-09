@@ -1,0 +1,1 @@
+[{"results":[{"campaign":{"id":"900000000201"},"segments":{"date":"2026-11-07","hour":10},"metrics":{"costMicros":"25000000","conversions":2.5,"conversionsValue":80}},{"campaign":{"id":"900000000202"},"segments":{"date":"2026-11-07","hour":12},"metrics":{"costMicros":"15000000","conversions":0.5,"conversionsValue":14}}]}]

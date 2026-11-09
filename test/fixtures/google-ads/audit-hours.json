@@ -1,0 +1,19 @@
+[
+  {"results":[
+    {"campaign":{"id":"990000000301"},"segments":{"date":"2026-10-19","hour":23},"metrics":{"costMicros":"100000000","conversions":0,"conversionsValue":0}},
+    {"campaign":{"id":"990000000301"},"segments":{"date":"2026-10-20","hour":0},"metrics":{"costMicros":"1005001","conversions":1,"conversionsValue":8}},
+    {"campaign":{"id":"990000000301"},"segments":{"date":"2026-10-20","hour":23},"metrics":{"costMicros":"2994999","conversions":0,"conversionsValue":0}},
+    {"campaign":{"id":"990000000301"},"segments":{"date":"2026-10-21","hour":1},"metrics":{"costMicros":"12000000","conversions":2,"conversionsValue":16}},
+    {"campaign":{"id":"990000000302"},"segments":{"date":"2026-10-21","hour":22},"metrics":{"costMicros":"4000000","conversions":1,"conversionsValue":8}},
+    {"campaign":{"id":"990000000301"},"segments":{"date":"2026-10-23","hour":12},"metrics":{"costMicros":"1234567","conversions":0,"conversionsValue":0}},
+    {"campaign":{"id":"990000000301"},"segments":{"date":"2026-10-23","hour":23},"metrics":{"costMicros":"8765433","conversions":3,"conversionsValue":24}}
+  ]},
+  {"results":[
+    {"campaign":{"id":"990000000301"},"segments":{"date":"2026-10-24","hour":23},"metrics":{"costMicros":"4500011","conversions":1,"conversionsValue":8}},
+    {"campaign":{"id":"990000000301"},"segments":{"date":"2026-10-25","hour":0},"metrics":{"costMicros":"5499989","conversions":1,"conversionsValue":8}},
+    {"campaign":{"id":"990000000302"},"segments":{"date":"2026-10-25","hour":23},"metrics":{"costMicros":"7000000","conversions":2,"conversionsValue":16}},
+    {"campaign":{"id":"990000000301"},"segments":{"date":"2026-10-26","hour":0},"metrics":{"costMicros":"3000000","conversions":0,"conversionsValue":0}},
+    {"campaign":{"id":"990000000301"},"segments":{"date":"2026-10-26","hour":12},"metrics":{"costMicros":"2000000","conversions":1,"conversionsValue":8}},
+    {"campaign":{"id":"990000000301"},"segments":{"date":"2026-10-27","hour":0},"metrics":{"costMicros":"999000000","conversions":0,"conversionsValue":0}}
+  ]}
+]

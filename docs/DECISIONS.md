@@ -647,3 +647,70 @@ Home no longer shows the health score, count pills or narrative greeting line. T
 Pin the top of .hero-grid at 530px for 390×844 and 440px for 1280×960, rounded up from measured tops of 527.06px and 433.63px in the dense invented fixture to the next 10px. Never raise these budgets to accommodate a regression. Keep the existing section budgets, alarm-first Decisions, deck counts, drop-line targeting, hourly chart summary, date picker and hero metrics. Removing only the pills was considered but left the redundant narrative consuming the fold. This task overrides the health score, pills and greeting-line requirements in the read-only spec; the spec itself stays unchanged. No data reads, migration, Settings key or key handling changes.
 
 CI follow-up: pin the test job to Ubuntu 24.04. The moving ubuntu-latest image switched to Ubuntu 26.04, where the pinned Playwright 1.58.2 cannot install Chromium dependencies. Keep the existing Playwright version and every check; a dependency upgrade would broaden this presentation fix unnecessarily. The secret-scan job remains unchanged.
+
+
+## 2026-11-08, build A–G: one pull request for this task
+
+The explicit task instruction overrides the usual one-stage-per-PR rule for this build only. Parts A–G share build-8-nov, with separate lettered commits and green typecheck, tests, build and browser checks before each part is pushed. Parts remain independently revertable; source writes, private data, new dependencies other than the final pinned Playwright upgrade, and changes to the read-only spec remain outside scope.
+
+## 2026-11-08, Part A: chart, Home and carry fixes
+
+Shorten the hourly plot by 28px and tighten the hero-grid top to 500px at 390×844 and 410px at 1280×960; never raise these limits. Preserve the review flag, drop line, chart comparison and all dense-fixture counts. Keep the live spend split in the sheet with the configured freelancer label, model the test say-line, escape decision metadata, validate stock markets and map shop-review titles on presentation. Waiting review rows retain their flag during a source outage.
+
+The dense invented fixture measures 499.0625px on the phone and 405.625px on desktop, within the new budgets. Unit checks run against PostgreSQL 17.6; the fulfilment subset also runs under America/New_York. Pin the retry test's fake clock so its Retry-After assertion measures the requested delay rather than incidental wall-clock time.
+
+Skip and count malformed activity rows individually with additive migration 051, map legacy activity object types when reading, and show waiting before the first activity read. Give the ad-set name column room and round scan durations. Read zone-free despatch timestamps as text and cover imports under a non-UTC CI timezone. Privacy cleanup moves from every first-order pass to one bounded, non-fatal run after listen per worker lifecycle; this supersedes the 27 October every-run cleanup decision.
+
+## 2026-11-08, Part B: unknown first orders and owner estimates
+
+Keep unknown first-order flags separate from first orders. Recent unknowns retry hourly; older unknowns retry daily, with the last check recorded per stored order in additive migration 052. A shared config policy uses a seven-day grace period and a ten-percent unknown tolerance: recent unknowns or a larger unresolved share keep the all-orders waiting basis. Once a small unresolved share has aged past the grace period, first-order CAC uses only known first orders and states the excluded unflagged count. Comparisons apply the same coverage rule to their own periods. These are explicit operational defaults, not measured business figures.
+
+Readable campaign tags often do not match campaign IDs. Keep an owner's estimate when campaign-ID matches are below half of Meta purchases divided by the account's Meta-to-Shopify ratio, using one config constant rather than a new Setting. Show the actual matched count with the estimate, and keep Meta's purchases beside Shopify's orders. A recent-activity actor picker makes configured IDs checkable; an unmatched ID is advisory because the actor may simply have no recent event.
+
+The creative library builds one request-local group/insight index and the sheet aggregates only its selected parent. Stored insight conversion uses its fixed shape. Video-frame hydration remains on the media route and cannot hold up the sheet JSON. No shared cache, extra index or dependency is needed, so refreshed data and sample/live accounts cannot cross. On 1,500 invented groups, 4,500 ads and 135,000 daily insights in local PostgreSQL, three-run API medians fell from 15.326s to 2.352s for the library and 2.425s to 1.163s for the sheet. The committed benchmark also measures tap-to-filled-sheet at a 1.172s median (1.113–1.387s). These are fixture measurements, not a live-app claim.
+
+Shopify polling and its first-order work now start with the explicit post-listen hook alongside the other workers. Startup still seeds only bounded invented sample data; live source polling never starts from onReady.
+
+## 2026-11-08, Part C: next arrival against stock cover
+
+Add inboundStock as an empty-by-default Settings collection, with product, UK/US market, positive quantity and expected UK calendar date. Match the StockCover product label without case sensitivity, warn about unmatched product labels, and ignore arrivals whose date has passed. Migration 053 allows the audited key; older Settings documents fill it on read without changing their saved version.
+
+The pure stock-gap calculation compares cover with the next arrival for that product and market. Without an upcoming arrival it uses the shortest supplied lead time and explicitly labels the resulting date an assumption. With no timing or no known cover it raises nothing. A positive gap adds only a live Shopify Watch need, linked to Settings and named stock-gap:, so the existing stock-card filtering and dense sample fixture remain unchanged.
+
+## 2026-11-08, Part D: monthly scorecard and daily product stock
+
+Add a signed-in monthly scorecard beside Ads and Creatives, outside Home. Default to the last full UK calendar month and compare the preceding month, with a month and market switch. Shopify net sales supplies revenue; spike dates stay labelled. Spend growth is shown beside sales growth, including when both fall. The existing Home Overall ROAS sheet gains one comparison line for complete periods; today's partial period waits rather than making a growth verdict.
+
+First/repeat/unknown flags supply separate customer-value slices. Refunds follow their UK event date and original order flag. Negative slice values remain signed money; a negative slice or non-positive total cannot supply a meaningful mix ring. Product movers use ordered units and SKU/product identifiers, never invented line revenue or titles. Only the top three rises and falls are shown. Last-year comparisons require actual coverage across twelve months, not merely an old order.
+
+Migration 054 adds pulse.stock_daily. A separate secondary Shopify job records fresh stored inventory once per UK day, preserving fetched time and taken time, with no historical backfill. Missing days remain unknown; measured zero remains out of stock. Its failures and the existing kit snapshot failures are independent; the secondary state is visible on Sources without creating a Home warning. Migration 054 took 5.4ms on local PostgreSQL 17.6. A partial set of known inventory items stays unknown rather than proving a sell-out. Profit names its cost assumptions and estimated overheads. Cost-per-order history stays explicitly “not enough data yet” until months of uploads exist; this does not build plan stage 6.
+
+## 2026-11-08, Part E: remaining Google Ads reads
+
+Keep Google Ads API v24, searchStream and the existing OAuth path, with no developer-token header. The shared client reads today/yesterday spend every 30 minutes; campaign/location/geo, network, conversion/cost hours and daily GMT totals every three hours; and bounded, limited change events every hour. No personal change-event fields are selected. Healthy scheduled reads use 121 operations per UTC day including currency metadata. Historical spend gets at most 16 additional attempts per day; retries and history share the persistent 200-attempt cap, reserving room for scheduled first attempts. A cap stops further reads, records health and leaves the app serving stored results. A separate post-listen worker runs one pass at a time and isolates its jobs from other sources.
+
+Campaign names remain authoritative for markets, including conflicting names. Only names with no UK/US marker use stored positive location targets resolved to country codes; ambiguous or unsupported targets stay unknown. Keep mixed and unrecognised networks as their own slices. The seven-complete-UK-day junk check compares each campaign/network slice with invented Settings spend and ROAS floors. This supersedes plan 4.4's share-based check on the task's 25 October instruction; the spec remains unchanged. YouTube share alone is informational. The existing expected-campaign list and missing-day need are reused; an empty list produces one configuration warning rather than a warning per campaign.
+
+Google claims stay beside Shopify orders identified by a last-visit gclid or paid-Google UTMs. Each dial becomes live only when its own required reads are available, carries freshness and moves into its panel's primary grid after the existing priority dials. The plan for the Google spend dial is explicitly the sum of enabled daily campaign budgets. The combined change dial requires both Google and Meta activity; unavailable inputs leave a labelled sample. Shopify sessions stay unchanged. Sources retains original GMT cost hours separately from UK conversion days and compares seven complete GMT days with the stored daily report using exact micros, naming differences instead of rounding them away. The daily report shares the three-hour schedule and cap.
+
+Google's complete UK and GMT coverage ends before the partial current day; a cached partial report cannot become complete merely because midnight passed. Shopify's comparison also requires completed order reads through the comparison end, with its read time shown. Additive migrations 055 and 056 took 3.1ms and 3.6ms respectively on local PostgreSQL 17.6.
+
+Review follow-up for Parts D and E: a paginated order poll can finish after midnight while retaining an earlier query cutoff. Scorecard and Google comparison coverage therefore use the completed query bound, with midnight regressions and separate full-check commits.
+
+## 2026-11-08, Part F: standalone Mailchimp reads and probe
+
+Build a GET-only Mailchimp Marketing API 3.0 client with fixed read methods, timeouts, three retries, backoff and request-ID logging. All configured server/list/flow values come from appConfig.mailchimp. Each endpoint requests a restricted set of non-personal fields; ecommerce orders always select only order ID, campaign ID, total, currency and date plus pagination metadata. Never infer a campaign ID from a configured flow ID. The probe visits the requested endpoints, reports success and selected response field names, isolates failures and writes nothing. No live probe was run because the key is absent; passing fixture probes do not establish production flow coverage.
+
+Automate the audience read in its own post-listen worker and health row. Mailchimp documents stats.total_contacts as an approximate count across all contact states, so the UI names that approximation and never substitutes subscribed contacts or a derived sum. Empty-by-default plan-limit and billing-day Settings raise a Watch warning only for a fresh live total over the limit in the seven UK calendar days before the next billing date, clamping the date to the month's final day. Migration 057 holds source-provenance observations and sync state; migration 058 adds the audited Settings keys. A long Retry-After defers work instead of violating the provider's timing.
+
+Keep Shopify's email view separate and in pounds, using only last-visit medium=email rather than discount-code backup or order_referrer_source. Its selected period and market drive the displayed money; periods before 27 September 2026 and incomplete history remain partial/unavailable. Mailchimp's own sample counts and dollars are labelled separately. Per-flow reports and the refill funnel remain sample until the read-only probe establishes API coverage; if the API does not cover flow emails, the presentation can explicitly say those per-flow figures are not available. Only audience ingestion is automated in this standalone portion; no write or source-side cleanup is added.
+
+Migrations 057 and 058 took 2.6ms and 1.7ms respectively on local PostgreSQL 17.6. The fixture probe reached all five endpoint types while correctly retaining unknown flow coverage; the no-key command made no requests.
+
+On restart, Mailchimp restores its own persisted health after listen before respecting the next scheduled poll. A fresh held audience or a recorded failure therefore retains its health and timestamps without an early source call.
+
+## 2026-11-08, Part G: pinned Playwright upgrade
+
+Upgrade only Playwright and its matching core package from 1.58.2 to exact version 1.65.0. This release explicitly supports Ubuntu 26.04, including its browser dependency names and Chromium download mapping, so the test job returns to ubuntu-latest. Keep every check and the 15-minute timeout. The earlier Ubuntu 24.04 pin was needed for the old package; it is not a permanent runner requirement. If the upgraded CI run cannot pass, revert this final part and retain the old runner pin.
+
+Local browser verification uses the installed Chromium via the documented executable override; CI must separately verify Playwright's bundled Chromium and runner dependencies. No source API version changes in this part: Google remains v24 and Mailchimp remains 3.0.

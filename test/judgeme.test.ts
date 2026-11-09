@@ -6,7 +6,7 @@ import { JudgeMeClient, JudgeMeReadError } from '../src/judgeme/client.js';
 import { cleanReview, waitingReviews } from '../src/judgeme/model.js';
 import { readReviews, saveReviews, readReviewHealth } from '../src/judgeme/store.js';
 import { ReviewsWorker, REVIEW_POLL_MS } from '../src/judgeme/worker.js';
-import { reviewLink, reviewsFlagLabel, reviewsGreeting, reviewsPanelHtml, reviewSheetHtml } from '../src/judgeme/presentation.js';
+import { reviewLink, reviewProductTitle, reviewsFlagLabel, reviewsGreeting, reviewsPanelHtml, reviewSheetHtml } from '../src/judgeme/presentation.js';
 import { sampleReviews } from '../src/judgeme/sample.js';
 import { getSampleDashboard } from '../src/sample-dashboard.js';
 import { dashboardPage } from '../src/dashboard-view.js';
@@ -276,7 +276,7 @@ test('Home review flag has short waiting labels and hides clear or unavailable s
   panel.rows.push(structuredClone(panel.rows[0]!));
   assert.equal(reviewsFlagLabel(panel), '★ 2 new reviews');
   for (const status of ['pending', 'unavailable'] as const) {
-    assert.equal(reviewsFlagLabel({ ...panel, status, unreadCount: 2 }), null);
+    assert.equal(reviewsFlagLabel({ ...panel, status, unreadCount: 2 }), '★ 2 new reviews');
   }
   panel.rows = [];
   assert.equal(reviewsFlagLabel(panel), null);
@@ -353,4 +353,17 @@ test('compact reviews rank low ratings first, fold after three and omit unknown 
   assert.doesNotMatch(html, /Market unknown|Verified buyer|data-review-link|photo/);
   assert.match(html, /class="chip info" id="rvcount"/);
   assert.equal((html.match(/data-review-open/g) ?? []).length, 6);
+});
+
+
+test('shop review provider titles map on read in rows and sheets without changing product titles', () => {
+  const panel = sampleReviews();
+  for (const title of ['Judge.me Shop Reviews', 'Store review']) {
+    panel.rows[0]!.productTitle = title;
+    assert.equal(reviewProductTitle(title), 'Shop review');
+    assert.match(reviewsPanelHtml(panel), /class="review-product">Shop review/);
+    assert.match(reviewSheetHtml(panel.rows[0]!, panel), /<dt>Product<\/dt><dd>Shop review<\/dd>/);
+    assert.equal(panel.rows[0]!.productTitle, title, 'The saved title is not rewritten');
+  }
+  assert.equal(reviewProductTitle('Invented product'), 'Invented product');
 });

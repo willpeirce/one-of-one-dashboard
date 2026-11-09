@@ -3,6 +3,7 @@ import type { SourceId } from './sources.js';
 import { profitAndMargin } from './profit.js';
 import { contributionMetric } from './contribution.js';
 import { formatNumber, formatPounds } from './money.js';
+import { firstOrderCoverage, firstOrderCoverageRule } from './shopify/first-order-coverage.js';
 
 const DAY = 86_400_000;
 const fields = ['net', 'o', 'uk', 'us', 'sess', 'ukS', 'ukM', 'usM', 'g', 'ours'] as const;
@@ -142,9 +143,13 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
   const n = dayCount(from, to);
   if (selected.length !== n) throw new HeroRangeError();
   const t = aggregateDays(selected);
-  const firstCac = t.o>0 && t.flaggedOrders===t.o;
+  const flagCoverage = firstOrderCoverage(selected, options.today);
+  const firstCac = flagCoverage.useFirstOrders;
   const valueFor = (metric:Metric,total:Totals) => metric==='cac'&&firstCac ? divide(total.spend,total.firstOrders??0) : metrics[metric](total);
-  const cacMissing = (list:readonly DailyMetrics[]) => list.some(row=>row.spendKnown===false) || firstCac && list.some(row=>row.flaggedOrders!==row.o || row.o>0&&!row.firstOrders);
+  const cacMissing = (list:readonly DailyMetrics[]) => {
+    const coverage = firstOrderCoverage(list, options.today);
+    return list.some(row=>row.spendKnown===false) || firstCac && coverage.orders > 0 && (!coverage.useFirstOrders || !coverage.firstOrders);
+  };
   const one = n === 1;
   const partial = to === options.today;
   const label = rangeLabel(from, to);
@@ -188,7 +193,7 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
     return marks.length ? `Spike days: ${marks.join(', ')}` : '';
   });
   const ha = `${weekly ? 'Week by week, average a day' : 'Day by day'}, ${rangeLabel(firstChartDate, to)}${spikeNote ? `. ${spikeNote}` : ''}`;
-  const history = (metric: Metric): number[] => (metric === 'cac' && cacMissing(chartRows) || salesMetrics.has(metric) && chartRows.some(row => row.netKnown === false) || countMetrics.has(metric) && chartRows.some(row => row.countsKnown === false) || metric === 'cr' && chartRows.some(row => row.sessionsKnown === false)) ? [] : bins.map((bin) => {
+  const history = (metric: Metric): number[] => (metric === 'cac' && (cacMissing(chartRows) || bins.some(cacMissing)) || salesMetrics.has(metric) && chartRows.some(row => row.netKnown === false) || countMetrics.has(metric) && chartRows.some(row => row.countsKnown === false) || metric === 'cr' && chartRows.some(row => row.sessionsKnown === false)) ? [] : bins.map((bin) => {
     const total = aggregateDays(bin);
     const value = valueFor(metric,total);
     return additive.has(metric) ? Math.round(value / total.days) : rounded(value, metric === 'cr' ? 1 : metric === 'margin' ? 0 : 2);
@@ -202,6 +207,8 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
   const cOrders = comparison('orders');
   const cCr = comparison('cr');
   const aov = metrics.aov(t), cac = valueFor('cac',t);
+  const cacBasis = firstCac ? `first orders${flagCoverage.unflagged ? ` · ${integer(flagCoverage.unflagged)} unflagged, excluded` : ''}`
+    : `all orders · ${integer(flagCoverage.unflagged)} waiting for first-order flags`;
   const cAov = comparison('aov'), cCac = comparison('cac');
   const ratioComparison = (value: number, base: number | null): string => base === null ? 'no earlier days to compare' : `${one ? '7-day avg' : `prev ${n} days`} ${formatPounds(base)}${!partial && base ? ` · ${value >= base ? '+' : '−'}${percent(value, base)}%` : ''}`;
   const cr = metrics.cr(t);
@@ -259,9 +266,9 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
     }, ['shopify']),
     cac: metric({ n: rounded(cac), state: partial ? 'sofar' : one && spikeRows.length ? 'info' : cCac === null ? 'info' : cac <= cCac ? 'good' : cac > 1.15 * cCac ? 'warn' : 'info', pre: '£', dp: 2,
       ss: ratioComparison(cac, cCac),
-      d: detail('cac', { hp: '£', src: `Meta + Google + TikTok spend ÷ counted Shopify orders, ${when}`,
-        why: `${formatPounds(t.spend)} all ad spend ÷ ${integer(t.o)} orders = ${formatPounds(cac)}.`,
-        rule: `Cost per order until first orders can be told apart; no bar of its own yet, the Meta cost-per-order dials carry the bar. ${later(`Green when at or below ${one ? 'the 7-day average' : `the previous ${n} days`}; amber over 115% of it. Red is never used here.`)}${spikeNote ? ` ${spikeNote}` : ''}` }),
+      d: detail('cac', { hp: '£', src: `Meta + Google + TikTok spend ÷ counted Shopify ${firstCac ? 'first orders' : 'orders'}, ${when}`,
+        why: `${formatPounds(t.spend)} all ad spend ÷ ${integer(firstCac ? flagCoverage.firstOrders : t.o)} counted ${firstCac ? 'first orders' : 'orders'} = ${formatPounds(cac)}. ${cacBasis}.`,
+        rule: `${firstOrderCoverageRule()} No bar of its own yet; the Meta cost-per-order dials carry the bar. ${later(`Green when at or below ${one ? 'the 7-day average' : `the previous ${n} days`}; amber over 115% of it. Red is never used here.`)}${spikeNote ? ` ${spikeNote}` : ''}` }),
     }, ['shopify', 'meta', 'google-ads', 'tiktok']),
     cr: metric({ n: rounded(cr, 1), state: state(cr, cCr), suf: '%', dp: 1,
       ss: `${integer(t.o)} of ${integer(t.sess)} sessions · ${marketRates}`,

@@ -5,6 +5,7 @@ import type { Database } from './db.js';
 import type { OverheadItem } from './overheads.js';
 import { sourceDefinitions } from './sources.js';
 import { isSeriesDate, seriesPaceDates } from './series-pace/dates.js';
+import type { InboundStock } from './shopify/stock-gap.js';
 
 export const SETTINGS_KEY_NAMES = Object.freeze(sourceDefinitions.flatMap((source) => [...source.requiredKeys]));
 type KeyName = (typeof SETTINGS_KEY_NAMES)[number];
@@ -26,6 +27,7 @@ export interface Settings {
   dispatchCutoffUk: string;
   dispatchCutoffUs: string;
   supplierLeadTimes: { supplier: string; days: number | null }[];
+  inboundStock: InboundStock[];
   safetyWeeks: number;
   seasonalMultiplier: number | null;
   markersPerKit: number | null;
@@ -61,6 +63,10 @@ export interface Settings {
   ourActors: { actorId: string }[];
   metaOwners: { campaignId: string; owner: 'ours' | 'freelancer'; test?: boolean }[];
   expectedGoogleCampaigns: { campaignId: string }[];
+  googleNetworkSpendFloorGbp: number;
+  googleNetworkRoasFloor: number;
+  mailchimpPlanLimit: number | null;
+  mailchimpBillingDay: number | null;
   blendedMetaTripwireGbp: number;
   creatorRules: {
     assetCapGbp: number;
@@ -136,6 +142,7 @@ export function defaultSettings(): Settings {
       { supplier: 'Rising Games', days: 35 }, { supplier: 'Hedy', days: 2 },
       { supplier: 'Shanghai Joan', days: null }, { supplier: 'Freight forwarder', days: null },
     ],
+    inboundStock: [],
     safetyWeeks: 3,
     seasonalMultiplier: null,
     markersPerKit: null,
@@ -149,6 +156,9 @@ export function defaultSettings(): Settings {
     freelancerLabel: 'Freelancer',
     metaAdAccountId: '', googleCustomerId: '', googleLoginCustomerId: '', tiktokAdvertiserId: '',
     metaSources: ['facebook','fb','instagram','ig','meta','an','msg'].map(source=>({source})), ourActors: [], metaOwners: [], expectedGoogleCampaigns: [],
+    // Invented starting rules; live values are set after review.
+    googleNetworkSpendFloorGbp: 40, googleNetworkRoasFloor: 1.2,
+    mailchimpPlanLimit: null, mailchimpBillingDay: null,
     blendedMetaTripwireGbp: 28,
     creatorRules: {
       assetCapGbp: 200, minimumUsageMonths: 3, pushPriceBeforeExtendingUsage: true,
@@ -306,6 +316,11 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
       const parsed = object(row, ['supplier', 'days'], path);
       return { supplier: businessText(parsed.supplier, `${path}.supplier`), days: number(parsed.days, `${path}.days`, 730, true, true) };
     }, (row) => row.supplier),
+    inboundStock: list(value.inboundStock, 'inboundStock', (row, path) => {
+      const parsed = object(row, ['product', 'market', 'quantity', 'expectedDate'], path);
+      return { product: text(parsed.product, `${path}.product`), market: choice(parsed.market, `${path}.market`, ['uk', 'us'] as const),
+        quantity: requiredNumber(parsed.quantity, `${path}.quantity`, 1_000_000, true, 1), expectedDate: seriesDate(parsed.expectedDate, `${path}.expectedDate`) };
+    }, (row) => `${row.product}:${row.market}:${row.expectedDate}`),
     safetyWeeks: requiredNumber(value.safetyWeeks, 'safetyWeeks', 104),
     seasonalMultiplier: number(value.seasonalMultiplier, 'seasonalMultiplier', 100, true, false, 0.01),
     markersPerKit: number(value.markersPerKit, 'markersPerKit', 1_000, true, true),
@@ -345,6 +360,8 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
     })(),
     googleCustomerId: accountId(value.googleCustomerId, 'googleCustomerId', true),
     googleLoginCustomerId: accountId(value.googleLoginCustomerId, 'googleLoginCustomerId', true),
+    googleNetworkSpendFloorGbp: requiredNumber(value.googleNetworkSpendFloorGbp, 'googleNetworkSpendFloorGbp', 100_000),
+    googleNetworkRoasFloor: requiredNumber(value.googleNetworkRoasFloor, 'googleNetworkRoasFloor', 1_000),
     tiktokAdvertiserId: accountId(value.tiktokAdvertiserId, 'tiktokAdvertiserId'),
     metaSources: list(value.metaSources, 'metaSources', (row,path) => {
       const parsed=object(row,['source'],path);
@@ -370,6 +387,8 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
       if (!campaignId) return invalid(`${path}.campaignId`);
       return { campaignId };
     }, (row) => row.campaignId),
+    mailchimpPlanLimit: number(value.mailchimpPlanLimit, 'mailchimpPlanLimit', Number.MAX_SAFE_INTEGER, true, true, 1),
+    mailchimpBillingDay: number(value.mailchimpBillingDay, 'mailchimpBillingDay', 31, true, true, 1),
     blendedMetaTripwireGbp: requiredNumber(value.blendedMetaTripwireGbp, 'blendedMetaTripwireGbp', 100_000, false, 0.01),
     creatorRules: {
       assetCapGbp: requiredNumber(rules.assetCapGbp, 'creatorRules.assetCapGbp', 100_000),
@@ -438,6 +457,11 @@ function storedSettings(input: unknown): Settings {
     metaSources: defaults.metaSources,
     ourActors: defaults.ourActors,
     freelancerLabel: defaults.freelancerLabel,
+    inboundStock: defaults.inboundStock,
+    googleNetworkSpendFloorGbp: defaults.googleNetworkSpendFloorGbp,
+    googleNetworkRoasFloor: defaults.googleNetworkRoasFloor,
+    mailchimpPlanLimit: defaults.mailchimpPlanLimit,
+    mailchimpBillingDay: defaults.mailchimpBillingDay,
     ...input as Record<string, unknown>,
   };
   if (!Object.hasOwn(stored, 'overheads') && !Object.hasOwn(stored, 'monthlyOverheadsGbp')) return validateSettings(stored);

@@ -198,7 +198,7 @@ test('Sources keeps last success and shows the current model attempt, UK time, H
   await seed(); await syncSourceHealth(db, {ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY});
   let instant = now;
   await runCreativeScans(db, settings(), {mode: 'live', accountId: account, clock: () => instant, fetch: async () => {
-    instant = new Date(now.getTime() + 2_000); return answer();
+    instant = new Date(now.getTime() + 2_420); return answer();
   }});
   const success = await sourceHealthHtml(settings());
   assert.match(success.html, /Last attempt 14 Oct 13:00 UK · done \(http 200\) · 2 seconds/);
@@ -220,7 +220,7 @@ test('Sources keeps last success and shows the current model attempt, UK time, H
 
   instant = new Date('2026-10-28T12:00:00Z');
   await runCreativeScans(db, settings(), {mode: 'live', accountId: account, groupId: entry.media.id!, clock: () => instant, fetch: async () => {
-    instant = new Date(instant.getTime() + 3_000);
+    instant = new Date(instant.getTime() + 2_600);
     return Response.json({error: {type: 'invalid_request_error', message: 'Invented provider diagnostic'}}, {status: 400});
   }});
   assert.match((await sourceHealthHtml(settings())).html,

@@ -1,6 +1,6 @@
 import type { CreativeData, MediaGroup } from './model.js';
 import { attributesForKind, resolveAttributes, type AttributeDefinition, type AttributeRow } from './attributes.js';
-import { aggregateCreativeGroups } from './ranking.js';
+import { aggregateCreativeGroups, indexCreativeData } from './ranking.js';
 import type { GroupPerformance } from './presentation-types.js';
 
 export interface TaggingQueueEntry { groupId: string; title: string; picture: string; unsure: boolean }
@@ -18,10 +18,15 @@ export function creativeAttributeOptions(kind: MediaGroup['kind'] | 'all' = 'all
   return [...combined.values()];
 }
 
-export function creativeTaggingQueue(data: CreativeData, rows: readonly AttributeRow[], floor: number, today: string): TaggingQueueEntry[] {
-  return aggregateCreativeGroups(data, { to: today }).filter(group => group.totals.spend > floor
-    && !rows.some(row => row.groupId === group.group.id && row.source === 'will')).map(group => ({
-      group, unsure: resolveAttributes(group.group.kind, rows.filter(row => row.groupId === group.group.id)).some(attribute => attribute.unsure),
+export function creativeTaggingQueue(data: CreativeData, rows: readonly AttributeRow[], floor: number, today: string, index = indexCreativeData(data)): TaggingQueueEntry[] {
+  const byGroup = new Map<string, AttributeRow[]>();
+  for (const row of rows) {
+    const attributes = byGroup.get(row.groupId) ?? [];
+    attributes.push(row); byGroup.set(row.groupId, attributes);
+  }
+  return aggregateCreativeGroups(data, { to: today }, index).filter(group => group.totals.spend > floor
+    && !(byGroup.get(group.group.id) ?? []).some(row => row.source === 'will')).map(group => ({
+      group, unsure: resolveAttributes(group.group.kind, byGroup.get(group.group.id) ?? []).some(attribute => attribute.unsure),
     })).sort((a, b) => Number(b.unsure) - Number(a.unsure)
       || b.group.group.firstSeen.localeCompare(a.group.group.firstSeen) || a.group.group.id.localeCompare(b.group.group.id))
     .map(({ group, unsure }) => ({ groupId: group.group.id, title: group.group.title, picture: group.group.thumbnailUrl, unsure }));

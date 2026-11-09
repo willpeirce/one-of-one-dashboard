@@ -94,3 +94,21 @@ test('Settings explains an empty campaign discovery without offering manual camp
   assert.equal((html.match(/data-save-campaign/g) ?? []).length, 0);
   assert.ok(!html.includes('data-settings-list="metaOwners"'));
 });
+
+test('Settings offers recent actors, warns on unmatched IDs and escapes the supplied actor label', () => {
+  const values={...defaultSettings(),ourActors:[{actorId:'990001'},{actorId:'990099'}]};
+  const html=settingsPage({version:0,values},[],'live',new Date('2026-10-26T12:00:00Z'),[],undefined,undefined,{
+    hasRead:true,line:'Meta activity: last read 26 Oct',actors:[{id:'990001',name:'Invented <script>operator</script>'}],
+  });
+  const section=html.match(/<section[^>]*data-settings-list="ourActors"[\s\S]*?<\/section>/)![0];
+  assert.equal((section.match(/⚠ Not seen in the last 7 UK days/g)??[]).length,1);
+  assert.match(section,/list="recent-meta-actors"/);
+  assert.match(section,/data-pick-actor="990001"/);
+  assert.match(section,/Invented &lt;script&gt;operator&lt;\/script&gt;/);
+  assert.ok(!section.includes('Invented <script>'));
+  assert.match(section,/Choose Save settings to keep edits/);
+  assert.match(section,/value="990099"/,'an unmatched ID is retained for correction');
+  const waiting=settingsPage({version:0,values});
+  assert.match(waiting,/Waiting for the first activity read to check actor IDs/);
+  assert.doesNotMatch(waiting,/⚠ Not seen in the last 7 UK days/);
+});

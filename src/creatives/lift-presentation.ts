@@ -5,7 +5,7 @@ import type { CreativeLift, LiftConfidence, LiftMarket, LiftWindowDays } from '.
 import { creativeLiftLabel, mergeInstructions } from './lift-phrasing.js';
 import type { CreativeData } from './model.js';
 import type { CreativeCard } from './presentation-types.js';
-import { aggregateCreativeGroups, parentGroup } from './ranking.js';
+import { aggregateCreativeGroups, indexCreativeData } from './ranking.js';
 
 export interface CreativeBullet { text: string; confidence: LiftConfidence; liftIds: string[] }
 export interface CreativeBrief {
@@ -55,7 +55,7 @@ export function emptyBrief(windowDays: LiftWindowDays): string {
 }
 
 export function makeCreativeBrief(kind: CreativeKind, lifts: readonly CreativeLift[], data: CreativeData,
-  windowDays: LiftWindowDays, market: LiftMarket, today: string): CreativeBrief {
+  windowDays: LiftWindowDays, market: LiftMarket, today: string, index = indexCreativeData(data)): CreativeBrief {
   const eligible = lifts.filter(lift => lift.kind === kind && lift.windowDays === windowDays && lift.market === market && lift.confidence !== 'Hint').sort(byConfidence);
   const clusters: CreativeLift[][] = [], seen = new Set<string>();
   for (const lift of eligible) {
@@ -71,11 +71,11 @@ export function makeCreativeBrief(kind: CreativeKind, lifts: readonly CreativeLi
   }));
   const top = eligible[0], seenExamples = new Set<string>();
   const examples = (top?.metrics.exampleGroupIds ?? []).flatMap(id => {
-    const group = parentGroup(id, data.groups);
+    const group = index.parentById.get(id);
     if (!group || group.kind !== kind || seenExamples.has(group.id)) return [];
     seenExamples.add(group.id); return [{ id: group.id, title: group.title }];
   }).slice(0, 2);
-  const groups = aggregateCreativeGroups(data, { kind, market, from: addDays(today, 1 - windowDays), to: today });
+  const groups = aggregateCreativeGroups(data, { kind, market, from: addDays(today, 1 - windowDays), to: today }, index);
   const spend = groups.reduce((sum, group) => sum + group.totals.spend, 0);
   const thin = top && (top.metrics.with.groupCount < 5 || top.metrics.without.groupCount < 5);
   const footer = `${formatNumber(groups.length)} ${kind === 'video' ? 'videos' : 'images'}, ${pounds(spend)} spend. Patterns, not proof.${thin ? ' Thin evidence, read loosely.' : ''}`;
@@ -87,11 +87,11 @@ export function makeCreativeBrief(kind: CreativeKind, lifts: readonly CreativeLi
 
 /** Home, library, sheets and Decide use the same ordered findings and stored strength. */
 export function deriveCreativeLiftPresentation(lifts: readonly CreativeLift[], data: CreativeData,
-  options: { windowDays?: LiftWindowDays; market?: LiftMarket; today?: string } = {}): CreativeLiftPresentation {
+  options: { windowDays?: LiftWindowDays; market?: LiftMarket; today?: string } = {}, index = indexCreativeData(data)): CreativeLiftPresentation {
   const windowDays = options.windowDays ?? 7, market = options.market ?? 'all';
   const today = options.today ?? lifts[0]?.metrics.to ?? ukToday(new Date());
   const makeNext = Object.fromEntries((['video', 'image'] as const).map(kind => [kind,
-    makeCreativeBrief(kind, lifts, data, windowDays, market, today)])) as CreativeLiftPresentation['makeNext'];
+    makeCreativeBrief(kind, lifts, data, windowDays, market, today, index)])) as CreativeLiftPresentation['makeNext'];
   const cards: CreativeCard[] = [];
   for (const kind of ['video', 'image'] as const) {
     const brief = makeNext[kind], first = brief.bullets[0], example = brief.examples[0];

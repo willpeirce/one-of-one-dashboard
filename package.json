@@ -12,6 +12,7 @@
     "icons:generate": "node --import tsx scripts/generate-icons.ts",
     "start": "node --env-file-if-exists=.env dist/server.js",
     "migrate": "node --env-file-if-exists=.env --import tsx src/migrate.ts",
+    "probe:mailchimp": "node --import tsx scripts/probe-mailchimp.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test --test-concurrency=1 test/*.test.ts",
     "test:browser": "node --import tsx scripts/test-browser.ts",
@@ -32,7 +33,7 @@
     "@types/node": "24.10.1",
     "@types/pg": "8.15.6",
     "esbuild": "0.28.2",
-    "playwright": "1.58.2",
+    "playwright": "1.65.0",
     "tsx": "4.23.15",
     "typescript": "5.9.3"
   }

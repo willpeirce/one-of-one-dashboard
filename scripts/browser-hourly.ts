@@ -31,11 +31,13 @@ export async function checkHourly(context: BrowserContext): Promise<void> {
       });
       assert.deepEqual(draws, [0, 1, 2], 'resize events draw at most once per frame');
       assert.equal(await chart.locator('tbody tr').count(), 24);
+      assert.equal((await chart.locator('.hourly-plot').boundingBox())!.height, 84);
+      assert.equal((await chart.locator('.hourly-plot svg').getAttribute('viewBox'))?.split(' ')[3], '84');
       assert.equal(await chart.locator('.hourly-legend svg').count(), 2);
       assert.equal(await chart.locator('[data-hourly-partial]').getAttribute('stroke-dasharray'), '2 4');
       assert.equal(await chart.locator('[data-hourly-yesterday]').getAttribute('stroke-dasharray'), '6 4');
       assert.match(await chart.innerText(), /Sample data/);
-      assert.ok((await chart.boundingBox())!.height < 155);
+      assert.ok((await chart.boundingBox())!.height < 127);
       for (const market of ['all', 'uk', 'us'] as const) {
         await page.locator(`#market [data-market=${market}]`).click();
         const label = await chart.locator('[role=img]').getAttribute('aria-label');
@@ -72,5 +74,6 @@ export async function checkHourly(context: BrowserContext): Promise<void> {
     await page.locator('#market [data-market=us]').click();
     await page.locator('#hourly-orders .hourly-unavailable').waitFor();
     assert.equal(await page.locator('#hourly-orders').innerText(), 'Hourly orders unavailable');
+    assert.equal((await page.locator('#hourly-orders .hourly-unavailable').boundingBox())!.height, 112);
   } finally { await page.close(); }
 }

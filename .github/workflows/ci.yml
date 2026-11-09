@@ -9,8 +9,8 @@ permissions:
 jobs:
   test:
     name: Typecheck, PostgreSQL tests and build
-    # Playwright 1.58.2 supports Ubuntu 24.04, not the newer ubuntu-latest image.
-    runs-on: ubuntu-24.04
+    # Pinned Playwright 1.65.0 supports the Ubuntu 26.04 runner and its browser dependencies.
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
       postgres:
@@ -37,6 +37,10 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - name: Fulfilment imports under a non-UTC host timezone
+        run: node --import tsx --test test/fulfilment.test.ts
+        env:
+          TZ: America/New_York
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser

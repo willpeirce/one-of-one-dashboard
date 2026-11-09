@@ -6,6 +6,8 @@ import type {SpendFacts} from './store.js';
 import {placedSpendRows} from './metrics.js';
 import {needsMarketName,spendMarket} from './placement.js';
 import {formatPounds} from '../money.js';
+import type { GoogleFacts } from '../google-ads/model.js';
+import { googleCovers, googleNetworkName, googleNetworkTotals } from '../google-ads/metrics.js';
 
 /** Read-only observations: these rules have no source or Settings writer. */
 export function metaRisks(facts:SpendFacts,days:DailyMetrics[],events:MetaActivity[],settings:Settings,today:string) {
@@ -38,6 +40,41 @@ export function metaRisks(facts:SpendFacts,days:DailyMetrics[],events:MetaActivi
     if(ukToday(new Date(event.time))<addDays(today,-6)||ukToday(new Date(event.time))>today||settings.ourActors.some(a=>a.actorId===event.actorId)||!event.type.endsWith('_budget')||event.oldPence===null||event.newPence===null)continue;
     const change=Math.abs(event.newPence-event.oldPence);
     if(change*5>event.oldPence)add(`meta-budget:${event.id}`,`Budget changed by more than 20%: ${event.object}`,`${event.old} → ${event.value} · ${event.actor||event.actorId} · ${event.app}. Review only, including freelancer campaigns.`);
+  }
+  return needs;
+}
+
+/** Google observations never expose a writer or imply a source change. */
+export function googleRisks(facts: GoogleFacts, settings: Settings, today: string, spend?: SpendFacts): DashboardNeed[] {
+  if (facts.mode !== 'live') return [];
+  const needs: DashboardNeed[] = [], from = addDays(today, -7), to = addDays(today, -1);
+  const add = (id: string, title: string, why: string, figure?: DashboardNeed['figure']) => needs.push({
+    id, source: 'google-ads', state: 'warn', title, why, link: '/settings', ...(figure ? { figure } : {}),
+  });
+  const expected = new Set(settings.expectedGoogleCampaigns.map(row => row.campaignId));
+  if (!expected.size) add('google-expected-list', 'Google expected campaign list is not set', 'Add the campaigns you expect in Settings. One list warning covers all campaigns until the list is set.');
+  else {
+    const spending = new Set([
+      ...facts.conversions.filter(row => row.day >= from && row.day <= today && BigInt(row.spendMicros) > 0n).map(row => row.campaignId),
+      ...facts.networks.filter(row => row.day >= from && row.day <= today && BigInt(row.spendMicros) > 0n).map(row => row.campaignId),
+      ...(spend?.mode === 'live' ? spend.rows.filter(row => row.source === 'google-ads' && row.day >= from && row.day <= today && Number(row.amount) > 0).map(row => row.campaignId) : []),
+    ]);
+    for (const id of spending) if (!expected.has(id)) add(`google-unexpected:${id}`, 'Google campaign spending outside the expected list', `${facts.campaigns.find(row => row.id === id)?.name ?? `Campaign ${id}`} spent in the last 7 complete UK days or today. Review it and add its ID in Settings if expected.`);
+  }
+  for (const campaign of facts.campaigns) {
+    if (campaign.status === 'ENABLED' && campaign.channelType === 'PERFORMANCE_MAX'
+      && (campaign.biddingStrategyType !== 'MAXIMIZE_CONVERSION_VALUE' || campaign.targetRoas === null || campaign.targetRoas <= 0))
+      add(`google-bidding:${campaign.id}`, 'Google Performance Max bidding needs review', `${campaign.name}: expected Maximise conversion value with a positive target ROAS. Review in Google; Pulse makes no change.`);
+  }
+  if (googleCovers(facts, 'networks', from, to)) {
+    const floor = BigInt(Math.round(settings.googleNetworkSpendFloorGbp * 1_000_000));
+    for (const slice of googleNetworkTotals(facts.networks, from, to)) {
+      if (slice.spendMicros <= 0n || slice.spendMicros < floor) continue;
+      const roas = Number(slice.valueMicros) / Number(slice.spendMicros);
+      if (roas < settings.googleNetworkRoasFloor) add(`google-network:${slice.campaignId}:${slice.network}`, 'Google network return below its bar',
+        `${facts.campaigns.find(row => row.id === slice.campaignId)?.name ?? `Campaign ${slice.campaignId}`} · ${googleNetworkName(slice.network)}: ${formatPounds(Number(slice.spendMicros) / 1_000_000)} spent, ${roas.toFixed(2)}× Google ROAS over ${from}–${to}. Floors: ${formatPounds(settings.googleNetworkSpendFloorGbp)} and ${settings.googleNetworkRoasFloor}×. YouTube share alone raises no warning.`,
+        { value: `${roas.toFixed(2)}×`, label: 'Google ROAS · 7 days' });
+    }
   }
   return needs;
 }

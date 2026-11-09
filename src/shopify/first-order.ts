@@ -1,16 +1,27 @@
 import type {Database} from '../db.js';
 import type {ShopifyReader} from './client.js';
 import {ShopifyError} from './http.js';
+import {appConfig} from '../config.js';
+import {ukToday} from '../hero-range.js';
+import {firstOrderRecentAfter} from './first-order-coverage.js';
 export type FirstOrder = 'first'|'repeat'|'unknown';
 export const firstOrderFlag=(index:unknown):FirstOrder=>Number.isSafeInteger(index)&&Number(index)>0 ? index===1?'first':'repeat':'unknown';
 
+/** Once after listen: the previous deployment may have written its old projection. */
+export async function cleanLegacyOrders(db: Database): Promise<void> {
+  await db.transaction(async tx => {
+    await tx.query("SET LOCAL statement_timeout = '5s'");
+    await tx.query("SET LOCAL lock_timeout = '1s'");
+    await tx.query(`UPDATE pulse.shopify_records SET data=(data-'customerId') || jsonb_build_object('firstOrder',COALESCE(data->>'firstOrder','unknown'))
+      WHERE mode='live' AND kind='order' AND (data ? 'customerId' OR NOT (data ? 'firstOrder'))`);
+  });
+}
+
 /** Narrow projections, persisted by page; no order or customer details are re-saved. */
 export async function backfillFirstOrders(db:Database,reader:ShopifyReader,clock:()=>Date,closing:()=>boolean):Promise<void> {
-  // The previous release can still write its old projection until deployment swaps over.
-  await db.query(`UPDATE pulse.shopify_records SET data=(data-'customerId') || jsonb_build_object('firstOrder',COALESCE(data->>'firstOrder','unknown'))
-    WHERE mode='live' AND kind='order' AND (data ? 'customerId' OR NOT (data ? 'firstOrder'))`);
   if(!reader.firstOrderFlags)return;
   const now=clock();
+  const policy=appConfig.shopify.firstOrderCoverage;
   await db.query("INSERT INTO pulse.shopify_first_order_backfill(mode,next_run_at) VALUES('live',$1) ON CONFLICT DO NOTHING",[now]);
   const job=(await db.query<{cursor:string;next_run_at:Date}>("SELECT cursor,next_run_at FROM pulse.shopify_first_order_backfill WHERE mode='live'")).rows[0]!;
   if(new Date(job.next_run_at)>now)return;
@@ -19,19 +30,26 @@ export async function backfillFirstOrders(db:Database,reader:ShopifyReader,clock
     for(let batch=0;batch<4&&!closing();batch++) {
       const poll=(await db.query<{next_run_at:Date}>("SELECT next_run_at FROM pulse.shopify_jobs WHERE mode='live' AND name='poll'")).rows[0];
       if(poll&&new Date(poll.next_run_at)<=clock())return;
+      const checkedAt=clock();
       const rows=await db.query<{source_id:string;source_updated_at:Date}>(`SELECT source_id,source_updated_at FROM pulse.shopify_records
         WHERE mode='live' AND kind='order' AND source_id>$1 AND COALESCE(data->>'firstOrder','unknown')='unknown'
-        ORDER BY source_id LIMIT 25`,[cursor]);
+        AND (first_order_checked_at IS NULL OR first_order_checked_at <= CASE
+          WHEN COALESCE(data->>'day','9999-12-31')>$2 THEN $3::timestamptz ELSE $4::timestamptz END)
+        ORDER BY source_id LIMIT 25`,[cursor,firstOrderRecentAfter(ukToday(checkedAt)),
+          new Date(checkedAt.getTime()-policy.recentRetryMinutes*60_000),new Date(checkedAt.getTime()-policy.olderRetryHours*3_600_000)]);
       if(!rows.rows.length){
-        await db.query("UPDATE pulse.shopify_first_order_backfill SET cursor='',next_run_at=$1,error=NULL WHERE mode='live'",[new Date(clock().getTime()+86_400_000)]);return;
+        // Wake for new unknown orders; the per-order timestamp keeps old ones on their slower retry.
+        await db.query("UPDATE pulse.shopify_first_order_backfill SET cursor='',next_run_at=$1,error=NULL WHERE mode='live'",[new Date(clock().getTime()+policy.recentRetryMinutes*60_000)]);return;
       }
       const flags=await reader.firstOrderFlags(rows.rows.map(r=>r.source_id));
       const next=rows.rows.at(-1)!.source_id;
       await db.transaction(async tx=>{
         for(const row of rows.rows){
-          const flag=flags.find(f=>f.id===row.source_id)?.firstOrder;
-          if(flag==='first'||flag==='repeat')await tx.query(`UPDATE pulse.shopify_records SET data=jsonb_set(data,'{firstOrder}',to_jsonb($2::text))
-            WHERE mode='live' AND kind='order' AND source_id=$1 AND source_updated_at=$3`,[row.source_id,flag,row.source_updated_at]);
+          const result=flags.find(f=>f.id===row.source_id)?.firstOrder;
+          const flag=result==='first'||result==='repeat'?result:'unknown';
+          await tx.query(`UPDATE pulse.shopify_records SET first_order_checked_at=$4,
+            data=CASE WHEN $2::text IN ('first','repeat') THEN jsonb_set(data,'{firstOrder}',to_jsonb($2::text)) ELSE data END
+            WHERE mode='live' AND kind='order' AND source_id=$1 AND source_updated_at=$3`,[row.source_id,flag,row.source_updated_at,clock()]);
         }
         await tx.query("UPDATE pulse.shopify_first_order_backfill SET cursor=$1,last_success_at=$2,error=NULL,next_run_at=$2 WHERE mode='live'",[next,clock()]);
       });

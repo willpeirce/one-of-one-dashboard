@@ -15,7 +15,7 @@ const now = new Date('2026-10-01T12:00:00Z');
 const money = (amount: string) => ({ shopMoney: { amount, currencyCode: 'GBP' } });
 const connection = (nodes: unknown[]) => ({ nodes, pageInfo: { hasNextPage: false, endCursor: null } });
 function facts(orders: Order[]): Facts {
-  return { mode: 'live', sample: false, counts: {}, pendingWebhooks: 0, geoNotice: null, notices: [], noticeDetails: [], jobs: [{ name: 'backfill', state: { from: '2026-09-01', allOrders: true, ordersDone: true }, last_success_at: now, failures: 0 }], records: orders.map(data => ({ kind: 'order', data, fetched_at: now })) };
+  return { mode: 'live', sample: false, counts: {}, pendingWebhooks: 0, failedWebhooks: [], geoNotice: null, notices: [], noticeDetails: [], jobs: [{ name: 'backfill', state: { from: '2026-09-01', allOrders: true, ordersDone: true }, last_success_at: now, failures: 0 }], records: orders.map(data => ({ kind: 'order', data, fetched_at: now })) };
 }
 async function refundedOrder(market: 'UK' | 'US'): Promise<Order> {
   const raw = (await fixture(market === 'UK' ? 'order-uk-tax-inclusive-refund' : 'order-us-tax-exclusive')).data.order;

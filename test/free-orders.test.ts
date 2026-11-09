@@ -113,7 +113,7 @@ test('free sends leave order ratios and sheet counts while their goods and posta
   const orders = [paid, zero, resend];
   const session = { day, sessions: 100, carts: 5, checkouts: 3, completed: 1, uk: 100, us: 0, missouri: 0,
     ukCarts: 5, usCarts: 0, ukCheckouts: 3, usCheckouts: 0, ukCompleted: 1, usCompleted: 0, marketReliable: true };
-  const makeFacts = (selected: Order[]): Facts => ({ mode: 'live', sample: false, counts: {}, pendingWebhooks: 0, notices: [], geoNotice: null, noticeDetails: [],
+  const makeFacts = (selected: Order[]): Facts => ({ mode: 'live', sample: false, counts: {}, pendingWebhooks: 0, failedWebhooks: [], notices: [], geoNotice: null, noticeDetails: [],
     jobs: ['backfill', 'poll', 'sessions', 'inventory', 'reconcile', 'subscriptions'].map(name => ({ name, state: name === 'backfill' ? { from: '2026-08-01', ordersDone: true, allOrders: true } : {}, last_success_at: now, failures: 0 })),
     records: [...selected.map(data => ({ kind: 'order', data, fetched_at: now })), { kind: 'sessions', data: session, fetched_at: now }],
   });

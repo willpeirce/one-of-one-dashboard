@@ -4,6 +4,7 @@ Updated in every pull request.
 
 | Stage | What | Code | Keys in Replit | Live check ("Done when") |
 |---|---|---|---|---|
+| Build 9 Nov · A | Capped webhook retries and skipped truncated creative scans; terminal failures remain visible without blocking Self-check | built on `build-9-nov`; additive migration 059 | none | Check terminal warnings and a changed creative after merge and Republish |
 | Build 8 Nov · G | Exact Playwright 1.65.0 pin and supported current Ubuntu runner | built on `build-8-nov`; CI timeout stays 15 minutes | none | Check the complete CI run before merge; revert the upgrade if it cannot pass |
 | Build 8 Nov · F | Mailchimp GET client, safe probe, audience worker/billing Watch and Shopify email pounds | standalone portion built on `build-8-nov`; migrations 057–058; per-flow ingestion deferred | optional MAILCHIMP_API_KEY | Run the probe after the key exists; check audience/Settings and separately attributed Shopify pounds |
 | Build 8 Nov · E | Remaining Google Ads reads, risks, live dials and GMT reconciliation | built on `build-8-nov`; additive migrations 055–056 | existing Google OAuth keys; no new key | Check seven GMT days on Sources, UK rebucketing, expected campaigns, network slices and live/sample dial placement |
@@ -86,7 +87,7 @@ Updated in every pull request.
 
 ## Next step
 
-Review **build-8-nov**, based on the merged Home fold change. One PR contains separately validated lettered parts, as explicitly requested for this task. Part A tightens the hero-grid budgets to 500px at 390×844 and 410px at 1280×960 while preserving all existing section/count/control limits. Part B adds coverage-aware first-order CAC, owner estimates, actor choices and faster creative reads. Part C adds next-arrival stock gaps through the existing Watch list. Part D adds the separate monthly scorecard and daily product stock history. Part E adds the remaining Google reads and source reconciliation. Part F adds the standalone Mailchimp client, probe, audience and billing warning, and clarifies Shopify email sales. Part G pins Playwright 1.65.0 and removes the Ubuntu 24.04 workaround; the upgraded package explicitly supports Ubuntu 26.04. Confirm CI before merge without extending the 15-minute test-job limit.
+Review **build-9-nov** as one pull request with separate lettered parts. Part A ends repeated terminal webhook and creative-scan failures while preserving their warnings. Continue with the carry fixes in Part B, then the shared Next up strip in Part C; retain every existing check and Home budget.
 
 After merge: run `npm run migrate`, Republish, supply live Settings values, and perform source and phone/desktop acceptance checks. Live source data is not available to the builder. The only requested new secret is `MAILCHIMP_API_KEY` when that source is wanted live; it is never entered in this repository.
 

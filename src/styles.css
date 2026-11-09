@@ -68,3 +68,5 @@ code { font-size: 0.85rem; }
   nav { gap: 0.9rem; }
   .sign-in { margin-top: 2rem; }
 }
+
+#source-health .source-warning { color: #ffc43d; }

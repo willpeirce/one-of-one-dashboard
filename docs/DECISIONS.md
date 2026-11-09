@@ -714,3 +714,16 @@ On restart, Mailchimp restores its own persisted health after listen before resp
 Upgrade only Playwright and its matching core package from 1.58.2 to exact version 1.65.0. This release explicitly supports Ubuntu 26.04, including its browser dependency names and Chromium download mapping, so the test job returns to ubuntu-latest. Keep every check and the 15-minute timeout. The earlier Ubuntu 24.04 pin was needed for the old package; it is not a permanent runner requirement. If the upgraded CI run cannot pass, revert this final part and retain the old runner pin.
 
 Local browser verification uses the installed Chromium via the documented executable override; CI must separately verify Playwright's bundled Chromium and runner dependencies. No source API version changes in this part: Google remains v24 and Mailchimp remains 3.0.
+
+
+## 2026-11-09, build A–C: one pull request for this task
+
+The explicit instruction for this build overrides the usual one-part-per-PR rule for this task only. Parts A, B and C share `build-9-nov`, in that order, with separate lettered commits and typecheck, tests, build and browser checks passing before each part is pushed. The spec, source write boundaries and pinned Home budgets stay unchanged.
+
+## 2026-11-09, Part A: terminal retries and Self-check
+
+Stop Shopify inbox retries at the named five-attempt cap, including missing orders. Add `failed_at` in migration 059 and retain exhausted rows for inspection. Log only the safe failure code, topic and inbox source ID. Exhausted events no longer hold source health in error; Sources shows their topic and ID as an amber Watch line. Recoverable events retain the existing retry behaviour.
+
+Retain the 1,500 output-token limit and existing per-call reserve guard. After three `max_tokens` replies for unchanged creative content, retain the scan history but mark that creative skipped. Sources and Creatives name the skip without keeping Anthropic or Self-check in error. A content fingerprint grants a fresh try after the ad or image changes. Increasing output tokens would increase the maximum per-call cost without guaranteeing a complete answer; a bounded skip is the chosen policy.
+
+The media digest is saved during catalogue ingestion and survives lazy hydration and cache eviction. Health reads small signatures, not image blobs. The combined regression proves Self-check passes with an exhausted webhook and a skipped creative. Migration 059 took 0.89ms on disposable PostgreSQL 17.6; browser checks preserve the existing 499.0625px phone and 405.625px desktop dense-fixture hero tops.

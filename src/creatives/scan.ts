@@ -5,11 +5,13 @@ import { ukToday } from '../hero-range.js';
 import type { CreativeReader } from './model.js';
 import { attributesForKind, validateAttributeValues, type AttributeValue, type CreativeKind } from './attributes.js';
 import { replaceSourceAttributes } from './attribute-store.js';
+import { readScanContent, scanMatchesContent } from './scan-content.js';
 import { scanEnabled, scanFailureLabel, scanPricesReady, scanSpendToday, type ScanFailure, type ScanScope } from './scan-health.js';
 export { readScanHealth } from './scan-health.js';
 
 const ENDPOINT = 'https://api.anthropic.com/v1/messages';
 const MAX_OUTPUT = 1500, MAX_CALLS = 20, MAX_RAW_BYTES = 20_480, MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+export const MAX_TOKEN_REPLIES = 3;
 const active = new Set<string>();
 export interface ScanOptions extends ScanScope {
   reader?: Pick<CreativeReader, 'imageBytes' | 'videoFrames'>;
@@ -24,7 +26,7 @@ export interface ScanResult {
 }
 type ImageMime = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
 type ImageBlock = { type: 'image'; source: { type: 'base64'; media_type: ImageMime; data: string } };
-interface Group { id: string; kind: CreativeKind; media_key: string; first_seen: Date | string; merged_into_id: string | null }
+interface Group { contentFingerprint?: string; id: string; kind: CreativeKind; media_key: string; first_seen: Date | string; merged_into_id: string | null }
 interface Attempt {
   failure: ScanFailure | null; httpStatus: number | null; input: number; output: number;
   providerMessage: string | null; providerCode: string | null; raw: string; values: Record<string, AttributeValue>; dropped: number;
@@ -213,13 +215,16 @@ async function candidates(db: Database, settings: Settings, options: ScanOptions
     const id = parentId(groups, row.media_group_id);
     if (id) spend.set(id, (spend.get(id) ?? 0) + Number(row.spend));
   }
-  const attempts = (await db.query<any>(`SELECT media_group_id,status,failure_reason,retry_after FROM pulse.creative_scans
-    WHERE mode=$1 AND account_id=$2 AND model_id=$3 ORDER BY sequence DESC`, [options.mode, options.accountId, settings.creativeScanModel])).rows;
+  const content = await readScanContent(db, options);
+  for (const group of groups.values()) group.contentFingerprint = content.get(group.id);
+  const attempts = (await db.query<any>(`SELECT media_group_id,status,failure_reason,retry_after,content_fingerprint,skipped FROM pulse.creative_scans
+    WHERE mode=$1 AND account_id=$2 AND model_id=$3 ORDER BY sequence DESC`, [options.mode, options.accountId, settings.creativeScanModel])).rows.filter(row => scanMatchesContent(row, content));
+  const skipped = new Set(attempts.filter(row => row.skipped).map(row => row.media_group_id));
   const done = new Set(attempts.filter(row => row.status === 'done').map(row => row.media_group_id));
   const tried = new Set(attempts.filter(row => !['cap', 'prices'].includes(row.failure_reason)).map(row => row.media_group_id));
   let cooling = false, capped = false;
   const eligible = [...groups.values()].filter(group => {
-    if (group.merged_into_id || options.groupId && options.groupId !== group.id) return false;
+    if (skipped.has(group.id) || group.merged_into_id || options.groupId && options.groupId !== group.id) return false;
     if (!options.groupId && (spend.get(group.id) ?? 0) <= settings.creativeSpendFloorGbp) return false;
     const latest = attempts.find(row => row.media_group_id === group.id);
     const meaningful = attempts.find(row => row.media_group_id === group.id && !['cap', 'prices'].includes(row.failure_reason));
@@ -268,14 +273,23 @@ async function saveAttempt(db: Database, settings: Settings, options: ScanOption
     const current = (await tx.query<any>('SELECT id,merged_into_id FROM pulse.media_groups WHERE mode=$1 AND account_id=$2 FOR UPDATE',
       [options.mode, options.accountId])).rows.find(row => row.id === group.id);
     if (current?.merged_into_id && !attempt.failure) attempt.failure = 'refused';
-    const retry = attempt.failure ? scanRetryAt(finished) : null;
+    // Attribute legacy attempts to the current input once, so a later content change starts fresh.
+    await tx.query(`UPDATE pulse.creative_scans SET content_fingerprint=$5 WHERE mode=$1 AND account_id=$2
+      AND media_group_id=$3 AND model_id=$4 AND content_fingerprint IS NULL`,
+      [options.mode, options.accountId, group.id, settings.creativeScanModel, group.contentFingerprint]);
+    const previousCuts = attempt.providerCode === 'max_tokens' ? Number((await tx.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM pulse.creative_scans WHERE mode=$1 AND account_id=$2
+        AND media_group_id=$3 AND model_id=$4 AND content_fingerprint=$5 AND provider_code='max_tokens'`,
+      [options.mode, options.accountId, group.id, settings.creativeScanModel, group.contentFingerprint])).rows[0]?.count ?? 0) : 0;
+    const skipped = attempt.providerCode === 'max_tokens' && previousCuts + 1 >= MAX_TOKEN_REPLIES;
+    const retry = attempt.failure && !skipped ? scanRetryAt(finished) : null;
     if (!attempt.failure) await replaceSourceAttributes(tx, options.mode, options.accountId, group.id, 'model', attempt.values, finished);
     await tx.query(`INSERT INTO pulse.creative_scans(id,mode,account_id,media_group_id,model_id,status,failure_reason,http_status,input_tokens,
-      output_tokens,cost_gbp,raw_response,requested_at,finished_at,retry_after,poster_only,dropped_count,provider_code,provider_message)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+      output_tokens,cost_gbp,raw_response,requested_at,finished_at,retry_after,poster_only,dropped_count,provider_code,provider_message,content_fingerprint,skipped)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
     [randomUUID(), options.mode, options.accountId, group.id, settings.creativeScanModel, attempt.failure ? 'failed' : 'done', attempt.failure,
       attempt.httpStatus, attempt.input, attempt.output, (attempt.input * settings.creativeScanInputPrice + attempt.output * settings.creativeScanOutputPrice) / 1_000_000,
-      attempt.raw, requested, finished, retry, posterOnly, attempt.dropped, attempt.providerCode, attempt.providerMessage]);
+      attempt.raw, requested, finished, retry, posterOnly, attempt.dropped, attempt.providerCode, attempt.providerMessage, group.contentFingerprint, skipped]);
   });
 }
 

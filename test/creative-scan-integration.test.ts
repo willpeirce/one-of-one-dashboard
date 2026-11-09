@@ -6,12 +6,17 @@ import { AdError } from '../src/ad-spend/model.js';
 import type { AdInsight, CatalogueEntry, CreativeReader } from '../src/creatives/model.js';
 import { CreativeWorker } from '../src/creatives/worker.js';
 import { creativeHealth, saveCatalogue, saveInsights } from '../src/creatives/store.js';
-import { readScanHealth, runCreativeScans } from '../src/creatives/scan.js';
+import { MAX_TOKEN_REPLIES, readScanHealth, runCreativeScans } from '../src/creatives/scan.js';
 import { scanFailureLabel } from '../src/creatives/scan-health.js';
 import { defaultSettings, type Settings } from '../src/settings.js';
 import { settingsPage } from '../src/settings-view.js';
 import { readSourceHealth, syncSourceHealth } from '../src/sources.js';
 import { sourceHealthPage } from '../src/views.js';
+import { readCreativeView } from '../src/creatives/routes.js';
+import { creativeGalleryHtml } from '../src/creatives/view.js';
+import { ShopifyWorker, WEBHOOK_MAX_ATTEMPTS } from '../src/shopify/worker.js';
+import { SampleShopify } from '../src/shopify/sample.js';
+import { blankObservation, evaluateWatchdogs } from '../src/shopify/watchdogs.js';
 import { createTestDatabase } from './helpers/database.js';
 
 // Invented media, reporting rows and dynamically generated test credentials only.
@@ -240,4 +245,84 @@ test('provider errors use the HTTP label while a model refusal remains refused',
   await runCreativeScans(db, settings(), {mode: 'live', accountId: account, clock: () => now,
     fetch: async () => Response.json({stop_reason: 'refusal', usage: {input_tokens: 10, output_tokens: 0}})});
   assert.match((await sourceHealthHtml(settings())).html, /refused \(http 200, refusal\)/);
+});
+
+
+test('repeated output limits skip one creative, recover source and Self-check, and retry changed inputs', async t => {
+  t.mock.method(console, 'error', () => {});
+  await seed();
+  const env = { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    SHOPIFY_CLIENT_ID: randomUUID(), SHOPIFY_CLIENT_SECRET: randomUUID(), META_ACCESS_TOKEN: randomUUID() };
+  await syncSourceHealth(db, env);
+  let instant = now, calls = 0;
+  const cut: typeof fetch = async (_url, init) => {
+    calls++;
+    assert.equal(JSON.parse(String(init?.body)).max_tokens, 1500, 'Keep the existing budget reserve and output limit');
+    return Response.json({ stop_reason: 'max_tokens', content: [{ type: 'text', text: 'Invented incomplete output' }],
+      usage: { input_tokens: 100, output_tokens: 1500 } });
+  };
+  const run = (fetch = cut) => runCreativeScans(db, settings(), { mode: 'live', accountId: account, clock: () => instant, fetch });
+  for (let index = 0; index < MAX_TOKEN_REPLIES; index++) {
+    await run();
+    const health = await readScanHealth(db, settings(), { mode: 'live', accountId: account, now: instant });
+    assert.equal(health.skipped, index === MAX_TOKEN_REPLIES - 1 ? 1 : 0);
+    assert.equal(health.status, index === MAX_TOKEN_REPLIES - 1 ? 'healthy' : 'error');
+    instant = new Date(instant.getTime() + 86_400_000);
+  }
+  const skipped = await readScanHealth(db, settings(), { mode: 'live', accountId: account, now: instant });
+  assert.equal(skipped.failed, 0); assert.equal(skipped.waiting, 0); assert.equal(skipped.consecutiveFailures, 0);
+  assert.deepEqual(skipped.skippedGroupIds, [entry.media.id]);
+  assert.equal(skipped.lastAttemptStatus, 'skipped');
+  assert.match(skipped.line, /↷ 1 skipped/);
+  const stored = (await db.query<{ skipped: boolean; retry_after: Date | null }>(
+    'SELECT skipped,retry_after FROM pulse.creative_scans ORDER BY sequence DESC LIMIT 1')).rows[0]!;
+  assert.equal(stored.skipped, true); assert.equal(stored.retry_after, null);
+  await run();
+  await runCreativeScans(db, settings(), { mode: 'live', accountId: account, groupId: entry.media.id!, clock: () => instant, fetch: cut });
+  assert.equal(calls, MAX_TOKEN_REPLIES, 'Automatic and manual retries both stop for unchanged content');
+  const view = await readCreativeView(db, settings(), env, instant);
+  assert.match(creativeGalleryHtml(view), /data-creative-scan-skipped>↷ Skipped/);
+  const source = (await readSourceHealth(db, skipped)).find(row => row.source === 'anthropic')!;
+  assert.equal(source.status, 'healthy');
+
+  // One terminal webhook and one skipped scan cannot hold Self-check red.
+  const worker = new ShopifyWorker(db, env, 'https://example.invalid', { reader: new SampleShopify(), clock: () => instant });
+  await worker.initialize();
+  await db.query("UPDATE pulse.shopify_jobs SET last_success_at=$1,next_run_at=$2,failures=0 WHERE mode='live'",
+    [instant, new Date(instant.getTime() + 86_400_000)]);
+  await db.query(`INSERT INTO pulse.shopify_webhook_inbox(source_id,topic,payload,attempts,next_attempt_at)
+    VALUES('invented-terminal-event','orders/updated','{"id":"invented-missing-order"}',$1,$2)`, [WEBHOOK_MAX_ATTEMPTS - 1, instant]);
+  await worker.drainInbox();
+  const facts = await worker.store.facts();
+  assert.equal(facts.failedWebhooks?.length, 1);
+  const sources = await readSourceHealth(db, skipped);
+  assert.equal(sources.find(row => row.source === 'shopify')!.status, 'healthy');
+  assert.equal(evaluateWatchdogs(facts, instant, settings(), blankObservation(), [], sources).find(row => row.id === 'self')!.status, 'pass');
+  await worker.stop();
+
+  // Eviction and lazy hydration change caches, never the source creative identity.
+  await db.query("UPDATE pulse.media_groups SET thumbnail=NULL,poster=NULL,full_image=NULL,frames='{}' WHERE id=$1", [entry.media.id]);
+  await run(); assert.equal(calls, MAX_TOKEN_REPLIES);
+  await db.query('UPDATE pulse.media_groups SET full_image=$2,thumbnail=$2 WHERE id=$1',
+    [entry.media.id, new Uint8Array([0xff, 0xd8, 0xff, 9])]);
+  await run(); assert.equal(calls, MAX_TOKEN_REPLIES);
+  assert.equal((await readScanHealth(db, settings(), { mode: 'live', accountId: account, now: instant })).skipped, 1);
+  // A new catalogue fetch with the same content does not undo a skip.
+  await saveCatalogue(db, account, [entry], instant); await run();
+  assert.equal(calls, MAX_TOKEN_REPLIES);
+  const changedImage = structuredClone(entry);
+  changedImage.media.thumbnail = new Uint8Array([0xff, 0xd8, 0xff, 2]);
+  await saveCatalogue(db, account, [changedImage], instant);
+  await run();
+  assert.equal(calls, MAX_TOKEN_REPLIES + 1, 'Changed image gets a fresh try immediately');
+  assert.equal((await readScanHealth(db, settings(), { mode: 'live', accountId: account, now: instant })).skipped, 0);
+  // Changing the copy also bypasses the previous content's daily cooldown.
+  const changedAd = structuredClone(changedImage);
+  changedAd.ad.body = 'Invented replacement copy';
+  await saveCatalogue(db, account, [changedAd], instant);
+  await run(async () => { calls++; return answer(); });
+  assert.equal(calls, MAX_TOKEN_REPLIES + 2);
+  const recovered = await readScanHealth(db, settings(), { mode: 'live', accountId: account, now: instant });
+  assert.equal(recovered.status, 'healthy'); assert.equal(recovered.scanned, 1); assert.equal(recovered.skipped, 0);
+  await run(); assert.equal(calls, MAX_TOKEN_REPLIES + 2, 'Successful changed content leaves the automatic queue');
 });

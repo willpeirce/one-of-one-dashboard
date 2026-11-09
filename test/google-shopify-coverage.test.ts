@@ -4,7 +4,7 @@ import { googleShopifyContext } from '../src/google-ads/shopify-coverage.js';
 import type { Facts } from '../src/shopify/metrics.js';
 
 function facts(until: string, poll: string | null, continuing = false): Facts {
-  return {mode: 'live', sample: false, records: [], noticeDetails: [], counts: {}, notices: [], geoNotice: null, pendingWebhooks: 0, jobs: [
+  return {mode: 'live', sample: false, records: [], noticeDetails: [], counts: {}, notices: [], geoNotice: null, pendingWebhooks: 0, failedWebhooks: [], jobs: [
     {name: 'backfill', state: {from: '2026-10-01', until, ordersDone: true}, last_success_at: new Date(until), failures: 0},
     {name: 'poll', state: {continuing}, last_success_at: poll ? new Date(poll) : null, failures: 0},
   ]};

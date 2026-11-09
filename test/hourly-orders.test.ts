@@ -11,7 +11,7 @@ test('UK autumn repeated hours combine, spring missing hour is zero, and readine
     ['2026-10-25', ['00:15', '01:15', '02:15'], [0, 2, 1, 0]],
     ['2027-03-28', ['00:15', '01:15', '02:15'], [1, 0, 1, 1]],
   ] as const) {
-    const facts: Facts = { mode: 'live', sample: false, counts: {}, pendingWebhooks: 0, geoNotice: null, notices: [], noticeDetails: [],
+    const facts: Facts = { mode: 'live', sample: false, counts: {}, pendingWebhooks: 0, failedWebhooks: [], geoNotice: null, notices: [], noticeDetails: [],
       jobs: [{ name: 'backfill', state: { from: '2026-01-01', ordersDone: true }, last_success_at: null, failures: 0 },
         { name: 'poll', state: {}, last_success_at: new Date(`${day}T12:00:00Z`), failures: 0 }],
       records: times.map(time => ({ kind: 'order', data: { ...base, day, createdAt: `${day}T${time}:00Z`, tags: [] }, fetched_at: new Date() })) };
@@ -43,7 +43,7 @@ test('a counted webhook order after the poll extends the chart and keeps its sum
   const { defaultSettings } = await import('../src/settings.js');
   const base = cleanOrder((await fixture('order')).data.order);
   const day = '2026-10-26', now = new Date(`${day}T13:10:00Z`);
-  const facts: Facts = { mode: 'live', sample: false, counts: {}, pendingWebhooks: 0, geoNotice: null, notices: [], noticeDetails: [],
+  const facts: Facts = { mode: 'live', sample: false, counts: {}, pendingWebhooks: 0, failedWebhooks: [], geoNotice: null, notices: [], noticeDetails: [],
     jobs: [{ name: 'backfill', state: { from: '2026-10-01', ordersDone: true }, last_success_at: null, failures: 0 },
       { name: 'poll', state: {}, last_success_at: new Date(`${day}T11:50:00Z`), failures: 0 }],
     records: ['UK', 'US'].map(market => ({ kind: 'order', data: { ...base, market, day, createdAt: `${day}T13:05:00Z`, tags: [] }, fetched_at: now })) };
@@ -57,7 +57,7 @@ test('a counted webhook order after the poll extends the chart and keeps its sum
 });
 
 test('before the new day first poll the chart stops at the current UK hour', async () => {
-  const facts: Facts = { mode: 'live', sample: false, counts: {}, pendingWebhooks: 0, geoNotice: null, notices: [], noticeDetails: [], records: [],
+  const facts: Facts = { mode: 'live', sample: false, counts: {}, pendingWebhooks: 0, failedWebhooks: [], geoNotice: null, notices: [], noticeDetails: [], records: [],
     jobs: [{ name: 'backfill', state: { from: '2026-10-01', ordersDone: true }, last_success_at: null, failures: 0 },
       { name: 'poll', state: {}, last_success_at: new Date('2026-10-25T23:50:00Z'), failures: 0 }] };
   const hours = hourlyOrders(facts, '2026-10-26', 'all', new Date('2026-10-26T00:10:00Z'));

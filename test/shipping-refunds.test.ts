@@ -19,7 +19,7 @@ const connection = (nodes: unknown[]) => ({ nodes, pageInfo: { hasNextPage: fals
 const settings = { ...defaultSettings(), paymentFeePercent: 2,
   startingCogs: [{ sku: 'sample-refund-kit', unitCostGbp: 10 }] };
 function facts(orders: Order[]): Facts {
-  return { mode: 'live', sample: false, counts: {}, pendingWebhooks: 0, geoNotice: null, notices: [], noticeDetails: [],
+  return { mode: 'live', sample: false, counts: {}, pendingWebhooks: 0, failedWebhooks: [], geoNotice: null, notices: [], noticeDetails: [],
     jobs: [{ name: 'backfill', state: { from: '2026-09-01', allOrders: true, ordersDone: true }, last_success_at: now, failures: 0 }],
     records: orders.map(data => ({ kind: 'order', data, fetched_at: now })) };
 }

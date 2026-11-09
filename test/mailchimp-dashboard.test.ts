@@ -12,7 +12,7 @@ import { createTestDatabase } from './helpers/database.js';
 
 const now = new Date('2026-10-26T12:00:00Z'), settings = defaultSettings();
 function facts(orders: Order[]): Facts {
-  return {mode:'live',sample:false,counts:{},pendingWebhooks:0,notices:[],geoNotice:null,noticeDetails:[],
+  return {mode:'live',sample:false,counts:{},pendingWebhooks:0, failedWebhooks: [],notices:[],geoNotice:null,noticeDetails:[],
     jobs:['backfill','poll','sessions','inventory','reconcile','subscriptions'].map(name=>({name,state:name==='backfill'?{from:'2026-09-01',until:now.toISOString(),ordersDone:true,allOrders:true}:{},last_success_at:now,failures:0})),
     records:orders.map(data=>({kind:'order',data,fetched_at:now}))};
 }

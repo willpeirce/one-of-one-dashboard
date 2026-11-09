@@ -16,7 +16,7 @@ export interface DecisionsState {
   amberDials?: number;
 }
 type Need = ShopifyDashboard['needs'][number];
-const sourceNames = { shopify: 'Shopify', 'j-and-j': 'J&J', meta: 'Meta', 'google-ads': 'Google Ads', tiktok: 'TikTok', pulse: 'Pulse' };
+const sourceNames = { shopify: 'Shopify', 'j-and-j': 'J&J', meta: 'Meta', 'google-ads': 'Google Ads', mailchimp: 'Mailchimp', tiktok: 'TikTok', pulse: 'Pulse' };
 const source = (need: Need) => sourceNames[need.source];
 function needLink(need: Need): string {
   const external = /^https?:\/\//.test(need.link);

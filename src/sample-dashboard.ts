@@ -1251,65 +1251,36 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       ],
       "mode": "sample",
       "value": {
-        "v": 103,
-        "min": 60,
+        "v": 72,
+        "min": 0,
         "max": 130,
-        "t": "103%",
+        "t": "72%",
         "l": "Email audience",
-        "s": "5,151 of 5,000 · row 5",
+        "s": "Invented all-market audience",
         "z": [
           [
-            60,
-            90,
-            "good"
-          ],
-          [
-            90,
-            100,
-            "warn"
-          ],
-          [
-            100,
+            0,
             130,
-            "decide"
+            "info"
           ]
         ],
         "d": {
-          "why": "5,151 contacts on a 5,000 plan. The bill on 12 Oct charges for the overage.",
-          "rule": "Amber from 90% of plan. Over plan is a decision: contact blocks or a tier.",
-          "src": "Mailchimp audience count",
-          "hist": [
-            99,
-            100,
-            100,
-            101,
-            102,
-            103,
-            103
-          ]
+          "why": "Invented example: approximately 720 contacts across all contact states on a 1,000 contact plan. This provider estimate is not an exact billing count.",
+          "rule": "Live needs require a configured plan limit and billing day; no source changes.",
+          "src": "Mailchimp sample audience report"
         }
       }
     },
     "w039": {
       "kind": "detail",
       "source": [
-        "mailchimp",
         "shopify"
       ],
       "mode": "sample",
       "value": {
-        "why": "11 orders in 7 days carried a flow UTM: abandoned cart 6, welcome 3, D1 2.",
-        "rule": "Trend only. Amber if flow orders fall under half the 4-week average.",
-        "src": "Shopify orders with utm_medium=flow",
-        "hist": [
-          8,
-          9,
-          12,
-          10,
-          13,
-          9,
-          11
-        ]
+        "why": "Invented Shopify view: 3 last-visit email orders with £96.00 net sales. Mailchimp’s own count and dollar revenue are separate.",
+        "rule": "Only last-visit medium=email; before 27 Sep 2026 attribution is partial.",
+        "src": "Shopify sample email attribution"
       }
     },
     "w040": {
@@ -1389,14 +1360,13 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
     "w043": {
       "kind": "detail",
       "source": [
-        "mailchimp",
-        "shopify"
+        "mailchimp"
       ],
       "mode": "sample",
       "value": {
-        "why": "Abandoned-cart flow 3327 has emailed 0 buyers since the purchase checks went in on 30 Sep. Before: about 1 kit buyer in 5.",
-        "rule": "Any buyer emailed by a flow after buying is a decision.",
-        "src": "Mailchimp flow report cross-checked with Shopify orders"
+        "why": "Invented Mailchimp view: 4 credited orders and $64.00 USD revenue. Per-flow reporting awaits the read-only probe.",
+        "rule": "Sample data; never convert or substitute this claim for Shopify’s GBP sales.",
+        "src": "Mailchimp sample own-credit report"
       }
     },
     "w044": {
@@ -1406,22 +1376,21 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       ],
       "mode": "sample",
       "value": {
-        "why": "D1 UK-ROW flow 3350: 571 entries. D1 US flow 3349: 3 entries since the country fix on 27 Sep.",
-        "rule": "Trend only.",
-        "src": "Mailchimp flows 3350 and 3349"
+        "why": "Invented add-on flow example: 17 entries across all versions. Per-flow reporting awaits the probe.",
+        "rule": "Sample data; Mailchimp’s UK/US address filter is unreliable.",
+        "src": "Mailchimp sample flow report"
       }
     },
     "w045": {
       "kind": "detail",
       "source": [
-        "mailchimp",
-        "shopify"
+        "mailchimp"
       ],
       "mode": "sample",
       "value": {
-        "why": "Gift popup flow 3354: 10 contacts in flow, 3 buyers removed by hand on 30 Sep. Shopify Flow trigger for existing customers still to build.",
-        "rule": "Trend only until the trigger is built.",
-        "src": "Mailchimp flow 3354"
+        "why": "Invented popup flow example: 9 entries. No live flow count or refill funnel is inferred before the probe.",
+        "rule": "Sample data; the refill funnel stays sample until reporting coverage is known.",
+        "src": "Mailchimp sample flow report"
       }
     },
     "w046": {
@@ -3047,25 +3016,22 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       "mode": "sample"
     },
     "t0268": {
-      "value": "Flow orders 7d",
+      "value": "Email sales · Shopify",
       "source": [
-        "mailchimp",
         "shopify"
       ],
       "mode": "sample"
     },
     "t0269": {
-      "value": "11",
+      "value": "£96.00",
       "source": [
-        "mailchimp",
         "shopify"
       ],
       "mode": "sample"
     },
     "t0270": {
-      "value": "cart 6 · welcome 3 · D1 2",
+      "value": "Sample Shopify view · GBP",
       "source": [
-        "mailchimp",
         "shopify"
       ],
       "mode": "sample"
@@ -3113,71 +3079,65 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       "mode": "sample"
     },
     "t0277": {
-      "value": "Flow leaks",
+      "value": "Email sales · Mailchimp",
       "source": [
-        "mailchimp",
-        "shopify"
+        "mailchimp"
       ],
       "mode": "sample"
     },
     "t0278": {
-      "value": "0",
+      "value": "$64.00",
       "source": [
-        "mailchimp",
-        "shopify"
+        "mailchimp"
       ],
       "mode": "sample"
     },
     "t0279": {
-      "value": "cart flow since the fix",
+      "value": "Sample own credit · USD",
       "source": [
-        "mailchimp",
-        "shopify"
+        "mailchimp"
       ],
       "mode": "sample"
     },
     "t0280": {
-      "value": "D1 flows",
+      "value": "Add-on flow · Mailchimp",
       "source": [
         "mailchimp"
       ],
       "mode": "sample"
     },
     "t0281": {
-      "value": "571 · 3",
+      "value": "Sample",
       "source": [
         "mailchimp"
       ],
       "mode": "sample"
     },
     "t0282": {
-      "value": "UK-ROW · US entries",
+      "value": "Per-flow reporting not connected",
       "source": [
         "mailchimp"
       ],
       "mode": "sample"
     },
     "t0283": {
-      "value": "Popup flow",
+      "value": "Popup flow · Mailchimp",
       "source": [
-        "mailchimp",
-        "shopify"
+        "mailchimp"
       ],
       "mode": "sample"
     },
     "t0284": {
-      "value": "10",
+      "value": "Sample",
       "source": [
-        "mailchimp",
-        "shopify"
+        "mailchimp"
       ],
       "mode": "sample"
     },
     "t0285": {
-      "value": "in flow · trigger to build",
+      "value": "Per-flow reporting not connected",
       "source": [
-        "mailchimp",
-        "shopify"
+        "mailchimp"
       ],
       "mode": "sample"
     },

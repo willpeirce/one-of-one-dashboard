@@ -41,6 +41,26 @@ test('Google row expands its read health and seven GMT days, naming differences 
   assert.match(row, /7 GMT days 2026-10-20–2026-10-26/);
 });
 
+test('Mailchimp health labels samples, missing contact totals and unknown flow coverage without claiming a live flow', () => {
+  const status: NonNullable<Parameters<typeof sourceHealthPage>[4]> = {
+    summary: 'Sources label their own data.', checkedAt: '2026-10-26T12:00:00Z',
+    shopify: {mode: 'sample', checks: [], stock: [], needs: [], detail: {}, live: {lastOrder: '', dispatch: '', carts: ''}},
+    mailchimp: {mode: 'sample', status: 'sample', fetchedAt: null, audience: {id: 'invented-audience', contacts: null, subscribers: 17, unsubscribed: 3, cleaned: 2},
+      flowCoverage: 'unknown', campaigns: [], reports: [], orders: []},
+  };
+  const sample = sourceHealthPage([source({source: 'mailchimp', name: 'Mailchimp'})], undefined, undefined, undefined, status);
+  assert.match(sample, /data-mailchimp-read-health/);
+  assert.match(sample, /Sample data · waiting for MAILCHIMP_API_KEY/);
+  assert.match(sample, /Total contacts not provided by the API · 17 subscribed/);
+  assert.match(sample, /probe has not established per-flow API coverage/);
+  assert.match(sample, /Per-flow examples and the refill funnel remain labelled sample/);
+  status.mailchimp = {...status.mailchimp!, mode: 'live', status: 'pending', audience: null};
+  const pending = sourceHealthPage([source({source: 'mailchimp', name: 'Mailchimp', mode: 'live', status: 'not_implemented'})], undefined, undefined, undefined, status);
+  assert.match(pending, /First sync pending/);
+  assert.match(pending, /Waiting for the first audience read/);
+  assert.doesNotMatch(pending, /Client not built|Live audience read/);
+});
+
 test('the shared head and page wrappers reserve the safe area on sign-in, Source health and Audit', () => {
   for (const html of [loginPage(false), sourceHealthPage([source()]), auditPage([])]) {
     assert.match(html, /<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">/);

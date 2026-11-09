@@ -4,6 +4,7 @@ Updated in every pull request.
 
 | Stage | What | Code | Keys in Replit | Live check ("Done when") |
 |---|---|---|---|---|
+| Build 8 Nov · F | Mailchimp GET client, safe probe, audience worker/billing Watch and Shopify email pounds | standalone portion built on `build-8-nov`; migrations 057–058; per-flow ingestion deferred | optional MAILCHIMP_API_KEY | Run the probe after the key exists; check audience/Settings and separately attributed Shopify pounds |
 | Build 8 Nov · E | Remaining Google Ads reads, risks, live dials and GMT reconciliation | built on `build-8-nov`; additive migrations 055–056 | existing Google OAuth keys; no new key | Check seven GMT days on Sources, UK rebucketing, expected campaigns, network slices and live/sample dial placement |
 | Build 8 Nov · D | Monthly scorecard, growth comparison and daily product stock | built on `build-8-nov`; additive migration 054 | none | Check closed-month/market totals and new daily stock rows; historical stock remains unknown |
 | Build 8 Nov · C | Inbound-stock Settings and UK-day stock gaps in Watch | built on `build-8-nov`; additive migration 053 | none | Fill inboundStock from shipment records, check product matches and dated/assumed arrivals |
@@ -77,16 +78,24 @@ Updated in every pull request.
 | 2 fix | Creative passes run detached so long catalogues never starve hero spend | built on `fix-creative-blocking-spend` after catalogue timeout PR #26; one pass at a time, shutdown waits; no migration | no new keys or Settings | after Publish, Meta spend becomes fresh while the creative catalogue keeps growing |
 | 2 fix | Creative scan omits the deprecated temperature parameter rejected by the model | built on `scan-no-temperature`; text-only response parsing retained; no migration | no new Settings or secrets | after Publish, confirm an eligible scan completes without the temperature-related HTTP 400 |
 | 3 | Google Ads | spend, campaigns, networks, conversions, changes and read-only needs built | three existing Google keys + account Settings | live GMT/UK spend and conversion comparison pending |
-| 4 | Mailchimp | not started | no | no |
+| 4 | Mailchimp | standalone client, probe, audience/billing and Shopify view built; per-flow figures/funnel stay sample | optional MAILCHIMP_API_KEY | probe and audience acceptance pending |
 | 5 | Workflow side (Handover) | not started | no | no |
 | 6 | Costs, uploads, planning | not started | no | no |
 | 7 | Alerts and Ask | not started | no | no |
 
 ## Next step
 
-Review **build-8-nov**, based on the merged Home fold change. One PR contains separately validated lettered parts, as explicitly requested for this task. Part A tightens the hero-grid budgets to 500px at 390×844 and 410px at 1280×960 while preserving all existing section/count/control limits. Part B adds coverage-aware first-order CAC, owner estimates, actor choices and faster creative reads. Part C adds next-arrival stock gaps through the existing Watch list. Part D adds the separate monthly scorecard and daily product stock history. Part E adds the remaining Google reads and source reconciliation. Parts F–G remain in progress and will be recorded here as they are completed or explicitly deferred.
+Review **build-8-nov**, based on the merged Home fold change. One PR contains separately validated lettered parts, as explicitly requested for this task. Part A tightens the hero-grid budgets to 500px at 390×844 and 410px at 1280×960 while preserving all existing section/count/control limits. Part B adds coverage-aware first-order CAC, owner estimates, actor choices and faster creative reads. Part C adds next-arrival stock gaps through the existing Watch list. Part D adds the separate monthly scorecard and daily product stock history. Part E adds the remaining Google reads and source reconciliation. Part F adds the standalone Mailchimp client, probe, audience and billing warning, and clarifies Shopify email sales. Part G (the pinned Playwright upgrade) remains in progress.
 
 After merge: run `npm run migrate`, Republish, supply live Settings values, and perform source and phone/desktop acceptance checks. Live source data is not available to the builder. The only requested new secret is `MAILCHIMP_API_KEY` when that source is wanted live; it is never entered in this repository.
+
+**Not done or known gaps:** No live source validation or Mailchimp probe was possible without source credentials. Mailchimp's per-flow API coverage is unverified, so automated per-flow reports and the refill funnel remain labelled sample; only its audience is ingested automatically. Google items wait on labelled sample when their required coverage, GBP currency or current enabled budgets are missing, and the combined changes tile needs healthy readings from both platforms. Campaign-specific Shopify matches use campaign-ID UTMs; gclid-only or readable-name credit can remain unmatched by campaign while staying in the aggregate Shopify view. Daily product stock has no backfill; cost-per-order history deliberately remains “not enough data yet”.
+
+## Needs from Will
+
+- `MAILCHIMP_API_KEY` in Replit Secrets when Mailchimp should become live.
+
+Claude handles migrations, Republish, live Settings values (including inboundStock, expectedGoogleCampaigns and googleLoginCustomerId), the probe and live acceptance after merge.
 
 The existing source-mode boundaries and labelled samples remain. No new Home section, automatic budget change or source write is introduced. The spec, AGENTS.md, replit.md and key handling remain unchanged.
 

@@ -13,14 +13,15 @@ import { seriesPaceDates } from '../series-pace/dates.js';
 import { readSeriesPaceFacts } from '../series-pace/store.js';
 import { sampleSeriesPaceCard, type SeriesPaceCard, type SeriesPaceMarketView } from '../series-pace/presentation.js';
 import { formatNumber, formatMetricNumber, formatPounds } from '../money.js';
-import { dailyRows, dataset, emailFlow, isRefill, isUpgrade, isKit, kitIds, orderNet, ratio, shopifyHero, stockCover, type Facts, type StockCover } from './metrics.js';
+import { dailyRows, dataset, emailFlow, isLastVisitEmail, isRefill, isUpgrade, isKit, kitIds, orderNet, ratio, shopifyHero, stockCover, type Facts, type StockCover } from './metrics.js';
 import { blankObservation, evaluateWatchdogs, type Check, type Observation } from './watchdogs.js';
 import { isFreeOrder } from './model.js';
+import { emailCoverageKnown } from './email-coverage.js';
 import { stockGapNeeds } from './stock-gap.js';
 
 export interface DashboardNeed {
   id: string; state: State; title: string; why: string; link: string;
-  source: 'shopify' | 'j-and-j' | 'meta' | 'google-ads' | 'tiktok' | 'pulse';
+  source: 'shopify' | 'j-and-j' | 'meta' | 'google-ads' | 'mailchimp' | 'tiktok' | 'pulse';
   figure?: { value: string; label: string };
 }
 export interface ShopifyDashboard {
@@ -118,18 +119,22 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
   // The prototype site ping is not an ingested Shopify metric.
   dial('w032', 'Site response', null, 'ms', 'Storefront probe deferred.', 'No storefront response measurement has been built.');
   const refill = data.orders.filter(isRefill), refillSince = refill.filter(o => o.day >= '2026-09-11');
-  const weekEmail = weekly.filter(o => emailFlow(o) !== null);
+  const weekEmail = weekly.filter(o => isLastVisitEmail(o) && !isFreeOrder(o));
+  const emailNet = data.orders.filter(isLastVisitEmail).reduce((n, o) => n + orderNet(o, weekFrom, today), 0) / 100;
+  const emailPartial = weekFrom < '2026-09-27';
+  const emailReady = data.ready && data.from <= weekFrom && emailCoverageKnown(facts, weekFrom, today, today, now);
+  snapshot.textValues.t0268 = { source: ['shopify'], mode: facts.mode, value: 'Email sales · Shopify' };
   const baseline = weekly.filter(o => !o.lastVisit?.fbclid && !o.lastVisit?.gclid && !o.lastVisit?.ttclid && !['cpc', 'paid', 'paid_social'].includes(String(o.lastVisit?.medium)));
   const stats: [string, string, string, string, Detail][] = [
     ['w035', 't0260', 't0261', formatNumber(baseline.length), detail(`${formatNumber(baseline.length)} of ${formatNumber(weekly.length)} orders have no last-visit paid signal.`, 'No fbclid/gclid/ttclid and medium not cpc/paid/paid_social; 7 UK dates, today so far.')],
     ['w036', 't0263', 't0264', checks.find(c => c.id === 'webhooks')!.status, detail(checks.find(c => c.id === 'webhooks')!.why, 'Hourly owned-subscription check, five-minute overlap polling backstop.')],
     ['w037', 't0266', 't0267', formatNumber(refillSince.length), detail(`${formatNumber(refillSince.length)} refill orders since 11 Sep 2026 (${data.from > '2026-09-11' ? 'partial order history' : 'covered'}).`, 'SKU REFILL; email credit from D30 campaign or REFILLSHIP only. Sent/opened figures await Mailchimp.', [['D30 email', formatNumber(refillSince.filter(o => emailFlow(o)?.startsWith('D30 refill')).length)], ['Site / other', formatNumber(refillSince.filter(o => !emailFlow(o)?.startsWith('D30 refill')).length)], ['Funnel', 'Starts at attributed orders; sends/clicks not available. Early: first 4 weeks from 25 Sep 2026; the sends threshold awaits stage 4.']])],
-    ['w039', 't0269', 't0270', formatNumber(weekEmail.length), detail(`${formatNumber(weekEmail.length)} last-visit email orders in 7 UK dates. ${formatPounds(weekEmail.reduce((n, o) => n + orderNet(o, weekFrom, today), 0) / 100)} net sales.`, 'UTM medium=email, grouped by campaign. Before 27 Sep 2026 is partial, never zero. SLABPACK is not an email signal.', appConfig.mailchimp.flows.filter(f => f.status === 'live').map(f => [f.name, `${formatNumber(weekEmail.filter(o => emailFlow(o) === f.name).length)} Shopify orders · sends and Mailchimp credit unavailable`]))],
+    ['w039', 't0269', 't0270', emailPartial && !weekEmail.length ? 'Partial' : !emailReady ? 'Unavailable' : formatPounds(emailNet), detail(`${emailPartial && !weekEmail.length ? 'Email attribution partial; no recorded email orders' : !emailReady ? 'Email sales unavailable; order history incomplete' : `${formatNumber(weekEmail.length)} last-visit email orders; ${formatPounds(emailNet)} net sales`} in 7 UK dates. ${emailPartial ? 'Attribution partial before 27 Sep 2026.' : ''}`, 'Shopify view in GBP: only last-visit UTM medium=email. Discount codes or the shop referrer alone never count as email attribution. Mailchimp’s own count and dollar revenue are separate.', appConfig.mailchimp.flows.filter(f => f.status === 'live').map(f => [f.name, emailReady ? `${formatNumber(weekEmail.filter(o => emailFlow(o) === f.name).length)} Shopify orders · sends and Mailchimp credit unavailable` : 'Shopify order history incomplete; Mailchimp credit unavailable']))],
   ];
   for (const [key, valueKey, subKey, value, d] of stats) {
     snapshot.widgets[key] = { source: ['shopify'], mode: facts.mode, kind: 'detail', value: d };
     snapshot.textValues[valueKey] = { source: ['shopify'], mode: facts.mode, value };
-    snapshot.textValues[subKey] = { source: ['shopify'], mode: facts.mode, value: stamp + (key === 'w039' && weekFrom < '2026-09-27' ? ' · attribution partial' : '') };
+    snapshot.textValues[subKey] = { source: ['shopify'], mode: facts.mode, value: stamp + (key === 'w039' ? ` · GBP${emailPartial ? ' · attribution partial' : ''}` : '') };
   }
   const stockDetails: [string, string][] = stock.map(s => [s.name, `Available ${s.available === null ? 'unknown' : formatNumber(s.available)} · cover ${s.cover === null ? 'unknown' : formatNumber(Math.floor(s.cover)) + ' days'} · ${s.basis}`]);
   for (const [key, productId, location] of [['w046', kitIds[0], appConfig.shopify.locations.us.id], ['w047', kitIds[0], appConfig.shopify.locations.uk.id], ['w048', 'gid://shopify/Product/10892913574222', appConfig.shopify.locations.us.id]] as const) {

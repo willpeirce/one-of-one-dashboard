@@ -322,8 +322,8 @@ function renderHero(hero: HeroPeriod, animate = false): void {
   }
   if (hero.business) for (const [kind, widgetId, valueKey, subKey] of [['email','w039','t0269','t0270'], ['refill','w037','t0266','t0267']] as const) {
     const model = hero.business[kind], element = document.querySelector<HTMLElement>(`[data-model-id="${widgetId}"]`);
-    all(`[data-sample-text="${valueKey}"]`).forEach(e => { e.textContent = formatNumber(model.count); });
-    all(`[data-sample-text="${subKey}"]`).forEach(e => { e.textContent = `${rangeLabel(hero.from, hero.to)} · Shopify ${hero.net.mode}`; });
+    all(`[data-sample-text="${valueKey}"]`).forEach(e => { e.textContent = kind === 'email' ? hero.business!.email.value : formatNumber(model.count); });
+    all(`[data-sample-text="${subKey}"]`).forEach(e => { e.textContent = `${rangeLabel(hero.from, hero.to)} · Shopify ${hero.net.mode}${kind === 'email' ? ` · GBP${hero.business!.email.partial ? ' · partial' : ''}` : ''}`; });
     if (element) details.set(element, { state: 'info', title: kind === 'email' ? 'Email · Shopify' : 'Refill Pack', detail: model.detail, mode: hero.net.mode });
   }
   setDecisions({amberDials:all('#dials .tile[data-state=warn][data-mode=live]').length});

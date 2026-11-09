@@ -59,6 +59,7 @@ export const appConfig = {
     ownerMatchMinimumShare: 0.5,
   },
   mailchimp: {
+    apiVersion: '3.0',
     server: 'us2',
     audienceName: 'One of One',
     listId: 'e07ea4488f',

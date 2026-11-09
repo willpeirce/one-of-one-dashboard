@@ -65,6 +65,8 @@ export interface Settings {
   expectedGoogleCampaigns: { campaignId: string }[];
   googleNetworkSpendFloorGbp: number;
   googleNetworkRoasFloor: number;
+  mailchimpPlanLimit: number | null;
+  mailchimpBillingDay: number | null;
   blendedMetaTripwireGbp: number;
   creatorRules: {
     assetCapGbp: number;
@@ -156,6 +158,7 @@ export function defaultSettings(): Settings {
     metaSources: ['facebook','fb','instagram','ig','meta','an','msg'].map(source=>({source})), ourActors: [], metaOwners: [], expectedGoogleCampaigns: [],
     // Invented starting rules; live values are set after review.
     googleNetworkSpendFloorGbp: 40, googleNetworkRoasFloor: 1.2,
+    mailchimpPlanLimit: null, mailchimpBillingDay: null,
     blendedMetaTripwireGbp: 28,
     creatorRules: {
       assetCapGbp: 200, minimumUsageMonths: 3, pushPriceBeforeExtendingUsage: true,
@@ -384,6 +387,8 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
       if (!campaignId) return invalid(`${path}.campaignId`);
       return { campaignId };
     }, (row) => row.campaignId),
+    mailchimpPlanLimit: number(value.mailchimpPlanLimit, 'mailchimpPlanLimit', Number.MAX_SAFE_INTEGER, true, true, 1),
+    mailchimpBillingDay: number(value.mailchimpBillingDay, 'mailchimpBillingDay', 31, true, true, 1),
     blendedMetaTripwireGbp: requiredNumber(value.blendedMetaTripwireGbp, 'blendedMetaTripwireGbp', 100_000, false, 0.01),
     creatorRules: {
       assetCapGbp: requiredNumber(rules.assetCapGbp, 'creatorRules.assetCapGbp', 100_000),
@@ -455,6 +460,8 @@ function storedSettings(input: unknown): Settings {
     inboundStock: defaults.inboundStock,
     googleNetworkSpendFloorGbp: defaults.googleNetworkSpendFloorGbp,
     googleNetworkRoasFloor: defaults.googleNetworkRoasFloor,
+    mailchimpPlanLimit: defaults.mailchimpPlanLimit,
+    mailchimpBillingDay: defaults.mailchimpBillingDay,
     ...input as Record<string, unknown>,
   };
   if (!Object.hasOwn(stored, 'overheads') && !Object.hasOwn(stored, 'monthlyOverheadsGbp')) return validateSettings(stored);

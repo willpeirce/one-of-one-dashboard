@@ -20,9 +20,11 @@ export const isUpgrade = (o: Order): boolean => o.lines.some(l => kitIds.slice(1
 export const isRefill = (o: Order): boolean => o.lines.some(l => l.sku === 'REFILL' || l.productId === 'gid://shopify/Product/16062800658766');
 export { isTikTok } from './order-market.js';
 import { isTikTok, orderInMarket } from './order-market.js';
+import { emailCoverageKnown } from './email-coverage.js';
+export const isLastVisitEmail = (o: Order): boolean => String(o.lastVisit?.medium ?? '').trim().toLowerCase() === 'email';
 export const emailFlow = (o: Order): string | null => {
-  if (o.lastVisit?.medium === 'email') {
-    const campaign = String(o.lastVisit.campaign ?? '');
+  if (isLastVisitEmail(o)) {
+    const campaign = String(o.lastVisit?.campaign ?? '');
     if (appConfig.mailchimp.ignoredUtmCampaigns.some(c => c === campaign)) return null;
     return appConfig.mailchimp.utmCampaigns.find(c => c.campaign === campaign)?.flow ?? 'Unmapped email';
   }
@@ -169,16 +171,19 @@ function marketHero(facts: Facts, today: string, from: string, to: string, setti
     for (const key of ['orders', 'aov', 'cac', 'cr'] as const) { hero[key].unavailable = true; hero[key].unavailableLabel = 'Unknown'; hero[key].ss = 'Older order detail unavailable; free orders cannot be separated'; }
     if (market !== 'all') for (const key of ['net', 'roas', 'margin', 'contribution', 'profit'] as const) { hero[key].unavailable = true; hero[key].ss = 'Older market sales unavailable'; }
   }
-  const periodEmail = orders.filter(o => emailFlow(o) !== null);
+  const periodEmail = orders.filter(isLastVisitEmail);
   const refill = orders.filter(isRefill);
-  const emailNet = marketOrders.filter(o => emailFlow(o) !== null).reduce((n, o) => n + orderNet(o, from, to), 0) / 100;
+  const emailNet = marketOrders.filter(isLastVisitEmail).reduce((n, o) => n + orderNet(o, from, to), 0) / 100;
+  const emailPartial = from < '2026-09-27';
+  const emailReady = data.ready && from >= data.from && emailCoverageKnown(facts, from, to, today, now);
+  const emailValue = emailPartial && !periodEmail.length ? 'Partial' : !emailReady ? 'Unavailable' : formatPounds(emailNet);
   const emailDate = (day: string) => `${weekdayDate(day)}${from.slice(0, 4) !== to.slice(0, 4) ? ` ${day.slice(0, 4)}` : ''}`;
   const emailDates = from === to ? emailDate(from) : `${emailDate(from)}–${emailDate(to)}`;
   const ordersByDay = new Map<string, Order[]>();
   for (const order of marketOrders.filter(o => !isFreeOrder(o))) { const list = ordersByDay.get(order.day) ?? []; list.push(order); ordersByDay.set(order.day, list); }
   hero.business = {
-    email: { count: periodEmail.length, detail: { why: `${formatNumber(periodEmail.length)} last-visit email orders; ${formatPounds(emailNet)} net sales, ${emailDates}. ${from < '2026-09-27' ? 'Attribution partial before 27 Sep 2026.' : ''}`, rule: 'UTM medium=email, grouped by last-visit campaign; first visit is assisted only. SLABPACK is never an email signal. Sends, reachable-by-email and Mailchimp credit await their source.', src: provenance,
-      extra: appConfig.mailchimp.flows.filter(f => f.status === 'live').map(f => [f.name, `${formatNumber(periodEmail.filter(o => emailFlow(o) === f.name).length)} Shopify orders · Mailchimp figures unavailable`]) } },
+    email: { count: periodEmail.length, value: emailValue, partial: emailPartial, detail: { why: `${emailPartial && !periodEmail.length ? 'Email attribution partial; no recorded email orders' : !emailReady ? 'Email sales unavailable; order history incomplete' : `${formatNumber(periodEmail.length)} last-visit email orders; ${formatPounds(emailNet)} net sales`}, ${emailDates}. ${emailPartial ? 'Attribution partial before 27 Sep 2026.' : ''}`, rule: 'Shopify view in GBP: last-visit UTM medium=email, grouped by campaign; first visit is assisted only. A discount code alone never counts as an email order. Mailchimp’s own count and dollar revenue remain separately labelled sample until the probe confirms reporting.', src: `${provenance} · ${lastLabel}`,
+      extra: appConfig.mailchimp.flows.filter(f => f.status === 'live').map(f => [f.name, emailReady ? `${formatNumber(periodEmail.filter(o => emailFlow(o) === f.name).length)} Shopify orders · Mailchimp figures unavailable` : 'Shopify order history incomplete; Mailchimp figures unavailable']) } },
     refill: { count: refill.length, detail: { why: `${formatNumber(refill.length)} ${refill.length === 1 ? 'order' : 'orders'} containing SKU REFILL in ${rangeLabel(from, to)}.`, rule: 'D30 attribution needs a refill campaign or REFILLSHIP. Early for 4 weeks from first send on 25 Sep 2026; sends threshold awaits Mailchimp. Before launch on 11 Sep 2026 has no refill history.', src: provenance,
       extra: [['D30 email', formatNumber(refill.filter(o => emailFlow(o)?.startsWith('D30 refill')).length)], ['Site / other', formatNumber(refill.filter(o => !emailFlow(o)?.startsWith('D30 refill')).length)], ['Since launch', `${formatNumber(data.orders.filter(o => o.day >= '2026-09-11' && isRefill(o)).length)}${data.from > '2026-09-11' ? ' (partial history)' : ''}`], ['Stock', 'Open Stock and cover for configured warehouse stock.']] } },
     orderDays: rows.filter(r => r.date >= from && r.date <= to).map(r => { const dayOrders = ordersByDay.get(r.date) ?? []; return { day: r.date, UK: dayOrders.filter(o => o.market === 'UK' && !isTikTok(o)).length, US: dayOrders.filter(o => o.market === 'US' && !isTikTok(o)).length, EU: dayOrders.filter(o => o.market === 'EU' && !isTikTok(o)).length, TikTok: dayOrders.filter(isTikTok).length, unknown: dayOrders.filter(o => o.market === 'unknown' && !isTikTok(o)).length, total: r.date >= data.from ? r.o : 0, detailAvailable: r.date >= data.from }; }),

@@ -1,0 +1,6 @@
+{
+  "orders": [
+    { "id": "invented-order", "campaign_id": "invented-campaign", "order_total": 27.50, "currency_code": "USD", "processed_at_foreign": "2026-11-03T15:00:00+00:00" }
+  ],
+  "total_items": 1
+}

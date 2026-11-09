@@ -128,7 +128,7 @@ export interface HeroPeriod {
   ukcpo: DialModel & SampleProvenance;
   uscpo: DialModel & SampleProvenance;
   business?: {
-    email: { count: number; detail: Detail };
+    email: { count: number; value: string; partial: boolean; detail: Detail };
     refill: { count: number; detail: Detail };
     orderDays: { day: string; UK: number; US: number; EU: number; TikTok: number; unknown: number; total: number; detailAvailable: boolean }[];
   };

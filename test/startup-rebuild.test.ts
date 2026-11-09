@@ -3,6 +3,7 @@ import test from 'node:test';
 import { randomBytes } from 'node:crypto';
 import { ShopifyWorker } from '../src/shopify/worker.js';
 import { GoogleWorker } from '../src/google-ads/worker.js';
+import { MailchimpWorker } from '../src/mailchimp/worker.js';
 import { createApp } from '../src/app.js';
 import { readRuntime } from '../src/runtime.js';
 import { createTestDatabase } from './helpers/database.js';
@@ -32,6 +33,8 @@ test('createApp and listen finish while the single background rebuild is blocked
   t.mock.method(ShopifyWorker.prototype,'start',()=>{workerStarts++;});
   let googleStarts = 0;
   t.mock.method(GoogleWorker.prototype,'start',()=>{googleStarts++;});
+  let mailchimpStarts = 0;
+  t.mock.method(MailchimpWorker.prototype,'start',()=>{mailchimpStarts++;});
   let cleanupCalls = 0;
   t.mock.method(ShopifyWorker.prototype,'startOrderCleanup',async()=>{cleanupCalls++;});
   const app=await createApp(wrapped,config,env);
@@ -40,10 +43,12 @@ test('createApp and listen finish while the single background rebuild is blocked
   assert.equal(cleanupCalls, 0, 'Order cleanup must not start in createApp');
   assert.equal(workerStarts, 0, 'Shopify source work must not start in createApp');
   assert.equal(googleStarts, 0, 'Google reads must not start in createApp');
+  assert.equal(mailchimpStarts, 0, 'Mailchimp reads must not start in createApp');
   await app.listen({host:'127.0.0.1',port:0});
   assert.equal(cleanupCalls, 0, 'Order cleanup must wait for the post-listen hook');
   assert.equal(workerStarts, 0, 'Shopify source work must wait for the post-listen hook');
   assert.equal(googleStarts, 0, 'Google reads must wait for the post-listen hook');
+  assert.equal(mailchimpStarts, 0, 'Mailchimp reads must wait for the post-listen hook');
   const logs:string[]=[];
   t.mock.method(console,'error',(message:string)=>logs.push(message));
   const run=app.startBackgroundWork();
@@ -51,6 +56,7 @@ test('createApp and listen finish while the single background rebuild is blocked
   assert.equal(cleanupCalls, 1);
   assert.equal(workerStarts, 1, 'The post-listen hook starts Shopify once');
   assert.equal(googleStarts, 1, 'The post-listen hook starts Google once');
+  assert.equal(mailchimpStarts, 1, 'The post-listen hook starts Mailchimp once');
   await entered;
   assert.equal((await app.inject('/health')).statusCode,200);
   release();await run;

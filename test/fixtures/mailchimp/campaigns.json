@@ -1,0 +1,6 @@
+{
+  "campaigns": [
+    { "id": "invented-campaign", "type": "regular", "status": "sent", "send_time": "2026-11-03T10:00:00+00:00" }
+  ],
+  "total_items": 1
+}

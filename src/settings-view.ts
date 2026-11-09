@@ -204,6 +204,10 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
   ], values)}</div>${campaignOwners(metaCampaigns, campaignSync, values)}${collection('metaSources', 'Meta sources', [{key:'source',label:'Last-visit source'}], values.metaSources, 'Matched case-insensitively alongside fbclid. Settle this list from the live Meta over-credit detail.')}${actorPicker(values, actorChoices)}${creativeControls}${collection('expectedGoogleCampaigns', 'Google campaign', [
     { key: 'campaignId', label: 'Campaign ID' },
   ], values.expectedGoogleCampaigns, 'Campaign IDs expected to report on complete days. This does not enable a campaign.')}`);
+  const email = section('Email billing', 'Your Mailchimp plan and billing date. Leave either blank to keep the audience warning off.', `<div class="settings-grid">${fields([
+    number('mailchimpPlanLimit', 'Mailchimp plan contact limit', { nullable: true, integer: true, min: 1, max: Number.MAX_SAFE_INTEGER, hint: 'Use the total-contact limit from your plan.' }),
+    number('mailchimpBillingDay', 'Mailchimp billing day of month', { nullable: true, integer: true, min: 1, max: 31, hint: 'Days 29–31 use the last day in shorter months. A fresh audience above the limit raises a Watch item in the seven days before billing.' }),
+  ], values)}</div>`);
   const creators = section('Creator negotiation', 'Your rules for agreeing an asset and its usage.', `<div class="settings-grid">${fields([
     number('assetCapGbp', 'Maximum fee per asset (£)'),
     number('minimumUsageMonths', 'Minimum usage (months)', { integer: true }),
@@ -254,7 +258,7 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     <div class="settings-intro"><p class="eyebrow">Your business, your rules</p><h1>Settings</h1><p>Real business settings, saved in Pulse. Dashboard figures remain labelled sample data while source feeds are being built.</p></div>
     <form id="settings-form" data-version="${snapshot.version}" method="post" action="/api/settings">
       <input type="hidden" id="saved-meta-owner-rules" value="${escapeHtml(JSON.stringify(values.metaOwners))}">
-      <fieldset id="settings-fields"><legend class="settings-sr-only">Business settings</legend>${goals}${advertising}${costs}${stock}${pace}${campaigns}${creators}${dates}${preferences}</fieldset>
+      <fieldset id="settings-fields"><legend class="settings-sr-only">Business settings</legend>${goals}${advertising}${costs}${stock}${pace}${campaigns}${email}${creators}${dates}${preferences}</fieldset>
       <div class="settings-savebar glass"><div><p id="settings-message" role="status" aria-live="polite">Choose Save settings for these fields, or Save beside a campaign owner.</p><p class="setting-help">Unknown costs can stay blank. Saving adds an audit entry.</p></div><button class="btn settings-save" id="settings-save" type="submit" disabled>Save settings</button></div>
     </form>
     <p id="auth-message" role="status" aria-live="polite"></p>

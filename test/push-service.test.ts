@@ -54,12 +54,12 @@ async function claims(db: Database): Promise<number> {
 }
 
 test('summary text uses all ranked open cards, including the more list after the daily cap, and bounds Unicode titles', () => {
-  assert.deepEqual(morningSummaryPayload(morning(0)), {title: 'All clear this morning', body: '', path: '/morning'});
-  assert.deepEqual(morningSummaryPayload(morning(1)), {title: 'Needs you: 1 item', body: '1. Invented task 1', path: '/morning'});
+  assert.deepEqual(morningSummaryPayload(morning(0)), {title: 'All clear this morning', body: '', path: '/morning', day: '2032-04-20'});
+  assert.deepEqual(morningSummaryPayload(morning(1)), {title: 'Needs you: 1 item', body: '1. Invented task 1', path: '/morning', day: '2032-04-20'});
   const result = morning(9, now, 'live', 7);
   assert.equal(result.snapshot.cards.length, 0); assert.equal(result.snapshot.more, 9);
   assert.deepEqual(morningSummaryPayload(result), {title: 'Needs you: 9 items',
-    body: '1. Invented task 1\n2. Invented task 2\n3. Invented task 3', path: '/morning'});
+    body: '1. Invented task 1\n2. Invented task 2\n3. Invented task 3', path: '/morning', day: '2032-04-20'});
   assert.equal(morningSummaryPayload(morning(0, now, 'sample')).title, 'Sample · All clear this morning');
   assert.equal(morningSummaryPayload(morning(9, now, 'sample')).title, 'Sample · Needs you: 9 items');
   result.openCards[0]!.title = `  ${'𐐀'.repeat(100)}\n   invented suffix `;
@@ -231,4 +231,18 @@ test('stop drains the active send but starts neither another subscription nor a 
   release.release(); await Promise.all([summary, stop]);
   assert.deepEqual(await queued, {status: 'unavailable'}); assert.equal(calls, 1); assert.equal(await claims(db), 1);
   await service.tick(); assert.equal(calls, 1);
+});
+
+
+test('a device revoked after the batch was loaded is not sent a queued summary', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close()); await prepare(db);
+  await subscribe(db, 'invented-first', 'first');
+  const revoked = await subscribe(db, 'invented-second', 'second', new Date(+now + 1));
+  const urls: string[] = [];
+  const service = new PushService(db, {origin, ...quiet, clock: () => now, loadMorning: async () => morning(1), transport: async request => {
+    urls.push(request.url);
+    await db.query('DELETE FROM pulse.push_subscriptions WHERE endpoint=$1', [revoked.endpoint]);
+    return {status: 201};
+  }}); t.after(() => service.stop());
+  await service.tick(); assert.equal(urls.length, 1); assert.ok(!urls.includes(revoked.endpoint));
 });

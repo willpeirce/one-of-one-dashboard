@@ -31,7 +31,7 @@ async function harness(t: TestContext) {
   let failure = false;
   registerPush(app, db, auth, {clock: () => now, sendTest: async who => { calls.push(who); if (failure) throw new Error('invented sensitive transport error'); return result; }});
   t.after(async () => {await app.close(); await db.close();});
-  return {db,app,credential,calls,headers: {cookie: `__Host-pulse_session=${token}`, origin: config.origin, 'content-type': 'application/json'},
+  return {db,app,auth,credential,calls,headers: {cookie: `__Host-pulse_session=${token}`, origin: config.origin, 'content-type': 'application/json'},
     setResult(value: PushTestResult) {result = value;}, fail() {failure = true;}};
 }
 
@@ -106,4 +106,17 @@ test('test route delegates only the current credential, maps cooldown and failur
   assert.ok(h.calls.every(value => value === h.credential)); assert.equal(h.calls.length, 4);
   const events = (await h.db.query<{event: string}>('SELECT event FROM pulse.audit_log')).rows;
   assert.equal(events.length, 4); assert.ok(events.every(row => row.event === 'Push test requested'));
+});
+
+
+test('sign-out atomically removes this browser endpoint and session, never another credential’s subscription', async t => {
+  for (const transferred of [false, true]) {
+    const h = await harness(t), item = subscription(); h.auth.registerRoutes(h.app);
+    await savePushSubscription(h.db, transferred ? 'invented-other' : h.credential, item, now);
+    const response = await h.app.inject({method: 'POST', url: '/auth/logout', headers: h.headers, payload: {pushEndpoint: item.endpoint}});
+    assert.equal(response.statusCode, 200); assert.ok(!response.body.includes(item.endpoint));
+    assert.equal((await readPushSubscriptions(h.db)).length, transferred ? 1 : 0);
+    assert.equal((await h.db.query('SELECT 1 FROM pulse_private.sessions')).rowCount, 0);
+    assert.equal((await h.app.inject({url: '/api/push/key', headers: h.headers})).statusCode, 401);
+  }
 });

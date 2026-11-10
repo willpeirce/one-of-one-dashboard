@@ -49,8 +49,9 @@ function hqCards(facts: HQFacts, now: Date): MorningCard[] {
     const sourceLine = `HQ test register · ${facts.registerReadAt ? `last read ${facts.registerReadAt}` : 'waiting for a successful read'}`;
     if (row.section === 'live' && assessment.answer) {
       const answer = assessment.answer, ruleId = `test-call:${answer}`, reading = assessment.reading;
+      const unmeasured = answer === 'draw' && !reading, state = unmeasured ? 'info' : 'decide';
       return [{ key: morningKey('test-call', row.id), kind: 'test-call', subjectId: row.id, sourceScope: 'tests',
-        factsHash: morningFacts('test-call', row.id, 'decide', ruleId), ruleId, state: 'decide', tier: 1, order: 20_000 + index,
+        factsHash: morningFacts('test-call', row.id, state, ruleId), ruleId, state, tier: unmeasured ? 3 : 1, order: 20_000 + index,
         title: `${title} is ready to call`, lane: `${row.cells[1] || 'Test'} · register`, source: 'github-hq',
         figure: { kind: 'arms', arms: reading?.arms.map(arm => ({ label: arm.key.toUpperCase(), value: arm.value, formatted: arm.formatted, count: arm.count })) ?? [],
           sure: reading?.sure ?? null, eligible: true },
@@ -59,7 +60,8 @@ function hqCards(facts: HQFacts, now: Date): MorningCard[] {
           : 'A stored reading from today or yesterday, at least 95% sure on two mornings, 30 events per arm and 7 full UK days; no spike day or Leaning cap. The app does not measure this test.',
         sourceLine, sourceHref: href,
         primary: { kind: 'save', target: 'morning', label: callLabel(answer), action: 'call', answer, confirm: `${callLabel(answer)} for ${title}? The register still needs a write-up.` },
-        secondary: { kind: 'save', target: 'morning', label: 'Not today', action: 'park' }, menu: [], allowedPresses: ['call', 'park'], callAnswer: answer,
+        secondary: { kind: 'save', target: 'morning', label: 'Not today', action: 'park' }, menu: unmeasured ? [{ kind: 'save', target: 'morning', label: 'Stop showing this', action: 'hide' }] : [],
+        allowedPresses: unmeasured ? ['call', 'park', 'hide'] : ['call', 'park'], callAnswer: answer,
       } satisfies MorningCard];
     }
     if (row.section === 'history' && assessment.verdictUntilDay) {
@@ -78,6 +80,7 @@ function hqCards(facts: HQFacts, now: Date): MorningCard[] {
 /** Add only stored HQ observations in live mode; the sample scenario keeps its own test demonstrations. */
 export function addMorningHq(input: MorningInput, facts: HQFacts, now: Date): MorningInput {
   const brief = morningBrief(input.mode, facts, now);
+  if (input.mode === 'live' && facts.sourceMode === 'live') brief.registerDiagnostics = {malformed: facts.registerSkippedRows, capped: facts.registerCappedRows ?? 0};
   if (input.mode === 'sample') return { ...input, brief };
   return { ...input, brief, extensions: [...(input.extensions ?? []).filter(card => !['test-call', 'new-verdict'].includes(card.kind)), ...hqCards(facts, now)],
     liveTestIds: facts.tests.filter(row => row.section === 'live').map(row => row.id),

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Database } from '../src/db.js';
@@ -76,7 +77,8 @@ test('Home uses Morning facts and read success, ignores cleared/expired/other-mo
   data.creativeCards[0]!.ruleIds = ['ctr-drop'];
   assert.equal(homeMorningOmissions(data, [hidden], now), undefined, 'A changed confirmed trigger restores the card');
   data.sourceReadOk.creatives = false;
-  assert.deepEqual(homeMorningOmissions(data, [hidden], now)?.creatives, ['invented-fading'], 'An unsuccessful read cannot clear the hidden answer');
+  assert.equal(homeMorningOmissions(data, [hidden], now), undefined, 'Present changed facts restore the card even during a failed read');
+  assert.ok(morningDeck(data, [hidden], now).openCards.some(card => card.key === hidden.cardKey));
   for (const row of [saved(watch, { clearedAt: now.toISOString() }), saved(watch, { untilDay: '2032-04-07' }),
     saved(watch, { mode: 'sample' }), saved(watch, { state: 'seen' })]) assert.equal(homeMorningOmissions(data, [row], now), undefined);
   data.needs[0]!.state = 'alarm'; data.sourceReadOk['needs:shopify'] = false;
@@ -85,7 +87,7 @@ test('Home uses Morning facts and read success, ignores cleared/expired/other-mo
 });
 
 test('Home without Morning state performs one read, adds no property and retains the same rendered page', async () => {
-  const dashboard = getSampleDashboard(), original = structuredClone(dashboard), calls: string[] = [];
+  const dashboard = {...getSampleDashboard(), generatedAt: now.toISOString()}, original = structuredClone(dashboard), calls: string[] = [];
   const db: Database = {
     async query(sql, values) { calls.push(sql); assert.match(sql, /^SELECT .*mode,card_key/s); assert.deepEqual(values, ['sample']); return { rows: [], rowCount: 0 }; },
     async transaction() { throw new Error('Home must not start a state mutation transaction'); },
@@ -95,7 +97,12 @@ test('Home without Morning state performs one read, adds no property and retains
   assert.equal(result, undefined); assert.equal(calls.length, 1);
   assert.equal(Object.hasOwn(dashboard, 'morningOmissions'), false);
   assert.deepEqual(dashboard, original);
-  assert.equal(dashboardPage(dashboard), dashboardPage({ ...dashboard, morningOmissions: result }));
+  // Rendered from main 3d43b39 at this fixed invented time. Only C's approved link is removed.
+  const markup = dashboardPage({...dashboard, morningOmissions: result});
+  const morningLink = '<a class="btn morning-link" href="/morning">Morning ›</a>';
+  assert.equal(markup.split(morningLink).length, 2);
+  assert.equal(createHash('sha256').update(markup.replace(morningLink, '')).digest('hex'),
+    'c44fd61adb59b2be939a42e4f3d7086191a2d82f17b68c1a8d3043a8b13307c5');
 });
 
 test('Home reads persisted answers without cleanup writes, isolates modes and restores after Undo', async t => {

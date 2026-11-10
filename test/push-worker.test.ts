@@ -9,7 +9,7 @@ test('notification paths stay inside this app after URL normalization, including
   assert.equal(notificationPath('/morning?from=push#today', origin), '/morning?from=push#today');
   assert.equal(notificationPath('/settings', origin), '/settings');
   assert.deepEqual(notificationMessage({ title: 'Invented notice', body: 'Invented body', path: '//elsewhere.example.test' }, origin),
-    { title: 'Invented notice', body: 'Invented body', path: '/morning' });
+    { title: 'Invented notice', body: 'Invented body', path: '/morning', day: null });
   assert.equal(notificationMessage({ title: 'All clear this morning', body: '', path: '/morning' }, origin).body, '');
 });
 
@@ -46,4 +46,16 @@ test('a notification click navigates and focuses an app window or opens its safe
   await click('/morning'); assert.deepEqual(visited, ['close', `${origin}/morning`, 'focus']);
   clients = []; visited.length = 0;
   await click('/\\elsewhere.example.test/'); assert.deepEqual(visited, ['close', `open ${origin}/morning`]);
+});
+
+test('notification tags differ by checked UK day and replace another notification from the same day', async () => {
+  const tags: string[] = []; let receive: ((event: {data: {json(): object}; waitUntil(work: Promise<unknown>): void}) => void) | undefined;
+  const scope = {location: {origin}, addEventListener: (type: string, listener: typeof receive) => {if (type === 'push') receive = listener;},
+    registration: {showNotification: async (_title: string, options: {tag: string}) => {tags.push(options.tag);}},
+    clients: {matchAll: async () => [], openWindow: async () => {}}} as unknown as PushWorkerScope;
+  installPushWorker(scope);
+  for (const day of ['2032-04-20', '2032-04-21', '2032-04-21', '../../invalid', '2032-99-99']) {
+    let work: Promise<unknown> | undefined; receive!({data: {json: () => ({title: 'Invented summary', body: '', path: '/morning', day})}, waitUntil: promise => {work = promise;}}); await work;
+  }
+  assert.deepEqual(tags, ['pulse-morning-2032-04-20', 'pulse-morning-2032-04-21', 'pulse-morning-2032-04-21', 'pulse-morning', 'pulse-morning']);
 });

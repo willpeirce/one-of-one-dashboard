@@ -74,14 +74,14 @@ test('register parser keeps section order and raw trimmed cells, ignores Watches
   assert.match(result.rows.find(row=>row.id==='T3')!.cells[7]!,/`report` with £123456\.78/);
   assert.equal(strictReading(result.rows[0]!.cells[8]!)?.ahead,'b');
   assert.equal(strictReading(result.rows[1]!.cells[8]!),null);
-  assert.deepEqual(parseRegister('# Invented file\n## Rules\n- No table'),{readable:false,rows:[],skippedRows:0});
-  assert.deepEqual(parseRegister('## Watches (kill rules, not tests)\n| malformed |'),{readable:true,rows:[],skippedRows:0});
+  assert.deepEqual(parseRegister('# Invented file\n## Rules\n- No table'),{readable:false,rows:[],skippedRows:0,cappedRows:0,complete:false});
+  assert.deepEqual(parseRegister('## Watches (kill rules, not tests)\n| malformed |'),{readable:true,rows:[],skippedRows:0,cappedRows:0,complete:false});
 });
 
 test('register caps each section, deduplicates IDs with Live priority and removes unsupported NUL before JSONB',()=>{
   const rows=Array.from({length:HQ_SECTION_ROW_LIMIT+2},(_,i)=>liveRow(`T${i}`));
   const result=parseRegister(register('Live',rows));
-  assert.equal(result.rows.length,HQ_SECTION_ROW_LIMIT);assert.equal(result.skippedRows,2);
+  assert.equal(result.rows.length,HQ_SECTION_ROW_LIMIT);assert.equal(result.skippedRows,0);assert.equal(result.cappedRows,2);
   const duplicate=parseRegister(`## History\n| T1 Earlier copy | Invented question | Draw | Invented rule | Invented evidence |\n## Queue\n| T1 Queued copy | Site | Q | Arms | Bar | Plan | Need |\n${register('Live',[liveRow('T1'),liveRow('T1')])}`);
   assert.equal(duplicate.rows.length,1);assert.equal(duplicate.rows[0]!.section,'live');assert.equal(duplicate.skippedRows,3);
   const nul=parseRegister(register('Live',[liveRow('T8','Invented\0status')]));
@@ -100,4 +100,11 @@ test('truncating Status preserves an explicit marker and cannot lose a late Lean
   const stored={...parsed,firstSeenAt:'2032-04-10T10:00:00Z',sectionFirstSeenAt:'2032-04-10T10:00:00Z',initiallySeen:false};
   assert.equal(readTest(stored,new Date('2032-04-20T10:00:00Z')).answer,null);
   assert.equal(readTest(stored,new Date('2032-05-10T10:00:00Z')).answer,'draw');
+});
+
+test('register splits escaped pipes and matching backtick spans and reports malformed and overflow separately', () => {
+  const valid = liveRow('T1').replace('Invented question', 'Invented \\| choice with `a|b` and ``a`|b``');
+  const result = parseRegister(`## Watches (kill rules, not tests)\n## Queue\n## History\n## Live\n${valid}\n| malformed |\n${Array.from({length: 41}, (_, i) => liveRow(`T${i + 2}`)).join('\n')}`);
+  assert.equal(result.complete, true); assert.equal(result.rows[0]!.cells[2], 'Invented | choice with `a|b` and ``a`|b``');
+  assert.equal(result.rows.length, 40); assert.equal(result.skippedRows, 1); assert.equal(result.cappedRows, 2);
 });

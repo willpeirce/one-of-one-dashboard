@@ -57,17 +57,27 @@ async function controls(page: Page): Promise<void> {
 }
 
 async function nudgeFit(page: Page, width: number, height: number): Promise<void> {
-  await page.setViewportSize({width, height}); await page.evaluate(async () => { await document.fonts.ready; scrollTo(0, 0); });
-  for (const selector of ['#mn-primary', '#mn-secondary', '#mn-good']) {
-    const button = page.locator(selector); if (!await button.count()) continue;
-    const box = (await button.boundingBox())!;
-    assert.ok(box.width >= 44 && box.height >= (selector === '#mn-primary' ? 50 : 44));
-    assert.ok(box.y >= 0 && box.y + box.height <= height + .5, `${width}: ${selector} stays on the first screen with the push line`);
+  await page.setViewportSize({width, height}); await page.evaluate(async () => {
+    await document.fonts.ready; scrollTo(0, 0);
+    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+  });
+  await page.waitForFunction(() => document.querySelector('#mn-card')?.getAnimations().every(animation =>
+    animation.playState !== 'running' || animation.effect?.getTiming().iterations === Infinity) ?? true);
+  // One frame: a concurrent Morning/ticker refresh must not mix positions from different layouts.
+  const layout = await page.evaluate(() => ({
+    boxes: ['#mn-primary', '#mn-secondary', '#mn-good', '#mn-brief', '#mn-push-nudge'].flatMap(selector => {
+      const element = document.querySelector(selector); if (!element) return [];
+      const {x, y, width, height} = element.getBoundingClientRect(); return [{selector, x, y, width, height}];
+    }), fits: document.documentElement.scrollWidth <= innerWidth,
+  }));
+  for (const box of layout.boxes.filter(box => ['#mn-primary', '#mn-secondary', '#mn-good'].includes(box.selector))) {
+    assert.ok(box.width >= 44 && box.height >= (box.selector === '#mn-primary' ? 50 : 44), `${width}: ${box.selector} keeps its tap size (${JSON.stringify(box)})`);
+    assert.ok(box.y >= 0 && box.y + box.height <= height + .5, `${width}: ${box.selector} stays on the first screen with the push line (${JSON.stringify(box)})`);
   }
-  const brief = (await page.locator('#mn-brief').boundingBox())!, nudge = (await page.locator('#mn-push-nudge').boundingBox())!;
-  assert.ok(nudge.y >= brief.y + brief.height, 'The device nudge follows the brief without overlap');
+  const brief = layout.boxes.find(box => box.selector === '#mn-brief')!, nudge = layout.boxes.find(box => box.selector === '#mn-push-nudge')!;
+  assert.ok(nudge.y >= brief.y + brief.height, `The device nudge follows the brief without overlap (${JSON.stringify(layout)})`);
   assert.ok(nudge.width >= 44 && nudge.height >= 44);
-  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  assert.equal(layout.fits, true);
 }
 
 /** Real local routes and real service worker, with a browser-only subscription stub and server transport fixture. */
@@ -103,7 +113,9 @@ export async function checkPush(signedIn: BrowserContext): Promise<void> {
     for (const width of [390, 1280]) {
       const context = await makeContext(); const page = await context.newPage(); await page.setViewportSize({width, height: width === 390 ? 844 : 960});
       try {
+        const initialRead = page.waitForResponse(reply => new URL(reply.url()).pathname === '/api/morning');
         const response = await page.goto('/morning'); assert.ok(response);
+        await (await initialRead).finished();
         const csp = response.headers()['content-security-policy']!;
         assert.match(csp, /script-src 'self'/); assert.doesNotMatch(csp, /worker-src/, 'Root service worker registration needs no CSP relaxation');
         await page.locator('#mn-push-nudge').waitFor({state: 'visible'});
@@ -145,21 +157,28 @@ export async function checkPush(signedIn: BrowserContext): Promise<void> {
           await page.locator('#push-send-test').click(); assert.equal((await limited).status(), 429);
           await page.waitForFunction(() => document.querySelector('#push-device-message')?.textContent?.includes('Wait a minute'));
         }
+        const removed = await signedIn.request.post('/api/push/unsubscribe', {headers: {origin}, data: {endpoint: browserPushEndpoint}});
+        assert.equal(removed.status(), 200);
+        const repaired = page.waitForResponse(reply => new URL(reply.url()).pathname === '/api/push/subscribe');
         await page.goto('/morning'); await page.locator('#mn-root[data-mn-ready="true"]').waitFor();
+        assert.equal((await repaired).status(), 200, 'Morning repairs a missing server subscription');
         await page.waitForFunction(() => (window as unknown as {__pulsePushTest: {reads: number}}).__pulsePushTest.reads > 0);
         assert.equal(await page.locator('#mn-push-nudge').isVisible(), false, 'Subscribed devices do not see the nudge');
+        await signedIn.request.post('/api/push/unsubscribe', {headers: {origin}, data: {endpoint: browserPushEndpoint}});
+        const settingsRepair = page.waitForResponse(reply => new URL(reply.url()).pathname === '/api/push/subscribe');
         await page.goto('/settings#notifications'); await page.locator('#push-turn-off').waitFor({state: 'visible'});
+        assert.equal((await settingsRepair).status(), 200, 'Settings repairs a missing server subscription');
         if (width === 390) {
           await page.route('**/api/push/unsubscribe', route => route.fulfill({status: 503, json: {error: 'Invented unsubscribe save failure.'}}), {times: 1});
           await page.locator('#push-turn-off').click();
           await page.waitForFunction(() => document.querySelector('#push-device-message')?.textContent?.includes('Could not finish turning notifications off'));
-          assert.equal(await page.locator('#push-device-status').innerText(), 'Notifications are on.');
+          assert.equal(await page.locator('#push-device-status').innerText(), 'Notifications need setup.');
           assert.equal(await page.locator('#push-turn-off').isVisible(), true);
           assert.equal(await page.evaluate(() => (window as unknown as {__pulsePushTest: {unsubscribes: number}}).__pulsePushTest.unsubscribes), 0);
           await page.route('**/api/push/subscribe', route => route.fulfill({status: 503, json: {error: 'Invented subscription resave failure.'}}), {times: 1});
           await page.locator('#push-turn-on').click();
           await page.waitForFunction(() => document.querySelector('#push-device-message')?.textContent?.includes('Could not turn notifications on'));
-          assert.equal(await page.locator('#push-device-status').innerText(), 'Notifications are on.');
+          assert.equal(await page.locator('#push-device-status').innerText(), 'Notifications need setup.');
           assert.equal(await page.evaluate(() => (window as unknown as {__pulsePushTest: {unsubscribes: number}}).__pulsePushTest.unsubscribes), 0,
             'Resaving an existing browser subscription cannot remove it on failure');
         }
@@ -172,6 +191,25 @@ export async function checkPush(signedIn: BrowserContext): Promise<void> {
         await page.goto('/morning'); await page.locator('#mn-push-nudge').waitFor({state: 'visible'});
       } finally { await context.close(); }
     }
+    const signOutContext = await makeContext();
+    try {
+      const page = await signOutContext.newPage(); await page.goto('/settings#notifications');
+      await page.locator('#push-turn-on').click();
+      await page.waitForFunction(() => document.querySelector('#push-device-status')?.textContent === 'Notifications are on.');
+      let logoutCalls = 0;
+      // Keep the suite's shared passkey session. Route tests exercise the real atomic logout.
+      await page.route('**/auth/logout', async route => {
+        assert.deepEqual(route.request().postDataJSON(), logoutCalls++ === 0 ? {pushEndpoint: browserPushEndpoint} : {});
+        if (logoutCalls === 2) await signOutContext.clearCookies({name: 'pulse_session'});
+        await route.fulfill({status: logoutCalls === 1 ? 503 : 200, json: logoutCalls === 1 ? {error: 'Invented sign-out failure'} : {ok: true}});
+      });
+      const removed = page.waitForResponse(reply => new URL(reply.url()).pathname === '/api/push/unsubscribe');
+      await page.locator('#sign-out').click(); assert.equal((await removed).status(), 200);
+      await page.waitForFunction(() => document.querySelector('#auth-message')?.textContent?.includes('Could not sign out'));
+      assert.equal(await page.evaluate(async () => !!(await (await navigator.serviceWorker.getRegistration('/'))?.pushManager.getSubscription())), false);
+      await page.locator('#sign-out').click(); await page.waitForURL('**/login');
+      assert.equal(logoutCalls, 2, 'Sign-out remains retryable after revoking the device');
+    } finally { await signOutContext.close(); }
     for (const kind of ['denied', 'unsupported'] as const) {
       const context = await makeContext(kind === 'denied' ? 'denied' : 'default', kind === 'unsupported');
       try {

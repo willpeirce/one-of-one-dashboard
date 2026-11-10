@@ -78,7 +78,7 @@ test('HQ failed, incomplete and unreadable register reads cannot certify call cl
   await saveHQRegister(db, {readable: false, rows: [], skippedRows: 0}, '"unreadable"', later);
   let facts = await readHQFacts(db, later, 'live'); assert.deepEqual(facts.tests, original); assert.equal(facts.registerReadOk, false);
   await assert.rejects(touchHQRead(db, register, null, later), (error: unknown) => error instanceof HQReadError && error.code === 'unreadable');
-  await saveHQRegister(db, {readable: true, rows: [row('T2', 'queue')], skippedRows: 1}, '"partial"', later);
+  await saveHQRegister(db, {readable: true, rows: [row('T2', 'queue')], skippedRows: 1, complete: false}, '"partial"', later);
   facts = await readHQFacts(db, later, 'live'); assert.ok(facts.tests.some(row => row.id === 'T2')); assert.equal(facts.registerSkippedRows, 1); assert.equal(facts.registerReadOk, false);
   assert.equal((await readHQSync(db, [register])).get('register')!.errorCode, null, 'A skipped row does not fail a readable file');
   await touchHQRead(db, register, null, new Date('2032-04-06T09:00:00Z'));
@@ -93,7 +93,7 @@ test('HQ partial register reads preserve old History identity, while removing th
   await saveHQRegister(db, {readable: true, rows: [row('T1', 'history')], skippedRows: 0}, '"first"', now);
   const original = (await readHQFacts(db, now, 'live')).tests[0]!;
   const later = new Date('2032-04-07T08:00:00Z');
-  await saveHQRegister(db, {readable: true, rows: [], skippedRows: 1}, '"partial"', later);
+  await saveHQRegister(db, {readable: true, rows: [], skippedRows: 1, complete: false}, '"partial"', later);
   assert.deepEqual((await readHQFacts(db, later, 'live')).tests, [original]);
   await saveHQRegister(db, {readable: true, rows: [row('T1', 'history')], skippedRows: 0}, '"repaired"', later);
   assert.deepEqual((await readHQFacts(db, later, 'live')).tests, [original], 'Fixing one malformed row cannot invent a new verdict');
@@ -105,7 +105,7 @@ test('HQ partial register reads preserve old History identity, while removing th
 
 test('HQ first partial register waits for a complete baseline before treating later rows as new verdicts', async t => {
   const db = await createTestDatabase(); t.after(() => db.close());
-  await saveHQRegister(db, {readable: true, rows: [row('T1', 'history')], skippedRows: 1}, '"partial-first"', now);
+  await saveHQRegister(db, {readable: true, rows: [row('T1', 'history')], skippedRows: 1, complete: false}, '"partial-first"', now);
   assert.equal((await readHQSync(db, [register])).get('register')!.initialized, false);
   await touchHQRead(db, register, null, new Date('2032-04-06T08:00:00Z'));
   assert.equal((await readHQSync(db, [register])).get('register')!.initialized, false);
@@ -122,7 +122,7 @@ test('HQ partial-cache retention stays at forty rows per section and prioritizes
   await saveHQRegister(db, {readable: true, rows: sections.flatMap(section => Array.from({length: 40}, (_, i) => row(`${section}-old-${i}`, section))), skippedRows: 0}, null, now);
   for (let iteration = 0; iteration < 3; iteration++) {
     const fresh = sections.flatMap(section => Array.from({length: 25}, (_, i) => row(`${section}-new-${iteration}-${i}`, section)));
-    await saveHQRegister(db, {readable: true, rows: fresh, skippedRows: 1}, null, new Date(now.getTime() + (iteration + 1) * 3_600_000));
+    await saveHQRegister(db, {readable: true, rows: fresh, skippedRows: 1, complete: false}, null, new Date(now.getTime() + (iteration + 1) * 3_600_000));
     const counts = await db.query<{section: string; count: string}>('SELECT section,count(*)::text FROM pulse.github_hq_tests GROUP BY section ORDER BY section');
     assert.deepEqual(counts.rows.map(row => Number(row.count)), [40, 40, 40]);
     const current = await readHQFacts(db, now, 'live'); assert.equal(current.tests.length, 120);
@@ -142,4 +142,18 @@ test('HQ register updates and metadata roll back together, and an unreadable fir
   const empty = await createTestDatabase(); t.after(() => empty.close());
   await beginHQRead(empty, target, now);
   await assert.rejects(touchHQRead(empty, target, null, now), (error: unknown) => error instanceof HQReadError && error.code === 'invalid');
+});
+
+test('a complete set of headings establishes the baseline and removes gone rows despite malformed and capped rows', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  await saveHQRegister(db, {readable: true, complete: true, rows: [row('T1', 'live'), row('H1', 'history')], skippedRows: 1, cappedRows: 2}, '"baseline"', now);
+  let facts = await readHQFacts(db, now, 'live');
+  assert.equal(facts.registerReadOk, true); assert.ok(facts.tests.every(test => test.initiallySeen));
+  assert.equal(facts.registerSkippedRows, 1); assert.equal(facts.registerCappedRows, 2);
+  const later = new Date('2032-04-07T08:00:00Z');
+  await saveHQRegister(db, {readable: true, complete: true, rows: [row('H2', 'history')], skippedRows: 1, cappedRows: 3}, '"next"', later);
+  facts = await readHQFacts(db, later, 'live');
+  assert.deepEqual(facts.tests.map(test => test.id), ['H2']); assert.equal(facts.tests[0]!.initiallySeen, false);
+  await touchHQRead(db, register, null, later);
+  assert.equal((await readHQFacts(db, later, 'live')).registerCappedRows, 3);
 });

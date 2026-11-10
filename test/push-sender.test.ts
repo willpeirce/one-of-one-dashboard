@@ -18,11 +18,11 @@ function example() {
 
 test('injected push transport receives a validated encrypted POST without making an HTTP-origin JWT', async () => {
   const { subscription, payload } = example(); let keyReads = 0, requests = 0;
-  const result = await sendPush(subscription, payload, { origin: 'http://localhost:3000',
+  const result = await sendPush(subscription, payload, { origin: 'http://localhost:3000', clock: () => new Date('2032-04-07T07:00:00Z'),
     getKeys: async () => { keyReads++; throw new Error('No key read expected'); },
     transport: async request => {
       requests++; assert.equal(request.url, subscription.endpoint); assert.equal(request.method, 'POST');
-      assert.equal(request.headers['Content-Encoding'], 'aes128gcm'); assert.equal(request.headers.TTL, '3600');
+      assert.equal(request.headers['Content-Encoding'], 'aes128gcm'); assert.equal(request.headers.TTL, '14400');
       assert.equal(request.headers.Urgency, 'normal'); assert.equal(request.signal.aborted, false);
       assert.ok(!Buffer.from(request.body).includes(Buffer.from(payload.title)));
       assert.equal(request.body[20], 65); return { status: 201 };
@@ -128,4 +128,14 @@ test('sender revalidates subscription keys and rejects oversized UTF-8 payloads 
     assert.equal(result.code, 'invalid_payload');
   }
   assert.equal(calls, 0);
+});
+
+test('summary TTL reaches noon UK in summer and winter instead of expiring after one hour', async () => {
+  const {subscription, payload, pair} = example();
+  for (const [at, ttl] of [['2032-04-20T07:00:00Z', '14400'], ['2032-12-20T08:00:00Z', '14400'],
+    ['2032-04-20T08:59:00Z', '7260'], ['2032-12-20T12:00:00Z', '0']]) {
+    const result = await sendPush(subscription, payload, {origin: 'https://pulse.example.invalid', getKeys: async () => pair,
+      clock: () => new Date(at!), transport: async request => {assert.equal(request.headers.TTL, ttl); return {status: 201};}});
+    assert.equal(result.outcome, 'sent');
+  }
 });

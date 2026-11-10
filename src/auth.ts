@@ -1,3 +1,4 @@
+import { validatePushEndpoint } from './push/validation.js';
 import { createECDH, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import {
   generateAuthenticationOptions, generateRegistrationOptions,
@@ -197,12 +198,21 @@ export class Auth {
       return { ok: true };
     });
 
-    app.post('/auth/logout', async (request, reply) => {
+    app.post('/auth/logout', {bodyLimit: 4096}, async (request, reply) => {
+      const body = request.body;
+      if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => key !== 'pushEndpoint'))
+        return reply.code(400).send({error: 'Invalid sign-out request.'});
+      let endpoint: string | undefined;
+      try { if ('pushEndpoint' in body) endpoint = validatePushEndpoint(body.pushEndpoint).href; }
+      catch { return reply.code(400).send({error: 'Invalid sign-out request.'}); }
       const token = request.cookies[this.sessionCookie];
       if (token && /^[A-Za-z0-9_-]{43}$/.test(token)) {
         await this.db.transaction(async tx => {
           const deleted = await tx.query<{ credential_id: string }>('DELETE FROM pulse_private.sessions WHERE token_hash = $1 RETURNING credential_id', [this.hash(token)]);
-          if (deleted.rows[0]) await audit(tx, 'sign_out', deleted.rows[0].credential_id);
+          if (deleted.rows[0]) {
+            if (endpoint) await tx.query('DELETE FROM pulse.push_subscriptions WHERE endpoint=$1 AND credential_id=$2', [endpoint, deleted.rows[0].credential_id]);
+            await audit(tx, 'sign_out', deleted.rows[0].credential_id);
+          }
         });
       }
       this.clearCookie(reply, this.sessionCookie);

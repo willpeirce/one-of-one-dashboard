@@ -2,12 +2,16 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { test } from 'node:test';
 import { HQWorker, HQ_HOURLY_MS, HQ_MORNING_MS, hqMonthInterval } from '../src/github-hq/worker.js';
+import { morningBrief } from '../src/github-hq/presentation.js';
+import { blankObservation, evaluateWatchdogs } from '../src/shopify/watchdogs.js';
+import { defaultSettings } from '../src/settings.js';
+import type { Facts } from '../src/shopify/metrics.js';
 import { readHQFacts } from '../src/github-hq/store.js';
 import { readSourceHealth, syncSourceHealth } from '../src/sources.js';
 import { createTestDatabase } from './helpers/database.js';
 
 const month = (day: string, run = 'run 1 May 07:41') => `# Invented checks\n## ${day} (Fri), ${run}\n\n**Needs Will:** nothing.\n\n### Ignored\nDo not persist this free section.`;
-const register = (bad = false) => `# Invented register\n## Live\n| Id | Lane | Question | Arms | Metric and bar | Started | Ends | Where measured | Status |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n| T1 Invented test | Site | Invented question | A vs B | Invented bar | 2032-03-02 | Later | Invented source | Waiting |\n${bad ? '| T2 Invented bad row | missing cells |\n' : ''}\n## History\n| Id | Question | Verdict | Rule | Evidence |\n| --- | --- | --- | --- | --- |\n| T3 Invented past | Invented question | Draw | Invented rule | Invented evidence |`;
+const register = (bad = false) => `## Watches (kill rules, not tests)\n## Queue\n# Invented register\n## Live\n| Id | Lane | Question | Arms | Metric and bar | Started | Ends | Where measured | Status |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n| T1 Invented test | Site | Invented question | A vs B | Invented bar | 2032-03-02 | Later | Invented source | Waiting |\n${bad ? '| T2 Invented bad row | missing cells |\n' : ''}\n## History\n| Id | Question | Verdict | Rule | Evidence |\n| --- | --- | --- | --- | --- |\n| T3 Invented past | Invented question | Draw | Invented rule | Invented evidence |`;
 const health = async (db: Awaited<ReturnType<typeof createTestDatabase>>) => (await readSourceHealth(db)).find(row => row.source === 'github-hq')!;
 const secret = () => randomBytes(24).toString('hex');
 const quiet = {log: () => {}, sleep: async () => {}};
@@ -116,7 +120,7 @@ test('HQ worker shares in-flight reads, contains failures, retains unreadable re
   assert.equal((await readHQFacts(db, now, 'live')).registerReadOk, false, '304 of unreadable content remains unreadable');
   phase = 3; now = new Date('2032-05-01T11:00:00Z'); await worker.tick();
   assert.equal((await health(db)).status, 'healthy'); const partial = await readHQFacts(db, now, 'live');
-  assert.equal(partial.registerSkippedRows, 1); assert.equal(partial.registerReadOk, false);
+  assert.equal(partial.registerSkippedRows, 1); assert.equal(partial.registerReadOk, true);
   phase = 4; now = new Date('2032-05-01T12:00:00Z'); const before = calls; await worker.tick();
   assert.equal(calls - before, 5, 'Four month attempts do not prevent the independent register read');
   assert.equal((await health(db)).status, 'error'); assert.equal((await readHQFacts(db, now, 'live')).registerReadOk, true);
@@ -138,4 +142,41 @@ test('HQ rate limits pause both files across worker restarts and a report-month 
   await syncSourceHealth(db, env); await restarted.tick(); assert.equal(calls, 1); assert.equal((await health(db)).status, 'error');
   now = new Date('2032-05-03T08:00:00Z'); await restarted.tick();
   assert.equal(calls, 3); assert.equal((await health(db)).status, 'healthy');
+});
+
+test('both month refs missing at the new-month turn keep source health healthy before and after 09:00 UK', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const env = {GITHUB_HQ_TOKEN: secret()}; await syncSourceHealth(db, env);
+  let now = new Date('2032-05-02T07:59:00Z');
+  const worker = new HQWorker(db, env, {...quiet, clock: () => now, fetch: async url =>
+    new URL(String(url)).pathname.endsWith('/register.md') ? new Response(register()) : new Response(null, {status: 404})});
+  t.after(() => worker.stop());
+  for (const at of ['2032-05-02T07:59:00Z', '2032-05-02T08:00:00Z']) {
+    now = new Date(at); await worker.tick();
+    const source = await health(db), stored = await readHQFacts(db, now, 'live');
+    assert.equal(source.status, 'healthy'); assert.equal(stored.report, null);
+    const brief = morningBrief('live', stored, now), due = at.endsWith('08:00:00Z');
+    assert.equal(brief.text, 'No morning check yet today'); assert.equal(brief.tone, due ? 'warn' : 'info');
+    const shopify: Facts = {mode: 'live', sample: false, counts: {}, pendingWebhooks: 0, failedWebhooks: [],
+      notices: [], geoNotice: null, noticeDetails: [], records: [], jobs: []};
+    const check = evaluateWatchdogs(shopify, now, defaultSettings(), blankObservation(), [], [source], {entry: stored.report, now}).find(row => row.id === 'ads_check');
+    assert.equal(check?.status, due ? 'tripped' : 'pass');
+  }
+});
+
+test('a parser version change bypasses the old ETag and resumes conditional reads after a fresh parse', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const env = {GITHUB_HQ_TOKEN: secret()}; await syncSourceHealth(db, env);
+  let now = new Date('2032-05-01T08:00:00Z'); const seen: (string | null)[] = [];
+  const worker = new HQWorker(db, env, {...quiet, clock: () => now, fetch: async (url, init) => {
+    if (!new URL(String(url)).pathname.endsWith('/register.md')) return new Response(month('2032-04-30'));
+    const etag = new Headers(init?.headers).get('if-none-match'); seen.push(etag);
+    return etag ? new Response(null, {status: 304}) : new Response(register(), {headers: {etag: '"invented-version"'}});
+  }}); t.after(() => worker.stop());
+  await worker.tick();
+  await db.query("UPDATE pulse.github_hq_reads SET parser_version=0 WHERE target_key='register'");
+  now = new Date(+now + HQ_HOURLY_MS); await worker.tick();
+  now = new Date(+now + HQ_HOURLY_MS); await worker.tick();
+  assert.deepEqual(seen, [null, null, '"invented-version"']);
+  assert.equal((await readHQFacts(db, now, 'live')).registerReadOk, true);
 });

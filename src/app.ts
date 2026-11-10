@@ -205,6 +205,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     return {activity:shopify.mode==='live' ? metaActivity?.events ?? [] : [],metaActivity,googleNow:googleAt,google:await readGoogleFacts(db,settings,sourceEnv,googleAt),spend:await spendFacts(db,settings,sourceEnv,shopify.mode,dataset(facts,today).min,today,now),costs:await shopify.store.costHistory(),estimates:await readEstimates(db,shopify.mode),now};
   }
   let unconfirmedCampaigns: { scope: string; count: number } | undefined;
+  let morningProjectionFailed = false;
   async function snapshot(options: { morning?: boolean; settings?: Awaited<ReturnType<typeof readSettings>>; hq?: HQFacts } = {}) {
     const settings = options.settings ?? await readSettings(db, { seed: !options.morning });
     const hqNow = localNow(), hqFacts = options.hq ?? await readHQFacts(db, hqNow, hq.mode);
@@ -233,10 +234,21 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     result.fulfilment = await fulfilmentSummary(db, shopify.mode, sourceNow());
     result.shopify?.needs.push(...result.fulfilment.needs.map(n => ({ ...n, state: 'warn' as const, source: 'j-and-j' as const })));
     if (!options.morning) {
-      if (shopify.mode === 'live') result.tests = homeTestsFromHq(hqFacts, await readMorningStates(db, shopify.mode), hqNow);
-      const omissions = await readHomeMorningOmissions(db, result, settings.values, shopify.mode, localNow(),
-        { metaNow: creativeNow(), googleNow: googleNow() });
-      if (omissions) result.morningOmissions = omissions;
+      try {
+        if (shopify.mode === 'live') result.tests = homeTestsFromHq(hqFacts, await readMorningStates(db, shopify.mode), hqNow);
+        const omissions = await readHomeMorningOmissions(db, result, settings.values, shopify.mode, localNow(),
+          { metaNow: creativeNow(), googleNow: googleNow() });
+        if (omissions) result.morningOmissions = omissions;
+        morningProjectionFailed = false;
+      } catch {
+        delete result.morningOmissions;
+        if (shopify.mode === 'live') {
+          try { result.tests = homeTestsFromHq(hqFacts, [], hqNow); }
+          catch { result.tests = {mode: 'live', readAt: null, readOk: false, rows: [], href: '/sources'}; }
+        }
+        if (!morningProjectionFailed) console.warn('Morning projection failed; Home shows all cards.');
+        morningProjectionFailed = true;
+      }
     }
     return result;
   }
@@ -272,9 +284,10 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   });
   app.get('/morning', async (request, reply) => {
     if (!await auth.session(request)) return reply.redirect('/login');
-    const now = localNow(), deck = await morning.read(now);
+    const now = localNow();
     reply.setCookie(MORNING_DAY_COOKIE, ukToday(now), { path: '/', httpOnly: true,
       secure: config.secureCookies, sameSite: 'strict', maxAge: MORNING_DAY_COOKIE_SECONDS });
+    const deck = await morning.read(now);
     return reply.type('text/html; charset=utf-8').send(morningPage(deck));
   });
   app.get('/api/dashboard', async (request, reply) => {

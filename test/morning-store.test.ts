@@ -243,3 +243,19 @@ test('Morning loads inputs outside sequential state transactions, audits once, a
   assert.equal((await readMorning(h.db, load, now)).completed, 0);
   assert.equal((await h.db.query('SELECT 1 FROM pulse.audit_log')).rows.length, 2);
 });
+
+test('lazy cleanup failures roll back to a savepoint while reads and audited presses still succeed', async t => {
+  const original = card(), h = await harness(t, input([original])); await h.press('hide');
+  const logs: string[] = []; t.mock.method(console, 'warn', (line: string) => logs.push(line));
+  await h.db.query(`CREATE FUNCTION pulse.reject_morning_cleanup() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN IF TG_OP='DELETE' OR NEW.cleared_at IS DISTINCT FROM OLD.cleared_at THEN RAISE EXCEPTION 'Invented cleanup failure'; END IF; RETURN NEW; END $$;
+    CREATE TRIGGER reject_cleanup BEFORE UPDATE OR DELETE ON pulse.morning_card_states FOR EACH ROW EXECUTE FUNCTION pulse.reject_morning_cleanup()`);
+  const changed = {...original, factsHash: morningFacts('need', original.subjectId, 'warn', 'changed-rule')}, second = card('invented-second');
+  h.setInput(input([changed, second]));
+  assert.equal((await h.read()).cards[0]!.key, original.key);
+  assert.equal((await h.press('park', second.key)).parked[0]!.stateRow.cardKey, second.key);
+  h.setNow(new Date('2032-04-07T10:00:00Z'));
+  assert.equal((await h.read()).cards.length, 2);
+  assert.ok(logs.length >= 3); assert.ok(logs.every(line => line === 'Morning state cleanup failed; using the current projection.'));
+  assert.equal((await h.db.query('SELECT 1 FROM pulse.audit_log')).rowCount, 2, 'Cleanup errors do not roll back the successful audited press');
+});

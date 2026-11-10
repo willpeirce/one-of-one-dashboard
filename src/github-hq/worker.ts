@@ -1,6 +1,7 @@
 import type { Database } from '../db.js';
 import { addDays, ukToday } from '../hero-range.js';
 import { HQClient, HQReadError, hqTargetInfo, type HQClientOptions, type HQTarget } from './client.js';
+import { HQ_REGISTER_PARSER_VERSION } from './model.js';
 import { parseMonth } from './parse-month.js';
 import { parseRegister } from './parse-register.js';
 import { beginHQRead, failHQRead, hqRateLimited, readHQReports, readHQSync, saveHQMonth, saveHQRegister, touchHQRead, type HQSync } from './store.js';
@@ -50,7 +51,7 @@ export class HQWorker {
   private async read(target: HQTarget, previous: HQSync | undefined, now: Date): Promise<void> {
     await beginHQRead(this.db, target, now);
     try {
-      const result = await this.client!.read(target, {etag: previous?.etag});
+      const result = await this.client!.read(target, {etag: target.kind !== 'register' || previous?.parserVersion === HQ_REGISTER_PARSER_VERSION ? previous?.etag : null});
       if (result.status === 'not-modified') await touchHQRead(this.db, target, result.etag, now);
       else if (target.kind === 'month') await saveHQMonth(this.db, target, parseMonth(result.text), result.etag, now);
       else {
@@ -92,9 +93,9 @@ export class HQWorker {
     const mainRead = reads.get(mainKey), branchRead = reads.get(branchKey), registerRead = reads.get('register');
     const mainHasReport = reports.some(report => report.ref === 'main');
     const monthOk = good(mainRead) && (mainHasReport || good(branchRead) || branchRead?.errorCode === 'not_found')
-      || mainRead?.errorCode === 'not_found' && good(branchRead);
+      || mainRead?.errorCode === 'not_found' && (good(branchRead) || branchRead?.errorCode === 'not_found');
     const healthy = monthOk && good(registerRead);
-    const monthSuccess = good(mainRead) ? mainRead!.lastSuccessAt : good(branchRead) ? branchRead!.lastSuccessAt : null;
+    const monthSuccess = good(mainRead) ? mainRead!.lastSuccessAt : good(branchRead) ? branchRead!.lastSuccessAt : monthOk ? [mainRead?.lastAttemptAt, branchRead?.lastAttemptAt].filter((at): at is string => !!at).sort()[0] ?? null : null;
     const successAt = healthy && monthSuccess && registerRead?.lastSuccessAt
       ? [monthSuccess, registerRead.lastSuccessAt].sort()[0]! : null;
     const lastAttempt = [...reads.values()].map(row => row.lastAttemptAt).filter((value): value is string => !!value).sort().at(-1) ?? now.toISOString();

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { addDays, ukToday } from '../hero-range.js';
 import { formatPounds } from '../money.js';
 import { adSetName } from '../meta-adsets/name.js';
+import { allowedBudgetChange } from '../meta-adsets/budget.js';
 import { decisionRows } from '../meta-adsets/decision-rows.js';
 import { activityObjectType } from '../meta-adsets/activity.js';
 import type { AdSetRow } from '../meta-adsets/presentation.js';
@@ -113,7 +114,7 @@ function dateCards(input: MorningInput): MorningCard[] {
     return { ...identity('date', item.key, late ? 'warn' : 'info', late ? 'late-date' : 'upcoming-date'),
       sourceScope: 'ticker', tier: late ? 2 : 3, order: late ? 10_000 + index : index,
       title: item.name, lane: 'Dates', source: 'pulse', eventKey: item.key, eventDate: item.date,
-      figure: { kind: 'rail', value: Math.abs(item.days), label: late ? item.chip : `${item.days} days left`, range: MORNING_DATE_DAYS } as MorningFigure,
+      figure: { kind: 'rail', value: Math.abs(item.days), label: late ? item.chip : item.days === 0 ? 'Due today' : `${item.days} ${item.days === 1 ? 'day' : 'days'} left`, range: MORNING_DATE_DAYS } as MorningFigure,
       flag: late ? item.chip : undefined, why: item.note || `${item.name} is due ${item.dateLabel}.`,
       whyLine: item.note || undefined, rule: 'Hard deadlines and launches. Dates do not advance by themselves.',
       sourceLine: `${input.mode === 'sample' ? 'Sample dates' : 'Saved key dates'} · UK calendar days`, sourceHref: '/settings#keyDates',
@@ -163,7 +164,8 @@ function externalChanges(input: MorningInput, today: string): MorningCard[] {
       const pounds = event.currency === 'GBP' && row.set.currency === 'GBP';
       const old = pounds ? formatPounds(event.oldPence! / 100) : `${event.currency ?? 'Unknown currency'} ${(event.oldPence! / 100).toFixed(2)}`;
       const value = pounds ? formatPounds(event.newPence! / 100) : `${event.currency ?? 'Unknown currency'} ${(event.newPence! / 100).toFixed(2)}`;
-      const canUndo = input.adSets!.mode === 'live' && input.adSets!.actionsEnabled && pounds && row.set.dailyBudget === event.newPence;
+      const canUndo = input.adSets!.mode === 'live' && input.adSets!.actionsEnabled && pounds && row.set.dailyBudget === event.newPence
+        && allowedBudgetChange(row.set.dailyBudget!, event.oldPence!);
       return { ...identity('done-for-you', event.id, 'done', event.id), sourceScope: 'activity', tier: 4, order: index,
         title: `${name} stepped from ${old} to ${value} a day`, lane: 'Meta · changed outside this app', source: 'meta',
         figure: plain(value, `Daily base · was ${old}`), why: 'A configured actor changed this set outside this app.',
@@ -181,7 +183,10 @@ function allCards(input: MorningInput, today: string): MorningCard[] {
   const needs = input.needs.filter(need => !need.id.startsWith('stock:') && !need.id.startsWith('attach:') && !excluded.has(need.id)
     && (need.state === 'alarm' || need.state === 'warn')).map((need, index) => needCard(need, input, index));
   const ads = input.adSets && (input.mode === 'sample' || input.adSets.mode === 'live')
-    ? decisionRows(input.adSets).filter(row => row.set.status !== 'PAUSED').map((row, index) => adCard(row, input, index, today)) : [];
+    ? decisionRows(input.adSets).filter(row => row.set.status !== 'PAUSED'
+      && !(row.verdict?.verdict === 'Step' && input.metaActions.some(action => action.adSetId === row.set.id
+        && action.action === 'budget' && action.result === 'success' && !action.undoneAt && !action.undoOf
+        && ukToday(new Date(action.time)) === today))).map((row, index) => adCard(row, input, index, today)) : [];
   const combined = [...needs, ...ads, ...dateCards(input), ...creativeCards(input), ...externalChanges(input, today), ...(input.extensions ?? [])];
   const unique = new Set<string>();
   return combined.filter(card => { if (unique.has(card.key)) return false; unique.add(card.key); return true; })
@@ -192,9 +197,8 @@ function stateApplies(row: MorningState, card: MorningCard | undefined, input: M
   if (row.state === 'answered' && row.answer === 'hold') return true;
   if (row.state === 'answered') return !input.sourceReadOk[row.sourceScope] || !!input.liveTestIds?.includes(row.subjectId);
   if (row.state === 'seen') return true;
-  if (row.state === 'parked' && !card) return true;
-  if (row.state === 'hidden' && !input.sourceReadOk[row.sourceScope]) return true;
   if (card) return row.factsHash === card.factsHash;
+  if (row.kind === 'need' && input.checks.some(check => check.id === row.subjectId && check.status === 'unknown')) return true;
   return !input.sourceReadOk[row.sourceScope];
 }
 function away(row: MorningState): MorningAway {

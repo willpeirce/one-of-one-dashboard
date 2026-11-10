@@ -145,3 +145,15 @@ test('live Home features the first Live row then folds other Live, Queue and His
   assert.match(liveHtml, /data-hq-tests="live"/); assert.doesNotMatch(liveHtml.match(/<section class="chapter tests"[\s\S]*?<\/section>/)![0], /data-mode="sample"/);
   assert.deepEqual(sample, before, 'Adding a live chapter does not mutate the fixture');
 });
+
+test('unmeasured draw offers are hideable Info; measured draw offers remain Decide', () => {
+  const source = facts(), row = live(); row.cells[5] = '2032-03-01'; row.cells[8] = 'No reading yet'; source.tests = [row];
+  let card = morningDeck(addMorningHq(input(), source, now), [], now).candidates[0]!;
+  assert.equal(card.state, 'info'); assert.equal(card.tier, 3); assert.equal(card.primary.label, 'Call a draw');
+  assert.ok(card.allowedPresses.includes('hide')); assert.equal(card.menu[0]!.label, 'Stop showing this');
+  row.cells[8] = 'Reading 2032-04-20: A 12% n=4; B 17% n=3; ahead none; sure 60%; mornings 1';
+  card = morningDeck(addMorningHq(input(), source, now), [], now).candidates[0]!;
+  assert.equal(card.state, 'decide'); assert.equal(card.tier, 1); assert.ok(!card.allowedPresses.includes('hide'));
+  const brief = addMorningHq(input(), {...source, registerSkippedRows: 2, registerCappedRows: 3}, now).brief!;
+  assert.match(morningBriefHtml(brief), /2 malformed rows skipped · 3 rows beyond the section cap/);
+});

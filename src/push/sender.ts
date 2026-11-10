@@ -1,8 +1,9 @@
+import { ukToday } from '../hero-range.js';
 import { setTimeout as delay } from 'node:timers/promises';
 import { encryptPushPayload, MAX_PUSH_PAYLOAD_BYTES, vapidAuthorization, type RawPushKeyPair } from './crypto.js';
 import { validatePushEndpoint, validatePushKeys, type PushSubscription } from './validation.js';
 
-export interface PushPayload { title: string; body: string; path: string }
+export interface PushPayload { title: string; body: string; path: string; day?: string }
 export interface PushTransportRequest {
   url: string; method: 'POST'; headers: Readonly<Record<string, string>>; body: Uint8Array;
   signal: AbortSignal; authorize: () => Promise<string>;
@@ -14,6 +15,12 @@ export interface PushSendResult { outcome: 'sent' | 'gone' | 'failed'; attempts:
 export interface PushSendOptions {
   origin: string; getKeys: () => Promise<RawPushKeyPair>; transport?: PushTransport;
   clock?: () => Date; sleep?: (ms: number) => Promise<void>; log?: (line: string) => void; timeoutMs?: number;
+}
+const ukTime = new Intl.DateTimeFormat('en-GB', {timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'});
+/** Expire at noon UK, including the four-hour window after an 08:00 summary. */
+export function pushTtl(now: Date): number {
+  const [hours, minutes, seconds] = ukTime.format(now).split(':').map(Number);
+  return Math.max(0, 12 * 3600 - (hours! * 3600 + minutes! * 60 + seconds!));
 }
 export const PUSH_RETRIES = 3;
 export const PUSH_TIMEOUT_MS = 10_000;
@@ -44,8 +51,8 @@ async function post(request: PushTransportRequest, clock: () => Date): Promise<P
 function payloadBytes(payload: PushPayload): Uint8Array {
   if (!payload || typeof payload.title !== 'string' || !payload.title || typeof payload.body !== 'string'
     || typeof payload.path !== 'string' || !payload.path.startsWith('/') || payload.path.startsWith('//')
-    || /[\u0000-\u0020\\]/u.test(payload.path)) throw new Error();
-  const bytes = Buffer.from(JSON.stringify({ title: payload.title, body: payload.body, path: payload.path }));
+    || /[\u0000-\u0020\\]/u.test(payload.path) || !/^\d{4}-\d{2}-\d{2}$/.test(payload.day ?? '')) throw new Error();
+  const bytes = Buffer.from(JSON.stringify({ title: payload.title, body: payload.body, path: payload.path, day: payload.day }));
   if (bytes.length > MAX_PUSH_PAYLOAD_BYTES) throw new Error();
   return bytes;
 }
@@ -65,9 +72,10 @@ export async function sendPush(subscription: PushSubscription, payload: PushPayl
       : endpoint.hostname === 'updates.push.services.mozilla.com' ? 'mozilla' : 'windows';
     validatePushKeys(subscription?.keys);
   } catch { return failure('invalid_subscription'); }
-  try { body = encryptPushPayload(payloadBytes(payload), subscription.keys); }
+  const clock = options.clock ?? (() => new Date());
+  try { body = encryptPushPayload(payloadBytes({...payload, day: payload.day ?? ukToday(clock())}), subscription.keys); }
   catch { return failure('invalid_payload'); }
-  const clock = options.clock ?? (() => new Date()), sleep = options.sleep ?? delay;
+  const sleep = options.sleep ?? delay;
   const transport = options.transport ?? ((request: PushTransportRequest) => post(request, clock));
   const timeoutMs = Math.min(PUSH_TIMEOUT_MS, Math.max(1, options.timeoutMs ?? PUSH_TIMEOUT_MS));
   for (let index = 0; index <= PUSH_RETRIES; index++) {
@@ -81,7 +89,7 @@ export async function sendPush(subscription: PushSubscription, payload: PushPayl
       });
       const response = await Promise.race([timeout, Promise.resolve().then(() => transport({
         url: endpoint.href, method: 'POST', body, signal: controller.signal,
-        headers: { TTL: '3600', 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', Urgency: 'normal' },
+        headers: { TTL: String(pushTtl(clock())), 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', Urgency: 'normal' },
         authorize: async () => {
           try { return vapidAuthorization(await options.getKeys(), endpoint, options.origin, clock()); }
           catch { throw new PushAttemptError('configuration'); }

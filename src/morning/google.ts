@@ -12,7 +12,7 @@ function flagKind(need: DashboardNeed): GoogleFlagDetail['kind'] | undefined {
 }
 /** Alarms remain independent, with their existing Seen-only action. */
 export function morningGoogleNeeds(input: MorningInput): DashboardNeed[] {
-  return input.needs.filter(need => need.source === 'google-ads' && need.state === 'warn'
+  return input.needs.filter(need => need.source === 'google-ads' && need.state === 'warn' && !!need.googleFlag
     && !need.id.startsWith('stock:') && !need.id.startsWith('attach:'));
 }
 const flagText = (need: DashboardNeed): string => {

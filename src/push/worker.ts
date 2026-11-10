@@ -1,4 +1,4 @@
-interface Notice { title: string; body: string; path: string }
+interface Notice { title: string; body: string; path: string; day: string | null }
 interface WindowClient {
   url: string; focus(): Promise<unknown>; navigate?(url: string): Promise<WindowClient | null>;
 }
@@ -26,7 +26,8 @@ export function notificationMessage(value: unknown, origin: string): Notice {
     ? Array.from(text).slice(0, limit).join('') : fallback;
   return { title: cut(data.title, 'Morning · Pulse', 120),
     body: typeof data.body === 'string' ? Array.from(data.body).slice(0, 1000).join('') : 'Open Morning for your daily check.',
-    path: notificationPath(data.path, origin) };
+    path: notificationPath(data.path, origin),
+    day: typeof data.day === 'string' && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(data.day) ? data.day : null };
 }
 
 /** No fetch handler, cache, install hook or private data persistence. */
@@ -36,7 +37,7 @@ export function installPushWorker(scope: PushWorkerScope): void {
     try { data = event.data?.json(); } catch { /* An unreadable push still shows one visible notification. */ }
     const notice = notificationMessage(data, scope.location.origin);
     event.waitUntil(scope.registration.showNotification(notice.title, {
-      body: notice.body, tag: 'pulse-morning', icon: '/assets/icon-192.png', data: { path: notice.path },
+      body: notice.body, tag: notice.day ? `pulse-morning-${notice.day}` : 'pulse-morning', icon: '/assets/icon-192.png', data: { path: notice.path },
     }));
   });
   scope.addEventListener('notificationclick', event => {

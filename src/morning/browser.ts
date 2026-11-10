@@ -45,8 +45,8 @@ function setup(root: HTMLElement): void {
     setBusy(busy);
     root.dataset.mnReady = 'true';
   }
-  async function request<T>(path: string, body?: object): Promise<T> {
-    const response = await fetch(path, {credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(10_000),
+  async function request<T>(path: string, body?: object, bounded = true): Promise<T> {
+    const response = await fetch(path, {credentials: 'same-origin', cache: 'no-store', ...(bounded ? {signal: AbortSignal.timeout(10_000)} : {}),
       headers: {accept: 'application/json', ...(body ? {'content-type': 'application/json'} : {})}, ...(body ? {method: 'POST', body: JSON.stringify(body)} : {})});
     if (!response.ok) {
       const result = await response.json().catch(() => ({})) as {error?: unknown};
@@ -105,6 +105,7 @@ function setup(root: HTMLElement): void {
     if (dialog.open && sheet === 'confirm') dialog.close();
     ++revision; setBusy(true);
     const button = command.button;
+    if (button.kind === 'live' && button.action === 'undo') hideToast();
     try {
       let next: MorningSnapshot | null = null, reverse: Undo | null = null, message = 'Saved', stamp = 'Saved';
       if (button.kind === 'save' && button.target === 'morning') {
@@ -116,7 +117,7 @@ function setup(root: HTMLElement): void {
         reverse = {kind: 'ticker', eventKey: button.eventKey, action: button.action === 'next' ? 'restore' : 'next'};
         next = await afterSourceSave(); stamp = button.action === 'next' ? 'Covered' : 'Put back';
       } else if (button.kind === 'live') {
-        const result = await request<{id: string; refreshed: boolean}>(`/api/meta/adset/${encodeURIComponent(button.adSetId)}`, {action: button.action, ...(button.value !== undefined ? {value: button.value} : {})});
+        const result = await request<{id: string; refreshed: boolean}>(`/api/meta/adset/${encodeURIComponent(button.adSetId)}`, {action: button.action, ...(button.value !== undefined ? {value: button.value} : {})}, false);
         if (button.action !== 'undo') reverse = {kind: 'live', button: {kind: 'live', label: 'Undo', adSetId: button.adSetId, action: 'undo', value: result.id, confirm: 'Undo this saved Meta action?'}};
         next = await afterSourceSave(); stamp = button.action === 'pause' ? 'Paused' : button.action === 'undo' ? 'Undone' : 'Stepped';
       }
@@ -124,6 +125,11 @@ function setup(root: HTMLElement): void {
       else { confirmation = null; render(); }
       saved(message, reverse);
     } catch (error) {
+      // A failed response can follow a committed source write. Reconcile before offering another action.
+      if (button.kind === 'live') {
+        try { snapshot = await request<MorningSnapshot>('/api/morning'); }
+        catch { get<HTMLElement>('#mn-read-status').textContent = 'ⓘ Could not refresh Morning. Check the saved actions before trying again.'; }
+      }
       const message = error instanceof Error ? error.message : 'Could not save. Try again.';
       confirmation = null; render(message);
       if (!current()) get<HTMLElement>('#mn-read-status').textContent = `✕ ${message}`;
@@ -201,7 +207,7 @@ function setup(root: HTMLElement): void {
     if (!target) return;
     if (target.closest('#mn-close')) { dialog.close(); return; }
     if (busy) { if (target.closest('#mn-stage a,#mn-stage button,#mn-dialog button,#mn-undo')) event.preventDefault(); return; }
-    if (target.closest('#mn-undo') && undo) { const command = undo; hideToast(); void restore(command); return; }
+    if (target.closest('#mn-undo') && undo) { const command = undo; if (command.kind !== 'live') hideToast(); void restore(command); return; }
     if (target.closest('#mn-confirm') && confirmation) { void perform(confirmation); return; }
     if (target.closest('#mn-cancel')) { confirmation = null; if (dialog.open) dialog.close(); render(); focusCard(); return; }
     const windowButton = target.closest<HTMLButtonElement>('[data-mn-window]');

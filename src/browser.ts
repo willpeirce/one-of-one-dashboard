@@ -1,3 +1,4 @@
+import { unsubscribeForSignOut } from './push/browser.js';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import { installPullToRefresh, reloadPageForRefresh } from './pull-refresh.js';
 
@@ -75,7 +76,8 @@ register?.addEventListener('submit', (event) => {
 
 signOut?.addEventListener('click', () => {
   void perform(async () => {
-    await post('/auth/logout', {});
+    const pushEndpoint = await unsubscribeForSignOut();
+    await post('/auth/logout', pushEndpoint ? {pushEndpoint} : {});
     window.location.assign('/login');
   }, 'Could not sign out. Try again.');
 });

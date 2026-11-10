@@ -2,23 +2,23 @@ import type { Database } from '../db.js';
 import { addDays, ukToday } from '../hero-range.js';
 import type { SourceMode } from '../sources.js';
 import { hqTargetInfo, HQReadError, type HQErrorCode, type HQTarget } from './client.js';
-import { hqCut, hqDate, HQ_CELL_LIMIT, HQ_ITEM_LIMIT, HQ_ITEM_TEXT_LIMIT, HQ_SECTION_ROW_LIMIT,
+import { HQ_REGISTER_PARSER_VERSION, hqCut, hqDate, HQ_CELL_LIMIT, HQ_ITEM_LIMIT, HQ_ITEM_TEXT_LIMIT, HQ_SECTION_ROW_LIMIT,
   type HQBriefEntry, type HQFacts, type HQRegisterResult, type HQStoredBriefEntry, type HQStoredTestRow } from './model.js';
 
 export interface HQSync {
   key: string; etag: string | null; lastAttemptAt: string | null; lastSuccessAt: string | null;
   errorCode: HQErrorCode | null; retryAfterAt: string | null; parsedAvailable: boolean; readable: boolean;
-  initialized: boolean; skippedRows: number;
+  initialized: boolean; skippedRows: number; cappedRows: number; parserVersion: number; headingsComplete: boolean;
 }
 interface SyncRow extends Record<string, unknown> {
   target_key: string; etag: string | null; last_attempt_at: Date | string | null; last_success_at: Date | string | null;
   error_code: HQErrorCode | null; retry_after_at: Date | string | null; parsed_available: boolean; readable: boolean;
-  initialized: boolean; skipped_rows: number;
+  initialized: boolean; skipped_rows: number; capped_rows: number; parser_version: number; headings_complete: boolean;
 }
 const iso = (value: Date | string | null): string | null => value ? new Date(value).toISOString() : null;
 const sync = (row: SyncRow): HQSync => ({key: row.target_key, etag: row.etag, lastAttemptAt: iso(row.last_attempt_at),
   lastSuccessAt: iso(row.last_success_at), errorCode: row.error_code, retryAfterAt: iso(row.retry_after_at),
-  parsedAvailable: row.parsed_available, readable: row.readable, initialized: row.initialized, skippedRows: row.skipped_rows});
+  parsedAvailable: row.parsed_available, readable: row.readable, initialized: row.initialized, skippedRows: row.skipped_rows, cappedRows: row.capped_rows, parserVersion: row.parser_version, headingsComplete: row.headings_complete});
 
 export async function readHQSync(db: Database, targets: readonly HQTarget[]): Promise<Map<string, HQSync>> {
   const keys = targets.map(target => hqTargetInfo(target).key);
@@ -91,21 +91,21 @@ export async function saveHQRegister(db: Database, result: HQRegisterResult, eta
         [id, section, ids.length - 1, JSON.stringify(row.cells.map(cell => hqCut(cell, HQ_CELL_LIMIT))), now, initial]);
       }
     }
-    if (result.skippedRows === 0) await tx.query('DELETE FROM pulse.github_hq_tests WHERE NOT(test_id = ANY($1::text[]))', [ids]);
-    else {
-      // An odd row cannot prove a previously seen test disappeared. Keep its identity/history
-      // until a clean file confirms removal, still bounded to the parser's cap per section.
-      await tx.query(`DELETE FROM pulse.github_hq_tests WHERE test_id IN (SELECT test_id FROM (
-        SELECT test_id,row_number() OVER(PARTITION BY section ORDER BY (test_id=ANY($1::text[])) DESC,row_order,test_id) AS position
-        FROM pulse.github_hq_tests) ranked WHERE position>$2)`, [ids, HQ_SECTION_ROW_LIMIT]);
-    }
-    await success(tx, target, etag, now, result.skippedRows, !initial || result.skippedRows === 0);
+    const complete = result.complete ?? true;
+    if (complete) await tx.query('DELETE FROM pulse.github_hq_tests WHERE NOT(test_id = ANY($1::text[]))', [ids]);
+    else await tx.query(`DELETE FROM pulse.github_hq_tests WHERE test_id IN (SELECT test_id FROM (
+      SELECT test_id,row_number() OVER(PARTITION BY section ORDER BY (test_id=ANY($1::text[])) DESC,row_order,test_id) AS position
+      FROM pulse.github_hq_tests) ranked WHERE position>$2)`, [ids, HQ_SECTION_ROW_LIMIT]);
+    await success(tx, target, etag, now, result.skippedRows, !initial || complete);
+    await tx.query(`UPDATE pulse.github_hq_reads SET parser_version=$1,capped_rows=$2,headings_complete=$3 WHERE target_key='register'`,
+      [HQ_REGISTER_PARSER_VERSION, result.cappedRows ?? 0, complete]);
   });
 }
 export async function touchHQRead(db: Database, target: HQTarget, etag: string | null, now: Date): Promise<void> {
   const {key, path, ref} = hqTargetInfo(target);
   await db.transaction(async tx => {
     const previous = (await readHQSync(tx, [target])).get(key);
+    if (target.kind === 'register' && previous?.parserVersion !== HQ_REGISTER_PARSER_VERSION) throw new HQReadError('invalid', 304);
     if (!previous?.parsedAvailable) throw new HQReadError('invalid', 304);
     if (!previous.readable) throw new HQReadError('unreadable', 304);
     await success(tx, target, etag ?? previous.etag, now, previous.skippedRows, previous.initialized);
@@ -136,11 +136,11 @@ export async function readHQFacts(db: Database, now: Date, sourceMode: SourceMod
   const report = (reads.get(`month:${month}:main`)?.errorCode === 'not_found'
     ? reports.find(row => row.ref === 'claude/ads-daily') ?? reports[0] : reports[0]) ?? null;
   const registerReadOk = sourceMode === 'live' && !!register?.initialized && register.readable && register.errorCode === null
-    && register.skippedRows === 0 && !!register.lastSuccessAt && register.lastSuccessAt === register.lastAttemptAt;
+    && register.headingsComplete && register.parserVersion === HQ_REGISTER_PARSER_VERSION && !!register.lastSuccessAt && register.lastSuccessAt === register.lastAttemptAt;
   const monthReadAt = report?.readAt ?? [reads.get(`month:${month}:main`)?.lastSuccessAt, reads.get(`month:${month}:claude/ads-daily`)?.lastSuccessAt]
     .filter((value): value is string => !!value).sort().at(-1) ?? null;
   return {sourceMode, report, registerReadAt: register?.lastSuccessAt ?? null, registerReadOk,
-    registerSkippedRows: register?.skippedRows ?? 0, monthReadAt,
+    registerSkippedRows: register?.skippedRows ?? 0, registerCappedRows: register?.cappedRows ?? 0, monthReadAt,
     tests: tests.rows.map(row => ({id: row.test_id, section: row.section, cells: row.cells, firstSeenAt: iso(row.first_seen_at)!,
       sectionFirstSeenAt: iso(row.section_first_seen_at)!, initiallySeen: row.initially_seen}))};
 }

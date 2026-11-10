@@ -35,6 +35,20 @@ function payload(subscription: PushSubscription): { endpoint: string; keys: { p2
   return { endpoint: subscription.endpoint, keys: { p256dh, auth } };
 }
 
+let signingOut = false;
+const subscriptionSaves = new Set<Promise<unknown>>();
+// Settings and the common browser entry can be separate bundles on the same page.
+document.addEventListener('pulse:signing-out', event => {
+  signingOut = true;
+  (event as CustomEvent<Promise<unknown>[]>).detail.push(...subscriptionSaves);
+});
+async function saveSubscription(subscription: PushSubscription): Promise<void> {
+  if (signingOut) return;
+  const pending = request('/api/push/subscribe', payload(subscription));
+  subscriptionSaves.add(pending);
+  try { await pending; } finally { subscriptionSaves.delete(pending); }
+}
+
 export function initializePushDevice(): void {
   const root = document.getElementById('push-device'); if (!root) return;
   const element = <T extends HTMLElement = HTMLElement>(id: string): T => root.querySelector(`#${id}`) as T;
@@ -43,7 +57,7 @@ export function initializePushDevice(): void {
   let subscription: PushSubscription | null = null, busy = false, retrySetup = false;
   function render(): void {
     const available = supported(), denied = available && Notification.permission === 'denied';
-    status.textContent = !available ? 'Notifications are unavailable here.' : denied ? 'Notifications are blocked.' : subscription ? 'Notifications are on.' : 'Notifications are off.';
+    status.textContent = !available ? 'Notifications are unavailable here.' : denied ? 'Notifications are blocked.' : subscription ? retrySetup ? 'Notifications need setup.' : 'Notifications are on.' : 'Notifications are off.';
     help.textContent = !available ? 'Add Pulse to the home screen and open it from there to use notifications.'
       : denied ? 'Allow notifications for Pulse in your device or browser settings, then return here.' : '';
     on.hidden = !available || denied || !!subscription && !retrySetup;
@@ -54,8 +68,10 @@ export function initializePushDevice(): void {
   function announce(text: string): void { message.textContent = text; }
   async function read(): Promise<void> {
     if (!supported() || Notification.permission === 'denied') { render(); return; }
-    try { subscription = await (await worker()).pushManager.getSubscription(); render(); }
-    catch { render(); announce('Could not check this device. Try turning notifications on again.'); }
+    try { subscription = await (await worker()).pushManager.getSubscription();
+      if (subscription) await saveSubscription(subscription);
+      retrySetup = false; render(); }
+    catch { retrySetup = true; render(); announce('Could not check this device. Try turning notifications on again.'); }
   }
   on.addEventListener('click', () => {
     if (busy || !supported()) return;
@@ -70,9 +86,11 @@ export function initializePushDevice(): void {
         if (await permission !== 'granted') { announce('Notifications were not enabled.'); return; }
         const serviceWorker = await worker(), existing = await serviceWorker.pushManager.getSubscription();
         const { publicKey } = await request<{ publicKey: string }>('/api/push/key');
+        if (signingOut) return;
         subscription = existing ?? await serviceWorker.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: publicKeyBytes(publicKey) });
         if (!existing) created = subscription;
-        await request('/api/push/subscribe', payload(subscription));
+        if (signingOut) { if (created) await created.unsubscribe(); return; }
+        await saveSubscription(subscription);
         retrySetup = false; announce('Notifications are on.');
       } catch {
         retrySetup = true;
@@ -124,11 +142,14 @@ async function readNudge(): Promise<void> {
   if (reading || !nudgeEnabled) return;
   if (!supported() || Notification.permission === 'denied') { subscribed = false; paintNudge(); return; }
   reading = true;
-  try { subscribed = !!await (await worker()).pushManager.getSubscription(); }
-  catch { subscribed = null; }
+  try {
+    const subscription = await (await worker()).pushManager.getSubscription();
+    if (subscription) await saveSubscription(subscription);
+    subscribed = !!subscription;
+  } catch { subscribed = false; }
   finally { reading = false; paintNudge(); }
 }
-/** Read local device state only. Registering a worker never requests notification permission. */
+/** Repair an existing subscription without asking for notification permission. */
 export function updateMorningPushNudge(enabled: boolean): void {
   if (enabled && !nudgeEnabled) subscribed = null;
   nudgeEnabled = enabled; paintNudge();
@@ -138,4 +159,20 @@ export function updateMorningPushNudge(enabled: boolean): void {
     window.addEventListener('focus', () => { void readNudge(); });
   }
   if (enabled && subscribed === null) void readNudge();
+}
+
+/** Revoke this browser before its authenticated server sign-out; never register a worker just to sign out. */
+export async function unsubscribeForSignOut(): Promise<string | undefined> {
+  const pending: Promise<unknown>[] = [];
+  document.dispatchEvent(new CustomEvent('pulse:signing-out', {detail: pending}));
+  await Promise.allSettled(pending);
+  if (!supported()) return undefined;
+  const subscription = await (await navigator.serviceWorker.getRegistration('/'))?.pushManager.getSubscription();
+  if (!subscription) return undefined;
+  // Remove the server row first so a failed logout remains safe to retry even after local revocation.
+  await request('/api/push/unsubscribe', {endpoint: subscription.endpoint});
+  await subscription.unsubscribe();
+  if (await (await navigator.serviceWorker.getRegistration('/'))?.pushManager.getSubscription())
+    throw new Error('Could not turn notifications off. Try signing out again.');
+  return subscription.endpoint;
 }

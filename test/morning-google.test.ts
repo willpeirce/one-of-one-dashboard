@@ -36,22 +36,22 @@ function saved(card: MorningCard, state: 'parked' | 'hidden' = 'hidden'): Mornin
     title: card.title, kind: card.kind, subjectId: card.subjectId, sourceScope: card.sourceScope };
 }
 
-test('Morning gathers every Google Watch into one tier-2 card in the fixed priority, preserving original Home inputs', () => {
+test('Morning gathers only typed Google rule flags into one tier-2 card in the fixed priority, preserving original Home inputs', () => {
   const ordinary: DashboardNeed = { id: 'google-future:invented', source: 'google-ads', state: 'warn', title: 'An invented later Google check', why: 'An invented count of 91.', link: '/settings' };
   const flags = [ordinary, ...(['expected-list', 'unexpected', 'bidding', 'content-share', 'nosale', 'network', 'under'] as const).map(kind => flag(kind))];
   const data = input(flags), before = structuredClone(data), decorated = addMorningGoogle(data);
   const cards = morningDeck(decorated, [], now).candidates;
-  assert.equal(cards.length, 1); assert.equal(cards[0]!.kind, 'google');
+  assert.equal(cards.length, 2); assert.equal(cards[0]!.kind, 'google');
   assert.equal(cards[0]!.tier, 2); assert.equal(cards[0]!.order, 20_000);
   assert.equal(cards[0]!.title, 'Invented network flag', 'Network and under break-even share the first priority');
-  assert.deepEqual(decorated.excludeNeedIds?.slice().sort(), flags.map(row => row.id).sort());
+  assert.deepEqual(decorated.excludeNeedIds?.slice().sort(), flags.filter(row => row.googleFlag).map(row => row.id).sort());
   assert.equal(decorated.needs, data.needs);
   assert.deepEqual(data, before);
   assert.deepEqual(addMorningGoogle(decorated), decorated, 'The pure decorator is idempotent');
   assert.deepEqual([...cards[0]!.why.matchAll(/^(Invented \S+ flag|An invented later Google check)$/gm)].map(match => match[0]),
-    ['Invented network flag', 'Invented under flag', 'Invented nosale flag', 'Invented content-share flag', 'Invented bidding flag', 'Invented unexpected flag', 'Invented expected-list flag', 'An invented later Google check']);
+    ['Invented network flag', 'Invented under flag', 'Invented nosale flag', 'Invented content-share flag', 'Invented bidding flag', 'Invented unexpected flag', 'Invented expected-list flag']);
   const fallback = flags.map(({ googleFlag: _metadata, ...row }) => row);
-  assert.equal(googleCard(input(fallback)).title, 'Invented network flag', 'Known IDs remain compatible without parsing prose');
+  assert.equal(morningDeck(addMorningGoogle(input(fallback)), [], now).candidates.some(card => card.kind === 'google'), false, 'IDs without rule metadata remain ordinary linked cards');
 });
 
 test('Google figure uses typed measures and the content flag appears only beside another title', () => {
@@ -103,7 +103,7 @@ test('Google saved facts ignore moving figures and flag ordering; a new flag res
   assert.notEqual(googleCard(changed).factsHash, card.factsHash);
   for (const row of rows) assert.equal(morningDeck(changed, [row], now).openCards.length, 1);
   changed.sourceReadOk.google = false;
-  assert.equal(morningDeck(changed, [rows[0]!], now).openCards.length, 0, 'A failed source cannot certify a new fact set');
+  assert.equal(morningDeck(changed, [rows[0]!], now).openCards.length, 1, 'A present changed flag set restores the card during a failed read');
   assert.equal(googleCard({ ...data, needs: [...data.needs, data.needs[0]!] }).factsHash, card.factsHash, 'Duplicate flag IDs do not alter the sorted set');
 });
 
@@ -138,4 +138,15 @@ test('sample Google uses the same note builder with explicit labels and never ap
   assert.equal(morningDeck(curateMorningSample(live, now), [], now).candidates.length, 0);
   const recycled = addMorningGoogle({ ...live, extensions: google });
   assert.equal(morningDeck(recycled, [], now).candidates.length, 0, 'A prior sample Google extension cannot leak into live output');
+});
+
+test('Google health needs keep their own card/link and never enter the rule note', () => {
+  const health: DashboardNeed = {id: 'source-health:google', state: 'warn', source: 'google-ads',
+    title: 'Invented source read failed', why: 'Invented unavailable source', link: '/sources'};
+  const data = addMorningGoogle(input([health, flag('nosale')]));
+  const cards = morningDeck(data, [], now).candidates;
+  assert.equal(cards.length, 2);
+  assert.deepEqual(cards.find(card => card.kind === 'need')!.primary, {kind: 'link', label: 'Open source health', href: '/sources'});
+  const note = cards.find(card => card.kind === 'google')!.primary;
+  assert.equal(note.kind, 'copy'); if (note.kind === 'copy') { assert.match(note.text, /nosale/); assert.doesNotMatch(note.text, /source read failed|unavailable source/); }
 });

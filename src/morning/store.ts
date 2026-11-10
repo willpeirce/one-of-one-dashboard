@@ -27,10 +27,15 @@ export async function readMorningStates(db: Database, mode: SourceMode): Promise
 async function resolve(db: Database, input: MorningInput, now: Date): Promise<{states: MorningState[]; result: MorningResult}> {
   const states = await readMorningStates(db, input.mode);
   const result = morningDeck(input, states, now);
-  if (result.clearKeys.length) await db.query(`UPDATE pulse.morning_card_states SET cleared_at=$3
-    WHERE mode=$1 AND card_key=ANY($2::text[]) AND cleared_at IS NULL`, [input.mode, result.clearKeys, now]);
-  if (result.deleteKeys.length) await db.query('DELETE FROM pulse.morning_card_states WHERE mode=$1 AND card_key=ANY($2::text[])',
-    [input.mode, result.deleteKeys]);
+  try {
+    if (result.clearKeys.length || result.deleteKeys.length) await db.transaction(async cleanup => {
+      // A savepoint keeps failed best-effort cleanup from aborting the enclosing press.
+      if (result.clearKeys.length) await cleanup.query(`UPDATE pulse.morning_card_states SET cleared_at=$3
+        WHERE mode=$1 AND card_key=ANY($2::text[]) AND cleared_at IS NULL`, [input.mode, result.clearKeys, now]);
+      if (result.deleteKeys.length) await cleanup.query('DELETE FROM pulse.morning_card_states WHERE mode=$1 AND card_key=ANY($2::text[])',
+        [input.mode, result.deleteKeys]);
+    });
+  } catch { console.warn('Morning state cleanup failed; using the current projection.'); }
   return {states, result};
 }
 

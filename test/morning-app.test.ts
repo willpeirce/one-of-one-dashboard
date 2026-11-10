@@ -59,3 +59,35 @@ test('Morning reuses read-only Home inputs and only mutates its state and audit,
   assert.deepEqual(writes, ['pulse.morning_card_states', 'pulse.audit_log']);
   assert.equal((await db.query('SELECT 1 FROM pulse.settings')).rows.length, 0);
 });
+
+test('a failed Morning read sets the visit marker and its failed projection cannot break Home', async t => {
+  const db = await createTestDatabase(); let fail = false;
+  const observed: Database = {...db, query(sql, values) {
+    if (fail && /^SELECT\b/.test(sql) && sql.includes('pulse.morning_card_states')) throw new Error('Invented Morning storage failure');
+    return db.query(sql, values);
+  }, transaction: fn => db.transaction(tx => fn({...tx, query(sql, values) {
+    if (fail && /^SELECT\b/.test(sql) && sql.includes('pulse.morning_card_states')) throw new Error('Invented Morning storage failure');
+    return tx.query(sql, values);
+  }}))};
+  const config = readRuntime({DATABASE_URL: 'postgresql://localhost/pulse_morning_test', APP_ORIGIN: 'https://pulse.example.test'});
+  const now = new Date('2032-04-07T08:00:00Z'), app = await createApp(observed, config, {}, {}, {}, {}, {}, {clock: () => now});
+  t.after(async () => {await app.close(); await db.close();});
+  const secret = (await db.query<{value: Uint8Array}>("SELECT value FROM pulse_private.app_secrets WHERE name='session_hmac'")).rows[0]!;
+  const token = randomBytes(32).toString('base64url'), credential = randomBytes(32).toString('base64url');
+  await db.query('INSERT INTO pulse_private.credentials(id,public_key) VALUES($1,$2)', [credential, randomBytes(32)]);
+  await db.query("INSERT INTO pulse_private.sessions(token_hash,credential_id,expires_at) VALUES($1,$2,now()+interval '30 days')",
+    [createHmac('sha256', Buffer.from(secret.value)).update(token).digest('hex'), credential]);
+  await db.query("UPDATE pulse.settings SET values=jsonb_set(values,'{morningOpensFirst}','true')");
+  const headers = {cookie: `__Host-pulse_session=${token}`}, logs: string[] = [];
+  t.mock.method(console, 'warn', (line: string) => logs.push(line)); fail = true;
+  assert.equal((await app.inject({url: '/', headers})).statusCode, 302);
+  const broken = await app.inject({url: '/morning', headers}); assert.equal(broken.statusCode, 500);
+  const cookies = broken.headers['set-cookie'];
+  const marker = (Array.isArray(cookies) ? cookies : [String(cookies)]).find(value => value.startsWith('pulse_morning_day='))!;
+  assert.match(marker, /^pulse_morning_day=2032-04-07;/);
+  headers.cookie += `; ${marker.split(';')[0]}`;
+  assert.equal((await app.inject({url: '/', headers})).statusCode, 200);
+  const snapshot = await app.inject({url: '/api/dashboard', headers}); assert.equal(snapshot.statusCode, 200);
+  assert.equal(Object.hasOwn(snapshot.json(), 'morningOmissions'), false);
+  assert.deepEqual(logs, ['Morning projection failed; Home shows all cards.']);
+});

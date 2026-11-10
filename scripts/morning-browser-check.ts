@@ -282,7 +282,8 @@ export async function checkMorning(signedIn: BrowserContext): Promise<void> {
     const fixturePage = await context.newPage();
     const base = await read(), cards = fixtureCards(base);
     let fixture: MorningSnapshot = {...base, cards: [cards[0]!], more: 0, completed: 0, total: 1, presses: [], parked: [], hidden: [], answers: [], metaActions: [], passedDates: []};
-    await fixturePage.route('**/api/morning', route => route.fulfill({json: fixture}));
+    let morningReads = 0;
+    await fixturePage.route('**/api/morning', route => {morningReads++; return route.fulfill({json: fixture});});
     try {
       await fixturePage.goto('/morning'); await shown(fixturePage, fixture);
       for (const viewport of [{width: 390, height: 844}, {width: 375, height: 667}, {width: 1280, height: 960}]) {
@@ -308,7 +309,7 @@ export async function checkMorning(signedIn: BrowserContext): Promise<void> {
       const live = {...cards[1]!, key: 'invented-live-action', primary: {kind: 'live', label: 'Pause invented set', adSetId: '990099', action: 'pause', value: 'PAUSED', confirm: 'Pause invented set now?'} as MorningButton};
       fixture = {...fixture, mode: 'live', cards: [live]};
       await fixturePage.evaluate(() => document.dispatchEvent(new Event('visibilitychange'))); await shown(fixturePage, fixture);
-      let attempts = 0;
+      let attempts = 0; const beforeFailureRead = morningReads;
       await fixturePage.route('**/api/meta/adset/990099', async route => {
         attempts++; assert.deepEqual(route.request().postDataJSON(), {action: 'pause', value: 'PAUSED'});
         await route.fulfill({status: 409, json: {error: 'Invented action is no longer available.'}});
@@ -317,7 +318,7 @@ export async function checkMorning(signedIn: BrowserContext): Promise<void> {
       assert.equal(attempts, 0); await fixturePage.locator('#mn-cancel').click(); assert.equal(attempts, 0);
       await fixturePage.locator('#mn-primary').click(); await fixturePage.locator('#mn-confirm').click();
       await fixturePage.locator('#mn-error').waitFor({state: 'visible'});
-      assert.equal(attempts, 1); assert.equal(await fixturePage.locator('#mn-card').getAttribute('data-mn-card'), live.key);
+      assert.equal(attempts, 1); assert.ok(morningReads > beforeFailureRead, 'A failed live action reconciles from Morning'); assert.equal(await fixturePage.locator('#mn-card').getAttribute('data-mn-card'), live.key);
       assert.match(await fixturePage.locator('#mn-error').innerText(), /Invented action is no longer available/);
       await fixturePage.unroute('**/api/meta/adset/990099');
       const nextLive = {...live, key: 'invented-next-live-action', primary: {kind: 'live', label: 'Step invented second set', adSetId: '990098', action: 'budget', value: 6, confirm: 'Step invented second set from £5 to £6 a day?'} as MorningButton};
@@ -326,6 +327,7 @@ export async function checkMorning(signedIn: BrowserContext): Promise<void> {
         const body = route.request().postDataJSON(); commands.push(body);
         if (body.action === 'pause') {
           fixture = {...fixture, cards: [nextLive], completed: 1, total: 2};
+          await new Promise(resolve => setTimeout(resolve, 10_500));
           await route.fulfill({json: {id: 'invented-action', refreshed: true}});
         } else await route.fulfill({status: 409, json: {error: 'Invented second action refused.'}});
       });
@@ -334,7 +336,9 @@ export async function checkMorning(signedIn: BrowserContext): Promise<void> {
       await focusAfterSave(fixturePage, fixture);
       await fixturePage.locator('#mn-primary').click(); await fixturePage.locator('#mn-confirm').waitFor({state: 'visible'});
       await fixturePage.locator('#mn-undo').click(); await fixturePage.locator('#mn-dialog').waitFor({state: 'visible'});
-      await closeSheet(fixturePage);
+      await fixturePage.locator('#mn-dialog #mn-cancel').click();
+      assert.equal(await fixturePage.locator('#mn-toast').isVisible(), true, 'Cancelling live Undo retains the original eight-second toast');
+      assert.equal(await fixturePage.locator('#mn-undo').isVisible(), true);
       if (!await fixturePage.locator('#mn-confirm').isVisible()) await fixturePage.locator('#mn-primary').click();
       assert.match(await fixturePage.locator('#mn-card').innerText(), /Step invented second set from £5 to £6 a day/);
       await fixturePage.locator('#mn-confirm').click(); await fixturePage.locator('#mn-error').waitFor({state: 'visible'});

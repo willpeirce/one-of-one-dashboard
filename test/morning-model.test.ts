@@ -88,7 +88,7 @@ test('park expires on next UK day and a worse state returns immediately without 
   const original = morningDeck(data, [], now).candidates[0]!, saved = state(original);
   assert.equal(morningDeck(data, [saved], now).snapshot.cards.length, 0);
   data.needs = [];
-  assert.equal(morningDeck(data, [saved], now).snapshot.parked.length, 1, 'a brief absence does not undo a timed park');
+  assert.equal(morningDeck(data, [saved], now).snapshot.parked.length, 0, 'A successfully read absence clears the park');
   data.needs = [need('same-rule')];
   assert.equal(morningDeck(data, [saved], now).snapshot.cards.length, 0);
   assert.equal(morningDeck(data, [saved], new Date('2032-04-08T08:00:00Z')).snapshot.cards.length, 1);
@@ -107,7 +107,7 @@ test('hidden survives moving figures, ends on a changed rule and never clears on
   const changedInput = { ...data, needs: [], extensions: [changed] };
   assert.equal(morningDeck(changedInput, [hidden], now).snapshot.cards.length, 1);
   changedInput.sourceReadOk['needs:shopify'] = false;
-  assert.equal(morningDeck(changedInput, [hidden], now).snapshot.hidden.length, 1, 'failed reads do not clear hidden state even when cached figures differ');
+  assert.equal(morningDeck(changedInput, [hidden], now).snapshot.hidden.length, 0, 'Present changed facts restore hidden cards even during failed reads');
   changedInput.extensions[0] = { ...changed, state: 'alarm' };
   assert.equal(morningDeck(changedInput, [hidden], now).snapshot.cards[0]?.state, 'alarm', 'a retained hidden Watch never conceals an Alarm');
   data.needs = []; data.sourceReadOk['needs:shopify'] = false;
@@ -199,6 +199,9 @@ test('Done for you requires owned ad-set budget activity by a configured actor a
   let done = morningDeck(data, [], now).candidates.filter(card => card.kind === 'done-for-you');
   assert.equal(done.length, 1); assert.equal(done[0]!.secondary?.kind, 'live');
   assert.doesNotMatch(done[0]!.title, /Invented actor/);
+  event.oldPence = 4000;
+  assert.equal(morningDeck(data, [], now).candidates.find(card => card.kind === 'done-for-you')!.secondary, undefined, 'A large cut cannot offer a restore above the route ceiling');
+  event.oldPence = 2000;
   row.set.dailyBudget = 2500;
   assert.equal(morningDeck(data, [], now).candidates.find(card => card.kind === 'done-for-you')!.secondary, undefined);
   row.set.dailyBudget = 2400;
@@ -309,4 +312,54 @@ test('mode boundaries and UK-day slot accounting hold around summer and winter m
     const next = morningDeck(data, [saved], new Date(after!));
     assert.equal(next.snapshot.day, day); assert.equal(next.snapshot.completed, 0); assert.equal(next.snapshot.cards.length, 1);
   }
+});
+
+test('same-day completed budget actions remove Step, keep its completion slot, and Undo restores it', () => {
+  const data = input(); data.adSets = {...sampleAdSetsView(data.settings), mode: 'live', actionsEnabled: true};
+  data.adSets.rows = data.adSets.rows.filter(row => row.verdict?.verdict === 'Step');
+  const row = data.adSets.rows[0]!;
+  assert.equal(morningDeck(data, [], now).snapshot.cards[0]!.kind, 'meta-step');
+  const action: MetaAction = {id: 'invented-step', time: now.toISOString(), adSetId: row.set.id, action: 'budget',
+    oldValue: '2000', newValue: '2400', result: 'success', undoneAt: null, undoOf: null, errorCode: null};
+  row.set.dailyBudget = 2400; row.verdict!.proposedBase = 28.8; data.metaActions = [action];
+  const acted = morningDeck(data, [], now);
+  assert.equal(acted.snapshot.cards.length, 0); assert.equal(acted.openCards.length, 0); assert.equal(acted.snapshot.completed, 1);
+  action.undoneAt = now.toISOString();
+  assert.equal(morningDeck(data, [], now).snapshot.cards[0]!.kind, 'meta-step');
+  assert.equal(morningDeck(data, [], now).snapshot.completed, 0);
+  action.undoneAt = null;
+  assert.equal(morningDeck(data, [], new Date('2032-04-08T08:00:00Z')).snapshot.cards[0]!.kind, 'meta-step');
+});
+
+test('live mode with actions off has no live button, including menus and outside-change controls', () => {
+  const data = sampleInput(); data.mode = 'live'; data.adSets!.mode = 'live'; data.adSets!.actionsEnabled = false;
+  const row = data.adSets!.rows[0]!; row.set.dailyBudget = 2400;
+  data.settings.ourActors = [{ actorId: 'invented-actor' }];
+  const event: MetaActivity = { id: 'invented-event', type: 'update_ad_set_budget', time: now.toISOString(), actorId: 'invented-actor', actor: 'Invented actor', app: 'Invented tool',
+    objectId: row.set.id, object: row.set.name, objectType: 'Ad set', old: 'GBP 20.00', value: 'GBP 24.00', oldPence: 2000, newPence: 2400, currency: 'GBP', budgetLabel: 'daily' };
+  data.activity = [event];
+  data.metaActions = [{id: 'invented-saved-budget', time: now.toISOString(), adSetId: row.set.id, action: 'budget',
+    oldValue: '1000', newValue: '2400', result: 'success', undoneAt: null, undoOf: null, errorCode: null}];
+  const result = morningDeck(data, [], now), cards = result.candidates;
+  assert.equal(result.snapshot.metaActions.length, 1);
+  assert.equal(result.snapshot.metaActions[0]!.undo, null);
+  assert.ok(cards.some(card => card.kind === 'done-for-you'));
+  for (const card of cards)
+    assert.ok([card.primary, card.secondary, ...card.menu].every(button => button?.kind !== 'live'));
+});
+
+test('date rails distinguish today, one day and several days', () => {
+  const data = input();
+  data.ticker = tickerState([0, 1, 2].map(offset => ({name: `Invented date ${offset}`, date: addDays(ukToday(now), offset), kind: 'flag' as const, note: ''})), [], now, 'live');
+  assert.deepEqual(morningDeck(data, [], now).candidates.map(card => card.figure.kind === 'rail' ? card.figure.label : assert.fail('Expected date rail')), ['Due today', '1 day left', '2 days left']);
+});
+
+test('a hidden watchdog survives Unknown and returns to the same hidden facts when it trips again', () => {
+  const data = input(); data.needs = [need('invented-watchdog')];
+  data.checks = [{id: 'invented-watchdog', status: 'tripped', name: 'Invented watchdog', why: 'Invented rule', link: '/sources'}];
+  const saved = state(morningDeck(data, [], now).candidates[0]!, {state: 'hidden', untilDay: null});
+  data.needs = []; data.checks[0]!.status = 'unknown';
+  assert.deepEqual(morningDeck(data, [saved], now).clearKeys, []);
+  data.needs = [need('invented-watchdog')]; data.checks[0]!.status = 'tripped';
+  assert.equal(morningDeck(data, [saved], now).openCards.length, 0);
 });

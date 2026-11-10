@@ -155,6 +155,20 @@ export async function checkCreatives(context: BrowserContext): Promise<void> {
       await page.goto('/creatives');
       await page.locator('#creative-filters').waitFor();
       assert.ok(await page.locator('#creative-gallery .creative-picture').count() >= 6);
+      assert.equal(await page.locator('#creative-sheet[open]').count(), 0, 'No-hash navigation leaves the creative sheet closed');
+      await page.goto('/creatives#sample-video-%33');
+      await page.locator('#creative-sheet .creative-media').waitFor();
+      assert.equal(await page.locator('#creative-sheet-title').innerText(), all.groups.find(group => group.id === 'sample-video-3')!.title);
+      await page.locator('[data-creative-close]').click();
+      await page.evaluate(() => { location.hash = 'sample-image-1'; });
+      await page.locator('#creative-sheet .creative-media').waitFor();
+      assert.equal(await page.locator('#creative-sheet-title').innerText(), all.groups.find(group => group.id === 'sample-image-1')!.title);
+      await page.locator('[data-creative-close]').click();
+      for (const hash of ['', '%E0%A4%A', 'invented-creative-not-listed']) {
+        await page.evaluate(value => new Promise<void>(resolve => { addEventListener('hashchange', () => requestAnimationFrame(() => resolve()), {once: true}); location.hash = value; }), hash);
+        assert.equal(await page.locator('#creative-sheet[open]').count(), 0, 'Unknown or malformed subject hashes do not open a sheet');
+      }
+      await page.evaluate(() => history.replaceState(null, '', '/creatives'));
       // Detailed window and unplaced descriptions remain in the full creative library.
       for (const [window, description] of [['24h', /Last complete UK day plus today so far/], ['7d', /Last 7 UK days/]] as const) {
         await page.locator(`[data-creative-window="${window}"]`).click();

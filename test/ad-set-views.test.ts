@@ -3,7 +3,7 @@ import {randomBytes} from 'node:crypto';
 import test from 'node:test';
 import {defaultSettings} from '../src/settings.js';
 import {sampleAdSetsView,decisionRows,readAdSetsView} from '../src/meta-adsets/presentation.js';
-import {adSetCards,adSetTable,adSetSheet} from '../src/meta-adsets/view.js';
+import {adSetCards,adSetTable,adSetSheet,actionForm} from '../src/meta-adsets/view.js';
 import {createTestDatabase} from './helpers/database.js';
 test('cards order every non-Clear verdict, filter market and distinguish never-read from all clear',()=>{
  const v=sampleAdSetsView(defaultSettings());
@@ -12,6 +12,13 @@ test('cards order every non-Clear verdict, filter market and distinguish never-r
  assert.match(adSetCards({...v,lastRead:null}),/catalogue has never been read/);
  assert.equal(decisionRows(v,'us').length,0);
  assert.doesNotMatch(adSetCards(v),/Clear Fern/);
+});
+test('the Ads action form opens on the same Step proposal used by Morning',()=>{
+ const view=sampleAdSetsView(defaultSettings()),row=view.rows.find(row=>row.verdict?.verdict==='Step')!;
+ row.verdict!.proposedBase=25;
+ assert.match(actionForm(row),/name="value"[^>]*value="25"/);
+ assert.match(actionForm(row),/data-budget-value="24"/);
+ assert.match(actionForm(row),/data-budget-value="26"/);
 });
 test('/ads sorts owners, gives freelancer trigger comparisons without verdicts, and sheets include daily rows',()=>{
  const v=sampleAdSetsView(defaultSettings()),table=adSetTable(v);

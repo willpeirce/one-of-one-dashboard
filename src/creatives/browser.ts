@@ -8,6 +8,7 @@ import { creativeScanControlHtml, type CreativeScanView } from './scan-view.js';
 import type { ScanResult } from './scan.js';
 
 let view: CreativeView | undefined;
+const knownGroups = new Set<string>();
 let selection: CreativeSelection = { window: '3d', market: 'all', owner: 'all' };
 let rememberedWindow: LiftWindowDays = 7;
 try { const saved = Number(localStorage.getItem('pulse-creative-evidence-window')); if (saved === 1 || saved === 3 || saved === 7) rememberedWindow = saved; } catch { /* Storage may be disabled. */ }
@@ -33,6 +34,9 @@ function status(message: string): void {
   }
 }
 function render(next: CreativeView): void {
+  if (view?.accountId !== next.accountId || view?.mode !== next.mode) knownGroups.clear();
+  for (const row of next.groups) knownGroups.add(row.group.id);
+  for (const row of next.merged) knownGroups.add(row.id);
   view = next;
   element('#creative-panel')?.replaceChildren();
   const panel = element('#creative-panel'); if (panel) panel.innerHTML = creativePanelHtml(next, Boolean(document.querySelector('#table')));
@@ -87,6 +91,12 @@ async function openSheet(groupId: string, tagging = false): Promise<void> {
     });
     if (video?.error) { const fallback = element('#creative-video-refused'); if (fallback) fallback.hidden = false; }
   } catch { if (current === sheetGeneration) body.innerHTML = '<h2 id="creative-sheet-title">Creative unavailable</h2><p>Could not read this creative. Close and try again.</p>'; }
+}
+function showLinkedCreative(): void {
+  if (location.pathname !== '/creatives' || !location.hash) return;
+  let id: string;
+  try { id = decodeURIComponent(location.hash.slice(1)); } catch { return; }
+  if (knownGroups.has(id)) void openSheet(id);
 }
 function brieflySaved(target: HTMLElement | null, text = 'Saved'): void {
   if (!target) return;
@@ -260,10 +270,15 @@ document.addEventListener('input', event => {
   noteTimer = setTimeout(flushNote, 400);
 });
 const dialog = element<HTMLDialogElement>('#creative-sheet');
-dialog?.addEventListener('close', () => { flushNote(); sheetGeneration++; activeSheet = undefined; noteGeneration++; dialog.querySelector('video')?.pause(); element('#creative-sheet-body')?.replaceChildren(); });
+dialog?.addEventListener('close', () => {
+  // A hash change can reopen the dialog before the previous close event is delivered.
+  if (dialog.open) return;
+  flushNote(); sheetGeneration++; activeSheet = undefined; noteGeneration++; dialog.querySelector('video')?.pause(); element('#creative-sheet-body')?.replaceChildren();
+});
 dialog?.addEventListener('click', event => { if (event.target === dialog) dialog.close(); });
 const state = element('#creative-state');
 if (state) {
-  try { const next = JSON.parse(state.dataset.view ?? '{}') as CreativeView; selection = { ...next.selection, liftWindow: rememberedWindow }; render(next); state.remove(); if (rememberedWindow !== (next.selection.liftWindow ?? 7)) void refresh(); }
+  try { const next = JSON.parse(state.dataset.view ?? '{}') as CreativeView; selection = { ...next.selection, liftWindow: rememberedWindow }; render(next); state.remove(); showLinkedCreative(); if (rememberedWindow !== (next.selection.liftWindow ?? 7)) void refresh(); }
   catch { status('Could not finish loading creatives. Refresh to try again.'); }
 }
+window.addEventListener('hashchange', showLinkedCreative);

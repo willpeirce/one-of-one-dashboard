@@ -56,7 +56,7 @@ export function buildCreativeView(data: CreativeData, settings: Settings, today:
   const cards: CreativeView['cards'] = performance.fading.map(row => ({
     id: `fading:${row.groupId}`, kind: 'watch', groupId: row.groupId,
     picture: index.parentById.get(row.groupId)?.thumbnailUrl ?? '',
-    title: `Fading: ${row.title}`, reason: row.reasons.join('; '), mode: data.mode,
+    title: `Fading: ${row.title}`, reason: row.reasons.join('; '), ruleIds: row.ruleIds, mode: data.mode,
   }));
   const presentation = deriveCreativeLiftPresentation(lifts, data, { windowDays: selected.liftWindow ?? 7, market: selected.market ?? 'all', today }, index);
   const home = (selected.liftWindow ?? 7) === 7 ? presentation : deriveCreativeLiftPresentation(lifts, data, { market: selected.market ?? 'all', today }, index);
@@ -67,12 +67,18 @@ export function buildCreativeView(data: CreativeData, settings: Settings, today:
     targets: { uk: settings.cppUkTargetGbp, us: settings.cppUsTargetGbp }, freelancerInitial: settings.creativeFreelancerInitial,
     merged: data.groups.filter(group => group.mergedIntoId).map(group => ({ id: group.id, title: group.title, parentId: group.mergedIntoId! })) };
 }
-export async function readCreativeView(db: Database, settings: Settings, env: NodeJS.ProcessEnv, now: Date, selection: CreativeSelection = {}): Promise<CreativeView> {
+export async function readCreativeView(db: Database, settings: Settings, env: NodeJS.ProcessEnv, now: Date, selection: CreativeSelection = {}, options: { seedSample?: boolean; briefWindows?: boolean } = {}): Promise<CreativeView> {
   const data = await readCreativeData(db, settings, env, now);
-  if (data.mode === 'sample') await seedCreativeSample(db, settings, now);
+  if (data.mode === 'sample' && options.seedSample !== false) await seedCreativeSample(db, settings, now);
   const attributes = await readAttributeRows(db, data.mode, accountFor(data, settings));
   const lifts = await storedLifts(db, accountFor(data, settings), data, ukToday(now));
   const view = buildCreativeView(data, settings, ukToday(now), selection, attributes, lifts);
+  if (options.briefWindows) {
+    const index = indexCreativeData(data), today = ukToday(now), market = selection.market ?? 'all';
+    view.briefWindows = Object.fromEntries(([1, 3, 7] as const).map(windowDays => [windowDays,
+      Object.fromEntries((['video', 'image'] as const).map(kind => [kind, makeCreativeBrief(kind, lifts, data, windowDays, market, today, index)])),
+    ])) as NonNullable<CreativeView['briefWindows']>;
+  }
   view.scan = scanView(await readScanHealth(db, settings, { mode: data.mode, accountId: view.accountId, now }));
   const states = await db.query<{ card_id: string; done_at: Date | null; snoozed_until: Date | null }>(
     'SELECT card_id,done_at,snoozed_until FROM pulse.creative_card_states WHERE account_id=$1 AND mode=$2', [view.accountId, view.mode]);

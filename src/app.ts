@@ -1,4 +1,8 @@
 import { registerTicker } from './ticker/routes.js';
+import { readTicker } from './ticker/store.js';
+import { registerMorning } from './morning/routes.js';
+import { morningInputFromDashboard, readMorningCoverage } from './morning/inputs.js';
+import { curateMorningSample } from './morning/sample.js';
 import { activityActors, readActivity } from './meta-adsets/activity.js';
 import {readMetaActions} from './meta-adsets/actions.js';
 import {registerAdSets} from './meta-adsets/routes.js';
@@ -56,11 +60,12 @@ declare module 'fastify' {
   interface FastifyInstance { startBackgroundWork(): Promise<void> }
 }
 
-export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: NodeJS.ProcessEnv = {}, shopifyOptions: ConstructorParameters<typeof ShopifyWorker>[3] = {}, adOptions:SpendWorkerOptions = {}, reviewOptions: ReviewsWorkerOptions = {}, mailchimpOptions: MailchimpWorkerOptions = {}) {
+export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: NodeJS.ProcessEnv = {}, shopifyOptions: ConstructorParameters<typeof ShopifyWorker>[3] = {}, adOptions:SpendWorkerOptions = {}, reviewOptions: ReviewsWorkerOptions = {}, mailchimpOptions: MailchimpWorkerOptions = {}, localOptions: { clock?: () => Date } = {}) {
   // Request/error logging is deliberately off: authentication bodies contain private material.
   const app = Fastify({ logger: false, bodyLimit: 32_768, trustProxy: false, requestTimeout: 15_000 });
   await app.register(cookie);
   const auth = await Auth.create(db, config);
+  const localNow = localOptions.clock ?? (() => new Date());
   await auth.cleanup();
   await syncSourceHealth(db, sourceEnv);
   const shopify = new ShopifyWorker(db, sourceEnv, config.origin, shopifyOptions);
@@ -183,8 +188,8 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     return {activity:shopify.mode==='live' ? metaActivity?.events ?? [] : [],metaActivity,googleNow:googleAt,google:await readGoogleFacts(db,settings,sourceEnv,googleAt),spend:await spendFacts(db,settings,sourceEnv,shopify.mode,dataset(facts,today).min,today,now),costs:await shopify.store.costHistory(),estimates:await readEstimates(db,shopify.mode),now};
   }
   let unconfirmedCampaigns: { scope: string; count: number } | undefined;
-  async function snapshot() {
-    const settings = await readSettings(db);
+  async function snapshot(options: { morning?: boolean; settings?: Awaited<ReturnType<typeof readSettings>> } = {}) {
+    const settings = options.settings ?? await readSettings(db, { seed: !options.morning });
     const sourceHealth = await creativeSourceHealth(settings.values);
     const facts=await shopify.store.facts(sourceNow());
     const adInputs=await heroInputs(facts,settings.values);
@@ -196,8 +201,9 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     // Radar describes actual ad connections even when Shopify numbers use sample data.
     result.adSources = await spendHealth(db, sourceEnv, settings.values, adOptions.clock?.() ?? new Date());
     result.reviews = reviews.mode === 'sample' ? sampleReviews() : await readReviews(db, reviewOptions.clock?.() ?? new Date());
-    result.adSets = await readAdSetsView(db, settings.values, sourceEnv, creativeNow());
-    result.creatives = await readCreativeView(db, settings.values, sourceEnv, creativeNow());
+    const cardEnv = options.morning && shopify.mode === 'sample' ? {} : sourceEnv;
+    result.adSets = await readAdSetsView(db, settings.values, cardEnv, creativeNow());
+    result.creatives = await readCreativeView(db, settings.values, cardEnv, creativeNow(), {}, { seedSample: !options.morning, briefWindows: !!options.morning });
     result.banner = result.banner?.replace('reviews and other stages: sample data', `reviews: ${reviews.mode === 'sample' ? 'sample data' : 'live Judge.me'}; Google: ${adInputs.google.mode === 'sample' ? 'sample data' : 'supported tiles use live reads, remaining examples stay labelled sample'}; Mailchimp: ${mailchimp.mode === 'sample' ? 'sample data' : result.widgets.w038?.mode === 'live' ? 'audience uses its own live read; per-flow examples remain labelled sample' : 'audience total pending or unavailable; examples remain labelled sample'}; other stages: sample data`);
     const campaignScope = JSON.stringify([settings.values.metaAdAccountId, getSourceStates(sourceEnv).find(source => source.source === 'meta')!.mode]);
     try {
@@ -211,6 +217,17 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     return result;
   }
   const events = registerDashboardEvents(app, auth, snapshot);
+  async function morningInputs(now: Date) {
+    const settings = await readSettings(db, { seed: false });
+    const [dashboard, ticker, coverage] = await Promise.all([
+      snapshot({ morning: true, settings }), readTicker(db, shopify.mode, now),
+      shopify.mode === 'live' ? readMorningCoverage(db, settings.values.metaAdAccountId, creativeNow(),
+        { googleAccount: settings.values.googleCustomerId, googleNow: googleNow() }) : undefined,
+    ]);
+    const input = morningInputFromDashboard(dashboard, settings.values, ticker, shopify.mode, coverage);
+    return shopify.mode === 'sample' ? curateMorningSample(input, now) : input;
+  }
+  registerMorning(app, db, auth, morningInputs, localNow);
   registerAdSets(app, db, auth, sourceEnv, creativeNow, adOptions, () => events.publish());
   registerScorecard(app, db, auth, shopify.store, sourceEnv, () => shopifyOptions.clock?.() ?? new Date());
   registerFulfilment(app, db, auth, shopify.mode, sourceNow, () => events.publish());
@@ -300,7 +317,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   app.get('/manifest.webmanifest', async (_request, reply) => reply.type('application/manifest+json').send(
     await readFile(new URL('../dist/public/manifest.webmanifest', import.meta.url)),
   ));
-  registerTicker(app, db, auth, shopify.mode, () => new Date());
+  registerTicker(app, db, auth, shopify.mode, localNow);
   auth.registerRoutes(app);
   const cleanup = setInterval(() => { void auth.cleanup().catch(() => {}); }, 60 * 60 * 1000);
   cleanup.unref();

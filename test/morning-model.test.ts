@@ -41,14 +41,14 @@ test('Morning retains all candidates but offers only alarms, decisions and done 
   data.extensions = curateMorningSample(inputWithMode('sample'), now).extensions;
   const result = morningDeck(data, [], now), cards = result.candidates;
   assert.deepEqual(cards.filter(card => card.tier === 0).map(card => card.subjectId), ['first-alarm', 'second-alarm']);
-  assert.deepEqual(cards.filter(card => card.tier === 1).map(card => card.kind), ['meta-kill', 'meta-slipping', 'test-call', 'meta-step']);
-  assert.deepEqual(cards.filter(card => card.tier === 2).map(card => card.kind), ['need', 'date', 'google', 'fading']);
+  assert.deepEqual(cards.filter(card => card.tier === 1).map(card => card.kind), ['meta-kill', 'meta-slipping', 'test-call', 'google', 'meta-step']);
+  assert.deepEqual(cards.filter(card => card.tier === 2).map(card => card.kind), ['need', 'date', 'fading']);
   assert.ok(cards.findIndex(card => card.kind === 'make-next') < cards.findIndex(card => card.kind === 'new-verdict'));
   assert.ok(cards.findIndex(card => card.kind === 'done-for-you') < cards.findIndex(card => card.subjectId === 'ordinary'));
   assert.equal(cards.some(card => /^(stock|attach):/.test(card.subjectId)), false);
-  assert.deepEqual(result.snapshot.cards.map(card => card.kind), ['need', 'need', 'meta-kill', 'meta-slipping', 'test-call', 'meta-step', 'done-for-you']);
+  assert.deepEqual(result.snapshot.cards.map(card => card.kind), ['need', 'need', 'meta-kill', 'meta-slipping', 'test-call', 'meta-step', 'done-for-you', 'google']);
   assert.equal(result.snapshot.more, 0);
-  assert.equal(result.snapshot.total, 7);
+  assert.equal(result.snapshot.total, 8);
 });
 function inputWithMode(mode: 'sample' | 'live'): MorningInput { const result = input(); result.mode = mode; return result; }
 
@@ -57,7 +57,7 @@ test('the Morning sample offers decisions without modifying Home or ticker fixtu
   source.needs = [need('sample-alarm', 'alarm')]; original.needs = structuredClone(source.needs);
   const curated = curateMorningSample(source, now), result = morningDeck(curated, [], now);
   assert.deepEqual(source, original);
-  assert.deepEqual(result.snapshot.cards.map(card => card.kind), ['meta-kill', 'test-call', 'done-for-you']);
+  assert.deepEqual(result.snapshot.cards.map(card => card.kind), ['meta-kill', 'test-call', 'done-for-you', 'google']);
   for (const kind of ['dial', 'arms', 'thumb', 'brief']) assert.ok(result.candidates.some(card => card.figure.kind === kind), 'Excluded figures remain available as candidates');
   assert.equal(result.snapshot.more, 0);
   assert.equal(source.ticker.ahead.length, 6);

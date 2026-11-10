@@ -256,7 +256,7 @@ function answeredDeckCard(row: MorningState, card: MorningCard | undefined): boo
   if (row.kind === 'pause-all') return false;
   if (row.kind === 'need') return row.state === 'seen';
   if (card) return morningDeckMember(card);
-  return ['meta-kill', 'meta-slipping', 'meta-step', 'test-call', 'done-for-you'].includes(row.kind);
+  return ['meta-kill', 'meta-slipping', 'meta-step', 'test-call', 'done-for-you', 'google'].includes(row.kind);
 }
 
 /** One deterministic projection: no reads, writes, wall clock or external calls. */

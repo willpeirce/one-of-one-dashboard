@@ -110,7 +110,7 @@ export function morningFineHtml(snapshot: MorningSnapshot, expanded = false): st
 }
 export function morningWhyHtml(card: MorningCard, window: MorningWindow = '3'): string {
   const why = card.figure.kind === 'brief' ? card.figure.variants[window].text : card.why;
-  return `<section><h3>Why</h3><p${card.figure.kind === 'brief' || card.figure.kind === 'list' ? ' class="mn-brief-evidence"' : ''}>${e(why)}</p></section><section><h3>The rule</h3><p>${e(card.rule)}</p></section><section><h3>The source</h3><p>${e(card.sourceLine)}</p></section>${card.sourceHref ? `<a class="mn-sheet-link" href="${e(href(card.sourceHref))}">Open ${card.kind.startsWith('meta-') || card.kind === 'done-for-you' ? 'ad set' : card.kind === 'fading' || card.kind === 'make-next' ? 'creative' : 'source'} ›</a>` : ''}`;
+  return `<section><h3>Why</h3><p${card.figure.kind === 'brief' || card.figure.kind === 'list' || card.kind === 'google' ? ' class="mn-brief-evidence"' : ''}>${e(why)}</p></section><section><h3>The rule</h3><p>${e(card.rule)}</p></section><section><h3>The source</h3><p>${e(card.sourceLine)}</p></section>${card.sourceHref ? `<a class="mn-sheet-link" href="${e(href(card.sourceHref))}">Open ${card.kind.startsWith('meta-') || card.kind === 'done-for-you' ? 'ad set' : card.kind === 'fading' || card.kind === 'make-next' ? 'creative' : 'source'} ›</a>` : ''}`;
 }
 export function morningMenuHtml(card: MorningCard): string { return `<div class="mn-menu-list">${card.menu.map((button, index) => buttonHtml(button, `menu-${index}`, undefined, true)).join('')}</div>`; }
 export function morningPage(snapshot: MorningSnapshot): string {

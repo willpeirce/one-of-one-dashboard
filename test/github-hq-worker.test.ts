@@ -6,7 +6,9 @@ import { morningBrief } from '../src/github-hq/presentation.js';
 import { blankObservation, evaluateWatchdogs } from '../src/shopify/watchdogs.js';
 import { defaultSettings } from '../src/settings.js';
 import type { Facts } from '../src/shopify/metrics.js';
-import { readHQFacts } from '../src/github-hq/store.js';
+import { failHQRead, readHQFacts, readHQSync } from '../src/github-hq/store.js';
+import { HQReadError } from '../src/github-hq/client.js';
+import { HQ_MONTH_PARSER_VERSION } from '../src/github-hq/model.js';
 import { readSourceHealth, syncSourceHealth } from '../src/sources.js';
 import { createTestDatabase } from './helpers/database.js';
 
@@ -179,4 +181,77 @@ test('a parser version change bypasses the old ETag and resumes conditional read
   now = new Date(+now + HQ_HOURLY_MS); await worker.tick();
   assert.deepEqual(seen, [null, null, '"invented-version"']);
   assert.equal((await readHQFacts(db, now, 'live')).registerReadOk, true);
+});
+
+test('a month parser upgrade rereads immediately without its old ETag and then resumes bounded conditional polling', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const env = {GITHUB_HQ_TOKEN: secret()}; await syncSourceHealth(db, env);
+  let now = new Date('2032-05-01T08:00:00Z'); const seen: (string | null)[] = [];
+  const content = `## 2032-04-30 (Fri), run 1 May 07:41\n**Needs Will:** 1 item\n1. **Review: Invented Fern.**\n   - An invented retained detail.\n   - Card: info`;
+  const worker = new HQWorker(db, env, {...quiet, clock: () => now, fetch: async (url, init) => {
+    if (new URL(String(url)).pathname.endsWith('/register.md')) return new Response(register());
+    const etag = new Headers(init?.headers).get('if-none-match'); seen.push(etag);
+    return etag ? new Response(null, {status: 304}) : new Response(content, {headers: {etag: '"invented-month-version"'}});
+  }}); t.after(() => worker.stop());
+  await worker.tick();
+  await db.query("UPDATE pulse.github_hq_reads SET parser_version=0 WHERE target_key='month:2032-04:main'");
+  await db.query('UPDATE pulse.github_hq_reports SET items=$1::jsonb', [JSON.stringify([{text: 'Review: Invented Fern.', label: 'Review'}])]);
+  now = new Date(+now + 1000); await worker.tick();
+  assert.deepEqual(seen, [null, null], 'An obsolete parse is refreshed before the ordinary hourly interval');
+  const reparsed = (await readHQFacts(db, now, 'live')).report!;
+  assert.deepEqual(reparsed.items[0]!.lines, ['An invented retained detail.']);
+  assert.deepEqual(reparsed.items[0]!.tag, {type: 'info'});
+  assert.equal((await readHQSync(db, [{kind: 'month', month: '2032-04', ref: 'main'}])).get('month:2032-04:main')!.parserVersion, HQ_MONTH_PARSER_VERSION);
+  await worker.tick(); assert.equal(seen.length, 2, 'A completed reparse does not force another immediate read');
+  now = new Date(+now + HQ_HOURLY_MS); await worker.tick();
+  assert.deepEqual(seen, [null, null, '"invented-month-version"']);
+  assert.deepEqual((await readHQFacts(db, now, 'live')).report!.items, reparsed.items);
+});
+
+test('a month parser upgrade respects persisted rate limits and keeps failed refreshes on the ordinary cadence', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const env = {GITHUB_HQ_TOKEN: secret()}; await syncSourceHealth(db, env);
+  let now = new Date('2032-05-01T08:00:00Z'), calls = 0; const monthEtags: (string | null)[] = [];
+  const worker = new HQWorker(db, env, {...quiet, clock: () => now, fetch: async (url, init) => {
+    calls++;
+    if (new URL(String(url)).pathname.endsWith('/register.md')) return new Response(register());
+    monthEtags.push(new Headers(init?.headers).get('if-none-match'));
+    return new Response(month('2032-04-30'), {headers: {etag: '"invented-paused-version"'}});
+  }}); t.after(() => worker.stop());
+  await worker.tick(); assert.equal(calls, 2);
+  await db.query("UPDATE pulse.github_hq_reads SET parser_version=0 WHERE target_key='month:2032-04:main'");
+  await failHQRead(db, {kind: 'month', month: '2032-04', ref: 'main'}, new HQReadError('rate_limit', 429, 120_000), now);
+  now = new Date(+now + 60_000); await worker.tick();
+  assert.equal(calls, 2, 'Parser invalidation never bypasses the shared retry-after guard');
+  now = new Date(+now + 60_000); await worker.tick();
+  assert.equal(calls, 2, 'A failed upgrade does not force a request every worker tick after retry-after expires');
+  now = new Date('2032-05-01T09:00:00Z'); await worker.tick();
+  assert.equal(calls, 4); assert.deepEqual(monthEtags, [null, null]);
+  assert.equal((await health(db)).status, 'healthy');
+});
+
+test('an interrupted month upgrade reparses the obsolete fallback branch without rereading current main', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const env = {GITHUB_HQ_TOKEN: secret()}; await syncSourceHealth(db, env);
+  let now = new Date('2032-05-01T08:00:00Z'); const seen: {ref: string | null; etag: string | null}[] = [];
+  const branch = `## 2032-04-30 (Fri), run 1 May 07:41\n**Needs Will:** 1 item\n1. **Review: Invented Cedar.**\n   - An invented fallback detail.\n   - Card: info`;
+  const worker = new HQWorker(db, env, {...quiet, clock: () => now, fetch: async (input, init) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith('/register.md')) return new Response(register());
+    const ref = url.searchParams.get('ref'); seen.push({ref, etag: new Headers(init?.headers).get('if-none-match')});
+    return new Response(ref === 'main' ? '# Invented month with no report yet' : branch,
+      {headers: {etag: ref === 'main' ? '"invented-main-version"' : '"invented-branch-version"'}});
+  }}); t.after(() => worker.stop());
+  await worker.tick();
+  assert.equal((await readHQFacts(db, now, 'live')).report!.ref, 'claude/ads-daily');
+  await db.query("UPDATE pulse.github_hq_reads SET parser_version=0 WHERE target_key='month:2032-04:claude/ads-daily'");
+  await db.query("UPDATE pulse.github_hq_reports SET items=$1::jsonb WHERE ref='claude/ads-daily'",
+    [JSON.stringify([{text: 'Review: Invented Cedar.', label: 'Review'}])]);
+  now = new Date(+now + 60_000); await worker.tick();
+  assert.deepEqual(seen, [{ref: 'main', etag: null}, {ref: 'claude/ads-daily', etag: null}, {ref: 'claude/ads-daily', etag: null}]);
+  const stored = (await readHQFacts(db, now, 'live')).report!;
+  assert.equal(stored.ref, 'claude/ads-daily'); assert.deepEqual(stored.items[0]!.lines, ['An invented fallback detail.']);
+  assert.deepEqual(stored.items[0]!.tag, {type: 'info'});
+  assert.equal((await readHQSync(db, [{kind: 'month', month: '2032-04', ref: 'claude/ads-daily'}])).get('month:2032-04:claude/ads-daily')!.parserVersion, HQ_MONTH_PARSER_VERSION);
+  await worker.tick(); assert.equal(seen.length, 3, 'The recovered branch returns to normal polling');
 });

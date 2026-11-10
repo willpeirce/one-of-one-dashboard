@@ -6,6 +6,7 @@ import { allowedBudgetChange } from '../meta-adsets/budget.js';
 import { decisionRows } from '../meta-adsets/decision-rows.js';
 import { activityObjectType } from '../meta-adsets/activity.js';
 import { morningPauseAll } from './pause-all.js';
+import { morningCheckItems } from './check-items.js';
 import {parsePauseUncertainty,pauseUncertaintyNote} from '../meta-adsets/pause-uncertainty.js';
 import type { AdSetRow } from '../meta-adsets/presentation.js';
 import type { DashboardNeed } from '../shopify/dashboard.js';
@@ -238,6 +239,7 @@ function actionsToday(input: MorningInput, today: string, now: Date): MorningMet
 /** Candidates stay complete for Home omissions; only decisions belong in the deck. */
 export function morningDeckMember(card: MorningCard): boolean {
   if (card.kind === 'need') return card.state === 'alarm';
+  if (card.kind === 'check-item') return true;
   if (['meta-watch', 'date', 'fading', 'make-next', 'new-verdict'].includes(card.kind)) return false;
   return card.state === 'decide' || card.kind === 'test-call' || card.kind === 'done-for-you';
 }
@@ -246,6 +248,7 @@ function deckPriority(card: MorningCard): number {
   if (card.kind === 'pause-all') return 1;
   if (card.kind === 'meta-kill') return 2;
   if (card.kind === 'meta-slipping') return 3;
+  if (card.kind === 'check-item' && card.state === 'decide') return 3.5;
   if (card.kind === 'meta-step' || card.kind === 'test-call') return 4;
   if (card.kind === 'done-for-you') return 5;
   if (card.kind === 'google') return 6;
@@ -255,14 +258,22 @@ function answeredDeckCard(row: MorningState, card: MorningCard | undefined): boo
   // One by one changes presentation; the individual decisions still need answers.
   if (row.kind === 'pause-all') return false;
   if (row.kind === 'need') return row.state === 'seen';
+  if (row.kind === 'check-item') return true;
+  if (row.kind === 'google' && row.sourceScope === 'check') return true;
   if (card) return morningDeckMember(card);
   return ['meta-kill', 'meta-slipping', 'meta-step', 'test-call', 'done-for-you', 'google'].includes(row.kind);
 }
 
 /** One deterministic projection: no reads, writes, wall clock or external calls. */
 export function morningDeck(input: MorningInput, rows: readonly MorningState[], now: Date): MorningResult {
-  const day = ukToday(now), candidates = allCards(input, day), byKey = new Map(candidates.map(card => [card.key, card]));
+  const day = ukToday(now), ordinary = allCards(input, day);
   const states = rows.filter(row => row.mode === input.mode), clearKeys: string[] = [], deleteKeys: string[] = [];
+  // Fold into open individual decisions before an optional aggregate covers them.
+  const openOrdinaryKeys = new Set(ordinary.filter(card => !states.some(row => row.cardKey === card.key
+    && stateApplies(row, card, input, day) && !(card.state === 'alarm' && row.state !== 'seen'))).map(card => card.key));
+  const check = morningCheckItems(input, ordinary, openOrdinaryKeys, day), candidates = check.candidates;
+  input = { ...input, sourceReadOk: { ...input.sourceReadOk, check: check.eligible } };
+  const byKey = new Map(candidates.map(card => [card.key, card]));
   const applicable = new Map<string, MorningState>(), effective: MorningState[] = [];
   for (const row of states) {
     const applies = stateApplies(row, byKey.get(row.cardKey), input, day);
@@ -288,8 +299,14 @@ export function morningDeck(input: MorningInput, rows: readonly MorningState[], 
     if (!group.coverage!.deferred) openCards.push(group.card);
   }
   const covered = new Set(group.card && !group.coverage!.deferred ? group.coverage!.members.map(member => member.cardKey) : []);
-  const cards = openCards.filter(card => morningDeckMember(card) && !covered.has(card.key))
+  const offered = openCards.filter(card => morningDeckMember(card) && !covered.has(card.key))
     .sort((a, b) => deckPriority(a) - deckPriority(b));
+  const watchItems = offered.filter(card => card.kind === 'check-item' && card.state === 'warn');
+  const allowance = Math.max(3, MORNING_LIMIT - (offered.length - watchItems.length));
+  const omitted = new Set(watchItems.slice(allowance).map(card => card.key));
+  const cards = offered.filter(card => !omitted.has(card.key));
+  const brief = input.brief && check.eligible ? { ...input.brief, moreHere: omitted.size,
+    allInDeck: check.totalItemCount > 0 && check.representedItemCount - omitted.size === check.totalItemCount } : input.brief ?? null;
   const watchOnHome = openCards.filter(card => !morningDeckMember(card) && card.state === 'warn').length;
   const fine = input.checks.filter(check => check.status === 'pass').map(check => ({ id: check.id, label: check.name }));
   const clearSets = input.adSets?.rows.filter(row => row.set.owner === 'ours' && row.verdict?.verdict === 'Clear').length ?? 0;
@@ -301,10 +318,11 @@ export function morningDeck(input: MorningInput, rows: readonly MorningState[], 
   return { candidates, openCards, clearKeys, deleteKeys, snapshot: { mode: input.mode, day, cards,
     ...(input.settings.morningSummaryEnabled ? { summaryEnabled: true } : {}),
     ...(group.coverage ? {pauseAll: group.coverage} : {}),
-    more: 0, watchOnHome, fine,
+    more: omitted.size, watchOnHome, fine,
+    ...(check.datedFromCheck.length ? {datedFromCheck: check.datedFromCheck} : {}),
     parked: active.filter(row => row.state === 'parked' || row.state === 'answered' && row.answer === 'hold').map(away),
     hidden: active.filter(row => row.state === 'hidden').map(away), presses, metaActions, passedDates,
-    answers: active.filter(row => row.state === 'answered'), brief: input.brief ?? null,
+    answers: active.filter(row => row.state === 'answered'), brief,
     completed, total: completed + cards.length,
   } };
 }

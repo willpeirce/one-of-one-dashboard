@@ -1,11 +1,16 @@
 export const HQ_REGISTER_PARSER_VERSION = 3;
+export const HQ_MONTH_PARSER_VERSION = 1;
 export const HQ_ITEM_LIMIT = 12;
+export const HQ_ITEM_LINES_LIMIT = 8;
 export const HQ_ITEM_TEXT_LIMIT = 300;
 export const HQ_CELL_LIMIT = 600;
 export const HQ_SECTION_ROW_LIMIT = 40;
 export const HQ_TRUNCATED_STATUS_MARKER = ' [Status truncated]';
 
-export interface HQBriefItem { text: string; label?: string }
+export type HQBriefTag = { type: 'pause' | 'hold'; adSetId: string }
+  | { type: 'freelancer' | 'dated' | 'info' };
+/** Older stored summaries have no lines or tag; readers supply an empty line list. */
+export interface HQBriefItem { text: string; label?: string; lines?: string[]; tag?: HQBriefTag }
 export interface HQBriefEntry {
   day: string;
   runLabel: string;
@@ -13,6 +18,7 @@ export interface HQBriefEntry {
   count: number;
   items: HQBriefItem[];
   firstLines: string[];
+  malformedCardTags?: number;
 }
 export interface HQStoredBriefEntry extends HQBriefEntry {
   ref: 'main' | 'claude/ads-daily';

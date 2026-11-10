@@ -8,12 +8,14 @@ import type { MetaAction } from '../meta-adsets/actions.js';
 import type { VerdictWord } from '../meta-adsets/rules.js';
 import type { CreativeCard } from '../creatives/presentation-types.js';
 import type { TickerPassed, TickerSnapshot } from '../ticker/model.js';
+import type { HQBriefItem } from '../github-hq/model.js';
 
 export type MorningAction = 'park' | 'remind' | 'hold' | 'hide' | 'ack' | 'call';
 export type MorningAnswer = 'hold' | 'a' | 'b' | 'draw';
 export type MorningTone = 'alarm' | 'decide' | 'warn' | 'info' | 'done';
 export type MorningKind = 'need' | 'meta-kill' | 'meta-slipping' | 'meta-step' | 'meta-watch'
-  | 'date' | 'fading' | 'make-next' | 'google' | 'test-call' | 'new-verdict' | 'done-for-you' | 'pause-all';
+  | 'date' | 'fading' | 'make-next' | 'google' | 'test-call' | 'new-verdict' | 'done-for-you' | 'pause-all'
+  | 'check-item';
 
 interface ButtonLabel { label: string; subline?: string }
 export interface MorningLiveButton extends ButtonLabel {
@@ -58,10 +60,11 @@ export interface MorningFine { id: string; label: string }
 export interface MorningMetaAction extends MetaAction { title: string; undo: MorningLiveButton | null }
 /** Later parts supply this slim-line presentation without adding a deck card. */
 export interface MorningBrief {
+  malformedCardTags?: number;
   registerDiagnostics?: { malformed: number; capped: number; missingHeadings?: boolean };
   text: string; status: 'ok' | 'needs' | 'unreadable' | 'missing' | 'key'; mode: SourceMode;
   tone?: 'info' | 'warn';
-  day?: string; runLabel?: string; count?: number; items?: { text: string; label?: string; lines?: string[] }[];
+  day?: string; runLabel?: string; count?: number; items?: HQBriefItem[];
   allInDeck?: boolean; moreHere?: number;
   firstLines?: string[]; href?: string;
 }

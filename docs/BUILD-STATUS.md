@@ -4,6 +4,7 @@ Updated in every pull request.
 
 | Stage | What | Code | Keys in Replit | Live check ("Done when") |
 |---|---|---|---|---|
+| Build 10 Nov · D | Google content/no-sale/break-even Watch checks and one Morning copy note | built on `build-10-nov`; additive migration 064; six Settings keys | existing Google keys only | Set real bars/contact in Settings after merge; compare complete-day flags with Google |
 | Build 10 Nov · C | Signed-in Morning screen, card actions/sheets, opt-in daily entry and Home omissions | built on `build-10-nov`; additive migration 063; Home follows saved answers without hiding Alarms | none | Enable Open Morning first after merge; check real phone layout and allowed Meta actions |
 | Build 10 Nov · B | Ranked seven-a-day Morning data, audited local answers and subject links | built on `build-10-nov`; additive migration 062 | none | Morning page follows in C; live ownership, freshness and source agreement follow merge |
 | Build 10 Nov · A | Bounded skipped-order history and ticker name-limit regression coverage | built on `build-10-nov`; no migration | none | Check retained unreadable-order counts on Sources after merge |
@@ -92,11 +93,11 @@ Updated in every pull request.
 
 ## Next step
 
-Build **build-10-nov** from merged main as one pull request with separate lettered commits. Parts A–C provide the carry fixes and Morning foundation. Continue with Google checks, HQ reads and phone push. All pinned Home counts, heights, controls and fold budgets remain in force.
+Build **build-10-nov** from merged main as one pull request with separate lettered commits. Parts A–D provide the carry fixes, Morning foundation and Google checks. Continue with HQ reads and phone push. All pinned Home counts, heights, controls and fold budgets remain in force.
 
 After an approved merge, the deployment maintainer runs the Shell merge, any migrations from 062, Republish, live Settings and acceptance. Part A needs no migration. The builder uses invented fixtures, PostgreSQL and browser checks; no live source access or deployment is performed.
 
-**Not done or known gaps:** Parts D–F are still to follow. The bounded skipped-order count retains older unreadable observations: once an ID has left the retained 50, its later recovery cannot be identified and does not lower the count. Existing unavailable-source and historical-stock limitations continue to apply.
+**Not done or known gaps:** Parts E–F are still to follow. The bounded skipped-order count retains older unreadable observations: once an ID has left the retained 50, its later recovery cannot be identified and does not lower the count. Existing unavailable-source and historical-stock limitations continue to apply.
 
 ## Needs from Will
 

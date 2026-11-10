@@ -10,6 +10,7 @@ import { googleCovers } from '../google-ads/metrics.js';
 import { emptyGoogleFacts, googleSync } from '../google-ads/store.js';
 import type { GoogleSyncState } from '../google-ads/model.js';
 import type { MorningFigure, MorningInput } from './model-types.js';
+import { addMorningGoogle } from './google.js';
 
 /** Project the same locally stored observations Home uses; no source or database work here. */
 export function morningInputFromDashboard(dashboard: DashboardSnapshot, settings: Settings, ticker: TickerSnapshot, mode: SourceMode, coverage?: MorningCoverage): MorningInput {
@@ -41,11 +42,11 @@ export function morningInputFromDashboard(dashboard: DashboardSnapshot, settings
   sourceReadAt.activity = adSets?.activity?.lastRead ?? null;
   sourceReadAt.google = coverage?.googleReadAt ?? null;
   sourceReadAt['needs:google-ads'] = coverage?.googleReadAt ?? null;
-  return {
+  return addMorningGoogle({
     mode, needs: dashboard.shopify?.needs ?? [], checks: dashboard.shopify?.checks ?? [], adSets,
     creativeCards: creatives?.cards ?? [], creativeFigures: creativeFigures(creatives), ticker, settings,
     activity: adSets?.activity?.events ?? [], metaActions: adSets?.actions ?? [], sourceReadOk, sourceReadAt,
-  };
+  });
 }
 
 export interface MorningCoverage { adsets: boolean; creatives: boolean; creativeReadAt: string | null; google: boolean; googleReadAt: string | null }

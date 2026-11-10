@@ -201,3 +201,6 @@ Part B adds migration **062** and signed-in `/api/morning` reads and local press
 Part C adds migration **063** and the signed-in `/morning` page. Use the Morning link in Home's Decisions heading, or opt into **Settings → Summary & brand → Open Morning first each day**. It starts off. Morning's Home pill always returns to Home, including when cookies are refused. Local answers have an eight-second Undo and persistent Put back; Meta actions retain their existing confirmation, ownership, audit and Undo rules. The shared Next up strip stays in sync with date actions on Morning.
 
 Home's Decisions deck omits cards parked, hidden or held on Morning. Alarms always remain visible. Its other source panels and counts retain their complete inputs; Put back restores the card through the existing dashboard refresh.
+
+
+Part D adds migration **064** and six fields in **Settings → Ad spend** for Google's content share/spend bars, no-sale spend floor, UK/US break-even returns and optional contact name. Both break-even returns start at zero (off). Morning gathers Google Watch flags into one card with a note to copy and send yourself; the app does not send it or change Google.

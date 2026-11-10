@@ -18,11 +18,13 @@ import { blankObservation, evaluateWatchdogs, type Check, type Observation } fro
 import { isFreeOrder } from './model.js';
 import { emailCoverageKnown } from './email-coverage.js';
 import { calculateStockGaps, stockGapNeeds } from './stock-gap.js';
+import type { GoogleFlagDetail } from '../google-ads/model.js';
 
 export interface DashboardNeed {
   id: string; state: State; title: string; why: string; link: string;
   source: 'shopify' | 'j-and-j' | 'meta' | 'google-ads' | 'mailchimp' | 'tiktok' | 'pulse';
   figure?: { value: string; label: string };
+  googleFlag?: GoogleFlagDetail;
 }
 export interface ShopifyDashboard {
   mode: 'sample' | 'live'; checks: Check[]; stock: StockCover[];

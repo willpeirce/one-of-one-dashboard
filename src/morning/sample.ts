@@ -1,5 +1,7 @@
 import { addDays, ukToday } from '../hero-range.js';
 import { morningFacts, morningKey } from './model.js';
+import { addMorningGoogle } from './google.js';
+import type { DashboardNeed } from '../shopify/dashboard.js';
 import type { MorningCard, MorningInput, MorningKind, MorningTone } from './model-types.js';
 
 function identity(kind: MorningKind, subjectId: string, state: MorningTone, ruleId: string) {
@@ -8,16 +10,6 @@ function identity(kind: MorningKind, subjectId: string, state: MorningTone, rule
 }
 function sampleExtras(now: Date): MorningCard[] {
   const day = ukToday(now);
-  const google: MorningCard = {
-    ...identity('google', 'sample-google-account', 'warn', 'sample-content-share'), sourceScope: 'google', tier: 2, order: 20_000,
-    title: 'Sample content spend needs a look', lane: 'Google · sample data', source: 'google-ads',
-    figure: { kind: 'dial', value: 8, bar: 2, label: 'Content share', formattedValue: '8%', formattedBar: '2%' },
-    why: 'An invented campaign puts more spend into content than its sample bar.',
-    rule: 'Sample content share 8%, against an invented 2% bar.', sourceLine: 'Sample Google data · invented example', sourceHref: '/settings',
-    primary: { kind: 'copy', label: 'Copy a note', text: 'Please review the sample content campaign: content share is 8%, above the sample 2% bar. These are invented figures.' },
-    secondary: { kind: 'save', target: 'morning', label: 'Not today', action: 'park' },
-    menu: [{ kind: 'save', target: 'morning', label: 'Stop showing this', action: 'hide' }], allowedPresses: ['park', 'hide'],
-  };
   const call: MorningCard = {
     ...identity('test-call', 'sample-test-arms', 'decide', 'sample-reading-ready'), sourceScope: 'tests', tier: 1, order: 20_000,
     title: 'Sample button test is ready to call', lane: 'Site · sample data', source: 'github-hq',
@@ -40,8 +32,17 @@ function sampleExtras(now: Date): MorningCard[] {
     rule: 'No live change is made in sample mode.', sourceLine: 'Sample Meta activity · invented change', sourceHref: '/ads',
     primary: { kind: 'save', target: 'morning', label: 'OK', action: 'ack' }, menu: [], allowedPresses: ['ack'], seenUntilDay: addDays(day, 1),
   };
-  return [google, call, verdict, done];
+  return [call, verdict, done];
 }
+
+const sampleGoogle: DashboardNeed = {
+  id: 'sample-google-content-share', source: 'google-ads', state: 'warn', title: 'Sample content spend needs a look',
+  why: 'The invented sample campaign has 8% Display / content share over 7 complete UK days, against an invented 2% bar, with £8 of £100 spent on content.',
+  link: '/settings', figure: { value: '8%', label: 'Content share · 7 complete UK days' },
+  googleFlag: { kind: 'content-share', rule: 'Sample content share 8%, against an invented 2% bar.',
+    sourceLine: 'Sample Google data · invented example',
+    measure: { value: 8, bar: 2, label: 'Content share', formattedValue: '8%', formattedBar: '2%' } },
+};
 
 /** A labelled Morning-only scenario; Home and the shared date strip keep their complete fixtures. */
 export function curateMorningSample(input: MorningInput, now: Date): MorningInput {
@@ -53,7 +54,7 @@ export function curateMorningSample(input: MorningInput, now: Date): MorningInpu
     .filter((card): card is NonNullable<typeof card> => !!card);
   const kinds = new Set(input.extensions?.map(card => card.kind) ?? []);
   const extras = sampleExtras(now).filter(card => !kinds.has(card.kind));
-  return { ...input, needs: [], checks: input.checks.filter(check => check.status === 'pass'),
+  return addMorningGoogle({ ...input, needs: [sampleGoogle], checks: input.checks.filter(check => check.status === 'pass'),
     adSets: input.adSets ? { ...input.adSets, mode: 'sample', actionsEnabled: false,
       rows: input.adSets.rows.filter(row => row.verdict?.verdict === 'Kill').slice(0, 1) } : undefined,
     creativeCards, activity: [],
@@ -61,5 +62,5 @@ export function curateMorningSample(input: MorningInput, now: Date): MorningInpu
     extensions: [...(input.extensions ?? []), ...extras],
     liveTestIds: [...new Set([...(input.liveTestIds ?? []), 'sample-test-arms'])],
     sourceReadOk: { ...input.sourceReadOk, adsets: true, creatives: true, ticker: true, activity: true, tests: true, google: true },
-  };
+  });
 }

@@ -18,6 +18,13 @@ export interface GoogleNetworkSlice extends GoogleAmounts { campaignId: string; 
 /** day/hour are the original GMT bucket, never a UK date relabelled as GMT. */
 export interface GoogleHour extends GoogleAmounts { campaignId: string; day: string; hour: number }
 export interface GoogleConversionDay extends GoogleAmounts { campaignId: string; day: string }
+/** Numeric risk details travel to Morning without parsing presentation text. */
+export interface GoogleFlagDetail {
+  kind: 'under' | 'network' | 'nosale' | 'content-share' | 'bidding' | 'unexpected' | 'expected-list';
+  rule: string;
+  sourceLine: string;
+  measure?: { value: number; bar: number; label: string; formattedValue: string; formattedBar: string };
+}
 export interface GoogleChange { id: string; at: string; resourceType: string; operation: string; campaignId: string | null }
 export interface GoogleDailyTotal { day: string; spendMicros: string }
 export interface GoogleCoverage {

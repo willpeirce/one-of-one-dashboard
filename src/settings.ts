@@ -67,6 +67,12 @@ export interface Settings {
   expectedGoogleCampaigns: { campaignId: string }[];
   googleNetworkSpendFloorGbp: number;
   googleNetworkRoasFloor: number;
+  googleContentShareMaxPct: number;
+  googleContentSpendFloorGbp: number;
+  googleNoSaleSpendFloorGbp: number;
+  googleBreakEvenReturnUk: number;
+  googleBreakEvenReturnUs: number;
+  googleContactName: string;
   mailchimpPlanLimit: number | null;
   mailchimpBillingDay: number | null;
   blendedMetaTripwireGbp: number;
@@ -162,6 +168,8 @@ export function defaultSettings(): Settings {
     metaSources: ['facebook','fb','instagram','ig','meta','an','msg'].map(source=>({source})), ourActors: [], metaOwners: [], expectedGoogleCampaigns: [],
     // Invented starting rules; live values are set after review.
     googleNetworkSpendFloorGbp: 40, googleNetworkRoasFloor: 1.2,
+    googleContentShareMaxPct: 2, googleContentSpendFloorGbp: 5, googleNoSaleSpendFloorGbp: 25,
+    googleBreakEvenReturnUk: 0, googleBreakEvenReturnUs: 0, googleContactName: '',
     mailchimpPlanLimit: null, mailchimpBillingDay: null,
     blendedMetaTripwireGbp: 28,
     creatorRules: {
@@ -371,6 +379,16 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
     googleLoginCustomerId: accountId(value.googleLoginCustomerId, 'googleLoginCustomerId', true),
     googleNetworkSpendFloorGbp: requiredNumber(value.googleNetworkSpendFloorGbp, 'googleNetworkSpendFloorGbp', 100_000),
     googleNetworkRoasFloor: requiredNumber(value.googleNetworkRoasFloor, 'googleNetworkRoasFloor', 1_000),
+    googleContentShareMaxPct: requiredNumber(value.googleContentShareMaxPct, 'googleContentShareMaxPct', 100),
+    googleContentSpendFloorGbp: requiredNumber(value.googleContentSpendFloorGbp, 'googleContentSpendFloorGbp', Number.MAX_SAFE_INTEGER),
+    googleNoSaleSpendFloorGbp: requiredNumber(value.googleNoSaleSpendFloorGbp, 'googleNoSaleSpendFloorGbp', Number.MAX_SAFE_INTEGER),
+    googleBreakEvenReturnUk: requiredNumber(value.googleBreakEvenReturnUk, 'googleBreakEvenReturnUk', 20),
+    googleBreakEvenReturnUs: requiredNumber(value.googleBreakEvenReturnUs, 'googleBreakEvenReturnUs', 20),
+    googleContactName: (() => {
+      if (typeof value.googleContactName !== 'string') return invalid('googleContactName');
+      const name = value.googleContactName.trim();
+      return name === '' ? '' : text(name, 'googleContactName', 40);
+    })(),
     tiktokAdvertiserId: accountId(value.tiktokAdvertiserId, 'tiktokAdvertiserId'),
     metaSources: list(value.metaSources, 'metaSources', (row,path) => {
       const parsed=object(row,['source'],path);
@@ -472,6 +490,12 @@ function storedSettings(input: unknown): Settings {
     morningOpensFirst: defaults.morningOpensFirst,
     googleNetworkSpendFloorGbp: defaults.googleNetworkSpendFloorGbp,
     googleNetworkRoasFloor: defaults.googleNetworkRoasFloor,
+    googleContentShareMaxPct: defaults.googleContentShareMaxPct,
+    googleContentSpendFloorGbp: defaults.googleContentSpendFloorGbp,
+    googleNoSaleSpendFloorGbp: defaults.googleNoSaleSpendFloorGbp,
+    googleBreakEvenReturnUk: defaults.googleBreakEvenReturnUk,
+    googleBreakEvenReturnUs: defaults.googleBreakEvenReturnUs,
+    googleContactName: defaults.googleContactName,
     mailchimpPlanLimit: defaults.mailchimpPlanLimit,
     mailchimpBillingDay: defaults.mailchimpBillingDay,
     ...input as Record<string, unknown>,

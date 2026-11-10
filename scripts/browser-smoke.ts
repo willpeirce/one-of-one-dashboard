@@ -28,6 +28,7 @@ import { checkMailchimpWidgets } from './browser-mailchimp.js';
 import { checkInboundSettings } from './browser-inbound-settings.js';
 import { checkTicker } from './ticker-browser-check.js';
 import { checkMorning } from './morning-browser-check.js';
+import { checkGoogleJunk } from './browser-google-junk.js';
 import { checkMorningHome } from './morning-home-browser-check.js';
 
 let step = 'read test configuration';
@@ -2109,6 +2110,8 @@ async function run(): Promise<void> {
     // Morning keeps its required audit entries, so run its many presses after the existing audit checks.
     step = 'check Morning cards, first-screen fit, local answers and the once-per-device daily redirect';
     await checkMorning(context);
+    step = 'check Google junk Settings and the sample Morning note';
+    await checkGoogleJunk(context);
     assert.equal(scriptErrors.length, 0);
     assert.equal(consoleErrors.length, 0);
     assert.equal(externalRequests, 0);

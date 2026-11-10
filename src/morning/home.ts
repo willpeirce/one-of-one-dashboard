@@ -6,10 +6,11 @@ import { ukToday } from '../hero-range.js';
 import { readTicker } from '../ticker/store.js';
 import { morningInputFromDashboard, readMorningCoverage } from './inputs.js';
 import { morningDeck } from './model.js';
+import { morningGoogleNeeds } from './google.js';
 import { readMorningStates } from './store.js';
 import type { MorningHomeOmissions, MorningInput, MorningState } from './model-types.js';
 
-const homeKinds = new Set<MorningState['kind']>(['need', 'meta-kill', 'meta-slipping', 'meta-step', 'meta-watch', 'fading', 'make-next']);
+const homeKinds = new Set<MorningState['kind']>(['need', 'meta-kill', 'meta-slipping', 'meta-step', 'meta-watch', 'fading', 'make-next', 'google']);
 function relevantStates(rows: readonly MorningState[], mode: SourceMode, now: Date): MorningState[] {
   const today = ukToday(now);
   return rows.filter(row => row.mode === mode && !row.clearedAt && (!row.untilDay || row.untilDay > today)
@@ -26,6 +27,7 @@ export function homeMorningOmissions(input: MorningInput, rows: readonly Morning
   for (const card of result.candidates) {
     if (card.state === 'alarm' || !away.has(card.key)) continue;
     if (card.kind === 'need') omissions.needs.push(card.subjectId);
+    else if (card.kind === 'google') omissions.needs.push(...morningGoogleNeeds(input).map(need => need.id));
     else if (card.kind === 'fading' || card.kind === 'make-next') omissions.creatives.push(card.subjectId);
     else if (card.kind.startsWith('meta-')) {
       const verdict = input.adSets?.rows.find(row => row.set.id === card.subjectId)?.verdict?.verdict;

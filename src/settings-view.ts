@@ -201,6 +201,12 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     {key:'googleLoginCustomerId',label:'Google login customer ID (manager, optional)',optional:true},
     number('googleNetworkSpendFloorGbp', 'Google network spend floor (£, 7 days)', { max: 100_000, hint: 'Each campaign and network slice must reach this spend before its ROAS is judged.' }),
     number('googleNetworkRoasFloor', 'Google network ROAS floor', { max: 1_000, hint: 'A qualifying slice below this return raises a Watch item. YouTube share alone is information.' }),
+    number('googleContentShareMaxPct', 'Google Display / content share bar (%)', { max: 100, hint: 'Checks the last complete UK day and the last 7 complete UK days.' }),
+    number('googleContentSpendFloorGbp', 'Google Display / content spend floor (£)', { hint: 'Content spend must reach this amount in the same window before its share raises a Watch item.' }),
+    number('googleNoSaleSpendFloorGbp', 'Google no-sale spend floor (£, 7 days)', { hint: 'Flags a campaign at this spend with fewer than 0.01 conversions.' }),
+    number('googleBreakEvenReturnUk', 'Google UK break-even return', { max: 20, hint: 'Zero keeps this market’s under-return check off.' }),
+    number('googleBreakEvenReturnUs', 'Google US break-even return', { max: 20, hint: 'Zero keeps this market’s under-return check off.' }),
+    { key: 'googleContactName', label: 'Google note contact (optional)', maxlength: 40, optional: true, hint: 'Names the copyable note on Morning. You send it yourself; the app sends nothing.' },
     {key:'tiktokAdvertiserId',label:'TikTok advertiser ID',optional:true},
   ], values)}</div>${campaignOwners(metaCampaigns, campaignSync, values)}${collection('metaSources', 'Meta sources', [{key:'source',label:'Last-visit source'}], values.metaSources, 'Matched case-insensitively alongside fbclid. Settle this list from the live Meta over-credit detail.')}${actorPicker(values, actorChoices)}${creativeControls}${collection('expectedGoogleCampaigns', 'Google campaign', [
     { key: 'campaignId', label: 'Campaign ID' },

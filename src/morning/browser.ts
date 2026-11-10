@@ -3,7 +3,7 @@ import { addDays } from '../hero-range.js';
 import { updateMorningPushNudge } from '../push/browser.js';
 import type { TickerSnapshot } from '../ticker/model.js';
 import type { MorningAction, MorningButton, MorningCard, MorningLiveButton, MorningSnapshot, MorningState } from './model-types.js';
-import { morningBriefHtml, morningChip, morningDay, morningDeckHtml, morningFineHtml, morningLinesHtml, morningMenuHtml, morningProgressHtml, morningWhyHtml, type MorningWindow } from './view.js';
+import { morningBriefHtml, morningDay, morningDeckHtml, morningFineHtml, morningLinesHtml, morningMenuHtml, morningProgressHtml, morningWhyHtml, type MorningWindow } from './view.js';
 
 type PressUndo = {kind: 'morning'; cardKey: string; action: MorningAction | 'undo'; answer?: 'a' | 'b' | 'draw'};
 type Undo = PressUndo | {kind: 'ticker'; eventKey: string; action: 'next' | 'restore'} | {kind: 'live'; button: MorningLiveButton};
@@ -38,7 +38,6 @@ function setup(root: HTMLElement): void {
     stage.innerHTML = morningDeckHtml(snapshot, {window: selectedWindow(), ...(confirmation ? {confirm: confirmation.button.kind === 'live' || confirmation.button.kind === 'save' && confirmation.button.target === 'morning' ? confirmation.button.confirm : undefined} : {}), error});
     get<HTMLElement>('#mn-progress').innerHTML = morningProgressHtml(snapshot);
     get<HTMLElement>('#mn-day').textContent = `${morningDay(snapshot.day)}${snapshot.mode === 'sample' ? ' · Sample data' : ''}`;
-    get<HTMLElement>('#mn-good').innerHTML = `${morningChip('good')}<span>${snapshot.more ? `${snapshot.fine.length} checks are fine` : 'Everything else is fine'}</span><span aria-hidden="true">›</span>`;
     get<HTMLElement>('#mn-lines').innerHTML = morningLinesHtml(snapshot);
     updateMorningPushNudge(snapshot.summaryEnabled === true);
     if (dialog.open && sheet === 'fine') sheetBody.innerHTML = morningFineHtml(snapshot, expanded);
@@ -239,8 +238,8 @@ function setup(root: HTMLElement): void {
     if (dialog.open) return;
     if (sheet === 'confirm') { confirmation = null; render(); }
     sheet = null; sheetCard = null; sheetBody.replaceChildren(); sheetStatus.textContent = '';
-    // A pending page-load read can replace the slim line while its sheet is open.
-    const returnTo = opener?.isConnected ? opener : opener?.id === 'mn-brief' ? root.querySelector<HTMLElement>('#mn-brief') : null;
+    // A read or local press can replace the footer controls while their sheet is open.
+    const returnTo = opener?.isConnected ? opener : opener && ['mn-brief', 'mn-good'].includes(opener.id) ? root.querySelector<HTMLElement>(`#${opener.id}`) : null;
     if (returnTo) returnTo.focus({preventScroll: true}); else focusCard();
   });
   dialog.addEventListener('click', event => {

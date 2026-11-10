@@ -99,10 +99,10 @@ test('Morning and Home share the exact supplied test call and effective saved-st
   assert.equal(homeTestsFromHq(source, [parked], now).rows[0]!.call?.answer, 'a', 'A changed call rule returns a parked test');
 });
 
-test('Home offers eligible calls outside the seven-card cap and renders unmeasured status without invented bars', () => {
+test('Home and Morning offer every eligible call and render unmeasured status without invented bars', () => {
   const source = facts(); source.tests = Array.from({ length: 8 }, (_, index) => live(`T${index + 1}`));
   const data = addMorningHq(input(), source, now);
-  assert.equal(morningDeck(data, [], now).snapshot.cards.length, 7);
+  assert.equal(morningDeck(data, [], now).snapshot.cards.length, 8);
   assert.ok(homeTestsFromHq(source, [], now).rows[7]!.call);
   source.tests[0]!.cells[8] = '<invented status> without a reading';
   const row = homeTestsFromHq(source, [], now).rows[0]!, html = homeTestReadingHtml(row);
@@ -147,9 +147,13 @@ test('live Home features the first Live row then folds other Live, Queue and His
 });
 
 test('unmeasured draw offers are hideable Info; measured draw offers remain Decide', () => {
-  const source = facts(), row = live(); row.cells[5] = '2032-03-01'; row.cells[8] = 'No reading yet'; source.tests = [row];
-  let card = morningDeck(addMorningHq(input(), source, now), [], now).candidates[0]!;
+  const source = facts(), row = live(); row.cells[5] = '2032-03-23'; row.cells[8] = 'No reading yet'; source.tests = [row];
+  const unmeasured = morningDeck(addMorningHq(input(), source, now), [], now);
+  let card = unmeasured.candidates[0]!;
   assert.equal(card.state, 'info'); assert.equal(card.tier, 3); assert.equal(card.primary.label, 'Call a draw');
+  assert.deepEqual(unmeasured.snapshot.cards.map(item => item.key), [card.key], 'A ready unmeasured draw remains an actionable test call in the decision deck');
+  assert.equal(unmeasured.snapshot.cards[0]!.state, 'info', 'Offering the call does not invent measured certainty or change its Info state');
+  assert.equal(unmeasured.snapshot.total, 1);
   assert.ok(card.allowedPresses.includes('hide')); assert.equal(card.menu[0]!.label, 'Stop showing this');
   assert.equal(homeTestsFromHq(source, [], now).rows[0]!.model!.presentation!.state, 'info');
   row.cells[8] = 'Reading 2032-04-20: A 12% n=4; B 17% n=3; ahead none; sure 60%; mornings 1';

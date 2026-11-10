@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import type { BrowserContext, Locator, Page } from 'playwright';
 import { addDays } from '../src/hero-range.js';
-import type { MorningButton, MorningCard, MorningFigure, MorningSnapshot } from '../src/morning/model-types.js';
+import type { MorningButton, MorningCard, MorningFigure, MorningSnapshot, MorningState } from '../src/morning/model-types.js';
 import type { SettingsSnapshot } from '../src/settings.js';
 import type { TickerSnapshot } from '../src/ticker/model.js';
 
@@ -39,6 +39,13 @@ async function fit(page: Page, label: string): Promise<void> {
   }
   assert.match(await page.locator('#mn-stage').getAttribute('data-mn-density') ?? '', /^(roomy|compact|tight)$/);
   await tapSizes(page.locator('#mn-root'), label);
+  const lines = await page.locator('.mn-summary-lines').boundingBox();
+  assert.ok(lines && lines.height <= 100, `${label}: the two Morning lines stay within 100px (${JSON.stringify(lines)})`);
+  const good = (await page.locator('#mn-good').boundingBox())!;
+  const watch = (await page.locator('.mn-watch-line').boundingBox())!;
+  assert.ok(watch.width >= 44 && watch.height >= 44, `${label}: Watch keeps its 44px area, including the non-link state`);
+  assert.ok(Math.abs(good.y - watch.y) < .5 && good.x + good.width <= watch.x,
+    `${label}: Good and Watch sit side by side`);
 }
 
 async function focusAfterSave(page: Page, snapshot: MorningSnapshot): Promise<void> {
@@ -61,7 +68,12 @@ async function openSheet(page: Page, opener: string): Promise<void> {
 
 async function closeSheet(page: Page, opener?: string): Promise<void> {
   await page.keyboard.press('Escape'); await page.locator('#mn-dialog').waitFor({state: 'hidden'});
-  if (opener) assert.equal(await page.evaluate(() => document.activeElement?.id), opener.replace(/^#/, ''));
+  if (opener) {
+    const id = opener.replace(/^#/, '');
+    // The native close event restores a replaced opener on its next task.
+    await page.waitForFunction(expected => document.activeElement?.id === expected, id);
+    assert.equal(await page.evaluate(() => document.activeElement?.id), id);
+  }
 }
 
 function fixtureCards(base: MorningSnapshot): MorningCard[] {
@@ -189,12 +201,12 @@ export async function checkMorning(signedIn: BrowserContext): Promise<void> {
         const afterStripNext = page.waitForResponse(reply => new URL(reply.url()).pathname === '/api/morning');
         await page.locator('#tk-next').click(); assert.equal((await stripNext).status(), 200);
         state = await (await afterStripNext).json() as MorningSnapshot; await shown(page, state);
-        assert.equal(state.completed, originalCompleted + 1, 'A strip pass refreshes Morning once without a reload');
+        assert.equal(state.completed, originalCompleted, 'A strip pass refreshes Morning without adding a date to decision progress');
         const stripRestore = page.waitForResponse(reply => new URL(reply.url()).pathname === '/api/ticker/restore');
         const afterStripRestore = page.waitForResponse(reply => new URL(reply.url()).pathname === '/api/morning');
         await page.locator('#tk-undo').click(); assert.equal((await stripRestore).status(), 200);
         state = await (await afterStripRestore).json() as MorningSnapshot; await shown(page, state);
-        assert.equal(state.completed, originalCompleted, 'Strip Undo restores the Morning slot');
+        assert.equal(state.completed, originalCompleted, 'Strip Undo leaves decision progress unchanged');
         const apply = async (selector: string | Locator, button: MorningButton): Promise<MorningSnapshot> => {
           assert.equal(button.kind, 'save');
           if (button.kind !== 'save') throw new Error('Expected local save');
@@ -224,7 +236,8 @@ export async function checkMorning(signedIn: BrowserContext): Promise<void> {
         state = await read(); await shown(page, state); await focusAfterSave(page, state); assert.equal(state.cards[0]!.key, first.key);
         await page.emulateMedia({reducedMotion: 'no-preference'});
         let copied = false, linked = false, menuOpened = false, putBack = false, hiddenPutBack = false;
-        for (let count = 0; state.cards.length && count < 8; count++) {
+        const initialOpenCount = state.cards.length + state.more;
+        for (let count = 0; state.cards.length && count < initialOpenCount; count++) {
           const current = state.cards[0]!;
           await fit(page, `${width} ${current.kind}`);
           assert.ok(![current.primary, current.secondary, ...current.menu].some(button => button?.kind === 'live'), 'Sample cards never offer a Meta write');
@@ -274,9 +287,9 @@ export async function checkMorning(signedIn: BrowserContext): Promise<void> {
           const hidden = state.hidden.some(row => row.stateRow.cardKey === current.key);
           if ((!putBack && state.parked.some(row => row.stateRow.cardKey === current.key)) || (!hiddenPutBack && hidden)) {
             await openSheet(page, '#mn-good');
-            if (!await page.locator(`[data-mn-put-back="${current.key}"]`).isVisible()) await page.locator('#mn-away-more').click();
+            if (!await page.locator(`#mn-sheet-body [data-mn-put-back="${current.key}"]`).isVisible()) await page.locator('#mn-away-more').click();
             const response = page.waitForResponse(reply => new URL(reply.url()).pathname === '/api/morning/press');
-            await page.locator(`[data-mn-put-back="${current.key}"]`).click(); assert.equal((await response).status(), 200);
+            await page.locator(`#mn-sheet-body [data-mn-put-back="${current.key}"]`).click(); assert.equal((await response).status(), 200);
             state = await read(); await shown(page, state); await focusAfterSave(page, state);
             if (await page.locator('#mn-dialog').isVisible()) await closeSheet(page);
             assert.equal(state.cards[0]!.key, current.key);
@@ -288,7 +301,7 @@ export async function checkMorning(signedIn: BrowserContext): Promise<void> {
             } else { state = await apply(selector, button!); putBack = true; }
           }
         }
-        assert.equal(state.cards.length, 0); assert.ok(copied && linked && menuOpened && putBack && hiddenPutBack);
+        assert.equal(state.cards.length, 0); assert.ok(linked && putBack, 'The real decision deck exercises links and persisted Put back; copy/hide/menu are covered below with explicit fixtures');
         await page.locator('#mn-all-clear').waitFor(); assert.match(await page.locator('#mn-done-list').innerText(), /.+/);
         await page.reload(); await shown(page, await read()); assert.equal(await page.locator('#mn-all-clear').count(), 1);
         await page.route('**/api/morning/press', route => route.fulfill({status: 503, json: {error: 'Invented Put back failure.'}}), {times: 1});
@@ -296,7 +309,8 @@ export async function checkMorning(signedIn: BrowserContext): Promise<void> {
         await page.locator('#mn-error').waitFor({state: 'visible'});
         assert.match(await page.locator('#mn-error').innerText(), /Invented Put back failure/);
         assert.equal((await read()).cards.length, 0, 'Failed All clear Put back retains the completed deck');
-        if (state.more) assert.doesNotMatch(await page.locator('#mn-good').innerText(), /Everything else is fine/);
+        assert.match(await page.locator('#mn-good').innerText(), new RegExp(`Good · ${state.fine.length} fine`));
+        if (state.watchOnHome) assert.match(await page.locator('#mn-all-clear').innerText(), new RegExp(`${state.watchOnHome} Watch cards? (?:is|are) on Home`));
         await openSheet(page, '#mn-good');
         if (state.parked.length + state.hidden.length > 3) {
           assert.equal(await page.locator('#mn-away-list [data-mn-put-back]:visible').count(), 3);
@@ -334,6 +348,45 @@ export async function checkMorning(signedIn: BrowserContext): Promise<void> {
             await fixturePage.screenshot({path: `${process.env.PULSE_SCREENSHOT_DIR}/morning-375-${card.kind}.png`});
         }
       }
+      await openSheet(fixturePage, '#mn-good');
+      const goodBeforeRefresh = await fixturePage.locator('#mn-good').elementHandle(); assert.ok(goodBeforeRefresh);
+      await fixturePage.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+      await fixturePage.waitForFunction(element => !element.isConnected, goodBeforeRefresh);
+      await closeSheet(fixturePage, '#mn-good'); await goodBeforeRefresh.dispose();
+      // Copy and hiding remain supported for eligible cards even when the base sample deck has none.
+      const copyCard: MorningCard = {...cards[0]!, key: 'invented-copy-decision', kind: 'google', state: 'decide',
+        primary: {kind: 'copy', label: 'Copy a message', text: 'Invented freelancer message'}};
+      fixture = {...fixture, cards: [copyCard], completed: 0, total: 1};
+      await fixturePage.evaluate(() => document.dispatchEvent(new Event('visibilitychange'))); await shown(fixturePage, fixture);
+      await openSheet(fixturePage, '#mn-primary');
+      assert.equal(await fixturePage.locator('#mn-copy-text').inputValue(), 'Invented freelancer message');
+      await fixturePage.locator('#mn-copy').click();
+      assert.equal(await fixturePage.evaluate(() => (window as unknown as {__morningClipboard: string[]}).__morningClipboard.at(-1)), 'Invented freelancer message');
+      assert.match(await fixturePage.locator('#mn-toast-message').innerText(), /Copied\. You send it\./);
+      if (await fixturePage.locator('#mn-dialog').isVisible()) await closeSheet(fixturePage, '#mn-primary');
+      const hidden: MorningState = {mode: fixture.mode, cardKey: copyCard.key, state: 'hidden', untilDay: null,
+        factsHash: copyCard.factsHash, answer: null, credentialId: 'invented-browser', pressedAt: `${fixture.day}T10:00:00Z`,
+        clearedAt: null, title: copyCard.title, kind: copyCard.kind, subjectId: copyCard.subjectId, sourceScope: copyCard.sourceScope};
+      const localCommands: object[] = [];
+      await fixturePage.route('**/api/morning/press', route => {
+        const body = route.request().postDataJSON(); localCommands.push(body);
+        fixture = body.action === 'hide' ? {...fixture, cards: [], completed: 1, presses: [hidden],
+          hidden: [{stateRow: hidden, title: hidden.title, reason: 'Stopped showing until the rule changes', untilDay: null}]}
+          : {...fixture, cards: [copyCard], completed: 0, presses: [], hidden: []};
+        return route.fulfill({json: fixture});
+      });
+      await openSheet(fixturePage, '#mn-menu');
+      for (const row of await fixturePage.locator('#mn-sheet-body button').all())
+        assert.ok((await row.boundingBox())!.height >= 52, 'Menu rows retain 52px taps');
+      await fixturePage.locator('#mn-sheet-body').getByRole('button', {name: 'Stop showing this'}).click();
+      await fixturePage.locator('#mn-all-clear').waitFor();
+      if (await fixturePage.locator('#mn-dialog').isVisible()) await closeSheet(fixturePage);
+      await openSheet(fixturePage, '#mn-good');
+      await fixturePage.locator(`#mn-sheet-body [data-mn-put-back="${copyCard.key}"]`).click();
+      await shown(fixturePage, {...fixture, cards: [copyCard], completed: 0});
+      if (await fixturePage.locator('#mn-dialog').isVisible()) await closeSheet(fixturePage, '#mn-good');
+      assert.deepEqual(localCommands, [{cardKey: copyCard.key, action: 'hide'}, {cardKey: copyCard.key, action: 'undo'}]);
+      await fixturePage.unroute('**/api/morning/press');
       await fixturePage.emulateMedia({reducedMotion: 'reduce'});
       assert.equal(await fixturePage.locator('#mn-root').evaluate(element => element.getAnimations({subtree: true}).filter(animation => animation.playState === 'running').length), 0);
       const live = {...cards[1]!, key: 'invented-live-action', primary: {kind: 'live', label: 'Pause invented set', adSetId: '990099', action: 'pause', value: 'PAUSED', confirm: 'Pause invented set now?'} as MorningButton};

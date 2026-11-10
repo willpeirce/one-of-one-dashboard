@@ -16,10 +16,11 @@ import { tickerState } from '../src/ticker/model.js';
 import { createTestDatabase } from './helpers/database.js';
 
 const now = new Date('2032-04-06T10:00:00Z');
-function card(id = 'invented-watch', overrides: Partial<MorningCard> = {}): MorningCard {
-  return { key: morningKey('need', id), kind: 'need', subjectId: id, sourceScope: 'needs:shopify',
-    factsHash: morningFacts('need', id, 'warn', 'invented-rule'), ruleId: 'invented-rule',
-    state: 'warn', tier: 5, order: 0, title: 'Invented stock timing', lane: 'Shopify', source: 'shopify',
+function card(id = 'invented-decision', overrides: Partial<MorningCard> = {}): MorningCard {
+  const kind = overrides.kind ?? 'meta-kill', state = overrides.state ?? 'decide';
+  return { key: morningKey(kind, id), kind, subjectId: id, sourceScope: 'needs:shopify',
+    factsHash: morningFacts(kind, id, state, 'invented-rule'), ruleId: 'invented-rule',
+    state, tier: 1, order: 0, title: 'Invented decision', lane: 'Meta', source: 'meta',
     figure: {kind: 'plain', value: '3 days', label: 'Invented cover'}, why: 'Invented reason', rule: 'Invented rule',
     sourceLine: 'Invented stored observation', primary: {kind: 'link', label: 'Open source', href: '/sources'},
     secondary: {kind: 'save', target: 'morning', label: 'Not today', action: 'park'},
@@ -76,50 +77,51 @@ test('Morning routes require a session, local JSON, an exact body and a small pa
   assert.equal((await h.db.query('SELECT 1 FROM pulse.audit_log')).rows.length, 0);
 });
 
-test('Morning clears seven slots, persists the same-day cap and gives a slot back on Undo', async t => {
+test('Morning offers all nine decisions, persists answers and puts a decision back on Undo', async t => {
   const cards = Array.from({length: 9}, (_, index) => card(`invented-${index}`, {order: index}));
   const h = await harness(t, input(cards));
-  assert.equal((await h.read()).cards.length, 7); assert.equal((await h.read()).more, 2);
-  for (let index = 0; index < 7; index++) {
+  assert.equal((await h.read()).cards.length, 9); assert.equal((await h.read()).more, 0);
+  for (let index = 0; index < 9; index++) {
     const state = await h.press('park', cards[index]!.key);
-    assert.equal(state.completed, index + 1); assert.equal(state.cards.length, 6 - index); assert.equal(state.more, 2);
+    assert.equal(state.completed, index + 1); assert.equal(state.cards.length, 8 - index); assert.equal(state.more, 0);
+    assert.equal(state.total, 9);
     assert.equal(state.presses.at(-1)!.untilDay, '2032-04-07');
   }
-  assert.equal((await h.read()).cards.length, 0, 'Reloading cannot refill a cleared daily deck');
+  assert.equal((await h.read()).cards.length, 0, 'Reloading keeps all nine answers');
   const summary = await h.service.summary();
   assert.equal(summary.snapshot.cards.length, 0);
-  assert.deepEqual(summary.openCards.map(row => row.key), cards.slice(7).map(row => row.key), 'An internal summary retains all open titles after the visible cap is used');
-  const overflow = await h.app.inject({method: 'POST', url: '/api/morning/press', headers: h.headers,
-    payload: {cardKey: cards[7]!.key, action: 'park'}});
-  assert.equal(overflow.statusCode, 409, 'A guessed card key cannot exceed the server-owned daily cap');
-  assert.equal((await h.db.query('SELECT 1 FROM pulse.audit_log')).rows.length, 7);
+  assert.deepEqual(summary.openCards, []);
+  const repeated = await h.app.inject({method: 'POST', url: '/api/morning/press', headers: h.headers,
+    payload: {cardKey: cards[8]!.key, action: 'park'}});
+  assert.equal(repeated.statusCode, 409, 'An answered card cannot be pressed twice');
+  assert.equal((await h.db.query('SELECT 1 FROM pulse.audit_log')).rows.length, 9);
   const undone = await h.press('undo', cards[3]!.key);
-  assert.equal(undone.completed, 6); assert.equal(undone.cards.length, 1); assert.equal(undone.cards[0]!.key, cards[3]!.key);
-  assert.equal(undone.parked.length, 6);
+  assert.equal(undone.completed, 8); assert.equal(undone.cards.length, 1); assert.equal(undone.cards[0]!.key, cards[3]!.key);
+  assert.equal(undone.parked.length, 8);
   const audits = (await h.db.query<{event: string; credential_id: string}>('SELECT event,credential_id FROM pulse.audit_log ORDER BY id')).rows;
-  assert.equal(audits.length, 8); assert.ok(audits.every(row => row.credential_id === h.credential));
+  assert.equal(audits.length, 10); assert.ok(audits.every(row => row.credential_id === h.credential));
   assert.match(audits.at(-1)!.event, /^Morning put back:/);
   h.setNow(new Date('2032-04-07T10:00:00Z'));
-  const tomorrow = await h.read(); assert.equal(tomorrow.completed, 0); assert.equal(tomorrow.cards.length, 7);
+  const tomorrow = await h.read(); assert.equal(tomorrow.completed, 0); assert.equal(tomorrow.cards.length, 9);
   assert.equal((await h.db.query('SELECT 1 FROM pulse.morning_card_states')).rows.length, 0);
 });
 
-test('Morning refuses unavailable presses and keeps server-owned reminder, seen, hold and call dates', async t => {
-  const alarm = card('invented-alarm', {state: 'alarm', tier: 0, allowedPresses: ['ack']});
-  const date = card('invented-date', {kind: 'date', eventDate: '2032-04-16', allowedPresses: ['remind', 'park', 'hide']});
+test('Morning refuses excluded and unavailable presses and keeps server-owned seen, hold and call dates', async t => {
+  const alarm = card('invented-alarm', {kind: 'need', state: 'alarm', tier: 0, allowedPresses: ['ack']});
+  const date = card('invented-date', {kind: 'date', state: 'info', eventDate: '2032-04-16', allowedPresses: ['remind', 'park', 'hide']});
   const held = card('invented-step', {kind: 'meta-step', sourceScope: 'adsets', state: 'decide', allowedPresses: ['hold', 'park']});
-  const verdict = card('invented-verdict', {kind: 'new-verdict', seenUntilDay: '2032-04-09', allowedPresses: ['ack']});
+  const verdict = card('invented-verdict', {kind: 'new-verdict', state: 'info', seenUntilDay: '2032-04-09', allowedPresses: ['ack']});
   const call = card('invented-test', {kind: 'test-call', sourceScope: 'tests', callAnswer: 'a', allowedPresses: ['call', 'park']});
   const data = {...input([alarm, date, held, verdict, call]), liveTestIds: [call.subjectId]};
   const h = await harness(t, data), url = '/api/morning/press';
   for (const action of ['park', 'hide', 'hold']) assert.equal((await h.app.inject({method: 'POST', url, headers: h.headers,
     payload: {cardKey: alarm.key, action}})).statusCode, 409);
-  await h.press('ack', alarm.key);
-  assert.equal((await h.press('remind', date.key)).parked.find(row => row.stateRow.cardKey === date.key)!.untilDay, '2032-04-13');
+  const seen = (await h.press('ack', alarm.key)).presses.find(row => row.cardKey === alarm.key)!;
+  assert.equal(seen.untilDay, '2032-04-07');
+  for (const [excluded, action] of [[date, 'remind'], [verdict, 'ack']] as const)
+    assert.equal((await h.app.inject({method: 'POST', url, headers: h.headers, payload: {cardKey: excluded.key, action}})).statusCode, 409);
   const hold = (await h.press('hold', held.key)).answers.find(row => row.cardKey === held.key)!;
   assert.equal(hold.answer, 'hold'); assert.equal(hold.untilDay, '2032-04-13');
-  const seen = (await h.press('ack', verdict.key)).presses.find(row => row.cardKey === verdict.key)!;
-  assert.equal(seen.untilDay, '2032-04-09');
   assert.equal((await h.app.inject({method: 'POST', url, headers: h.headers, payload: {cardKey: call.key, action: 'call', answer: 'b'}})).statusCode, 409);
   const called = (await h.press('call', call.key, 'a')).answers.find(row => row.cardKey === call.key)!;
   assert.equal(called.answer, 'a'); assert.equal(called.untilDay, null);
@@ -129,21 +131,40 @@ test('Morning refuses unavailable presses and keeps server-owned reminder, seen,
   assert.ok(afterWriteup.presses.find(row => row.cardKey === call.key)!.clearedAt, 'A cleared answer retains today’s slot');
 });
 
-test('Home can confirm a ready test beyond the Morning cap, while parked, answered and wrong calls stay refused', async t => {
-  const alarms = Array.from({length: 7}, (_, index) => card(`invented-urgent-${index}`, {state: 'alarm', tier: 0, order: index, allowedPresses: ['ack']}));
+test('stored reminders and verdict acknowledgements still load and expire without entering decision progress', async t => {
+  const date = card('invented-old-date', {kind: 'date', state: 'info', eventDate: '2032-04-16'});
+  const verdict = card('invented-old-verdict', {kind: 'new-verdict', state: 'info', seenUntilDay: '2032-04-09'});
+  const h = await harness(t, input([date, verdict]));
+  for (const [item, state, until] of [[date, 'parked', '2032-04-13'], [verdict, 'seen', '2032-04-09']] as const) {
+    await h.db.query(`INSERT INTO pulse.morning_card_states(mode,card_key,state,until_day,facts_hash,answer,credential_id,
+      pressed_at,title,card_kind,subject_id,source_scope) VALUES('live',$1,$2,$3,$4,NULL,$5,$6,$7,$8,$9,$10)`,
+    [item.key, state, until, item.factsHash, h.credential, now, item.title, item.kind, item.subjectId, item.sourceScope]);
+  }
+  const loaded = await h.read();
+  assert.equal(loaded.cards.length, 0); assert.equal(loaded.completed, 0); assert.equal(loaded.total, 0);
+  assert.equal(loaded.parked[0]!.untilDay, '2032-04-13');
+  assert.equal(loaded.presses.find(row => row.cardKey === verdict.key)!.untilDay, '2032-04-09');
+  await h.press('undo', date.key);
+  assert.equal((await h.read()).parked.length, 0, 'An old reminder can still be put back');
+  h.setNow(new Date('2032-04-09T10:00:00Z'));
+  assert.equal((await h.read()).presses.length, 0);
+  assert.equal((await h.db.query('SELECT 1 FROM pulse.morning_card_states')).rowCount, 0);
+});
+
+test('Home and Morning can confirm a ready test after seven alarms, while parked, answered and wrong calls stay refused', async t => {
+  const alarms = Array.from({length: 7}, (_, index) => card(`invented-urgent-${index}`, {kind: 'need', state: 'alarm', tier: 0, order: index, allowedPresses: ['ack']}));
   const call = card('invented-overflow-test', {kind: 'test-call', state: 'decide', tier: 1, sourceScope: 'tests',
     callAnswer: 'a', allowedPresses: ['call', 'park']});
   const data = {...input([...alarms, call]), liveTestIds: [call.subjectId]};
   const h = await harness(t, data), initial = await h.read();
-  assert.equal(initial.cards.length, 7); assert.equal(initial.more, 1);
-  assert.ok(initial.cards.every(row => row.key !== call.key));
+  assert.equal(initial.cards.length, 8); assert.equal(initial.more, 0);
+  assert.equal(initial.cards.at(-1)!.key, call.key);
   const post = (action: string, answer?: string) => h.app.inject({method: 'POST', url: '/api/morning/press', headers: h.headers,
     payload: {cardKey: call.key, action, ...(answer ? {answer} : {})}});
-  assert.equal((await post('park')).statusCode, 409, 'Only the ready test Call can be offered outside the Morning cap');
   assert.equal((await post('call', 'b')).statusCode, 409);
   const called = await h.press('call', call.key, 'a');
   assert.equal(called.answers.find(row => row.cardKey === call.key)?.answer, 'a');
-  assert.equal(called.completed, 1); assert.equal(called.cards.length, 6);
+  assert.equal(called.completed, 1); assert.equal(called.cards.length, 7);
   assert.equal((await post('call', 'a')).statusCode, 409, 'An answered call cannot be repeated');
   assert.equal((await h.db.query('SELECT 1 FROM pulse.audit_log')).rowCount, 1);
   await h.press('undo', call.key);
@@ -156,7 +177,7 @@ test('Home can confirm a ready test beyond the Morning cap, while parked, answer
   assert.equal((await post('call', 'a')).statusCode, 409, 'The current rule must still offer the call');
 });
 
-test('Morning hidden state survives changed figures and failed reads, then clears safely without refilling today', async t => {
+test('Morning hidden state survives changed figures and failed reads, then clears safely', async t => {
   const original = card(), data = input([original]), h = await harness(t, data);
   await h.press('hide');
   h.setInput(input([{...original, figure: {kind: 'plain', value: '2 days', label: 'Invented cover'}}]));

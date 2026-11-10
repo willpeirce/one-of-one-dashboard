@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
 import type { BrowserContext, Page } from 'playwright';
+import type { DashboardSnapshot } from '../src/dashboard-types.js';
+import { morningInputFromDashboard } from '../src/morning/inputs.js';
+import { morningDeck } from '../src/morning/model.js';
+import { curateMorningSample } from '../src/morning/sample.js';
+import type { TickerSnapshot } from '../src/ticker/model.js';
 import type { MorningSnapshot } from '../src/morning/model-types.js';
 import type { Settings, SettingsSnapshot } from '../src/settings.js';
 
@@ -15,7 +20,7 @@ async function openAdSettings(page: Page): Promise<void> {
   for (const key of keys) assert.equal(await group.locator(`input[name="${key}"]`).isVisible(), true, `${key} stays with the Google network settings`);
 }
 
-/** Exercise real Settings saves; only focus the server's real sample card with an intercepted read. */
+/** Exercise real Settings saves and the same sample candidate builder, then focus its copy UI with an intercepted read. */
 export async function checkGoogleJunk(signedIn: BrowserContext): Promise<void> {
   const response = await signedIn.request.get('/api/settings'); assert.equal(response.status(), 200);
   const before = await response.json() as SettingsSnapshot, original = pick(before.values), origin = new URL(response.url()).origin;
@@ -60,8 +65,17 @@ export async function checkGoogleJunk(signedIn: BrowserContext): Promise<void> {
         const morningResponse = await context.request.get('/api/morning'); assert.equal(morningResponse.status(), 200);
         const actual = await morningResponse.json() as MorningSnapshot;
         assert.equal(actual.mode, 'sample');
-        const google = actual.cards.find(card => card.kind === 'google');
-        assert.ok(google, 'The server supplies a Google card in the sample Morning deck');
+        assert.ok(!actual.cards.some(card => card.kind === 'google'), 'The Google Watch candidate stays out of the decision deck');
+        const [dashboardResponse, tickerResponse] = await Promise.all([
+          context.request.get('/api/dashboard'), context.request.get('/api/ticker'),
+        ]);
+        assert.equal(dashboardResponse.status(), 200); assert.equal(tickerResponse.status(), 200);
+        const dashboard = await dashboardResponse.json() as DashboardSnapshot;
+        const ticker = await tickerResponse.json() as TickerSnapshot;
+        const clock = new Date(`${actual.day}T12:00:00Z`);
+        const input = curateMorningSample(morningInputFromDashboard(dashboard, (await readSettings()).values, ticker, 'sample'), clock);
+        const google = morningDeck(input, [], clock).candidates.find(card => card.kind === 'google');
+        assert.ok(google, 'The same sample builder retains the Google candidate and its copy note');
         assert.equal(google.primary.kind, 'copy');
         if (google.primary.kind !== 'copy') throw new Error('Expected a copy-only Google card');
         const note = google.primary.text;

@@ -92,7 +92,7 @@ export async function pressMorning(db: Database, loadInputs: MorningInputLoader,
     } else {
       const card = result.candidates.find(row => row.key === press.cardKey);
       if (!card) throw new MorningPressError(404, 'This card is no longer listed.');
-      // Home also offers eligible test calls beyond Morning's seven-card display cap.
+      // Home offers eligible test calls through the same current candidate guard.
       const offered = card.kind === 'test-call' && press.action === 'call' ? result.openCards : result.snapshot.cards;
       if (!card.allowedPresses.includes(press.action) || !offered.some(row => row.key === card.key))
         throw new MorningPressError(409, 'This card does not offer that press.');

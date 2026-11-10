@@ -58,7 +58,8 @@ export interface MorningBrief {
   registerDiagnostics?: { malformed: number; capped: number; missingHeadings?: boolean };
   text: string; status: 'ok' | 'needs' | 'unreadable' | 'missing' | 'key'; mode: SourceMode;
   tone?: 'info' | 'warn';
-  day?: string; runLabel?: string; count?: number; items?: { text: string; label?: string }[];
+  day?: string; runLabel?: string; count?: number; items?: { text: string; label?: string; lines?: string[] }[];
+  allInDeck?: boolean; moreHere?: number;
   firstLines?: string[]; href?: string;
 }
 export interface MorningInput {
@@ -71,7 +72,8 @@ export interface MorningInput {
 }
 export interface MorningSnapshot {
   summaryEnabled?: boolean;
-  mode: SourceMode; day: string; cards: MorningCard[]; more: number; fine: MorningFine[];
+  mode: SourceMode; day: string; cards: MorningCard[]; more: number; watchOnHome: number; fine: MorningFine[];
+  datedFromCheck?: { text: string; lines?: string[] }[];
   parked: MorningAway[]; hidden: MorningAway[]; presses: MorningState[];
   metaActions: MorningMetaAction[]; passedDates: TickerPassed[]; answers: MorningState[];
   brief: MorningBrief | null; completed: number; total: number;
@@ -79,7 +81,7 @@ export interface MorningSnapshot {
 export interface MorningResult {
   snapshot: MorningSnapshot;
   candidates: MorningCard[];
-  /** Every unsuppressed card, including cards beyond the daily cap, for the summary. */
+  /** Every unsuppressed candidate, including Watch cards shown on Home. */
   openCards: MorningCard[];
   clearKeys: string[];
   deleteKeys: string[];

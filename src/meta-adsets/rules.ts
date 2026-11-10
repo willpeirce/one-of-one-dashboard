@@ -34,6 +34,15 @@ export function judgeAdSet(set: StoredAdSet, days: SetDay[], settings: Settings,
   const gap=missing.length?`no action data for ${missing.length} of ${windowDates.length} days (${missing.join(', ')})`:'';
   const enough=window.length>=2;
   const complete=windowDates.length>0&&windowDates.every(d=>window.some(r=>r.day===d));
+  const lifeDates=dates(born,yesterday),life=days.filter(d=>d.day>=born&&d.day<=yesterday),lifeTotal=totalDays(life);
+  const lifeComplete=lifeDates.length>0&&lifeDates.every(d=>life.some(r=>r.day===d));
+  // Flat tests reach their cost judgement by spend, even in their first completed day.
+  // A partial lifetime cannot stand in for the whole life; each unknown metric stays null.
+  const flat=set.flatBudget===true,costTotals=flat?lifeTotal:totals,costReady=flat?lifeComplete:enough;
+  const costFloor=flat?settings.adRules.flatJudgeGbp:settings.adRules.killFloorGbp;
+  const costCpp=ratio(costTotals.spend,costTotals.purchases),costCpatc=ratio(costTotals.spend,costTotals.addsToCart);
+  const costPrefix=flat?`Reached its judgement spend of ${formatPounds(costFloor)} · Life: `:'';
+  const costSpend=`${formatPounds(costTotals.spend)} ${flat?'life ':''}spend`;
   const market=set.market==='unknown'?null:set.market,be=market?breakEven(settings,market,today):null;
   const reasons:RuleReason[]=[];
   const add=(rule:string,verdict:VerdictWord,text:string,a:string,b:string)=>reasons.push({rule,verdict,text,figures:[a,b]});
@@ -43,10 +52,10 @@ export function judgeAdSet(set: StoredAdSet, days: SetDay[], settings: Settings,
   const beText=be?`${market!.toUpperCase()} break-even ${formatPounds(be.value)}${be.note?` · ${be.note}`:''}`:'Unknown market';
   if(market&&be) {
     const rules=settings.adRules[market],bar=be.value*rules.killBar;
-    if(enough&&totals.spend>=settings.adRules.killFloorGbp && totals.purchases!==null && (totals.purchases===0||cpp!>bar))
-      add('purchase-cost','Kill',`${formatPounds(totals.spend)} on ${formatNumber(totals.purchases)} purchases, ${cost(totals.spend,totals.purchases)}${totals.purchases?' each':''} against ${formatPounds(bar)} · ${beText}`,`${formatPounds(totals.spend)} spend`,`${cost(totals.spend,totals.purchases)} per purchase`);
-    if(enough&&totals.spend>=settings.adRules.killFloorGbp&&totals.addsToCart!==null&&(totals.addsToCart===0||cpatc!>rules.atcBarGbp))
-      add('atc-cost','Kill',`${formatPounds(totals.spend)} on ${totals.addsToCart} adds to cart against ${formatPounds(rules.atcBarGbp)} each`,`${formatPounds(totals.spend)} spend`,totals.addsToCart?`${formatPounds(cpatc!)} an add to cart`:'0 adds to cart');
+    if(costReady&&costTotals.spend>=costFloor && costTotals.purchases!==null && (costTotals.purchases===0||costCpp!>bar))
+      add('purchase-cost','Kill',`${costPrefix}${formatPounds(costTotals.spend)} on ${formatNumber(costTotals.purchases)} purchases, ${cost(costTotals.spend,costTotals.purchases)}${costTotals.purchases?' each':''} against ${formatPounds(bar)} · ${beText}`,costSpend,`${cost(costTotals.spend,costTotals.purchases)} per purchase`);
+    if(costReady&&costTotals.spend>=costFloor&&costTotals.addsToCart!==null&&(costTotals.addsToCart===0||costCpatc!>rules.atcBarGbp))
+      add('atc-cost','Kill',`${costPrefix}${formatPounds(costTotals.spend)} on ${costTotals.addsToCart} adds to cart against ${formatPounds(rules.atcBarGbp)} each`,costSpend,costTotals.addsToCart?`${formatPounds(costCpatc!)} an add to cart`:'0 adds to cart');
     if(enough&&last&&yesterday>born&&budget!==null&&budget>0&&last.spend>=budget/2&&last.addsToCart===0)
       add('zero-day','Kill',`${formatPounds(last.spend)} yesterday, no adds to cart, against ${formatPounds(budget/2)} half-budget · ${beText}`,`${formatPounds(last.spend)} yesterday`,'0 adds to cart');
     const threeDates=dates(addDays(today,-3),yesterday),three=days.filter(d=>threeDates.includes(d.day)&&d.purchases!==null&&d.addsToCart!==null),t=totalDays(three);
@@ -66,8 +75,6 @@ export function judgeAdSet(set: StoredAdSet, days: SetDay[], settings: Settings,
       add('two-clean-days','Step',`Two clean days at or below ${beText}; base +${stepPercent}% to ${formatPounds(proposedBase)}`,`${formatPounds(set.dailyBudget/100)} current base`,`${formatPounds(proposedBase)} proposed base`);
     }
   }
-  const lifeDates=dates(born,yesterday),life=days.filter(d=>d.day>=born&&d.day<=yesterday),lifeTotal=totalDays(life);
-  const lifeComplete=lifeDates.length>0&&lifeDates.every(d=>life.some(r=>r.day===d));
   if(lifeComplete&&lifeDates.length>=3&&life[0]&&lifeTotal.addsToCart!==null) {
     const first=life.find(d=>d.day===born);
     if(first?.addsToCart&&first.addsToCart===lifeTotal.addsToCart)
@@ -86,5 +93,10 @@ export function judgeAdSet(set: StoredAdSet, days: SetDay[], settings: Settings,
     add('test-share','Test share',`${formatPounds(last.spend)} is ${formatNumber(last.spend/context.ourMarketSpendYesterday*100,1)}% of our market spend, above ${settings.adRules.testShareCapPercent}%`,`${formatPounds(last.spend)} test spend`,`${settings.adRules.testShareCapPercent}% cap`);
   reasons.sort((a,b)=>verdictOrder.indexOf(a.verdict)-verdictOrder.indexOf(b.verdict));
   const first=reasons[0];
-  return {verdict:first?.verdict??'Clear',reason:[first?.text??(!market?'Market unknown; assign a UK or US name':enough?'Inside its rules':'Need at least 2 complete action days'),gap].filter(Boolean).join(' · '),reasons,figures:first?.figures??[`${formatPounds(totals.spend)} spend`,`${cost(totals.spend,totals.purchases)} per purchase`],...totals,cpp,cpatc,windowFrom:from,windowTo:yesterday,includesSpikeDays:!!market&&windowDates.some(d=>isSpikeDay(market,d)),breakEven:be?.value??null,breakEvenNote:be?.note??'',proposedBase,proposedWeekday,stepPercent};
+  const lifeCost=flat&&(first?.rule==='purchase-cost'||first?.rule==='atc-cost');
+  const clearReason=!market?'Market unknown; assign a UK or US name':flat
+    ? !lifeComplete||lifeTotal.purchases===null||lifeTotal.addsToCart===null?'Waiting for complete lifetime action data before cost judgement'
+      : lifeTotal.spend<costFloor?`Below its judgement spend of ${formatPounds(costFloor)}`:'Inside its lifetime cost bars'
+    : enough?'Inside its rules':'Need at least 2 complete action days';
+  return {verdict:first?.verdict??'Clear',reason:[first?.text??clearReason,gap].filter(Boolean).join(' · '),reasons,figures:first?.figures??[`${formatPounds(totals.spend)} spend`,`${cost(totals.spend,totals.purchases)} per purchase`],...(lifeCost?lifeTotal:totals),cpp:lifeCost?costCpp:cpp,cpatc:lifeCost?costCpatc:cpatc,windowFrom:lifeCost?born:from,windowTo:yesterday,includesSpikeDays:!!market&&(lifeCost?lifeDates:windowDates).some(d=>isSpikeDay(market,d)),breakEven:be?.value??null,breakEvenNote:be?.note??'',proposedBase,proposedWeekday,stepPercent};
 }

@@ -5,7 +5,7 @@ import { morningDeck } from './model.js';
 import type { MorningAction, MorningCard, MorningInput, MorningResult, MorningSnapshot, MorningState } from './model-types.js';
 
 export type MorningInputLoader = (now: Date) => Promise<MorningInput>;
-export interface MorningPress { cardKey: string; action: MorningAction | 'undo'; answer?: 'a' | 'b' | 'draw' }
+export interface MorningPress { cardKey: string; action: MorningAction | 'undo'; answer?: 'a' | 'b' | 'draw'; days?: 3 | 7 }
 
 export class MorningPressError extends Error {
   constructor(readonly statusCode: 404 | 409, message: string) { super(message); }
@@ -63,7 +63,7 @@ function answerState(card: MorningCard, press: MorningPress, credentialId: strin
     if (!card.eventDate) throw new MorningPressError(409, 'This card does not offer a reminder.');
     untilDay = addDays(card.eventDate, -3);
   } else if (press.action === 'hold') {
-    state = 'answered'; answer = 'hold'; untilDay = addDays(today, 7);
+    state = 'answered'; answer = 'hold'; untilDay = addDays(today, press.days ?? 7);
   } else if (press.action === 'hide') { state = 'hidden'; untilDay = null; }
   else if (press.action === 'ack') { state = 'seen'; untilDay = card.seenUntilDay ?? addDays(today, 1); }
   else if (press.action === 'call') {

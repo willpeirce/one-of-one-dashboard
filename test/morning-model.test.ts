@@ -196,6 +196,12 @@ test('buttons enforce alarm restrictions, sample action safety, exact Step amoun
   assert.equal(live.find(card => card.kind === 'meta-kill')!.primary.kind, 'live');
   const slipping = live.find(card => card.kind === 'meta-slipping')!;
   assert.equal(slipping.primary.kind, 'link'); assert.equal(slipping.menu[0]?.kind, 'live');
+  const kill = live.find(card => card.kind === 'meta-kill')!;
+  assert.equal(kill.secondary?.label, 'One more day');
+  assert.equal(slipping.secondary?.label, 'One more day');
+  assert.deepEqual(kill.menu, [3, 7].map(days => ({kind: 'save', target: 'morning', label: `Hold ${days} days`, action: 'hold', days})));
+  assert.ok(kill.allowedPresses.includes('hold'));
+  assert.equal(sample.find(card => card.kind === 'meta-kill')!.primary.kind, 'link');
   const step = live.find(card => card.kind === 'meta-step')!;
   assert.equal(step.primary.kind, 'live');
   if (step.primary.kind === 'live') assert.equal(step.primary.value, view.rows.find(row => row.set.id === step.subjectId)!.verdict!.proposedBase);

@@ -11,6 +11,8 @@ function parsePress(input: unknown): MorningPress | null {
     || typeof body.action !== 'string' || !actions.has(body.action)) return null;
   if (body.action === 'call') {
     if (keys.join(',') !== 'action,answer,cardKey' || !['a', 'b', 'draw'].includes(body.answer as string)) return null;
+  } else if (body.action === 'hold' && Object.hasOwn(body, 'days')) {
+    if (keys.join(',') !== 'action,cardKey,days' || body.days !== 3 && body.days !== 7) return null;
   } else if (keys.join(',') !== 'action,cardKey') return null;
   return body as unknown as MorningPress;
 }

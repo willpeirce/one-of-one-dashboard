@@ -22,7 +22,7 @@ export interface MorningLiveButton extends ButtonLabel {
 export type MorningButton = MorningLiveButton
   | (ButtonLabel & { kind: 'link'; href: string })
   | (ButtonLabel & { kind: 'copy'; text: string })
-  | (ButtonLabel & { kind: 'save'; target: 'morning'; action: MorningAction; answer?: 'a' | 'b' | 'draw'; confirm?: string })
+  | (ButtonLabel & { kind: 'save'; target: 'morning'; action: MorningAction; answer?: 'a' | 'b' | 'draw'; days?: 3 | 7; confirm?: string })
   | (ButtonLabel & { kind: 'save'; target: 'ticker'; eventKey: string; action: 'next' | 'restore' });
 
 export interface MorningBriefVariant {

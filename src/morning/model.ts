@@ -83,9 +83,13 @@ function adCard(row: AdSetRow, input: MorningInput, order: number, today: string
   const open = link('Open set', `/ads#${encodeURIComponent(row.set.id)}`);
   const pause: MorningButton = { kind: 'live', label: `Pause ${name}`, adSetId: row.set.id, action: 'pause', value: 'PAUSED', confirm: `Pause ${name} now?` };
   let primary: MorningButton = open, secondary = park(), menu: MorningButton[] = [], allowedPresses: MorningAction[] = ['park'];
-  if (word === 'Kill') primary = actions ? pause : open;
-  else if (word === 'Slipping') menu = actions ? [{ ...pause, label: 'Pause it now' }] : [];
-  else if (word === 'Step') {
+  if (word === 'Kill') {
+    primary = actions ? pause : open; secondary = save('One more day', 'park');
+    menu = ([3, 7] as const).map(days => ({kind: 'save', target: 'morning', label: `Hold ${days} days`, action: 'hold', days}));
+    allowedPresses.push('hold');
+  } else if (word === 'Slipping') {
+    secondary = save('One more day', 'park'); menu = actions ? [{ ...pause, label: 'Pause it now' }] : [];
+  } else if (word === 'Step') {
     const base = row.set.dailyBudget === null ? null : row.set.dailyBudget / 100;
     if (actions && base !== null && verdict.proposedBase !== null) primary = { kind: 'live', label: `Step to ${formatPounds(verdict.proposedBase)} a day`,
       adSetId: row.set.id, action: 'budget', value: verdict.proposedBase,

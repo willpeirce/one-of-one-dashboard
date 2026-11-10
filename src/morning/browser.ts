@@ -1,11 +1,11 @@
 import { escapeCreative as e } from '../creatives/html.js';
-import { addDays } from '../hero-range.js';
+import { addDays, ukToday } from '../hero-range.js';
 import { updateMorningPushNudge } from '../push/browser.js';
 import type { TickerSnapshot } from '../ticker/model.js';
 import type { MorningAction, MorningButton, MorningCard, MorningLiveButton, MorningSnapshot, MorningState } from './model-types.js';
 import { morningBriefHtml, morningDay, morningDeckHtml, morningFineHtml, morningLinesHtml, morningMenuHtml, morningProgressHtml, morningWhyHtml, type MorningWindow } from './view.js';
 
-type PressUndo = {kind: 'morning'; cardKey: string; action: MorningAction | 'undo'; answer?: 'a' | 'b' | 'draw'};
+type PressUndo = {kind: 'morning'; cardKey: string; action: MorningAction | 'undo'; answer?: 'a' | 'b' | 'draw'; days?: 3 | 7};
 type Undo = PressUndo | {kind: 'ticker'; eventKey: string; action: 'next' | 'restore'} | {kind: 'live'; button: MorningLiveButton};
 type Command = {cardKey: string; button: MorningButton};
 type SheetKind = 'why' | 'menu' | 'copy' | 'fine' | 'brief' | 'confirm';
@@ -97,7 +97,9 @@ function setup(root: HTMLElement): void {
       const row = next.answers.find(row => row.cardKey === key);
       return {message: `Held here until ${row?.untilDay ? morningDay(row.untilDay) : 'the saved day'}. Nothing changed in Meta.`, stamp: 'Held'};
     }
-    return {message: 'Saved', stamp: action === 'park' || action === 'remind' ? 'Parked' : action === 'hide' ? 'Hidden' : action === 'call' ? 'Called' : 'Seen'};
+    const row = next.presses.find(row => row.cardKey === key);
+    const message = action === 'park' && row && ['meta-kill', 'meta-slipping'].includes(row.kind) ? 'Back tomorrow with new figures' : 'Saved';
+    return {message, stamp: action === 'park' || action === 'remind' ? 'Parked' : action === 'hide' ? 'Hidden' : action === 'call' ? 'Called' : 'Seen'};
   }
   async function perform(command: Command): Promise<void> {
     if (busy) return;
@@ -108,7 +110,7 @@ function setup(root: HTMLElement): void {
     try {
       let next: MorningSnapshot | null = null, reverse: Undo | null = null, message = 'Saved', stamp = 'Saved';
       if (button.kind === 'save' && button.target === 'morning') {
-        next = await request<MorningSnapshot>('/api/morning/press', {cardKey: command.cardKey, action: button.action, ...(button.answer ? {answer: button.answer} : {})});
+        next = await request<MorningSnapshot>('/api/morning/press', {cardKey: command.cardKey, action: button.action, ...(button.answer ? {answer: button.answer} : {}), ...(button.action === 'hold' && button.days !== undefined ? {days: button.days} : {})});
         reverse = {kind: 'morning', cardKey: command.cardKey, action: 'undo'};
         ({message, stamp} = pressMessage(button.action, next, command.cardKey));
       } else if (button.kind === 'save' && button.target === 'ticker') {
@@ -140,7 +142,8 @@ function setup(root: HTMLElement): void {
     if (!card) return null;
     const action: MorningAction = row.state === 'hidden' ? 'hide' : row.state === 'seen' ? 'ack' : row.answer === 'hold' ? 'hold' : row.answer ? 'call'
       : card.allowedPresses.includes('remind') && row.untilDay !== null && row.untilDay > addDays(snapshot.day, 1) ? 'remind' : 'park';
-    return card.allowedPresses.includes(action) ? {kind: 'morning', cardKey: row.cardKey, action, ...(row.answer && row.answer !== 'hold' ? {answer: row.answer} : {})} : null;
+    return card.allowedPresses.includes(action) ? {kind: 'morning', cardKey: row.cardKey, action, ...(row.answer && row.answer !== 'hold' ? {answer: row.answer} : {}),
+      ...(action === 'hold' ? {days: row.untilDay === addDays(ukToday(new Date(row.pressedAt)), 3) ? 3 as const : 7 as const} : {})} : null;
   }
   async function restore(command: Undo): Promise<void> {
     if (busy) return;
@@ -153,12 +156,12 @@ function setup(root: HTMLElement): void {
         next = await afterSourceSave(); reverse = {...command, action: command.action === 'next' ? 'restore' : 'next'};
       } else {
         const old = [...snapshot.presses, ...snapshot.parked.map(row => row.stateRow), ...snapshot.hidden.map(row => row.stateRow), ...snapshot.answers].find(row => row.cardKey === command.cardKey);
-        next = await request<MorningSnapshot>('/api/morning/press', {cardKey: command.cardKey, action: command.action, ...(command.answer ? {answer: command.answer} : {})});
+        next = await request<MorningSnapshot>('/api/morning/press', {cardKey: command.cardKey, action: command.action, ...(command.answer ? {answer: command.answer} : {}), ...(command.action === 'hold' && command.days !== undefined ? {days: command.days} : {})});
         if (command.action === 'undo' && old) reverse = priorAction(old, next);
         else if (command.action !== 'undo') reverse = {...command, action: 'undo', answer: undefined};
       }
       const feedback = command.kind === 'morning' && command.action !== 'undo' && next ? pressMessage(command.action, next, command.cardKey)
-        : {message: reverse?.kind === 'morning' && reverse.action === 'hold' ? 'Put back. Hold again starts a new seven-day hold.' : 'Saved', stamp: command.kind === 'ticker' && command.action === 'next' ? 'Saved' : 'Put back'};
+        : {message: reverse?.kind === 'morning' && reverse.action === 'hold' ? `Put back. Hold again starts a new ${reverse.days === 3 ? 'three' : 'seven'}-day hold.` : 'Saved', stamp: command.kind === 'ticker' && command.action === 'next' ? 'Saved' : 'Put back'};
       if (next) await update(next, feedback.stamp);
       saved(feedback.message, reverse);
     } catch (error) {
@@ -237,9 +240,12 @@ function setup(root: HTMLElement): void {
   dialog.addEventListener('close', () => {
     if (dialog.open) return;
     if (sheet === 'confirm') { confirmation = null; render(); }
+    const sameCard = sheetCard?.key === current()?.key;
     sheet = null; sheetCard = null; sheetBody.replaceChildren(); sheetStatus.textContent = '';
-    // A read or local press can replace the footer controls while their sheet is open.
-    const returnTo = opener?.isConnected ? opener : opener && ['mn-brief', 'mn-good'].includes(opener.id) ? root.querySelector<HTMLElement>(`#${opener.id}`) : null;
+    // Refreshes can replace an opener. Only restore card controls for the same card.
+    const replacedOpener = opener && (['mn-brief', 'mn-good'].includes(opener.id)
+      || sameCard && ['mn-menu', 'mn-figure', 'mn-primary'].includes(opener.id));
+    const returnTo = opener?.isConnected ? opener : replacedOpener ? root.querySelector<HTMLElement>(`#${opener!.id}`) : null;
     if (returnTo) returnTo.focus({preventScroll: true}); else focusCard();
   });
   dialog.addEventListener('click', event => {

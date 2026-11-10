@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import type { BrowserContext, Locator, Page } from 'playwright';
 import { addDays } from '../src/hero-range.js';
+import { morningDay } from '../src/morning/view.js';
+import { checkMorningRuleSettings } from './morning-rules-browser-check.js';
 import type { MorningButton, MorningCard, MorningFigure, MorningSnapshot, MorningState } from '../src/morning/model-types.js';
 import type { SettingsSnapshot } from '../src/settings.js';
 import type { TickerSnapshot } from '../src/ticker/model.js';
@@ -219,6 +221,39 @@ export async function checkMorning(signedIn: BrowserContext): Promise<void> {
           assert.equal((await response).status(), 200);
           const next = await read(); await shown(page, next); await focusAfterSave(page, next); return next;
         };
+        const kill = state.cards[0]!;
+        assert.equal(kill.kind, 'meta-kill');
+        assert.equal(kill.secondary?.label, 'One more day');
+        const undoHold = async (): Promise<MorningSnapshot> => {
+          const response = page.waitForResponse(reply => new URL(reply.url()).pathname === '/api/morning/press' && reply.request().method() === 'POST');
+          await page.locator('#mn-undo').click();
+          const saved = await response; assert.equal(saved.status(), 200);
+          assert.deepEqual(saved.request().postDataJSON(), {cardKey: kill.key, action: 'undo'});
+          const next = await read(); await shown(page, next); await focusAfterSave(page, next);
+          assert.equal(next.cards[0]?.key, kill.key);
+          assert.equal(await page.locator('#mn-undo').innerText(), 'Hold again');
+          return next;
+        };
+        for (const days of [3, 7] as const) {
+          const button = state.cards[0]!.menu.find(button => button.label === `Hold ${days} days`);
+          assert.ok(button?.kind === 'save' && button.target === 'morning' && button.action === 'hold');
+          await openSheet(page, '#mn-menu');
+          const request = page.waitForRequest(request => new URL(request.url()).pathname === '/api/morning/press' && request.method() === 'POST');
+          state = await apply(page.locator('#mn-sheet-body').getByRole('button', {name: `Hold ${days} days`, exact: true}), button);
+          assert.deepEqual((await request).postDataJSON(), {cardKey: kill.key, action: 'hold', days});
+          assert.equal(await page.locator('#mn-confirm').count(), 0, 'A local hold needs no confirmation');
+          const untilDay = addDays(state.day, days);
+          assert.equal(state.answers.find(row => row.cardKey === kill.key)?.untilDay, untilDay);
+          assert.ok((await page.locator('#mn-toast-message').innerText()).includes(`Held here until ${morningDay(untilDay)}. Nothing changed in Meta.`));
+          state = await undoHold();
+          const heldAgain = page.waitForResponse(reply => new URL(reply.url()).pathname === '/api/morning/press' && reply.request().method() === 'POST');
+          await page.locator('#mn-undo').click();
+          const repeated = await heldAgain; assert.equal(repeated.status(), 200);
+          assert.deepEqual(repeated.request().postDataJSON(), {cardKey: kill.key, action: 'hold', days}, 'Hold again preserves the selected duration');
+          state = await read(); await shown(page, state); await focusAfterSave(page, state);
+          assert.equal(state.answers.find(row => row.cardKey === kill.key)?.untilDay, untilDay);
+          state = await undoHold();
+        }
         const first = state.cards[0]!, firstSave = first.secondary?.kind === 'save' ? first.secondary : first.primary;
         const firstSelector = first.secondary?.kind === 'save' ? '#mn-secondary' : '#mn-primary';
         await page.route('**/api/morning/press', route => route.fulfill({status: 503, json: {error: 'Invented save failure.'}}), {times: 1});
@@ -227,6 +262,7 @@ export async function checkMorning(signedIn: BrowserContext): Promise<void> {
         assert.equal((await read()).completed, state.completed, 'A failed save cannot consume a slot');
         await page.emulateMedia({reducedMotion: 'reduce'});
         state = await apply(firstSelector, firstSave);
+        assert.match(await page.locator('#mn-toast-message').innerText(), /Back tomorrow with new figures/);
         assert.equal(await page.locator('#mn-root').evaluate(element => element.getAnimations({subtree: true}).filter(animation => animation.playState === 'running').length), 0,
           'Reduced motion also applies during save feedback');
         await page.locator('#mn-undo').waitFor({state: 'visible'});
@@ -348,11 +384,13 @@ export async function checkMorning(signedIn: BrowserContext): Promise<void> {
             await fixturePage.screenshot({path: `${process.env.PULSE_SCREENSHOT_DIR}/morning-375-${card.kind}.png`});
         }
       }
-      await openSheet(fixturePage, '#mn-good');
-      const goodBeforeRefresh = await fixturePage.locator('#mn-good').elementHandle(); assert.ok(goodBeforeRefresh);
-      await fixturePage.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
-      await fixturePage.waitForFunction(element => !element.isConnected, goodBeforeRefresh);
-      await closeSheet(fixturePage, '#mn-good'); await goodBeforeRefresh.dispose();
+      for (const selector of ['#mn-good', '#mn-menu', '#mn-figure']) {
+        await openSheet(fixturePage, selector);
+        const openerBeforeRefresh = await fixturePage.locator(selector).elementHandle(); assert.ok(openerBeforeRefresh);
+        await fixturePage.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+        await fixturePage.waitForFunction(element => !element.isConnected, openerBeforeRefresh);
+        await closeSheet(fixturePage, selector); await openerBeforeRefresh.dispose();
+      }
       // Copy and hiding remain supported for eligible cards even when the base sample deck has none.
       const copyCard: MorningCard = {...cards[0]!, key: 'invented-copy-decision', kind: 'google', state: 'decide',
         primary: {kind: 'copy', label: 'Copy a message', text: 'Invented freelancer message'}};
@@ -360,10 +398,15 @@ export async function checkMorning(signedIn: BrowserContext): Promise<void> {
       await fixturePage.evaluate(() => document.dispatchEvent(new Event('visibilitychange'))); await shown(fixturePage, fixture);
       await openSheet(fixturePage, '#mn-primary');
       assert.equal(await fixturePage.locator('#mn-copy-text').inputValue(), 'Invented freelancer message');
+      const copyOpenerBeforeRefresh = await fixturePage.locator('#mn-primary').elementHandle(); assert.ok(copyOpenerBeforeRefresh);
+      await fixturePage.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+      await fixturePage.waitForFunction(element => !element.isConnected, copyOpenerBeforeRefresh);
+      await copyOpenerBeforeRefresh.dispose();
       await fixturePage.locator('#mn-copy').click();
       assert.equal(await fixturePage.evaluate(() => (window as unknown as {__morningClipboard: string[]}).__morningClipboard.at(-1)), 'Invented freelancer message');
       assert.match(await fixturePage.locator('#mn-toast-message').innerText(), /Copied\. You send it\./);
       if (await fixturePage.locator('#mn-dialog').isVisible()) await closeSheet(fixturePage, '#mn-primary');
+      await fixturePage.waitForFunction(() => document.activeElement?.id === 'mn-primary');
       const hidden: MorningState = {mode: fixture.mode, cardKey: copyCard.key, state: 'hidden', untilDay: null,
         factsHash: copyCard.factsHash, answer: null, credentialId: 'invented-browser', pressedAt: `${fixture.day}T10:00:00Z`,
         clearedAt: null, title: copyCard.title, kind: copyCard.kind, subjectId: copyCard.subjectId, sourceScope: copyCard.sourceScope};
@@ -434,6 +477,7 @@ export async function checkMorning(signedIn: BrowserContext): Promise<void> {
       await fixturePage.waitForFunction(day => document.querySelector('#mn-day')?.textContent?.includes(day), expectedDay);
     } finally { await fixturePage.close(); }
 
+    await checkMorningRuleSettings(context);
     const settingsPage = await context.newPage();
     try {
       await setFirst(false); await context.clearCookies({name: 'pulse_morning_day'});

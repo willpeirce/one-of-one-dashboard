@@ -1,10 +1,10 @@
 import type { Settings } from '../settings.js';
 export type AdMarket = 'uk' | 'us';
 export interface MarketRules { overrideGbp: number | null; overrideUntil: string; killBar: number; slippingBar: number; atcBarGbp: number; upliftPercent: number }
-export interface AdRules { uk: MarketRules; us: MarketRules; killFloorGbp: number; slippingFloorGbp: number; freelancerTriggerGbp: number; testShareCapPercent: number }
+export interface AdRules { uk: MarketRules; us: MarketRules; killFloorGbp: number; flatJudgeGbp: number; slippingFloorGbp: number; freelancerTriggerGbp: number; testShareCapPercent: number }
 export function adRulesDefaults(): AdRules {
   const market = (atcBarGbp: number): MarketRules => ({overrideGbp:null,overrideUntil:'',killBar:1.3,slippingBar:1.5,atcBarGbp,upliftPercent:0});
-  return {uk:market(15),us:market(10),killFloorGbp:75,slippingFloorGbp:90,freelancerTriggerGbp:30,testShareCapPercent:25};
+  return {uk:market(15),us:market(10),killFloorGbp:75,flatJudgeGbp:60,slippingFloorGbp:90,freelancerTriggerGbp:30,testShareCapPercent:25};
 }
 export function breakEven(settings: Settings, market: AdMarket, today: string): {value: number; note: string} {
   const rule=settings.adRules[market];

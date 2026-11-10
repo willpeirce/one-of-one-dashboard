@@ -135,7 +135,9 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     number('atcBarGbp','Add-to-cart cost bar (£)',{min:0.01}),number('upliftPercent','Mon–Sat uplift (%)',{max:1000}),
   ],values.adRules[market],`adRules.${market}`)}</div><p class="setting-help" data-ad-override="${market}">${values.adRules[market].overrideUntil ? `${values.adRules[market].overrideUntil < ukToday(now) ? 'Expired' : 'override to'} ${values.adRules[market].overrideUntil}` : 'No dated override'}</p>`).join('')}
   <p class="setting-help">Daily budget is the Sunday base. Mon–Sat uses the market uplift. Spike dates are fixed in the rules.</p><div class="settings-grid">${fields([
-    number('killFloorGbp','Kill window spend floor (£)',{min:0.01}),number('slippingFloorGbp','Slipping window spend floor (£)',{min:0.01}),
+    number('killFloorGbp','Kill window spend floor (£)',{min:0.01}),
+    number('flatJudgeGbp','Flat test judgement spend (£)',{min:0.01,max:100_000}),
+    number('slippingFloorGbp','Slipping window spend floor (£)',{min:0.01}),
     number('freelancerTriggerGbp','Freelancer purchase-cost trigger (£)',{min:0.01}),number('testShareCapPercent','Test share cap (%)',{max:100}),
   ],values.adRules,'adRules')}</div>`);
   const costs = section('Costs & dispatch', 'Shopify unit costs first; starting costs are the fallback.', `<div class="settings-grid">${fields([

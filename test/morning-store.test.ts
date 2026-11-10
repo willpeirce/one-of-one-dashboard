@@ -280,3 +280,27 @@ test('lazy cleanup failures roll back to a savepoint while reads and audited pre
   assert.ok(logs.length >= 3); assert.ok(logs.every(line => line === 'Morning state cleanup failed; using the current projection.'));
   assert.equal((await h.db.query('SELECT 1 FROM pulse.audit_log')).rowCount, 2, 'Cleanup errors do not roll back the successful audited press');
 });
+
+test('hold accepts only three or seven days with exact keys and a three-day hold returns on the fourth day', async t => {
+  const held = card('invented-short-hold', {allowedPresses: ['hold', 'park']});
+  const h = await harness(t, input([held])), url = '/api/morning/press';
+  const base = {cardKey: held.key, action: 'hold'};
+  for (const payload of [
+    ...[0, 1, 2, 4, 6, 8, -3, 3.5, '3', null, true].map(days => ({...base, days})),
+    {...base, days: 3, extra: 'invented'}, {...base, action: 'park', days: 3},
+    {...base, action: 'undo', days: 7}, {...base, days: 7, answer: 'a'},
+  ]) assert.equal((await h.app.inject({method: 'POST', url, headers: h.headers, payload})).statusCode, 400);
+  assert.equal(h.loads, 0, 'Bad durations and extra keys are refused before any input read');
+  const three = await h.app.inject({method: 'POST', url, headers: h.headers, payload: {...base, days: 3}});
+  assert.equal(three.statusCode, 200);
+  assert.equal(three.json<MorningSnapshot>().answers[0]!.untilDay, '2032-04-09');
+  h.setNow(new Date('2032-04-08T22:59:59Z'));
+  assert.equal((await h.read()).cards.length, 0);
+  h.setNow(new Date('2032-04-08T23:00:00Z'));
+  assert.equal((await h.read()).cards[0]!.key, held.key, 'Fourth UK day begins at BST midnight');
+  const seven = await h.app.inject({method: 'POST', url, headers: h.headers, payload: {...base, days: 7}});
+  assert.equal(seven.statusCode, 200);
+  assert.equal(seven.json<MorningSnapshot>().answers[0]!.untilDay, '2032-04-16');
+  await h.press('undo', held.key);
+  assert.equal((await h.press('hold', held.key)).answers[0]!.untilDay, '2032-04-16', 'Omitted days still means seven');
+});

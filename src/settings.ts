@@ -293,6 +293,7 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
   const settings: Settings = {
     adRules: {uk:parseMarket('uk'),us:parseMarket('us'),
       killFloorGbp:requiredNumber(ad.killFloorGbp,'adRules.killFloorGbp',100_000,false,0.01),
+      flatJudgeGbp:requiredNumber(ad.flatJudgeGbp,'adRules.flatJudgeGbp',100_000,false,0.01),
       slippingFloorGbp:requiredNumber(ad.slippingFloorGbp,'adRules.slippingFloorGbp',100_000,false,0.01),
       freelancerTriggerGbp:requiredNumber(ad.freelancerTriggerGbp,'adRules.freelancerTriggerGbp',100_000,false,0.01),
       testShareCapPercent:requiredNumber(ad.testShareCapPercent,'adRules.testShareCapPercent',100)},
@@ -500,6 +501,11 @@ function storedSettings(input: unknown): Settings {
     mailchimpBillingDay: defaults.mailchimpBillingDay,
     ...input as Record<string, unknown>,
   };
+  if (stored.adRules && typeof stored.adRules === 'object' && !Array.isArray(stored.adRules)
+    && [Object.prototype, null].includes(Object.getPrototypeOf(stored.adRules))
+    && !Object.hasOwn(stored.adRules, 'flatJudgeGbp')) {
+    stored.adRules = { ...stored.adRules, flatJudgeGbp: defaults.adRules.flatJudgeGbp };
+  }
   if (!Object.hasOwn(stored, 'overheads') && !Object.hasOwn(stored, 'monthlyOverheadsGbp')) return validateSettings(stored);
   const { monthlyOverheadsGbp, ...values } = stored;
   const overheads = Object.hasOwn(stored, 'overheads') ? stored.overheads

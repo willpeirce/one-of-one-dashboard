@@ -89,7 +89,7 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
   content = content.replace(/<span class="avatar"[\s\S]*?<\/span><\/span>/, `<details class="account-menu" id="account-menu">
     <summary class="avatar" aria-label="Account menu">W</summary>
     <nav class="account-links" aria-label="Account">
-      <a href="/ads">Ads</a><a href="/creatives">Creatives</a><a href="/scorecard">Scorecard</a><a href="/fulfilment">Fulfilment costs</a><a href="/sources">Source health${badge('source-health-count', failing, 'failing checks')}</a><a href="/settings">Settings${badge('settings-count', unconfirmed, 'campaigns to confirm')}</a><a href="/audit">Audit log</a>
+      <a href="/morning">Morning</a><a href="/ads">Ads</a><a href="/creatives">Creatives</a><a href="/scorecard">Scorecard</a><a href="/fulfilment">Fulfilment costs</a><a href="/sources">Source health${badge('source-health-count', failing, 'failing checks')}</a><a href="/settings">Settings${badge('settings-count', unconfirmed, 'campaigns to confirm')}</a><a href="/audit">Audit log</a>
       <button type="button" id="sign-out" disabled>Sign out</button>
     </nav>
   </details>`);

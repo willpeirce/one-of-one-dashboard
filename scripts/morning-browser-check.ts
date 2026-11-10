@@ -142,7 +142,9 @@ export async function checkMorning(signedIn: BrowserContext): Promise<void> {
         await page.goto('/'); await page.locator('html[data-dashboard-ready="true"]').waitFor();
         const top = await page.locator('.hero-grid').evaluate(element => element.getBoundingClientRect().top + scrollY);
         assert.equal(top, width === 390 ? 499.0625 : 405.625, 'The new Morning way in leaves Home’s fold unchanged to the pixel');
-        assert.equal(await page.locator('a[href="/morning"]').count(), 1, 'Home has exactly one Morning link');
+        assert.equal(await page.locator('a[href="/morning"]').count(), 3, 'Home links to Morning three times and no more');
+        for (const way of ['#table a.morning-link', 'header.top .pills a.pill-morning', 'header.top .account-links a'])
+          assert.equal(await page.locator(`${way}[href="/morning"]`).count(), 1, `Home has one Morning link at ${way}`);
         console.log('MORNING HOME FOLD', width, top);
         await page.goto('/morning'); let state = await read(); await shown(page, state);
         assert.equal(await page.locator('header.top + #tk-strip').count(), 1);

@@ -97,3 +97,6 @@
  #dials #creative-panel .creative-floor{grid-column:1;grid-row:3;margin:0}
  #dials #creative-panel .creative-home-well{grid-column:2;grid-row:2/4;border-top:0;border-left:1px solid var(--line);padding:0 0 0 14px}
 }
+/* Morning leads Home's top bar. Six pills keep one row: up to 480px every pill is its icon, and from 861px to 1180px Morning is its icon beside a shorter search box. */
+@media (max-width:480px){.pill[aria-current="true"] .t{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}.pill[aria-current="true"]{padding:8px 10px}.pills{gap:3px}}
+@media (min-width:861px) and (max-width:1180px){.pill-morning .t{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}.pill-morning{padding:8px 10px}.search input{width:140px}}

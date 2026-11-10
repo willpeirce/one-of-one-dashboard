@@ -19,7 +19,7 @@ export const dashboardTemplate = `
   <symbol id="i-cal" viewBox="0 0 24 24"><path d="M4 5h16v15H4z M4 10h16 M8 3v4 M16 3v4"></path></symbol>
   <symbol id="i-search" viewBox="0 0 24 24"><path d="M11 4a7 7 0 1 1 0 14 7 7 0 0 1 0-14z M20 20l-4-4"></path></symbol>
   <symbol id="i-mail" viewBox="0 0 24 24"><path d="M3 6h18v12H3z M3 7l9 6 9-6"></path></symbol>
-  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8v9a2 2 0 0 1-2 2h-4v-6h-6v6H5a2 2 0 0 1-2-2z"></path></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8v9a2 2 0 0 1-2 2h-4v-6h-6v6H5a2 2 0 0 1-2-2z"></path></symbol><symbol id="i-sun" viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M12 2v2.5 M12 19.5V22 M4.9 4.9l1.8 1.8 M17.3 17.3l1.8 1.8 M2 12h2.5 M19.5 12H22 M4.9 19.1l1.8-1.8 M17.3 6.7l1.8-1.8"></path></symbol>
   <symbol id="i-list" viewBox="0 0 24 24"><path d="M4 6h16 M4 12h16 M4 18h10"></path></symbol>
   <symbol id="i-dial" viewBox="0 0 24 24"><path d="M4 17a8 8 0 0 1 16 0 M12 17l4-5"></path></symbol>
   <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4 6.1 20.5l1.2-6.5L2.5 9.4l6.6-.9z"></path></symbol>
@@ -30,7 +30,7 @@ export const dashboardTemplate = `
 <header class="top">
   <div class="hin">
     <a class="logo" href="#hero" aria-label="One of One, control centre"><img src="/assets/logo.png" alt="One of One" width="500" height="312" decoding="async"></a>
-    <nav class="pills" aria-label="Sections">
+    <nav class="pills" aria-label="Sections"><a class="pill pill-morning" href="/morning" aria-label="Morning" title="Morning"><svg class="ic" aria-hidden="true"><use href="#i-sun"></use></svg><span class="t">Morning</span></a>
       <button class="pill" type="button" aria-current="true" data-go="hero"><svg class="ic" aria-hidden="true"><use href="#i-home"></use></svg><span class="t"><span data-sample-text="t0021">{{sample:t0021}}</span></span></button>
       <button class="pill" type="button" data-go="table"><svg class="ic" aria-hidden="true"><use href="#i-list"></use></svg><span class="t"><span data-sample-text="t0022">{{sample:t0022}}</span></span></button>
       <button class="pill" type="button" data-go="tests"><svg class="ic" aria-hidden="true"><use href="#i-flask"></use></svg><span class="t"><span data-sample-text="t0023">{{sample:t0023}}</span></span></button>

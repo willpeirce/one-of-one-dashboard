@@ -31,3 +31,5 @@
 .settings-page .push-device button{min-width:44px;min-height:44px}
 .settings-page .push-device [hidden]{display:none!important}
 .settings-page #push-device-message:empty,.settings-page #push-device-help:empty{display:none}
+/* Four header buttons keep one row on the narrowest phones. */
+@media(max-width:389px){.settings-nav{gap:4px}.settings-nav .btn{padding:6px 7px}}

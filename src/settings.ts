@@ -84,6 +84,7 @@ export interface Settings {
   deadlines: { label: string; date: string }[];
   keyExpiryDates: { keyName: KeyName; expiresOn: string }[];
   morningSummaryEnabled: boolean;
+  morningOpensFirst: boolean;
   brand: 'one-of-one';
 }
 
@@ -169,7 +170,7 @@ export function defaultSettings(): Settings {
       offerCreatorLink: true, useAffiliateWording: false,
     },
     waitingContacts: [], deadlines: [], keyExpiryDates: [],
-    morningSummaryEnabled: false, brand: appConfig.brand,
+    morningSummaryEnabled: false, morningOpensFirst: false, brand: appConfig.brand,
   };
 }
 
@@ -421,6 +422,7 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
       return { keyName: choice(parsed.keyName, `${path}.keyName`, SETTINGS_KEY_NAMES), expiresOn: date(parsed.expiresOn, `${path}.expiresOn`) };
     }, (row) => row.keyName),
     morningSummaryEnabled: bool(value.morningSummaryEnabled, 'morningSummaryEnabled'),
+    morningOpensFirst: bool(value.morningOpensFirst, 'morningOpensFirst'),
     brand: choice(value.brand, 'brand', ['one-of-one'] as const),
   };
   if (!seriesPaceDates(settings.series1OrderDate, settings.series1UkLandingOffsetDays)
@@ -467,6 +469,7 @@ function storedSettings(input: unknown): Settings {
     freelancerLabel: defaults.freelancerLabel,
     inboundStock: defaults.inboundStock,
     keyDates: defaults.keyDates,
+    morningOpensFirst: defaults.morningOpensFirst,
     googleNetworkSpendFloorGbp: defaults.googleNetworkSpendFloorGbp,
     googleNetworkRoasFloor: defaults.googleNetworkRoasFloor,
     mailchimpPlanLimit: defaults.mailchimpPlanLimit,

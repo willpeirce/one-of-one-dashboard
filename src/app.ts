@@ -1,6 +1,8 @@
 import { registerTicker } from './ticker/routes.js';
 import { readTicker } from './ticker/store.js';
 import { registerMorning } from './morning/routes.js';
+import { morningPage } from './morning/view.js';
+import { MORNING_DAY_COOKIE, MORNING_DAY_COOKIE_SECONDS, opensMorning, readMorningFirst } from './morning/entry.js';
 import { morningInputFromDashboard, readMorningCoverage } from './morning/inputs.js';
 import { curateMorningSample } from './morning/sample.js';
 import { activityActors, readActivity } from './meta-adsets/activity.js';
@@ -227,7 +229,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     const input = morningInputFromDashboard(dashboard, settings.values, ticker, shopify.mode, coverage);
     return shopify.mode === 'sample' ? curateMorningSample(input, now) : input;
   }
-  registerMorning(app, db, auth, morningInputs, localNow);
+  const morning = registerMorning(app, db, auth, morningInputs, localNow);
   registerAdSets(app, db, auth, sourceEnv, creativeNow, adOptions, () => events.publish());
   registerScorecard(app, db, auth, shopify.store, sourceEnv, () => shopifyOptions.clock?.() ?? new Date());
   registerFulfilment(app, db, auth, shopify.mode, sourceNow, () => events.publish());
@@ -239,7 +241,16 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   }, () => events.publish(), adOptions.creativeReader, adOptions.creativeScan);
   app.get('/', async (request, reply) => {
     if (!await auth.session(request)) return reply.redirect('/login');
+    if (request.url === '/' && opensMorning(await readMorningFirst(db), request.cookies[MORNING_DAY_COOKIE], request.url, localNow()))
+      return reply.redirect('/morning');
     return reply.type('text/html; charset=utf-8').send(dashboardPage(await snapshot()));
+  });
+  app.get('/morning', async (request, reply) => {
+    if (!await auth.session(request)) return reply.redirect('/login');
+    const now = localNow(), deck = await morning.read(now);
+    reply.setCookie(MORNING_DAY_COOKIE, ukToday(now), { path: '/', httpOnly: true,
+      secure: config.secureCookies, sameSite: 'strict', maxAge: MORNING_DAY_COOKIE_SECONDS });
+    return reply.type('text/html; charset=utf-8').send(morningPage(deck));
   });
   app.get('/api/dashboard', async (request, reply) => {
     if (!await auth.session(request)) return reply.code(401).send({ error: 'Sign in to continue.' });
@@ -302,8 +313,8 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   });
   // Fixed paths only; the server never exposes repository or environment files.
   const assets = [
-    ...['browser.js', 'dashboard.js', 'settings.js', 'fulfilment.js', 'creatives.js', 'adsets.js', 'ticker.js'].map(name => [name, 'text/javascript; charset=utf-8'] as const),
-    ...['styles.css', 'dashboard.css', 'settings.css', 'fulfilment.css', 'creatives.css', 'fonts.css', 'pull-refresh.css', 'adsets.css', 'scorecard.css', 'home-compact.css', 'home-panels.css', 'decisions.css', 'ticker.css'].map(name => [name, 'text/css; charset=utf-8'] as const),
+    ...['browser.js', 'dashboard.js', 'settings.js', 'fulfilment.js', 'creatives.js', 'adsets.js', 'ticker.js', 'morning.js'].map(name => [name, 'text/javascript; charset=utf-8'] as const),
+    ...['styles.css', 'dashboard.css', 'settings.css', 'fulfilment.css', 'creatives.css', 'fonts.css', 'pull-refresh.css', 'adsets.css', 'scorecard.css', 'home-compact.css', 'home-panels.css', 'decisions.css', 'ticker.css', 'morning.css'].map(name => [name, 'text/css; charset=utf-8'] as const),
     ...['logo.png', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'].map(name => [name, 'image/png'] as const),
     ...['outfit', 'plus-jakarta-sans'].flatMap(name => [
       [`fonts/${name}-latin-wght-normal.woff2`, 'font/woff2'] as const,

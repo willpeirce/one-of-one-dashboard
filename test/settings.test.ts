@@ -66,6 +66,56 @@ test('key-date name limit counts UTF-16 units and names the field when a longer 
   assert.equal(Array.from(names[3]!).length, 50, 'Astral letters consume two UTF-16 units each');
 });
 
+test('Morning-first defaults off, accepts booleans only and renders its saved checkbox in Summary & brand', () => {
+  const defaults = defaultSettings();
+  assert.equal(defaults.morningOpensFirst, false);
+  for (const value of [false, true]) {
+    const values = validateSettings({...defaults, morningOpensFirst: value});
+    assert.equal(values.morningOpensFirst, value);
+    const preferences = settingsPage({version: 0, values}).split('Summary &amp; brand')[1]!.split('</details>')[0]!;
+    assert.match(preferences, /Open Morning first each day/);
+    const input = preferences.match(/<input[^>]*name="morningOpensFirst"[^>]*>/)![0];
+    assert.match(input, /type="checkbox"/);
+    assert.equal(input.includes(' checked'), value);
+  }
+  for (const value of ['true', 'false', 0, 1, null, undefined, [], {}]) {
+    assert.throws(() => validateSettings({...defaults, morningOpensFirst: value}), (error: unknown) =>
+      error instanceof SettingsValidationError && error.fields.length === 1 && error.fields[0] === 'morningOpensFirst');
+  }
+});
+
+test('Morning-first fills older Settings without writing and its guarded audit migration replays unchanged', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const initial = await readSettings(db);
+  const {morningOpensFirst: _morningOpensFirst, ...older} = initial.values;
+  await db.query('UPDATE pulse.settings SET values=$1', [JSON.stringify(older)]);
+  const before = (await db.query('SELECT * FROM pulse.settings')).rows;
+  const filled = await readSettings(db);
+  assert.equal(filled.values.morningOpensFirst, false);
+  assert.equal(filled.version, initial.version);
+  assert.deepEqual((await db.query('SELECT * FROM pulse.settings')).rows, before);
+  assert.equal((await db.query('SELECT 1 FROM pulse.audit_log')).rows.length, 0);
+  assert.equal((await db.query('SELECT 1 FROM pulse.settings_changes')).rows.length, 0);
+  const constraint = async () => (await db.query<{definition: string}>(`SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
+    WHERE conrelid='pulse.settings_changes'::regclass AND contype='c' AND pg_get_constraintdef(oid) LIKE '%goalOrdersPerDay%'`)).rows[0]!.definition;
+  const definition = await constraint();
+  const migration = await readFile(new URL('../migrations/063_morning_first.sql', import.meta.url), 'utf8');
+  const started = performance.now();
+  await db.query(migration);
+  await db.query(migration);
+  t.diagnostic(`Morning-first migration replay twice: ${Math.round(performance.now() - started)} ms`);
+  assert.equal(await constraint(), definition);
+  assert.equal((definition.match(/'morningOpensFirst'/g) ?? []).length, 1);
+  const enabled = await saveSettings(db, {version: filled.version, values: {...filled.values, morningOpensFirst: true}}, randomUUID());
+  assert.deepEqual(enabled.changedFields, ['morningOpensFirst']);
+  assert.equal((await readSettings(db)).values.morningOpensFirst, true);
+  const disabled = await saveSettings(db, {version: enabled.version, values: {...enabled.values, morningOpensFirst: false}}, randomUUID());
+  assert.deepEqual(disabled.changedFields, ['morningOpensFirst']);
+  assert.equal((await readSettings(db)).values.morningOpensFirst, false);
+  assert.deepEqual((await db.query('SELECT field FROM pulse.settings_changes ORDER BY audit_id')).rows,
+    [{field: 'morningOpensFirst'}, {field: 'morningOpensFirst'}]);
+});
+
 test('settings initialize once with specified defaults, unknowns unset and no default-change audit', async (t) => {
   const db = await createTestDatabase();
   t.after(() => db.close());

@@ -240,6 +240,7 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
   const preferences = section('Summary & brand', 'The morning summary starts switched off.', `<div class="settings-grid">${fields([
     { key: 'brand', label: 'Brand', options: [{ value: 'one-of-one', label: 'One of One' }], hint: 'Kinda Rare comes in a later stage.' },
     { ...checkbox('morningSummaryEnabled', 'Enable the 08:00 UK summary'), hint: 'Saves your preference. Summary delivery is built in stage 7.' },
+    { ...checkbox('morningOpensFirst', 'Open Morning first each day'), hint: 'Your first Home visit each UK day opens Morning on this device.' },
   ], values)}</div>`);
   return `<!doctype html>
 <html lang="en" data-theme="dark">

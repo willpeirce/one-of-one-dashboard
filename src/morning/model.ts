@@ -138,7 +138,7 @@ function creativeCards(input: MorningInput): MorningCard[] {
       factsHash: morningFacts(kind, card.id, state, fading ? ruleIds : card.id), sourceScope: 'creatives',
       tier: fading ? 2 : 3, order: fading ? 30_000 + index : 10_000 + index,
       title: card.title, lane: 'Meta · creative', source: 'meta', figure,
-      why: card.reason, whyLine: card.reason, rule: fading ? 'Fading creative: the stored performance rule has tripped.' : 'Make next: stored creative patterns, not proof.',
+      why: card.reason, whyLine: fading ? card.reason : 'Creative patterns, not proof. Tap for the evidence.', rule: fading ? 'Fading creative: the stored performance rule has tripped.' : 'Make next: stored creative patterns, not proof.',
       sourceLine: `Meta creative evidence · ${card.mode === 'sample' ? 'sample data · ' : ''}${readTime(input, 'creatives')}`, sourceHref: open.href,
       primary: fading && !card.brief ? open : copy, secondary: park(), menu: [hide()], allowedPresses: ['park', 'hide'],
     };

@@ -149,6 +149,7 @@ function setupTicker(root: HTMLElement): void {
       else if (command.source === 'undo') { undoStack.pop(); restoredNotice = !undoStack.length; armUndo(); }
       else clearUndo();
       await display(data, true, command.source === 'next');
+      root.dispatchEvent(new CustomEvent('pulse:ticker-saved'));
       if (dialog.open) close.focus({ preventScroll: true });
       else if (!next.hidden) next.focus({ preventScroll: true });
       else if (!add.hidden) add.focus({ preventScroll: true });
@@ -198,5 +199,12 @@ function setupTicker(root: HTMLElement): void {
   new ResizeObserver(measure).observe(band);
   void document.fonts.ready.then(measure);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') void read(); });
+  // Morning already has the saved ticker response; share it without another read or poll.
+  root.addEventListener('pulse:ticker-state', event => {
+    if (!(event instanceof CustomEvent)) return;
+    const data = event.detail as TickerSnapshot;
+    if (!data || !['sample', 'live'].includes(data.mode) || !Array.isArray(data.ahead) || !Array.isArray(data.passed)) return;
+    ++revision; clearUndo(); failedPress = null; void display(data);
+  });
   void read();
 }

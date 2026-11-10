@@ -97,7 +97,8 @@ function creativeFigures(view: CreativeView | undefined): Record<string, Morning
     const kind = view.groups.find(row => row.group.id === card.groupId)?.group.kind ?? (card.id.includes('-video-') ? 'video' : 'image');
     const variants = Object.fromEntries(([1, 3, 7] as const).map(window => {
       const brief = view.briefWindows?.[window][kind] ?? view.homeMakeNext[kind];
-      return [String(window), { bullets: brief.bullets.slice(0, 3).map(bullet => ({ text: bullet.text, strength: strengths[bullet.confidence] })), text: brief.brief, footer: brief.footer }];
+      return [String(window), { bullets: brief.bullets.slice(0, 3).map(bullet => ({ text: bullet.instruction ?? bullet.text, strength: strengths[bullet.confidence] })), text: brief.brief,
+        footer: `Patterns, not proof.${brief.footer.includes('Thin evidence') ? ' Thin evidence, read loosely.' : ''}` }];
     })) as Extract<MorningFigure, { kind: 'brief' }>['variants'];
     return [card.id, { kind: 'brief', variants } satisfies MorningFigure];
   }));

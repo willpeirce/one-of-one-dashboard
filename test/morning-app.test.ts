@@ -38,6 +38,14 @@ test('Morning reuses read-only Home inputs and only mutates its state and audit,
   assert.equal(initial.mode, 'sample');
   assert.equal(initial.cards.length, 7);
   for (const kind of ['dial', 'thumb', 'brief', 'arms']) assert.ok(initial.cards.some(card => card.figure.kind === kind), `First sample deck includes ${kind}`);
+  const brief = initial.cards.find(card => card.figure.kind === 'brief')!;
+  assert.equal(brief.figure.kind, 'brief');
+  if (brief.figure.kind === 'brief') for (const variant of Object.values(brief.figure.variants)) {
+    for (const bullet of variant.bullets) assert.doesNotMatch(bullet.text, /£|a purchase against|Hook \d+%/);
+    assert.doesNotMatch(variant.footer, /£/);
+    if (variant.bullets.length) assert.match(variant.text, /£|%/, 'Evidence remains in the full copy/why text');
+  }
+  assert.doesNotMatch(brief.whyLine!, /£/);
   assert.deepEqual(writes, []);
   const cardKey = initial.cards[0]!.key;
   const saved = await app.inject({ method: 'POST', url: '/api/morning/press', headers, payload: {cardKey, action: 'park'} });

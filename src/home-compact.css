@@ -1,5 +1,7 @@
 /* Home's compact chapter layout. Sheets and source pages retain their own styles. */
 #table,#reviews,#tests,#dials{min-width:0}
+#table>.chapter-heading>.chapter-copy{min-width:150px}
+#table .morning-link{display:inline-flex;align-items:center;justify-content:center;align-self:center;text-decoration:none;padding:6px 12px}
 #table :is(button,a,summary),#reviews :is(button,a,summary),#tests :is(button,a,summary),#dials :is(button,a,summary),#foot :is(button,a,summary){min-height:44px}
 #table summary,#reviews summary,#tests summary,#dials summary{cursor:pointer}
 #table [hidden],#reviews [hidden],#tests [hidden],#dials [hidden]{display:none!important}

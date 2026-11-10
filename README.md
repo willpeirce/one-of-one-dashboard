@@ -197,3 +197,5 @@ The `build-9-nov` update requires additive migrations **059–061**. Exhausted S
 The `build-10-nov` carry fixes bound stored unreadable-order IDs to the latest 50 while retaining their count. Part A needs no migration; existing key-date names and passed keys remain compatible.
 
 Part B adds migration **062** and signed-in `/api/morning` reads and local presses. Morning takes at most seven items per UK day, including completed presses, ticker passes and successful app actions; Undo returns a slot. Sample and live answers stay separate. Ads and Creatives subject links open their existing detail sheets. No new keys, dependencies or source calls are needed.
+
+Part C adds migration **063** and the signed-in `/morning` page. Use the Morning link in Home's Decisions heading, or opt into **Settings → Summary & brand → Open Morning first each day**. It starts off. Morning's Home pill always returns to Home, including when cookies are refused. Local answers have an eight-second Undo and persistent Put back; Meta actions retain their existing confirmation, ownership, audit and Undo rules. The shared Next up strip stays in sync with date actions on Morning.

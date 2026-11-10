@@ -27,6 +27,7 @@ import { checkGoogleWidgets } from './browser-google.js';
 import { checkMailchimpWidgets } from './browser-mailchimp.js';
 import { checkInboundSettings } from './browser-inbound-settings.js';
 import { checkTicker } from './ticker-browser-check.js';
+import { checkMorning } from './morning-browser-check.js';
 
 let step = 'read test configuration';
 
@@ -1803,6 +1804,8 @@ async function run(): Promise<void> {
     await checkScorecard(context);
     step = 'check shared Next up strip, local persistence and accessible modal at phone and desktop widths';
     await checkTicker(context);
+    step = 'check Morning cards, first-screen fit, local answers and the once-per-device daily redirect';
+    await checkMorning(context);
 
     step = 'check same-origin manifest and installation icons';
     await checkManifest(page, context, origin);

@@ -135,6 +135,26 @@ export async function checkMorning(signedIn: BrowserContext): Promise<void> {
   };
   try {
     await setFirst(false);
+    const bar = await context.newPage();
+    try {
+      // The widths the two usual viewports never load: six pills stay on one row with any chapter current.
+      for (const width of [375, 402, 430, 480, 1024, 1180, 1181]) {
+        await bar.setViewportSize({width, height: 844});
+        await bar.goto('/'); await bar.locator('html[data-dashboard-ready="true"]').waitFor();
+        for (const go of ['hero', 'table', 'tests', 'dials']) {
+          const sideways = await bar.evaluate(current => {
+            document.querySelectorAll<HTMLElement>('[data-go]').forEach(item => item.setAttribute('aria-current', String(item.dataset.go === current)));
+            return document.documentElement.scrollWidth - innerWidth;
+          }, go);
+          assert.ok(sideways <= 0, `Home's six-pill bar fits at ${width}px with ${go} current (${sideways}px over)`);
+        }
+      }
+      for (const path of ['/settings', '/ads']) for (const width of [375, 390]) {
+        await bar.setViewportSize({width, height: 844}); await bar.goto(path);
+        const height = await bar.locator('header.top').evaluate(element => element.getBoundingClientRect().height);
+        assert.ok(height < 70, `${path} keeps a one-row header at ${width}px (${height}px)`);
+      }
+    } finally { await bar.close(); }
     for (const width of [390, 1280]) {
       await clean();
       const page = await context.newPage(); await page.setViewportSize({width, height: width === 390 ? 844 : 960});
@@ -142,7 +162,17 @@ export async function checkMorning(signedIn: BrowserContext): Promise<void> {
         await page.goto('/'); await page.locator('html[data-dashboard-ready="true"]').waitFor();
         const top = await page.locator('.hero-grid').evaluate(element => element.getBoundingClientRect().top + scrollY);
         assert.equal(top, width === 390 ? 499.0625 : 405.625, 'The new Morning way in leaves Home’s fold unchanged to the pixel');
-        assert.equal(await page.locator('a[href="/morning"]').count(), 1, 'Home has exactly one Morning link');
+        assert.equal(await page.locator('a[href="/morning"]').count(), 3, 'Home links to Morning three times and no more');
+        for (const way of ['#table a.morning-link', 'header.top .pills a.pill-morning', 'header.top .account-links a'])
+          assert.equal(await page.locator(`${way}[href="/morning"]`).count(), 1, `Home has one Morning link at ${way}`);
+        const tap = await page.locator('header.top a.pill-morning').evaluate(pill => {
+          const box = pill.getBoundingClientRect(), area = getComputedStyle(pill, '::after');
+          const x = box.left + box.width / 2, y = box.top + box.height / 2;
+          return { width: parseFloat(area.width), height: parseFloat(area.height),
+            edges: [[x, box.top - 4], [x, box.bottom + 4], [box.left - 3, y], [box.right + 2, y]]
+              .every(point => document.elementFromPoint(point[0]!, point[1]!) === pill) };
+        });
+        assert.ok(tap.width >= 44 && tap.height >= 44 && tap.edges, `Morning's pill has a 44px tap area at ${width}px (${JSON.stringify(tap)})`);
         console.log('MORNING HOME FOLD', width, top);
         await page.goto('/morning'); let state = await read(); await shown(page, state);
         assert.equal(await page.locator('header.top + #tk-strip').count(), 1);

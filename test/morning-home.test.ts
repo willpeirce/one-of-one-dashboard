@@ -103,11 +103,22 @@ test('Home without Morning state performs one read, adds no property and retains
     assert.equal(Object.hasOwn(dashboard, 'morningOmissions'), false);
     assert.deepEqual(dashboard, original);
     // Main 3d43b39, 2032-04-07 08:00 UTC (09:00 UK): timestamp and greeting fixed.
-    // Only C's approved link is removed.
+    // Only C's approved link and the Morning navigation entry (its icon, its pill and its menu link) are removed.
     const markup = dashboardPage({...dashboard, morningOmissions: result});
     const morningLink = '<a class="btn morning-link" href="/morning">Morning ›</a>';
-    assert.equal(markup.split(morningLink).length, 2);
-    assert.equal(createHash('sha256').update(markup.replace(morningLink, '')).digest('hex'),
+    const morningNavigation = [
+      '<symbol id="i-sun" viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M12 2v2.5 M12 19.5V22 M4.9 4.9l1.8 1.8 M17.3 17.3l1.8 1.8 M2 12h2.5 M19.5 12H22 M4.9 19.1l1.8-1.8 M17.3 6.7l1.8-1.8"></path></symbol>',
+      '<a class="pill pill-morning" href="/morning" aria-label="Morning" title="Morning"><svg class="ic" aria-hidden="true"><use href="#i-sun"></use></svg><span class="t">Morning</span></a>',
+      '<a href="/morning">Morning</a>',
+    ];
+    let pinned = markup;
+    for (const part of [morningLink, ...morningNavigation]) {
+      assert.equal(markup.split(part).length, 2);
+      pinned = pinned.replace(part, '');
+    }
+    assert.match(markup, /<nav class="pills" aria-label="Sections"><a class="pill pill-morning" href="\/morning"/, 'Morning leads the top bar');
+    assert.match(markup, /<nav class="account-links" aria-label="Account">\s*<a href="\/morning">Morning<\/a>/, 'Morning leads the account menu');
+    assert.equal(createHash('sha256').update(pinned).digest('hex'),
       'c9442a57f6b24ab50d180539383d313a9648d18bd78df45468245a051d751e7e');
   });
 });

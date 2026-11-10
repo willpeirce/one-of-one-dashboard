@@ -46,7 +46,7 @@ ${signedIn ? tickerHead() : ''}</head>
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="top"><div class="hin">
     <a class="wordmark" href="/">One of One <span>Pulse</span></a>
-    ${signedIn ? `<nav aria-label="Main"><a href="/">Home</a><a href="/scorecard">Scorecard</a><a href="/sources">Source health</a><a href="/settings">Settings</a><a href="/audit">Audit log</a><button id="sign-out" type="button" disabled>Sign out</button></nav>` : ''}
+    ${signedIn ? `<nav aria-label="Main"><a href="/morning">Morning</a><a href="/">Home</a><a href="/scorecard">Scorecard</a><a href="/sources">Source health</a><a href="/settings">Settings</a><a href="/audit">Audit log</a><button id="sign-out" type="button" disabled>Sign out</button></nav>` : ''}
   </div></header>${signedIn ? tickerHtml() : ''}
   <main class="wrap" id="main">${content}<p id="auth-message" role="status" aria-live="polite"></p></main>
   <noscript><div class="wrap"><p class="notice">Enable JavaScript to sign in or sign out with a passkey.</p></div></noscript>

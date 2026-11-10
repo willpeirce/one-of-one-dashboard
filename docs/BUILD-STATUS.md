@@ -95,9 +95,13 @@ Updated in every pull request.
 | 6 | Costs, uploads, planning | not started | no | no |
 | 7 | Alerts and Ask | push delivery and morning summary built; other alerts and Ask not started | no new key | installed-phone delivery pending |
 
+## Small change: Morning in every header · 10 Nov
+
+Branch **morning-nav**. Every signed-in page header links to Morning: a pill on Home (first in the top bar, plus the account menu), a link on Source health and Audit log, a button on Settings, Ads, Creatives, Fulfilment costs and Scorecard. No migration, no new dependency, no new Setting, no source read. Runs the same on sample and live. The browser suite now requires a visible Morning link in the header of all nine shells at 390px and 1280px, a 44px tap area on Home's Morning pill, and no sideways scroll on Home at seven further widths; Home's fold budgets and its markup pin are unchanged. Known gap carried from main: Home's top bar scrolls sideways at about 861px to 1020px wide.
+
 ## Next step
 
-Review **build-10-nov** as one pull request with separate lettered commits. Parts A–H provide the carry fixes, Morning foundation and screen, Google checks, HQ reads, phone push, G’s eleven fixes and H’s eight follow-up fixes. All pinned Home counts, heights, controls and fold budgets remain in force.
+**build-10-nov** is merged (10 Nov), as one pull request with separate lettered commits. Parts A–H provide the carry fixes, Morning foundation and screen, Google checks, HQ reads, phone push, G’s eleven fixes and H’s eight follow-up fixes. All pinned Home counts, heights, controls and fold budgets remain in force.
 
 After an approved merge, the deployment maintainer runs the Shell merge, any migrations from 062, Republish, live Settings and acceptance. Part A needs no migration. The builder uses invented fixtures, PostgreSQL and browser checks; no live source access or deployment is performed.
 

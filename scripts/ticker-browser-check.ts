@@ -91,6 +91,7 @@ export async function checkTicker(signedIn: BrowserContext): Promise<void> {
           }
           assert.equal(await page.locator('header.top + #tk-strip').count(), 1, `${path}: one shared strip directly after the header`);
           assert.equal(await page.locator('head link[href="/assets/fonts.css"]').count(), 1, `${path}: shared fonts are loaded`);
+          assert.ok(await page.locator('header.top a[href="/morning"]:visible').count() >= 1, `${path} at ${width}px: Morning is one tap from the header`);
           assert.equal(await page.locator('head link[href="/assets/ticker.css"]').count(), 1, `${path}: ticker height is reserved in the head`);
           const strip = (await page.locator('#tk-strip').boundingBox())!, header = (await page.locator('header.top').boundingBox())!;
           assert.equal(strip.height, width === 390 ? 44 : 40, `${path}: fixed strip height`);

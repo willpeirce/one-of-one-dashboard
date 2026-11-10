@@ -174,7 +174,7 @@ test('a parser version change bypasses the old ETag and resumes conditional read
     return etag ? new Response(null, {status: 304}) : new Response(register(), {headers: {etag: '"invented-version"'}});
   }}); t.after(() => worker.stop());
   await worker.tick();
-  await db.query("UPDATE pulse.github_hq_reads SET parser_version=0 WHERE target_key='register'");
+  await db.query("UPDATE pulse.github_hq_reads SET parser_version=2 WHERE target_key='register'");
   now = new Date(+now + HQ_HOURLY_MS); await worker.tick();
   now = new Date(+now + HQ_HOURLY_MS); await worker.tick();
   assert.deepEqual(seen, [null, null, '"invented-version"']);

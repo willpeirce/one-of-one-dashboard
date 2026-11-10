@@ -1,4 +1,4 @@
-interface Notice { title: string; body: string; path: string; day: string | null }
+interface Notice { title: string; body: string; path: string; day: string | null; kind: 'summary' | 'test' }
 interface WindowClient {
   url: string; focus(): Promise<unknown>; navigate?(url: string): Promise<WindowClient | null>;
 }
@@ -6,7 +6,7 @@ interface PushEvent { data?: { json(): unknown } | null; waitUntil(work: Promise
 interface ClickEvent { notification: { data: unknown; close(): void }; waitUntil(work: Promise<unknown>): void }
 export interface PushWorkerScope {
   location: { origin: string };
-  registration: { showNotification(title: string, options: { body: string; tag: string; icon: string; data: { path: string } }): Promise<unknown> };
+  registration: { showNotification(title: string, options: { body: string; tag?: string; icon: string; data: { path: string } }): Promise<unknown> };
   clients: { matchAll(options: { type: 'window'; includeUncontrolled: boolean }): Promise<WindowClient[]>; openWindow(url: string): Promise<unknown> };
   addEventListener(type: 'push', listener: (event: PushEvent) => void): void;
   addEventListener(type: 'notificationclick', listener: (event: ClickEvent) => void): void;
@@ -24,7 +24,7 @@ export function notificationMessage(value: unknown, origin: string): Notice {
   const data = value && typeof value === 'object' ? value as Record<string, unknown> : {};
   const cut = (text: unknown, fallback: string, limit: number) => typeof text === 'string' && text.trim()
     ? Array.from(text).slice(0, limit).join('') : fallback;
-  return { title: cut(data.title, 'Morning · Pulse', 120),
+  return { kind: data.kind === 'test' ? 'test' : 'summary', title: cut(data.title, 'Morning · Pulse', 120),
     body: typeof data.body === 'string' ? Array.from(data.body).slice(0, 1000).join('') : 'Open Morning for your daily check.',
     path: notificationPath(data.path, origin),
     day: typeof data.day === 'string' && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(data.day) ? data.day : null };
@@ -37,7 +37,7 @@ export function installPushWorker(scope: PushWorkerScope): void {
     try { data = event.data?.json(); } catch { /* An unreadable push still shows one visible notification. */ }
     const notice = notificationMessage(data, scope.location.origin);
     event.waitUntil(scope.registration.showNotification(notice.title, {
-      body: notice.body, tag: notice.day ? `pulse-morning-${notice.day}` : 'pulse-morning', icon: '/assets/icon-192.png', data: { path: notice.path },
+      body: notice.body, ...(notice.kind === 'test' ? {} : {tag: notice.day ? `pulse-morning-${notice.day}` : 'pulse-morning'}), icon: '/assets/icon-192.png', data: { path: notice.path },
     }));
   });
   scope.addEventListener('notificationclick', event => {

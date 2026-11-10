@@ -1,3 +1,4 @@
+import { greetingAt } from '../src/greeting.js';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -86,23 +87,29 @@ test('Home uses Morning facts and read success, ignores cleared/expired/other-mo
   assert.match(decisionsHtml({ shopify: shopify(data.needs), morningOmissions: { needs: ['watch', 'alarm'], adSets: [], creatives: [] } }), /Invented watch/);
 });
 
-test('Home without Morning state performs one read, adds no property and retains the same rendered page', async () => {
-  const dashboard = {...getSampleDashboard(), generatedAt: now.toISOString()}, original = structuredClone(dashboard), calls: string[] = [];
-  const db: Database = {
-    async query(sql, values) { calls.push(sql); assert.match(sql, /^SELECT .*mode,card_key/s); assert.deepEqual(values, ['sample']); return { rows: [], rowCount: 0 }; },
-    async transaction() { throw new Error('Home must not start a state mutation transaction'); },
-    async close() {},
-  };
-  const result = await readHomeMorningOmissions(db, dashboard, defaultSettings(), 'sample', now);
-  assert.equal(result, undefined); assert.equal(calls.length, 1);
-  assert.equal(Object.hasOwn(dashboard, 'morningOmissions'), false);
-  assert.deepEqual(dashboard, original);
-  // Rendered from main 3d43b39 at this fixed invented time. Only C's approved link is removed.
-  const markup = dashboardPage({...dashboard, morningOmissions: result});
-  const morningLink = '<a class="btn morning-link" href="/morning">Morning ›</a>';
-  assert.equal(markup.split(morningLink).length, 2);
-  assert.equal(createHash('sha256').update(markup.replace(morningLink, '')).digest('hex'),
-    'c44fd61adb59b2be939a42e4f3d7086191a2d82f17b68c1a8d3043a8b13307c5');
+test('Home without Morning state performs one read, adds no property and retains the same rendered page', async t => {
+  for (const hour of ['00', '08', '14', '20']) await t.test(`host hour ${hour}`, async t => {
+    t.mock.timers.enable({apis: ['Date'], now: new Date(`2032-04-07T${hour}:00:00Z`)});
+    const dashboard = {...getSampleDashboard(), generatedAt: now.toISOString()}, calls: string[] = [];
+    dashboard.textValues.t0033!.value = greetingAt(now);
+    const original = structuredClone(dashboard);
+    const db: Database = {
+      async query(sql, values) { calls.push(sql); assert.match(sql, /^SELECT .*mode,card_key/s); assert.deepEqual(values, ['sample']); return { rows: [], rowCount: 0 }; },
+      async transaction() { throw new Error('Home must not start a state mutation transaction'); },
+      async close() {},
+    };
+    const result = await readHomeMorningOmissions(db, dashboard, defaultSettings(), 'sample', now);
+    assert.equal(result, undefined); assert.equal(calls.length, 1);
+    assert.equal(Object.hasOwn(dashboard, 'morningOmissions'), false);
+    assert.deepEqual(dashboard, original);
+    // Main 3d43b39, 2032-04-07 08:00 UTC (09:00 UK): timestamp and greeting fixed.
+    // Only C's approved link is removed.
+    const markup = dashboardPage({...dashboard, morningOmissions: result});
+    const morningLink = '<a class="btn morning-link" href="/morning">Morning ›</a>';
+    assert.equal(markup.split(morningLink).length, 2);
+    assert.equal(createHash('sha256').update(markup.replace(morningLink, '')).digest('hex'),
+      'c9442a57f6b24ab50d180539383d313a9648d18bd78df45468245a051d751e7e');
+  });
 });
 
 test('Home reads persisted answers without cleanup writes, isolates modes and restores after Undo', async t => {

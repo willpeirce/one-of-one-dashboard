@@ -185,7 +185,7 @@ function allCards(input: MorningInput, today: string): MorningCard[] {
   const ads = input.adSets && (input.mode === 'sample' || input.adSets.mode === 'live')
     ? decisionRows(input.adSets).filter(row => row.set.status !== 'PAUSED'
       && !(row.verdict?.verdict === 'Step' && input.metaActions.some(action => action.adSetId === row.set.id
-        && action.action === 'budget' && action.result === 'success' && !action.undoneAt && !action.undoOf
+        && action.action === 'budget' && action.result === 'success'
         && ukToday(new Date(action.time)) === today))).map((row, index) => adCard(row, input, index, today)) : [];
   const combined = [...needs, ...ads, ...dateCards(input), ...creativeCards(input), ...externalChanges(input, today), ...(input.extensions ?? [])];
   const unique = new Set<string>();
@@ -198,6 +198,7 @@ function stateApplies(row: MorningState, card: MorningCard | undefined, input: M
   if (row.state === 'answered') return !input.sourceReadOk[row.sourceScope] || !!input.liveTestIds?.includes(row.subjectId);
   if (row.state === 'seen') return true;
   if (card) return row.factsHash === card.factsHash;
+  if (row.state === 'parked') return true;
   if (row.kind === 'need' && input.checks.some(check => check.id === row.subjectId && check.status === 'unknown')) return true;
   return !input.sourceReadOk[row.sourceScope];
 }

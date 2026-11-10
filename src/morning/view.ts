@@ -83,10 +83,16 @@ export function morningLinesHtml(snapshot: MorningSnapshot): string {
   return `${snapshot.more ? `<a class="mn-more-line" id="mn-more-home" href="/?from=morning">△ Watch · ${snapshot.more} more on Home ›</a>` : ''}${brief ? `<button type="button" class="mn-brief-line" id="mn-brief" data-mn-brief="${brief.status}" aria-haspopup="dialog">${brief.status === 'ok' ? '✓ Good · ' : brief.status === 'unreadable' || brief.tone === 'warn' ? '△ Watch · ' : ''}${e(brief.text)}${brief.mode === 'sample' ? ' · Sample data' : ''}</button>` : ''}${nudge}${snapshot.metaActions.length ? '<a class="mn-log-line" id="mn-log" href="/audit">Meta actions today · Log ›</a>' : ''}`;
 }
 export function morningBriefHtml(brief: MorningBrief): string {
+  const diagnostics = brief.registerDiagnostics;
+  const registerNotes = [
+    diagnostics?.malformed ? `${diagnostics.malformed} malformed ${diagnostics.malformed === 1 ? 'row' : 'rows'} skipped` : '',
+    diagnostics?.capped ? `${diagnostics.capped} ${diagnostics.capped === 1 ? 'row' : 'rows'} beyond the section cap` : '',
+    diagnostics?.missingHeadings ? 'One or more register headings are missing' : '',
+  ].filter(Boolean);
   const status = brief.status === 'ok' ? '✓ Good' : brief.status === 'needs' ? '△ Watch'
     : brief.status === 'unreadable' ? "△ Watch · Couldn't read"
     : brief.status === 'key' ? 'i Info · Needs its key' : `${brief.tone === 'warn' ? '△ Watch' : 'i Info'} · Not here yet`;
-  return `<p>${e(brief.day ? morningDay(brief.day) : 'Morning check')}</p><p>${e(brief.runLabel ?? brief.text)}</p><p>${e(status)}${brief.count !== undefined ? ` · ${brief.count} ${brief.count === 1 ? 'item' : 'items'}` : ''}</p>${brief.items?.length ? `<ol>${brief.items.map(item => `<li>${e(item.text)}</li>`).join('')}</ol>` : ''}${brief.firstLines?.length ? `<pre>${e(brief.firstLines.join('\n'))}</pre>` : ''}${brief.registerDiagnostics ? `<p>Test register · ${brief.registerDiagnostics.malformed} malformed rows skipped · ${brief.registerDiagnostics.capped} rows beyond the section cap</p>` : ''}${brief.href ? `<a class="mn-sheet-link" href="${e(href(brief.href))}">${brief.status === 'key' ? 'Open source health' : 'Open source'} ›</a>` : ''}`;
+  return `<p>${e(brief.day ? morningDay(brief.day) : 'Morning check')}</p><p>${e(brief.runLabel ?? brief.text)}</p><p>${e(status)}${brief.count !== undefined ? ` · ${brief.count} ${brief.count === 1 ? 'item' : 'items'}` : ''}</p>${brief.items?.length ? `<ol>${brief.items.map(item => `<li>${e(item.text)}</li>`).join('')}</ol>` : ''}${brief.firstLines?.length ? `<pre>${e(brief.firstLines.join('\n'))}</pre>` : ''}${registerNotes.length ? `<p>Test register · ${registerNotes.join(' · ')}</p>` : ''}${brief.href ? `<a class="mn-sheet-link" href="${e(href(brief.href))}">${brief.status === 'key' ? 'Open source health' : 'Open source'} ›</a>` : ''}`;
 }
 export function morningFineHtml(snapshot: MorningSnapshot, expanded = false): string {
   const away = [...snapshot.parked, ...snapshot.hidden];

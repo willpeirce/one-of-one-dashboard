@@ -54,11 +54,11 @@ async function claims(db: Database): Promise<number> {
 }
 
 test('summary text uses all ranked open cards, including the more list after the daily cap, and bounds Unicode titles', () => {
-  assert.deepEqual(morningSummaryPayload(morning(0)), {title: 'All clear this morning', body: '', path: '/morning', day: '2032-04-20'});
-  assert.deepEqual(morningSummaryPayload(morning(1)), {title: 'Needs you: 1 item', body: '1. Invented task 1', path: '/morning', day: '2032-04-20'});
+  assert.deepEqual(morningSummaryPayload(morning(0)), {kind: 'summary', title: 'All clear this morning', body: '', path: '/morning', day: '2032-04-20'});
+  assert.deepEqual(morningSummaryPayload(morning(1)), {kind: 'summary', title: 'Needs you: 1 item', body: '1. Invented task 1', path: '/morning', day: '2032-04-20'});
   const result = morning(9, now, 'live', 7);
   assert.equal(result.snapshot.cards.length, 0); assert.equal(result.snapshot.more, 9);
-  assert.deepEqual(morningSummaryPayload(result), {title: 'Needs you: 9 items',
+  assert.deepEqual(morningSummaryPayload(result), {kind: 'summary', title: 'Needs you: 9 items',
     body: '1. Invented task 1\n2. Invented task 2\n3. Invented task 3', path: '/morning', day: '2032-04-20'});
   assert.equal(morningSummaryPayload(morning(0, now, 'sample')).title, 'Sample · All clear this morning');
   assert.equal(morningSummaryPayload(morning(9, now, 'sample')).title, 'Sample · Needs you: 9 items');

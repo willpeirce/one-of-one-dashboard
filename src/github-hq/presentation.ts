@@ -80,7 +80,7 @@ function hqCards(facts: HQFacts, now: Date): MorningCard[] {
 /** Add only stored HQ observations in live mode; the sample scenario keeps its own test demonstrations. */
 export function addMorningHq(input: MorningInput, facts: HQFacts, now: Date): MorningInput {
   const brief = morningBrief(input.mode, facts, now);
-  if (input.mode === 'live' && facts.sourceMode === 'live') brief.registerDiagnostics = {malformed: facts.registerSkippedRows, capped: facts.registerCappedRows ?? 0};
+  if (input.mode === 'live' && facts.sourceMode === 'live') brief.registerDiagnostics = {malformed: facts.registerSkippedRows, capped: facts.registerCappedRows ?? 0, missingHeadings: facts.registerHeadingsComplete === false};
   if (input.mode === 'sample') return { ...input, brief };
   return { ...input, brief, extensions: [...(input.extensions ?? []).filter(card => !['test-call', 'new-verdict'].includes(card.kind)), ...hqCards(facts, now)],
     liveTestIds: facts.tests.filter(row => row.section === 'live').map(row => row.id),
@@ -93,6 +93,7 @@ export function homeTestsFromHq(facts: HQFacts, states: readonly MorningState[],
   const result = morningDeck(input, states, now), open = new Set(result.openCards.map(card => card.key));
   const rows: HomeTestRow[] = facts.tests.map(row => {
     const assessment = readTest(row, now), reading = assessment.reading, key = morningKey('test-call', row.id);
+    const decide = !!assessment.answer && !(assessment.answer === 'draw' && !reading);
     const called = result.snapshot.answers.find(answer => answer.cardKey === key && answer.answer !== 'hold');
     const parked = result.snapshot.parked.find(answer => answer.stateRow.cardKey === key);
     const status = called ? `Called ${called.answer!.toUpperCase()} · waiting for the write-up` : parked
@@ -100,7 +101,7 @@ export function homeTestsFromHq(facts: HQFacts, states: readonly MorningState[],
     const model: TestModel | null = row.section !== 'live' ? null : {
       metric: row.cells[4] || '', unit: '', arms: reading?.arms.map(arm => ({ k: arm.key.toUpperCase(), l: arm.key.toUpperCase(), x: arm.value })) ?? [],
       day: assessment.daysRun ?? 0, min: 7, max: 28, minx: 30, prev: 0, denom: 'events per arm', strip: [], note: row.cells[8] || '',
-      presentation: { sure: reading?.sure ?? 0, state: assessment.answer ? 'decide' : 'info', chipText: assessment.answer ? '◆ Decide' : 'i Info',
+      presentation: { sure: reading?.sure ?? 0, state: decide ? 'decide' : 'info', chipText: decide ? '◆ Decide' : 'i Info',
         say: status, homeSay: status, small: assessment.reasons.join(' · '), progress: assessment.daysRun === null ? '' : `Day ${assessment.daysRun}`,
         buttonText: assessment.answer ? callLabel(assessment.answer) : 'Call', sureZones: [[0, 95, 'info'], [95, 100, 'good']], sureLabel: 'How sure',
         stripLabel: 'Stored reading', sureCaption: reading ? `Reading ${reading.day}` : 'No well-formed reading' },

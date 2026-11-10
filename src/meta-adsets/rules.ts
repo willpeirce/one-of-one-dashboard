@@ -57,7 +57,7 @@ export function judgeAdSet(set: StoredAdSet, days: SetDay[], settings: Settings,
       const row=days.find(d=>d.day===day);
       return !!row&&!changes.includes(day)&&!isSpikeDay(market,day)&&row.addsToCart!==null&&row.addsToCart>0&&row.purchases!==null&&row.purchases>0&&row.spend/row.purchases<=be.value;
     };
-    if(set.dailyBudget!==null&&set.dailyBudget>=100&&!isSpikeDay(market,today)&&clean(yesterday)&&clean(addDays(today,-2))) {
+    if(set.dailyBudget!==null&&set.dailyBudget>=100&&!changes.includes(today)&&!isSpikeDay(market,today)&&clean(yesterday)&&clean(addDays(today,-2))) {
       stepPercent=complete&&windowDates.length===7&&cpp!==null&&cpp<be.value*0.85?30:20;
       proposedBase=Math.round(set.dailyBudget/100*(1+stepPercent/100)*2)/2;
       // Nearest 50p may cross the hard +30% action ceiling: use the nearest permitted 50p instead.

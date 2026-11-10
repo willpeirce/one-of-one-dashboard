@@ -3,7 +3,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { encryptPushPayload, MAX_PUSH_PAYLOAD_BYTES, vapidAuthorization, type RawPushKeyPair } from './crypto.js';
 import { validatePushEndpoint, validatePushKeys, type PushSubscription } from './validation.js';
 
-export interface PushPayload { title: string; body: string; path: string; day?: string }
+export interface PushPayload { title: string; body: string; path: string; day?: string; kind?: 'summary' | 'test' }
 export interface PushTransportRequest {
   url: string; method: 'POST'; headers: Readonly<Record<string, string>>; body: Uint8Array;
   signal: AbortSignal; authorize: () => Promise<string>;
@@ -17,8 +17,10 @@ export interface PushSendOptions {
   clock?: () => Date; sleep?: (ms: number) => Promise<void>; log?: (line: string) => void; timeoutMs?: number;
 }
 const ukTime = new Intl.DateTimeFormat('en-GB', {timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'});
-/** Expire at noon UK, including the four-hour window after an 08:00 summary. */
-export function pushTtl(now: Date): number {
+export const PUSH_TEST_TTL_SECONDS = 3600;
+/** Summaries expire at noon UK; manual tests keep a fixed lifetime at every hour. */
+export function pushTtl(now: Date, kind: PushPayload['kind'] = 'summary'): number {
+  if (kind === 'test') return PUSH_TEST_TTL_SECONDS;
   const [hours, minutes, seconds] = ukTime.format(now).split(':').map(Number);
   return Math.max(0, 12 * 3600 - (hours! * 3600 + minutes! * 60 + seconds!));
 }
@@ -52,7 +54,7 @@ function payloadBytes(payload: PushPayload): Uint8Array {
   if (!payload || typeof payload.title !== 'string' || !payload.title || typeof payload.body !== 'string'
     || typeof payload.path !== 'string' || !payload.path.startsWith('/') || payload.path.startsWith('//')
     || /[\u0000-\u0020\\]/u.test(payload.path) || !/^\d{4}-\d{2}-\d{2}$/.test(payload.day ?? '')) throw new Error();
-  const bytes = Buffer.from(JSON.stringify({ title: payload.title, body: payload.body, path: payload.path, day: payload.day }));
+  const bytes = Buffer.from(JSON.stringify({ title: payload.title, body: payload.body, path: payload.path, day: payload.day, kind: payload.kind === 'test' ? 'test' : 'summary' }));
   if (bytes.length > MAX_PUSH_PAYLOAD_BYTES) throw new Error();
   return bytes;
 }
@@ -89,7 +91,7 @@ export async function sendPush(subscription: PushSubscription, payload: PushPayl
       });
       const response = await Promise.race([timeout, Promise.resolve().then(() => transport({
         url: endpoint.href, method: 'POST', body, signal: controller.signal,
-        headers: { TTL: String(pushTtl(clock())), 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', Urgency: 'normal' },
+        headers: { TTL: String(pushTtl(clock(), payload.kind)), 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', Urgency: 'normal' },
         authorize: async () => {
           try { return vapidAuthorization(await options.getKeys(), endpoint, options.origin, clock()); }
           catch { throw new PushAttemptError('configuration'); }

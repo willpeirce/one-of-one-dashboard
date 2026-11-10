@@ -69,36 +69,56 @@ export async function saveHQMonth(db: Database, target: Extract<HQTarget, {kind:
 export async function saveHQRegister(db: Database, result: HQRegisterResult, etag: string | null, now: Date): Promise<void> {
   const target: HQTarget = {kind: 'register'};
   if (!result.readable) {
-    await db.query(`INSERT INTO pulse.github_hq_reads(target_key,path,ref,etag,last_attempt_at,error_code,parsed_available,readable)
-      VALUES('register','ops/tests/register.md','main',$1,$2,'unreadable',true,false)
+    await db.query(`INSERT INTO pulse.github_hq_reads(target_key,path,ref,etag,last_attempt_at,error_code,parsed_available,readable,parser_version,headings_complete)
+      VALUES('register','ops/tests/register.md','main',$1,$2,'unreadable',true,false,$3,false)
       ON CONFLICT(target_key) DO UPDATE SET etag=EXCLUDED.etag,last_attempt_at=EXCLUDED.last_attempt_at,
-        error_code='unreadable',parsed_available=true,readable=false`, [etag, now]);
+        error_code='unreadable',parsed_available=true,readable=false,parser_version=$3,headings_complete=false,skipped_rows=0,capped_rows=0`, [etag, now, HQ_REGISTER_PARSER_VERSION]);
     return;
   }
   await db.transaction(async tx => {
     const previous = (await tx.query<{initialized: boolean}>('SELECT initialized FROM pulse.github_hq_reads WHERE target_key=$1 FOR UPDATE', ['register'])).rows[0];
     const initial = !previous?.initialized, ids: string[] = [], seen = new Set<string>();
-    for (const section of ['live', 'queue', 'history'] as const) {
-      for (const row of result.rows.filter(row => row.section === section).slice(0, HQ_SECTION_ROW_LIMIT)) {
-        const id = hqCut(row.id, HQ_CELL_LIMIT);
-        if (!id || seen.has(id)) continue;
-        seen.add(id); ids.push(id);
-        await tx.query(`INSERT INTO pulse.github_hq_tests(test_id,section,row_order,cells,first_seen_at,section_first_seen_at,initially_seen)
-          VALUES($1,$2,$3,$4::jsonb,$5,$5,$6)
-          ON CONFLICT(test_id) DO UPDATE SET section=EXCLUDED.section,row_order=EXCLUDED.row_order,cells=EXCLUDED.cells,
-            section_first_seen_at=CASE WHEN github_hq_tests.section=EXCLUDED.section THEN github_hq_tests.section_first_seen_at ELSE EXCLUDED.section_first_seen_at END,
-            initially_seen=CASE WHEN $6 THEN true WHEN github_hq_tests.section=EXCLUDED.section THEN github_hq_tests.initially_seen ELSE false END`,
-        [id, section, ids.length - 1, JSON.stringify(row.cells.map(cell => hqCut(cell, HQ_CELL_LIMIT))), now, initial]);
+    const skipped = new Set((result.skippedCells ?? []).map(cell => hqCut(cell, HQ_CELL_LIMIT).split(/\s+/)[0]).filter(Boolean));
+    const existing = new Map((await tx.query<{test_id: string; section: string}>(
+      'SELECT test_id,section FROM pulse.github_hq_tests')).rows.map(row => [row.test_id, row.section]));
+    const retainedIds = [...existing.keys()].filter(id => skipped.has(id));
+    const candidates = (['live', 'queue', 'history'] as const).flatMap(section =>
+      result.rows.filter(row => row.section === section).slice(0, HQ_SECTION_ROW_LIMIT)).flatMap(row => {
+      const id = hqCut(row.id, HQ_CELL_LIMIT);
+      if (!id || seen.has(id) || skipped.has(id)) return [];
+      seen.add(id); return [{...row, id}];
+    });
+    // Reserve present stored identities first. A full destination leaves a moving row in its old section.
+    const occupied = new Map([...existing].filter(([id]) => seen.has(id) || skipped.has(id)));
+    const count = (section: string): number => [...occupied.values()].filter(value => value === section).length;
+    const accepted = new Set<string>();
+    let cappedRows = result.cappedRows ?? 0;
+    for (const known of [true, false]) for (const row of candidates) {
+      if (existing.has(row.id) !== known) continue;
+      if (occupied.get(row.id) !== row.section && count(row.section) >= HQ_SECTION_ROW_LIMIT) {
+        if (known) retainedIds.push(row.id);
+        cappedRows++; continue;
       }
+      occupied.set(row.id, row.section); accepted.add(row.id);
+    }
+    for (const [order, row] of candidates.entries()) {
+      if (!accepted.has(row.id)) continue;
+      const {id, section} = row; ids.push(id);
+      await tx.query(`INSERT INTO pulse.github_hq_tests(test_id,section,row_order,cells,first_seen_at,section_first_seen_at,initially_seen)
+        VALUES($1,$2,$3,$4::jsonb,$5,$5,$6)
+        ON CONFLICT(test_id) DO UPDATE SET section=EXCLUDED.section,row_order=EXCLUDED.row_order,cells=EXCLUDED.cells,
+          section_first_seen_at=CASE WHEN github_hq_tests.section=EXCLUDED.section THEN github_hq_tests.section_first_seen_at ELSE EXCLUDED.section_first_seen_at END,
+          initially_seen=CASE WHEN $6 THEN true WHEN github_hq_tests.section=EXCLUDED.section THEN github_hq_tests.initially_seen ELSE false END`,
+      [id, section, order, JSON.stringify(row.cells.map(cell => hqCut(cell, HQ_CELL_LIMIT))), now, initial]);
     }
     const complete = result.complete ?? true;
-    if (complete) await tx.query('DELETE FROM pulse.github_hq_tests WHERE NOT(test_id = ANY($1::text[]))', [ids]);
+    if (complete) await tx.query('DELETE FROM pulse.github_hq_tests WHERE NOT(test_id = ANY($1::text[]))', [[...ids, ...retainedIds]]);
     else await tx.query(`DELETE FROM pulse.github_hq_tests WHERE test_id IN (SELECT test_id FROM (
-      SELECT test_id,row_number() OVER(PARTITION BY section ORDER BY (test_id=ANY($1::text[])) DESC,row_order,test_id) AS position
-      FROM pulse.github_hq_tests) ranked WHERE position>$2)`, [ids, HQ_SECTION_ROW_LIMIT]);
+      SELECT test_id,row_number() OVER(PARTITION BY section ORDER BY (test_id=ANY($3::text[])) DESC,(test_id=ANY($1::text[])) DESC,row_order,test_id) AS position
+      FROM pulse.github_hq_tests) ranked WHERE position>$2)`, [ids, HQ_SECTION_ROW_LIMIT, retainedIds]);
     await success(tx, target, etag, now, result.skippedRows, !initial || complete);
     await tx.query(`UPDATE pulse.github_hq_reads SET parser_version=$1,capped_rows=$2,headings_complete=$3 WHERE target_key='register'`,
-      [HQ_REGISTER_PARSER_VERSION, result.cappedRows ?? 0, complete]);
+      [HQ_REGISTER_PARSER_VERSION, cappedRows, complete]);
   });
 }
 export async function touchHQRead(db: Database, target: HQTarget, etag: string | null, now: Date): Promise<void> {
@@ -140,7 +160,7 @@ export async function readHQFacts(db: Database, now: Date, sourceMode: SourceMod
   const monthReadAt = report?.readAt ?? [reads.get(`month:${month}:main`)?.lastSuccessAt, reads.get(`month:${month}:claude/ads-daily`)?.lastSuccessAt]
     .filter((value): value is string => !!value).sort().at(-1) ?? null;
   return {sourceMode, report, registerReadAt: register?.lastSuccessAt ?? null, registerReadOk,
-    registerSkippedRows: register?.skippedRows ?? 0, registerCappedRows: register?.cappedRows ?? 0, monthReadAt,
+    registerSkippedRows: register?.skippedRows ?? 0, registerCappedRows: register?.cappedRows ?? 0, registerHeadingsComplete: register?.parsedAvailable ? register.headingsComplete : undefined, monthReadAt,
     tests: tests.rows.map(row => ({id: row.test_id, section: row.section, cells: row.cells, firstSeenAt: iso(row.first_seen_at)!,
       sectionFirstSeenAt: iso(row.section_first_seen_at)!, initiallySeen: row.initially_seen}))};
 }

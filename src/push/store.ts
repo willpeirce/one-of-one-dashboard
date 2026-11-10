@@ -24,15 +24,18 @@ export async function savePushSubscription(db: Database, credentialId: string, s
   await db.transaction(async tx => {
     // Endpoints can move between credentials. One local lock also makes the ten-device cap atomic.
     await tx.query('SELECT pg_advisory_xact_lock(1668244583,hashtext($1))', ['push-subscriptions']);
-    await tx.query(`INSERT INTO pulse.push_subscriptions(endpoint,p256dh,auth,credential_id,created_at)
+    const saved = await tx.query(`INSERT INTO pulse.push_subscriptions(endpoint,p256dh,auth,credential_id,created_at)
       VALUES($1,$2,$3,$4,$5) ON CONFLICT(endpoint) DO UPDATE SET
       created_at=CASE WHEN push_subscriptions.credential_id=EXCLUDED.credential_id THEN push_subscriptions.created_at ELSE EXCLUDED.created_at END,
       last_success_at=CASE WHEN push_subscriptions.credential_id=EXCLUDED.credential_id AND push_subscriptions.p256dh=EXCLUDED.p256dh
         AND push_subscriptions.auth=EXCLUDED.auth THEN push_subscriptions.last_success_at ELSE NULL END,
       failures=CASE WHEN push_subscriptions.credential_id=EXCLUDED.credential_id AND push_subscriptions.p256dh=EXCLUDED.p256dh
         AND push_subscriptions.auth=EXCLUDED.auth THEN push_subscriptions.failures ELSE 0 END,
-      p256dh=EXCLUDED.p256dh,auth=EXCLUDED.auth,credential_id=EXCLUDED.credential_id`,
+      p256dh=EXCLUDED.p256dh,auth=EXCLUDED.auth,credential_id=EXCLUDED.credential_id
+      WHERE (push_subscriptions.credential_id,push_subscriptions.p256dh,push_subscriptions.auth)
+        IS DISTINCT FROM (EXCLUDED.credential_id,EXCLUDED.p256dh,EXCLUDED.auth) RETURNING endpoint`,
     [subscription.endpoint,subscription.keys.p256dh,subscription.keys.auth,credentialId,now]);
+    if (!saved.rowCount) return;
     await tx.query(`DELETE FROM pulse.push_subscriptions WHERE endpoint IN
       (SELECT endpoint FROM pulse.push_subscriptions WHERE credential_id=$1 ORDER BY created_at DESC,endpoint DESC OFFSET 10)`, [credentialId]);
     await tx.query('INSERT INTO pulse.audit_log(event,credential_id,occurred_at) VALUES($1,$2,$3)', ['Push notifications enabled',credentialId,now]);

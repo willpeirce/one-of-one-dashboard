@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createECDH, randomBytes } from 'node:crypto';
-import { sendPush, type PushPayload, type PushTransportRequest } from '../src/push/sender.js';
+import { PUSH_TEST_TTL_SECONDS, sendPush, type PushPayload, type PushTransportRequest } from '../src/push/sender.js';
 import type { RawPushKeyPair } from '../src/push/crypto.js';
 
 function example() {
@@ -136,6 +136,19 @@ test('summary TTL reaches noon UK in summer and winter instead of expiring after
     ['2032-04-20T08:59:00Z', '7260'], ['2032-12-20T12:00:00Z', '0']]) {
     const result = await sendPush(subscription, payload, {origin: 'https://pulse.example.invalid', getKeys: async () => pair,
       clock: () => new Date(at!), transport: async request => {assert.equal(request.headers.TTL, ttl); return {status: 201};}});
+    assert.equal(result.outcome, 'sent');
+  }
+});
+
+
+test('manual tests keep one-hour TTL in the UK afternoon while summaries expire at noon in both seasons', async () => {
+  const {subscription, payload, pair} = example();
+  for (const [kind, at, ttl] of [
+    ['test', '2032-07-07T15:00:00Z', PUSH_TEST_TTL_SECONDS], ['test', '2032-12-07T15:00:00Z', PUSH_TEST_TTL_SECONDS],
+    ['summary', '2032-07-07T07:00:00Z', 14400], ['summary', '2032-12-07T08:00:00Z', 14400],
+  ] as const) {
+    const result = await sendPush(subscription, {...payload, kind}, {origin: 'https://pulse.example.test', clock: () => new Date(at), getKeys: async () => pair,
+      transport: async request => {assert.equal(request.headers.TTL, String(ttl)); return {status: 201};}});
     assert.equal(result.outcome, 'sent');
   }
 });

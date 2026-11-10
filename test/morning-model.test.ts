@@ -88,7 +88,7 @@ test('park expires on next UK day and a worse state returns immediately without 
   const original = morningDeck(data, [], now).candidates[0]!, saved = state(original);
   assert.equal(morningDeck(data, [saved], now).snapshot.cards.length, 0);
   data.needs = [];
-  assert.equal(morningDeck(data, [saved], now).snapshot.parked.length, 0, 'A successfully read absence clears the park');
+  assert.equal(morningDeck(data, [saved], now).snapshot.parked.length, 1, 'An absent card stays parked for its day even after a good read');
   data.needs = [need('same-rule')];
   assert.equal(morningDeck(data, [saved], now).snapshot.cards.length, 0);
   assert.equal(morningDeck(data, [saved], new Date('2032-04-08T08:00:00Z')).snapshot.cards.length, 1);
@@ -314,7 +314,7 @@ test('mode boundaries and UK-day slot accounting hold around summer and winter m
   }
 });
 
-test('same-day completed budget actions remove Step, keep its completion slot, and Undo restores it', () => {
+test('same-day budget receipts suppress stale Step proposals even after Undo, which returns its completion slot', () => {
   const data = input(); data.adSets = {...sampleAdSetsView(data.settings), mode: 'live', actionsEnabled: true};
   data.adSets.rows = data.adSets.rows.filter(row => row.verdict?.verdict === 'Step');
   const row = data.adSets.rows[0]!;
@@ -325,7 +325,7 @@ test('same-day completed budget actions remove Step, keep its completion slot, a
   const acted = morningDeck(data, [], now);
   assert.equal(acted.snapshot.cards.length, 0); assert.equal(acted.openCards.length, 0); assert.equal(acted.snapshot.completed, 1);
   action.undoneAt = now.toISOString();
-  assert.equal(morningDeck(data, [], now).snapshot.cards[0]!.kind, 'meta-step');
+  assert.equal(morningDeck(data, [], now).snapshot.cards.length, 0);
   assert.equal(morningDeck(data, [], now).snapshot.completed, 0);
   action.undoneAt = null;
   assert.equal(morningDeck(data, [], new Date('2032-04-08T08:00:00Z')).snapshot.cards[0]!.kind, 'meta-step');

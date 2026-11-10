@@ -151,9 +151,21 @@ test('unmeasured draw offers are hideable Info; measured draw offers remain Deci
   let card = morningDeck(addMorningHq(input(), source, now), [], now).candidates[0]!;
   assert.equal(card.state, 'info'); assert.equal(card.tier, 3); assert.equal(card.primary.label, 'Call a draw');
   assert.ok(card.allowedPresses.includes('hide')); assert.equal(card.menu[0]!.label, 'Stop showing this');
+  assert.equal(homeTestsFromHq(source, [], now).rows[0]!.model!.presentation!.state, 'info');
   row.cells[8] = 'Reading 2032-04-20: A 12% n=4; B 17% n=3; ahead none; sure 60%; mornings 1';
   card = morningDeck(addMorningHq(input(), source, now), [], now).candidates[0]!;
   assert.equal(card.state, 'decide'); assert.equal(card.tier, 1); assert.ok(!card.allowedPresses.includes('hide'));
+  assert.equal(homeTestsFromHq(source, [], now).rows[0]!.model!.presentation!.state, 'decide');
   const brief = addMorningHq(input(), {...source, registerSkippedRows: 2, registerCappedRows: 3}, now).brief!;
   assert.match(morningBriefHtml(brief), /2 malformed rows skipped · 3 rows beyond the section cap/);
+});
+
+
+test('brief register diagnostics stay quiet when clean and name singular rows and missing headings', () => {
+  const source = facts();
+  const render = (malformed: number, capped: number, complete: boolean) => morningBriefHtml(addMorningHq(input(),
+    {...source, registerSkippedRows: malformed, registerCappedRows: capped, registerHeadingsComplete: complete}, now).brief!);
+  assert.doesNotMatch(render(0, 0, true), /Test register/);
+  assert.match(render(1, 1, true), /1 malformed row skipped · 1 row beyond the section cap/);
+  assert.match(render(0, 0, false), /register headings are missing/);
 });

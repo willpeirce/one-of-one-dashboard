@@ -33,7 +33,8 @@ async function run(): Promise<void> {
       DASHBOARD_SETUP_CODE: setupPhrase,
     });
     const {transport, deliveries} = captureBrowserPushTransport();
-    app = await createApp(db, config, {}, {}, {}, {}, {}, {pushTransport: transport});
+    // Keep the summary timer outside its send window at every host hour; service tests exercise the window with fixed clocks.
+    app = await createApp(db, config, {}, {}, {}, {}, {}, {pushTransport: transport, pushClock: () => new Date('2032-04-07T14:00:00Z')});
     await app.listen({ host: '127.0.0.1', port });
     const exitCode = await new Promise<number>((resolve, reject) => {
       const child = spawn(process.execPath, ['--import', 'tsx', 'scripts/browser-smoke.ts'], {

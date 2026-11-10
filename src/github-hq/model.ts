@@ -1,4 +1,4 @@
-export const HQ_REGISTER_PARSER_VERSION = 2;
+export const HQ_REGISTER_PARSER_VERSION = 3;
 export const HQ_ITEM_LIMIT = 12;
 export const HQ_ITEM_TEXT_LIMIT = 300;
 export const HQ_CELL_LIMIT = 600;
@@ -34,9 +34,10 @@ export interface HQFacts {
   registerReadOk: boolean;
   registerSkippedRows: number;
   registerCappedRows?: number;
+  registerHeadingsComplete?: boolean;
   monthReadAt: string | null;
 }
-export interface HQRegisterResult { readable: boolean; rows: HQTestRow[]; skippedRows: number; cappedRows?: number; complete?: boolean }
+export interface HQRegisterResult { readable: boolean; rows: HQTestRow[]; skippedRows: number; cappedRows?: number; complete?: boolean; skippedCells?: string[] }
 export interface HQReadingArm {
   key: 'a' | 'b'; value: number; formatted: string; count: number; unit: '' | '£' | '%';
 }

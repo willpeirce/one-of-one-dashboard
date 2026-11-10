@@ -13,11 +13,11 @@ function worker(): Promise<ServiceWorkerRegistration> {
   })().catch(error => { registration = null; throw error; });
   return registration;
 }
-async function request<T>(path: string, body?: object): Promise<T> {
-  const response = await fetch(path, { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(10_000),
+async function request<T>(path: string, body?: object, timeoutMs = 10_000, redirect = true): Promise<T> {
+  const response = await fetch(path, { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(timeoutMs),
     headers: { Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) },
     ...(body ? { method: 'POST', body: JSON.stringify(body) } : {}) });
-  if (response.status === 401) { location.assign('/login'); throw new Error('Sign in to change notifications.'); }
+  if (response.status === 401) { if (redirect) location.assign('/login'); throw new Error('Sign in to change notifications.'); }
   if (response.status === 429) throw new Error('A test was sent recently. Wait a minute and try again.');
   if (!response.ok) throw new Error('Could not save notifications or send the test. Try again.');
   return await response.json() as T;
@@ -49,6 +49,53 @@ async function saveSubscription(subscription: PushSubscription): Promise<void> {
   try { await pending; } finally { subscriptionSaves.delete(pending); }
 }
 
+const CLEANUP_TIMEOUT_MS = 1500;
+const REMOVAL_OWED = 'pulse-push-removal-owed';
+function removalOwed(): boolean {
+  try { if (localStorage.getItem(REMOVAL_OWED) === '1') return true; } catch { /* Cookies provide a fallback. */ }
+  try { return document.cookie.split(';').some(part => part.trim() === `${REMOVAL_OWED}=1`); } catch { return false; }
+}
+function markRemoval(owed: boolean): void {
+  // One boolean only: never persist an endpoint, keys or credential in browser storage.
+  try { if (owed) localStorage.setItem(REMOVAL_OWED, '1'); else localStorage.removeItem(REMOVAL_OWED); } catch { /* Fall back to the same boolean cookie. */ }
+  try { document.cookie = `${REMOVAL_OWED}=${owed ? '1' : ''}; Path=/; SameSite=Strict; Max-Age=${owed ? 34_560_000 : 0}`; } catch { /* Storage availability cannot block sign-out. */ }
+}
+async function bounded<T>(work: () => Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([Promise.resolve().then(work), new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error('Device cleanup is still pending.')), CLEANUP_TIMEOUT_MS);
+    })]);
+  } finally { if (timer) clearTimeout(timer); }
+}
+async function localSubscription(): Promise<PushSubscription | null> {
+  const registration = await bounded(() => navigator.serviceWorker.getRegistration('/'));
+  return registration ? bounded(() => registration.pushManager.getSubscription()) : null;
+}
+async function revokeLocal(subscription: PushSubscription): Promise<void> {
+  await bounded(() => subscription.unsubscribe());
+  if (await localSubscription()) throw new Error('Device cleanup is still pending.');
+  markRemoval(false);
+}
+let removing: Promise<void> | undefined;
+/** Finish an owed local removal before any automatic repair, including on the sign-in page. */
+export function finishPendingPushRemoval(): Promise<void> {
+  if (!removalOwed()) return Promise.resolve();
+  if (!removing) removing = (async () => {
+    if (!('serviceWorker' in navigator)) throw new Error('Device cleanup is still pending.');
+    const subscription = await localSubscription();
+    if (subscription) await revokeLocal(subscription); else markRemoval(false);
+  })().finally(() => { removing = undefined; });
+  return removing;
+}
+let repair: Promise<void> | undefined;
+function repairOnce(subscription: PushSubscription | null): Promise<void> {
+  // A failed repair stays unknown for this page; focus/visibility reads never write again.
+  return repair ??= subscription ? saveSubscription(subscription) : Promise.resolve();
+}
+export function cancelPushSignOut(): void { document.dispatchEvent(new Event('pulse:sign-out-failed')); }
+document.addEventListener('pulse:sign-out-failed', () => { signingOut = false; });
+
 export function initializePushDevice(): void {
   const root = document.getElementById('push-device'); if (!root) return;
   const element = <T extends HTMLElement = HTMLElement>(id: string): T => root.querySelector(`#${id}`) as T;
@@ -68,13 +115,14 @@ export function initializePushDevice(): void {
   function announce(text: string): void { message.textContent = text; }
   async function read(): Promise<void> {
     if (!supported() || Notification.permission === 'denied') { render(); return; }
-    try { subscription = await (await worker()).pushManager.getSubscription();
-      if (subscription) await saveSubscription(subscription);
+    try { await finishPendingPushRemoval();
+      subscription = await (await worker()).pushManager.getSubscription();
+      await repairOnce(subscription);
       retrySetup = false; render(); }
     catch { retrySetup = true; render(); announce('Could not check this device. Try turning notifications on again.'); }
   }
   on.addEventListener('click', () => {
-    if (busy || !supported()) return;
+    if (busy || signingOut || !supported()) return;
     // Ask within this click before awaiting registration or the public key (iPhone activation rule).
     let permission: Promise<NotificationPermission>;
     try { permission = Notification.permission === 'granted' ? Promise.resolve('granted') : Notification.requestPermission(); }
@@ -84,13 +132,14 @@ export function initializePushDevice(): void {
       let created: PushSubscription | null = null;
       try {
         if (await permission !== 'granted') { announce('Notifications were not enabled.'); return; }
+        await finishPendingPushRemoval();
         const serviceWorker = await worker(), existing = await serviceWorker.pushManager.getSubscription();
         const { publicKey } = await request<{ publicKey: string }>('/api/push/key');
         if (signingOut) return;
         subscription = existing ?? await serviceWorker.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: publicKeyBytes(publicKey) });
         if (!existing) created = subscription;
-        if (signingOut) { if (created) await created.unsubscribe(); return; }
-        await saveSubscription(subscription);
+        if (signingOut) { if (created) { markRemoval(true); await revokeLocal(created); } return; }
+        await saveSubscription(subscription); repair = Promise.resolve();
         retrySetup = false; announce('Notifications are on.');
       } catch {
         retrySetup = true;
@@ -130,6 +179,7 @@ export function initializePushDevice(): void {
     for (let parent = root!.parentElement; parent; parent = parent.parentElement) if (parent instanceof HTMLDetailsElement) parent.open = true;
     document.getElementById('notifications')?.scrollIntoView({ block: 'center' });
   }
+  document.addEventListener('pulse:sign-out-failed', () => { void read(); });
   window.addEventListener('hashchange', reveal); reveal(); void read();
 }
 
@@ -143,10 +193,11 @@ async function readNudge(): Promise<void> {
   if (!supported() || Notification.permission === 'denied') { subscribed = false; paintNudge(); return; }
   reading = true;
   try {
+    await finishPendingPushRemoval();
     const subscription = await (await worker()).pushManager.getSubscription();
-    if (subscription) await saveSubscription(subscription);
+    await repairOnce(subscription);
     subscribed = !!subscription;
-  } catch { subscribed = false; }
+  } catch { subscribed = null; }
   finally { reading = false; paintNudge(); }
 }
 /** Repair an existing subscription without asking for notification permission. */
@@ -161,18 +212,22 @@ export function updateMorningPushNudge(enabled: boolean): void {
   if (enabled && subscribed === null) void readNudge();
 }
 
-/** Revoke this browser before its authenticated server sign-out; never register a worker just to sign out. */
+/** Best-effort cleanup never prevents logout; retain any readable endpoint for atomic server revocation. */
 export async function unsubscribeForSignOut(): Promise<string | undefined> {
+  markRemoval(true);
   const pending: Promise<unknown>[] = [];
   document.dispatchEvent(new CustomEvent('pulse:signing-out', {detail: pending}));
-  await Promise.allSettled(pending);
-  if (!supported()) return undefined;
-  const subscription = await (await navigator.serviceWorker.getRegistration('/'))?.pushManager.getSubscription();
-  if (!subscription) return undefined;
-  // Remove the server row first so a failed logout remains safe to retry even after local revocation.
-  await request('/api/push/unsubscribe', {endpoint: subscription.endpoint});
-  await subscription.unsubscribe();
-  if (await (await navigator.serviceWorker.getRegistration('/'))?.pushManager.getSubscription())
-    throw new Error('Could not turn notifications off. Try signing out again.');
-  return subscription.endpoint;
+  try { await bounded(() => Promise.allSettled(pending)); } catch { /* Logout must proceed. */ }
+  let subscription: PushSubscription | null;
+  try {
+    if (!('serviceWorker' in navigator)) return undefined;
+    subscription = await localSubscription();
+  } catch { return undefined; }
+  if (!subscription) { markRemoval(false); return undefined; }
+  const endpoint = subscription.endpoint;
+  try { await request('/api/push/unsubscribe', {endpoint}, CLEANUP_TIMEOUT_MS, false); } catch { /* Logout also removes it. */ }
+  try { await revokeLocal(subscription); } catch { /* The boolean marker prevents repair after signing back in. */ }
+  return endpoint;
 }
+
+void finishPendingPushRemoval().catch(() => {});

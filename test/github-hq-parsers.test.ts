@@ -74,8 +74,8 @@ test('register parser keeps section order and raw trimmed cells, ignores Watches
   assert.match(result.rows.find(row=>row.id==='T3')!.cells[7]!,/`report` with £123456\.78/);
   assert.equal(strictReading(result.rows[0]!.cells[8]!)?.ahead,'b');
   assert.equal(strictReading(result.rows[1]!.cells[8]!),null);
-  assert.deepEqual(parseRegister('# Invented file\n## Rules\n- No table'),{readable:false,rows:[],skippedRows:0,cappedRows:0,complete:false});
-  assert.deepEqual(parseRegister('## Watches (kill rules, not tests)\n| malformed |'),{readable:true,rows:[],skippedRows:0,cappedRows:0,complete:false});
+  assert.deepEqual(parseRegister('# Invented file\n## Rules\n- No table'),{readable:false,rows:[],skippedRows:0,cappedRows:0,complete:false,skippedCells:[]});
+  assert.deepEqual(parseRegister('## Watches (kill rules, not tests)\n| malformed |'),{readable:true,rows:[],skippedRows:0,cappedRows:0,complete:false,skippedCells:[]});
 });
 
 test('register caps each section, deduplicates IDs with Live priority and removes unsupported NUL before JSONB',()=>{
@@ -107,4 +107,14 @@ test('register splits escaped pipes and matching backtick spans and reports malf
   const result = parseRegister(`## Watches (kill rules, not tests)\n## Queue\n## History\n## Live\n${valid}\n| malformed |\n${Array.from({length: 41}, (_, i) => liveRow(`T${i + 2}`)).join('\n')}`);
   assert.equal(result.complete, true); assert.equal(result.rows[0]!.cells[2], 'Invented | choice with `a|b` and ``a`|b``');
   assert.equal(result.rows.length, 40); assert.equal(result.skippedRows, 1); assert.equal(result.cappedRows, 2);
+});
+
+
+test('unmatched backtick runs are literal, while a matching run protects interior pipes', () => {
+  const line = (question: string) => `| T1 Invented | Site | ${question} | A vs B | Bar | 2032-04-01 | Later | Source | Waiting |`;
+  for (const question of ['Invented ` literal', 'Invented `` literal `', 'Invented `one | two` code', 'Invented ``one ` | two`` code']) {
+    const result = parseRegister(`## Live\n${line(question)}`);
+    assert.equal(result.rows.length, 1, question); assert.equal(result.skippedRows, 0, question);
+    assert.equal(result.rows[0]!.cells[2], question);
+  }
 });

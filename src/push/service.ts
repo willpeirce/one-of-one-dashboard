@@ -26,7 +26,7 @@ function shortTitle(title: string): string {
 /** Use every ranked open card, even when today's seven-card allowance is already spent. */
 export function morningSummaryPayload(result: MorningResult): PushPayload {
   const count = result.openCards.length, prefix = result.snapshot.mode === 'sample' ? 'Sample · ' : '';
-  return {title: `${prefix}${count ? `Needs you: ${count} ${count === 1 ? 'item' : 'items'}` : 'All clear this morning'}`,
+  return {kind: 'summary', title: `${prefix}${count ? `Needs you: ${count} ${count === 1 ? 'item' : 'items'}` : 'All clear this morning'}`,
     body: result.openCards.slice(0, 3).map((card, index) => `${index + 1}. ${shortTitle(card.title)}`).join('\n'), path: '/morning', day: result.snapshot.day};
 }
 
@@ -75,7 +75,7 @@ export class PushService {
         const expires = this.nextTestAt.get(credentialId);
         if (expires !== undefined) return {status: 'rate-limited', retryAfterSeconds: Math.ceil((expires - at) / 1000)};
         this.nextTestAt.set(credentialId, at + PUSH_TEST_INTERVAL_MS);
-        const result = await this.deliver({title: 'Pulse test notification', body: 'Notifications are ready on this device.', path: '/morning', day: ukToday(this.now())}, credentialId);
+        const result = await this.deliver({kind: 'test', title: 'Pulse test notification', body: 'Notifications are ready on this device.', path: '/morning', day: ukToday(this.now())}, credentialId);
         return result.sent ? {status: 'sent', ...result} : {status: 'unavailable'};
       } catch { this.log('Test push failed.'); return {status: 'unavailable'}; }
     });

@@ -119,3 +119,20 @@ test('push key reader reuses the existing Auth pair without any writes and repor
   await assert.rejects(readPushKeyPair(db), {message: 'Push key pair is unavailable.'});
   assert.equal((await db.query("SELECT 1 FROM pulse_private.app_secrets WHERE name='push_key_pair'")).rowCount, 0);
 });
+
+
+test('identical repairs do not audit; recreating, replacing keys and transferring do', async t => {
+  const db = await database(t), item = subscription();
+  const count = async () => Number((await db.query<{count: string}>("SELECT count(*)::text FROM pulse.audit_log WHERE event='Push notifications enabled'")).rows[0]!.count);
+  await savePushSubscription(db, 'invented-first', item, now); assert.equal(await count(), 1);
+  await recordPushResult(db, (await readPushSubscriptions(db))[0]!, success, now);
+  await recordPushResult(db, (await readPushSubscriptions(db))[0]!, failure, now);
+  const before = await readPushSubscriptions(db);
+  await savePushSubscription(db, 'invented-first', item, new Date(+now + 1000));
+  assert.equal(await count(), 1); assert.deepEqual(await readPushSubscriptions(db), before);
+  await removePushSubscription(db, item.endpoint);
+  await savePushSubscription(db, 'invented-first', item, new Date(+now + 2000)); assert.equal(await count(), 2);
+  await savePushSubscription(db, 'invented-second', item, new Date(+now + 3000)); assert.equal(await count(), 3);
+  assert.equal((await readPushSubscriptions(db))[0]!.credentialId, 'invented-second');
+  await savePushSubscription(db, 'invented-second', subscription(), new Date(+now + 4000)); assert.equal(await count(), 4);
+});

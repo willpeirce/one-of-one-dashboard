@@ -1,3 +1,8 @@
+import { parseRegister } from '../src/github-hq/parse-register.js';
+import { addMorningHq } from '../src/github-hq/presentation.js';
+import { pressMorning, readMorningResult } from '../src/morning/store.js';
+import { defaultSettings } from '../src/settings.js';
+import { tickerState } from '../src/ticker/model.js';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
@@ -156,4 +161,58 @@ test('a complete set of headings establishes the baseline and removes gone rows 
   assert.deepEqual(facts.tests.map(test => test.id), ['H2']); assert.equal(facts.tests[0]!.initiallySeen, false);
   await touchHQRead(db, register, null, later);
   assert.equal((await readHQFacts(db, later, 'live')).registerCappedRows, 3);
+});
+
+
+test('malformed and capped IDs retain their exact stored rows, first-seen marks and called answers', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const live = row('T1', 'live'); live.cells[5] = '2032-03-01';
+  await saveHQRegister(db, {readable: true, complete: true, rows: [live, row('H1', 'history'), row('gone', 'history')], skippedRows: 0}, null, now);
+  const original = (await readHQFacts(db, now, 'live')).tests;
+  const load = async (at: Date) => addMorningHq({mode: 'live', needs: [], checks: [], creativeCards: [], settings: defaultSettings(),
+    ticker: tickerState([], [], at, 'live'), activity: [], metaActions: [], sourceReadOk: {}}, await readHQFacts(db, at, 'live'), at);
+  const card = (await readMorningResult(db, load, now)).openCards.find(card => card.subjectId === 'T1')!;
+  await pressMorning(db, load, {cardKey: card.key, action: 'call', answer: 'draw'}, 'invented-device', now);
+  const source = (liveRows: string, historyRows: string) => `## Live\n${liveRows}\n## Queue\n## History\n${historyRows}\n## Watches`;
+  const parsed = parseRegister(source('| T1 Invented broken | too few |', '| H1 Invented broken | too few |\n| H2 | Question | Draw | Rule | Evidence |'));
+  assert.deepEqual(parsed.skippedCells, ['T1 Invented broken', 'H1 Invented broken']);
+  await saveHQRegister(db, parsed, null, new Date(+now + 1000));
+  let facts = await readHQFacts(db, now, 'live');
+  for (const id of ['T1', 'H1']) assert.deepEqual(facts.tests.find(row => row.id === id), original.find(row => row.id === id));
+  assert.equal(facts.tests.some(row => row.id === 'gone'), false);
+  assert.equal((await readMorningResult(db, load, now)).snapshot.answers[0]!.cardKey, card.key);
+  const beforeMalformedTable = facts.tests;
+  await saveHQRegister(db, parseRegister(source('| T1 | too few |', '| H1 | too few |\n| H2 | too few |')), null, new Date(+now + 2000));
+  assert.deepEqual((await readHQFacts(db, now, 'live')).tests, beforeMalformedTable);
+  const full = Array.from({length: 40}, (_, index) => `| N${index} | Site | Question | A vs B | Bar | 2032-04-01 | Later | Source | Waiting |`).join('\n');
+  await saveHQRegister(db, parseRegister(source(`${full}\n| ${live.cells.join(' | ')} |`, '| H1 | Question | Draw | Rule | Evidence |')), null, new Date(+now + 3000));
+  facts = await readHQFacts(db, now, 'live');
+  assert.deepEqual(facts.tests.find(row => row.id === 'T1'), original.find(row => row.id === 'T1'));
+  assert.equal(facts.tests.filter(row => row.section === 'live').length, 40, 'Protected rows reserve space within the existing cap');
+  assert.equal(facts.registerCappedRows, 2);
+  assert.equal((await readMorningResult(db, load, now)).snapshot.answers[0]!.cardKey, card.key);
+  await saveHQRegister(db, parseRegister(source('', '| H1 | Question | Draw | Rule | Evidence |')), null, new Date(+now + 4000));
+  assert.equal((await readMorningResult(db, load, now)).snapshot.answers.length, 0, 'A genuinely absent called test still clears');
+});
+
+test('protected rows reserve capped storage without displacing other present stored identities', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const original = Array.from({length: 40}, (_, index) => row(`T${index}`, 'live'));
+  await saveHQRegister(db, {readable: true, rows: original, skippedRows: 0}, null, now);
+  const before = (await readHQFacts(db, now, 'live')).tests;
+  await saveHQRegister(db, {readable: true, complete: true,
+    rows: [...Array.from({length: 39}, (_, index) => row(`new${index}`, 'live')), original[39]!],
+    skippedRows: 39, skippedCells: original.slice(0, 39).map(row => row.id)}, null, new Date(+now + 1000));
+  let facts = await readHQFacts(db, now, 'live');
+  assert.deepEqual(facts.tests, before, 'New rows cannot crowd out an existing well-formed row');
+  assert.equal(facts.registerCappedRows, 39);
+  // A present row also survives a requested move into a section wholly occupied by protected rows.
+  await saveHQRegister(db, {readable: true, rows: [...original, row('Q1', 'queue')], skippedRows: 0}, null, now);
+  const moving = (await readHQFacts(db, now, 'live')).tests.find(row => row.id === 'Q1');
+  await saveHQRegister(db, {readable: true, complete: true, rows: [row('Q1', 'live')],
+    skippedRows: 40, skippedCells: original.map(row => row.id)}, null, new Date(+now + 2000));
+  facts = await readHQFacts(db, now, 'live');
+  assert.deepEqual(facts.tests.find(row => row.id === 'Q1'), moving);
+  assert.equal(facts.tests.filter(row => row.section === 'live').length, 40);
+  assert.equal(facts.registerCappedRows, 1);
 });

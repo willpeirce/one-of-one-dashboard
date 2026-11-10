@@ -39,7 +39,11 @@ async function stubPush(context: BrowserContext, keys: PushStubKeys, permission:
       save('invented-push-permission', 'granted'); return Promise.resolve('granted');
     };
     const subscription = () => ({endpoint, toJSON: () => ({endpoint, keys}), unsubscribe: async () => {
-      stats.unsubscribes++; localStorage.removeItem('invented-push-subscribed'); return true;
+      stats.unsubscribes++;
+      if (stats.failure === 'unsubscribe-reject') throw new Error('Invented unsubscribe rejection');
+      if (stats.failure === 'unsubscribe-survives') return true;
+      if (stats.failure === 'unsubscribe-hangs') await new Promise(() => {});
+      localStorage.removeItem('invented-push-subscribed'); return true;
     }});
     Object.defineProperty(PushManager.prototype, 'getSubscription', {configurable: true, value: async () => { stats.reads++; return load('invented-push-subscribed') ? subscription() : null; }});
     Object.defineProperty(PushManager.prototype, 'subscribe', {configurable: true, value: async options => {
@@ -159,11 +163,33 @@ export async function checkPush(signedIn: BrowserContext): Promise<void> {
         }
         const removed = await signedIn.request.post('/api/push/unsubscribe', {headers: {origin}, data: {endpoint: browserPushEndpoint}});
         assert.equal(removed.status(), 200);
+        let repairs = 0;
+        page.on('request', request => {if (new URL(request.url()).pathname === '/api/push/subscribe') repairs++;});
         const repaired = page.waitForResponse(reply => new URL(reply.url()).pathname === '/api/push/subscribe');
         await page.goto('/morning'); await page.locator('#mn-root[data-mn-ready="true"]').waitFor();
         assert.equal((await repaired).status(), 200, 'Morning repairs a missing server subscription');
         await page.waitForFunction(() => (window as unknown as {__pulsePushTest: {reads: number}}).__pulsePushTest.reads > 0);
         assert.equal(await page.locator('#mn-push-nudge').isVisible(), false, 'Subscribed devices do not see the nudge');
+        for (let index = 0; index < 4; index++) {
+          const reads = await page.evaluate(() => (window as unknown as {__pulsePushTest: {reads: number}}).__pulsePushTest.reads);
+          await page.evaluate(() => {window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange'));});
+          await page.waitForFunction(before => (window as unknown as {__pulsePushTest: {reads: number}}).__pulsePushTest.reads > before, reads);
+        }
+        assert.equal(repairs, 1, 'Focus and visibility read locally without another repair');
+        if (width === 390) {
+          await page.route('**/api/push/subscribe', route => route.fulfill({status: 503, json: {error: 'Invented repair failure'}}));
+          repairs = 0;
+          const failedRepair = page.waitForResponse(reply => new URL(reply.url()).pathname === '/api/push/subscribe');
+          await page.goto('/morning'); assert.equal((await failedRepair).status(), 503);
+          for (let index = 0; index < 3; index++) {
+            const reads = await page.evaluate(() => (window as unknown as {__pulsePushTest: {reads: number}}).__pulsePushTest.reads);
+            await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+            await page.waitForFunction(before => (window as unknown as {__pulsePushTest: {reads: number}}).__pulsePushTest.reads > before, reads);
+          }
+          assert.equal(repairs, 1); assert.equal(await page.locator('#mn-push-nudge').isVisible(), false, 'Failed repair is unknown, never Off');
+          await page.unroute('**/api/push/subscribe');
+        }
+
         await signedIn.request.post('/api/push/unsubscribe', {headers: {origin}, data: {endpoint: browserPushEndpoint}});
         const settingsRepair = page.waitForResponse(reply => new URL(reply.url()).pathname === '/api/push/subscribe');
         await page.goto('/settings#notifications'); await page.locator('#push-turn-off').waitFor({state: 'visible'});
@@ -199,7 +225,7 @@ export async function checkPush(signedIn: BrowserContext): Promise<void> {
       let logoutCalls = 0;
       // Keep the suite's shared passkey session. Route tests exercise the real atomic logout.
       await page.route('**/auth/logout', async route => {
-        assert.deepEqual(route.request().postDataJSON(), logoutCalls++ === 0 ? {pushEndpoint: browserPushEndpoint} : {});
+        logoutCalls++; assert.deepEqual(route.request().postDataJSON(), {pushEndpoint: browserPushEndpoint});
         if (logoutCalls === 2) await signOutContext.clearCookies({name: 'pulse_session'});
         await route.fulfill({status: logoutCalls === 1 ? 503 : 200, json: logoutCalls === 1 ? {error: 'Invented sign-out failure'} : {ok: true}});
       });
@@ -207,9 +233,46 @@ export async function checkPush(signedIn: BrowserContext): Promise<void> {
       await page.locator('#sign-out').click(); assert.equal((await removed).status(), 200);
       await page.waitForFunction(() => document.querySelector('#auth-message')?.textContent?.includes('Could not sign out'));
       assert.equal(await page.evaluate(async () => !!(await (await navigator.serviceWorker.getRegistration('/'))?.pushManager.getSubscription())), false);
+      const enabledAgain = page.waitForResponse(reply => new URL(reply.url()).pathname === '/api/push/subscribe');
+      await page.locator('#push-turn-on').click(); assert.equal((await enabledAgain).status(), 200);
+      await page.waitForFunction(() => document.querySelector('#push-device-status')?.textContent === 'Notifications are on.');
       await page.locator('#sign-out').click(); await page.waitForURL('**/login');
       assert.equal(logoutCalls, 2, 'Sign-out remains retryable after revoking the device');
     } finally { await signOutContext.close(); }
+    for (const failure of ['lookup-reject', 'lookup-hangs', 'unsubscribe-request', 'unsubscribe-reject', 'unsubscribe-survives', 'unsubscribe-hangs'] as const) {
+      const context = await makeContext();
+      try {
+        const page = await context.newPage(); await page.goto('/settings#notifications');
+        await page.locator('#push-turn-on').click();
+        await page.waitForFunction(() => document.querySelector('#push-device-status')?.textContent === 'Notifications are on.');
+        if (failure.startsWith('lookup')) await page.evaluate(failure === 'lookup-hangs'
+          ? "Object.defineProperty(navigator.serviceWorker, 'getRegistration', {configurable: true, value: function () {return new Promise(function () {});}})"
+          : "Object.defineProperty(navigator.serviceWorker, 'getRegistration', {configurable: true, value: function () {return Promise.reject(new Error('Invented lookup failure'));}})");
+        else if (failure === 'unsubscribe-request') await page.route('**/api/push/unsubscribe', route => route.fulfill({status: 503, json: {error: 'Invented removal failure'}}));
+        else await page.evaluate(value => { (window as unknown as {__pulsePushTest: {failure: string}}).__pulsePushTest.failure = value; }, failure);
+        let logoutCalls = 0;
+        await page.route('**/auth/logout', async route => {
+          logoutCalls++;
+          assert.deepEqual(route.request().postDataJSON(), failure.startsWith('lookup') ? {} : {pushEndpoint: browserPushEndpoint});
+          if (failure !== 'unsubscribe-request') assert.equal(await page.evaluate(() => localStorage.getItem('pulse-push-removal-owed')), '1');
+          await context.clearCookies({name: 'pulse_session'});
+          await route.fulfill({json: {ok: true}});
+        });
+        const started = Date.now(); await page.locator('#sign-out').click(); await page.waitForURL('**/login');
+        assert.equal(logoutCalls, 1, failure); assert.ok(Date.now() - started < 10_000, `${failure}: cleanup remains bounded`);
+        // A new document has working local APIs, but retains the boolean owed marker and browser subscription.
+        await page.waitForFunction(() => localStorage.getItem('pulse-push-removal-owed') === null);
+        assert.equal(await page.evaluate(() => localStorage.getItem('invented-push-subscribed')), null);
+        await context.addCookies((await signedIn.storageState()).cookies);
+        let repairs = 0; page.on('request', request => {if (new URL(request.url()).pathname === '/api/push/subscribe') repairs++;});
+        await page.goto('/settings#notifications');
+        await page.waitForFunction(() => document.querySelector('#push-device-status')?.textContent === 'Notifications are off.');
+        assert.equal(repairs, 0, 'Signing back in never repairs a device whose removal was owed');
+      } finally {
+        await context.close();
+        await signedIn.request.post('/api/push/unsubscribe', {headers: {origin}, data: {endpoint: browserPushEndpoint}});
+      }
+    }
     for (const kind of ['denied', 'unsupported'] as const) {
       const context = await makeContext(kind === 'denied' ? 'denied' : 'default', kind === 'unsupported');
       try {

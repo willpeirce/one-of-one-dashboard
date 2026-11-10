@@ -120,3 +120,15 @@ test('sign-out atomically removes this browser endpoint and session, never anoth
     assert.equal((await h.app.inject({url: '/api/push/key', headers: h.headers})).statusCode, 401);
   }
 });
+
+
+test('logout ends the session and clears cookies with absent, extra, invalid or malformed body data', async t => {
+  for (const payload of [undefined, {inventedExtra: true}, {pushEndpoint: 'https://elsewhere.example.test/device'}, 'null', '{broken']) {
+    const h = await harness(t); h.auth.registerRoutes(h.app);
+    const response = await h.app.inject({method: 'POST', url: '/auth/logout', headers: h.headers, ...(payload === undefined ? {} : {payload})});
+    assert.equal(response.statusCode, 200);
+    assert.equal((await h.db.query('SELECT 1 FROM pulse_private.sessions')).rowCount, 0);
+    const cookies = response.headers['set-cookie'];
+    assert.match(String(cookies), /__Host-pulse_session=;/); assert.match(String(cookies), /Max-Age=0/);
+  }
+});

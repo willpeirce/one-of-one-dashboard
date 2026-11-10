@@ -71,7 +71,7 @@ declare module 'fastify' {
   interface FastifyInstance { startBackgroundWork(): Promise<void> }
 }
 
-export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: NodeJS.ProcessEnv = {}, shopifyOptions: ConstructorParameters<typeof ShopifyWorker>[3] = {}, adOptions:SpendWorkerOptions = {}, reviewOptions: ReviewsWorkerOptions = {}, mailchimpOptions: MailchimpWorkerOptions = {}, localOptions: { clock?: () => Date; pushTransport?: PushTransport } = {}) {
+export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: NodeJS.ProcessEnv = {}, shopifyOptions: ConstructorParameters<typeof ShopifyWorker>[3] = {}, adOptions:SpendWorkerOptions = {}, reviewOptions: ReviewsWorkerOptions = {}, mailchimpOptions: MailchimpWorkerOptions = {}, localOptions: { clock?: () => Date; pushClock?: () => Date; pushTransport?: PushTransport } = {}) {
   // Request/error logging is deliberately off: authentication bodies contain private material.
   const app = Fastify({ logger: false, bodyLimit: 32_768, trustProxy: false, requestTimeout: 15_000 });
   await app.register(cookie);
@@ -264,9 +264,10 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     return shopify.mode === 'sample' ? curateMorningSample(input, now) : input;
   }
   const morning = registerMorning(app, db, auth, morningInputs, localNow);
-  const push = new PushService(db, {origin: config.origin, clock: localNow, loadMorning: now => morning.summary(now),
+  const pushNow = localOptions.pushClock ?? localNow;
+  const push = new PushService(db, {origin: config.origin, clock: pushNow, loadMorning: now => morning.summary(now),
     transport: localOptions.pushTransport});
-  registerPush(app, db, auth, {clock: localNow, sendTest: credentialId => push.sendTest(credentialId)});
+  registerPush(app, db, auth, {clock: pushNow, sendTest: credentialId => push.sendTest(credentialId)});
   registerAdSets(app, db, auth, sourceEnv, creativeNow, adOptions, () => events.publish());
   registerScorecard(app, db, auth, shopify.store, sourceEnv, () => shopifyOptions.clock?.() ?? new Date());
   registerFulfilment(app, db, auth, shopify.mode, sourceNow, () => events.publish());

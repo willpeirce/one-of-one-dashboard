@@ -198,13 +198,11 @@ export class Auth {
       return { ok: true };
     });
 
-    app.post('/auth/logout', {bodyLimit: 4096}, async (request, reply) => {
+    const logout = async (request: FastifyRequest, reply: FastifyReply) => {
       const body = request.body;
-      if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => key !== 'pushEndpoint'))
-        return reply.code(400).send({error: 'Invalid sign-out request.'});
       let endpoint: string | undefined;
-      try { if ('pushEndpoint' in body) endpoint = validatePushEndpoint(body.pushEndpoint).href; }
-      catch { return reply.code(400).send({error: 'Invalid sign-out request.'}); }
+      try { if (body && typeof body === 'object' && 'pushEndpoint' in body) endpoint = validatePushEndpoint(body.pushEndpoint).href; }
+      catch { /* Optional device cleanup cannot prevent session revocation. */ }
       const token = request.cookies[this.sessionCookie];
       if (token && /^[A-Za-z0-9_-]{43}$/.test(token)) {
         await this.db.transaction(async tx => {
@@ -218,6 +216,11 @@ export class Auth {
       this.clearCookie(reply, this.sessionCookie);
       this.clearCookie(reply, this.challengeCookie);
       return { ok: true };
-    });
+    };
+    app.post('/auth/logout', {bodyLimit: 4096, errorHandler: async (error, request, reply) => {
+      if (!error.code?.startsWith('FST_ERR_CTP_')) throw error;
+      request.body = undefined;
+      return logout(request, reply);
+    }}, logout);
   }
 }

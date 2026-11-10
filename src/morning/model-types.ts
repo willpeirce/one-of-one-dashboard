@@ -55,7 +55,7 @@ export interface MorningFine { id: string; label: string }
 export interface MorningMetaAction extends MetaAction { title: string; undo: MorningLiveButton | null }
 /** Later parts supply this slim-line presentation without adding a deck card. */
 export interface MorningBrief {
-  registerDiagnostics?: { malformed: number; capped: number };
+  registerDiagnostics?: { malformed: number; capped: number; missingHeadings?: boolean };
   text: string; status: 'ok' | 'needs' | 'unreadable' | 'missing' | 'key'; mode: SourceMode;
   tone?: 'info' | 'warn';
   day?: string; runLabel?: string; count?: number; items?: { text: string; label?: string }[];

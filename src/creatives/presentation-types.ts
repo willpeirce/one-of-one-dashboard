@@ -12,12 +12,13 @@ export type GroupPerformance = ReturnType<typeof aggregateCreativeGroups>[number
 export type CreativeSelection = CreativeFilter & { window?: Exclude<CreativeWindow, 'lifetime'>; attribute?: string; value?: string; liftWindow?: LiftWindowDays };
 export interface CreativeCard {
   id: string; kind: 'watch' | 'decide'; groupId: string; picture: string;
-  title: string; reason: string; mode: SourceMode; brief?: string; strength?: LiftConfidence;
+  title: string; reason: string; mode: SourceMode; brief?: string; strength?: LiftConfidence; ruleIds?: string[];
 }
 export interface CreativeView {
   mode: SourceMode; accountId: string; selection: CreativeSelection;
   top: ReturnType<typeof topCreatives>; performance: ReturnType<typeof creativePerformance>;
   groups: GroupPerformance[]; cards: CreativeCard[]; lifts: CreativeLift[]; homeMakeNext: CreativeLiftPresentation['makeNext']; makeNext: CreativeLiftPresentation['makeNext'];
+  briefWindows?: Record<1 | 3 | 7, CreativeLiftPresentation['makeNext']>;
   scan: CreativeScanView; taggingQueue: TaggingQueueEntry[]; attributeFilters: AttributeDefinition[];
   targets: { uk: number; us: number }; freelancerInitial: string;
   merged: { id: string; title: string; parentId: string }[];

@@ -1,4 +1,12 @@
 import { registerTicker } from './ticker/routes.js';
+import { readTicker } from './ticker/store.js';
+import { registerMorning } from './morning/routes.js';
+import { morningPage } from './morning/view.js';
+import { MORNING_DAY_COOKIE, MORNING_DAY_COOKIE_SECONDS, opensMorning, readMorningFirst } from './morning/entry.js';
+import { morningInputFromDashboard, readMorningCoverage } from './morning/inputs.js';
+import { curateMorningSample } from './morning/sample.js';
+import { readHomeMorningOmissions } from './morning/home.js';
+import { readMorningStates } from './morning/store.js';
 import { activityActors, readActivity } from './meta-adsets/activity.js';
 import {readMetaActions} from './meta-adsets/actions.js';
 import {registerAdSets} from './meta-adsets/routes.js';
@@ -51,29 +59,39 @@ import { MailchimpWorker, type MailchimpWorkerOptions } from './mailchimp/worker
 import { readMailchimpFacts } from './mailchimp/store.js';
 import { applyMailchimpDashboard, applyMailchimpHero } from './mailchimp/dashboard.js';
 import { mailchimpBillingNeeds } from './mailchimp/needs.js';
+import { HQWorker } from './github-hq/worker.js';
+import { readHQFacts } from './github-hq/store.js';
+import type { HQFacts } from './github-hq/model.js';
+import { addMorningHq, homeTestsFromHq } from './github-hq/presentation.js';
+import { PushService } from './push/service.js';
+import { registerPush } from './push/routes.js';
+import type { PushTransport } from './push/sender.js';
 
 declare module 'fastify' {
   interface FastifyInstance { startBackgroundWork(): Promise<void> }
 }
 
-export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: NodeJS.ProcessEnv = {}, shopifyOptions: ConstructorParameters<typeof ShopifyWorker>[3] = {}, adOptions:SpendWorkerOptions = {}, reviewOptions: ReviewsWorkerOptions = {}, mailchimpOptions: MailchimpWorkerOptions = {}) {
+export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: NodeJS.ProcessEnv = {}, shopifyOptions: ConstructorParameters<typeof ShopifyWorker>[3] = {}, adOptions:SpendWorkerOptions = {}, reviewOptions: ReviewsWorkerOptions = {}, mailchimpOptions: MailchimpWorkerOptions = {}, localOptions: { clock?: () => Date; pushClock?: () => Date; pushTransport?: PushTransport } = {}) {
   // Request/error logging is deliberately off: authentication bodies contain private material.
   const app = Fastify({ logger: false, bodyLimit: 32_768, trustProxy: false, requestTimeout: 15_000 });
   await app.register(cookie);
   const auth = await Auth.create(db, config);
+  const localNow = localOptions.clock ?? (() => new Date());
   await auth.cleanup();
   await syncSourceHealth(db, sourceEnv);
+  const hq = new HQWorker(db, sourceEnv, { clock: localNow });
   const shopify = new ShopifyWorker(db, sourceEnv, config.origin, shopifyOptions);
   await shopify.initialize();
   if (shopify.mode === 'sample') await shopify.tick();
   const sourceNow = () => shopifyOptions.clock?.() ?? (shopify.mode === 'sample' ? new Date(appConfig.shopify.sampleNow) : new Date());
   async function runWatchdogs() {
     const facts = await shopify.store.facts(sourceNow());
-    const [settings, context] = await Promise.all([readSettings(db), readWatchdogContext(db, facts)]);
+    const hqNow = localNow();
+    const [settings, context, hqFacts] = await Promise.all([readSettings(db), readWatchdogContext(db, facts), readHQFacts(db, hqNow, hq.mode)]);
     const health = await creativeSourceHealth(settings.values);
     const now = sourceNow();
     const observation = await updateObservation(db, shopify.mode, facts, now);
-    const checks = evaluateWatchdogs(facts, now, settings.values, observation, context.holidays, health);
+    const checks = evaluateWatchdogs(facts, now, settings.values, observation, context.holidays, health, { entry: hqFacts.report, now: hqNow });
     await db.query('UPDATE pulse.shopify_watchdog_state SET data = data || $2::jsonb WHERE mode = $1', [shopify.mode, JSON.stringify({ checks, evaluatedAt: now.toISOString() })]);
   }
   await seedFulfilment(db, shopify.mode, sourceNow());
@@ -108,6 +126,8 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     ads.start();
     google.start();
     mailchimp.start();
+    hq.start();
+    push.start();
     reviews.start();
     void shopify.startOrderCleanup();
     observationTimer = setInterval(() => { void observe(); }, 60_000);
@@ -129,6 +149,8 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     if (observationTimer) clearInterval(observationTimer);
     await google.stop();
     await mailchimp.stop();
+    await hq.stop();
+    await push.stop();
     await ads.stop();
     await reviews.stop();
     await startupRun;
@@ -183,12 +205,14 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     return {activity:shopify.mode==='live' ? metaActivity?.events ?? [] : [],metaActivity,googleNow:googleAt,google:await readGoogleFacts(db,settings,sourceEnv,googleAt),spend:await spendFacts(db,settings,sourceEnv,shopify.mode,dataset(facts,today).min,today,now),costs:await shopify.store.costHistory(),estimates:await readEstimates(db,shopify.mode),now};
   }
   let unconfirmedCampaigns: { scope: string; count: number } | undefined;
-  async function snapshot() {
-    const settings = await readSettings(db);
+  let morningProjectionFailed = false;
+  async function snapshot(options: { morning?: boolean; settings?: Awaited<ReturnType<typeof readSettings>>; hq?: HQFacts } = {}) {
+    const settings = options.settings ?? await readSettings(db, { seed: !options.morning });
+    const hqNow = localNow(), hqFacts = options.hq ?? await readHQFacts(db, hqNow, hq.mode);
     const sourceHealth = await creativeSourceHealth(settings.values);
     const facts=await shopify.store.facts(sourceNow());
     const adInputs=await heroInputs(facts,settings.values);
-    const result = await applyShopifyDashboard({ ...getSampleDashboard(settings.values), generatedAt: new Date().toISOString(), sourceHealth }, db, facts, settings.values, sourceHealth, sourceNow(), adInputs, shopifyOptions.clock?.() ?? new Date());
+    const result = await applyShopifyDashboard({ ...getSampleDashboard(settings.values), generatedAt: new Date().toISOString(), sourceHealth }, db, facts, settings.values, sourceHealth, sourceNow(), adInputs, shopifyOptions.clock?.() ?? new Date(), { entry: hqFacts.report, now: hqNow });
     applyGoogleDashboard(result, adInputs.google, googleShopifyContext(facts,adInputs.now), settings.values, adInputs.metaActivity, adInputs.googleNow, adInputs.spend);
     const mailchimpAt = mailchimpNow(), mailchimpFacts = await readMailchimpFacts(db,mailchimp.mode,mailchimpAt);
     applyMailchimpDashboard(result,mailchimpFacts,settings.values,mailchimpAt);
@@ -196,8 +220,9 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     // Radar describes actual ad connections even when Shopify numbers use sample data.
     result.adSources = await spendHealth(db, sourceEnv, settings.values, adOptions.clock?.() ?? new Date());
     result.reviews = reviews.mode === 'sample' ? sampleReviews() : await readReviews(db, reviewOptions.clock?.() ?? new Date());
-    result.adSets = await readAdSetsView(db, settings.values, sourceEnv, creativeNow());
-    result.creatives = await readCreativeView(db, settings.values, sourceEnv, creativeNow());
+    const cardEnv = options.morning && shopify.mode === 'sample' ? {} : sourceEnv;
+    result.adSets = await readAdSetsView(db, settings.values, cardEnv, creativeNow());
+    result.creatives = await readCreativeView(db, settings.values, cardEnv, creativeNow(), {}, { seedSample: !options.morning, briefWindows: !!options.morning });
     result.banner = result.banner?.replace('reviews and other stages: sample data', `reviews: ${reviews.mode === 'sample' ? 'sample data' : 'live Judge.me'}; Google: ${adInputs.google.mode === 'sample' ? 'sample data' : 'supported tiles use live reads, remaining examples stay labelled sample'}; Mailchimp: ${mailchimp.mode === 'sample' ? 'sample data' : result.widgets.w038?.mode === 'live' ? 'audience uses its own live read; per-flow examples remain labelled sample' : 'audience total pending or unavailable; examples remain labelled sample'}; other stages: sample data`);
     const campaignScope = JSON.stringify([settings.values.metaAdAccountId, getSourceStates(sourceEnv).find(source => source.source === 'meta')!.mode]);
     try {
@@ -208,9 +233,41 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     if (unconfirmedCampaigns?.scope === campaignScope) result.metaCampaigns = { unconfirmedCount: unconfirmedCampaigns.count };
     result.fulfilment = await fulfilmentSummary(db, shopify.mode, sourceNow());
     result.shopify?.needs.push(...result.fulfilment.needs.map(n => ({ ...n, state: 'warn' as const, source: 'j-and-j' as const })));
+    if (!options.morning) {
+      try {
+        if (shopify.mode === 'live') result.tests = homeTestsFromHq(hqFacts, await readMorningStates(db, shopify.mode), hqNow);
+        const omissions = await readHomeMorningOmissions(db, result, settings.values, shopify.mode, localNow(),
+          { metaNow: creativeNow(), googleNow: googleNow() });
+        if (omissions) result.morningOmissions = omissions;
+        morningProjectionFailed = false;
+      } catch {
+        delete result.morningOmissions;
+        if (shopify.mode === 'live') {
+          try { result.tests = homeTestsFromHq(hqFacts, [], hqNow); }
+          catch { result.tests = {mode: 'live', readAt: null, readOk: false, rows: [], href: '/sources'}; }
+        }
+        if (!morningProjectionFailed) console.warn('Morning projection failed; Home shows all cards.');
+        morningProjectionFailed = true;
+      }
+    }
     return result;
   }
   const events = registerDashboardEvents(app, auth, snapshot);
+  async function morningInputs(now: Date) {
+    const [settings, hqFacts] = await Promise.all([readSettings(db, { seed: false }), readHQFacts(db, now, hq.mode)]);
+    const [dashboard, ticker, coverage] = await Promise.all([
+      snapshot({ morning: true, settings, hq: hqFacts }), readTicker(db, shopify.mode, now),
+      shopify.mode === 'live' ? readMorningCoverage(db, settings.values.metaAdAccountId, creativeNow(),
+        { googleAccount: settings.values.googleCustomerId, googleNow: googleNow() }) : undefined,
+    ]);
+    const input = addMorningHq(morningInputFromDashboard(dashboard, settings.values, ticker, shopify.mode, coverage), hqFacts, now);
+    return shopify.mode === 'sample' ? curateMorningSample(input, now) : input;
+  }
+  const morning = registerMorning(app, db, auth, morningInputs, localNow);
+  const pushNow = localOptions.pushClock ?? localNow;
+  const push = new PushService(db, {origin: config.origin, clock: pushNow, loadMorning: now => morning.summary(now),
+    transport: localOptions.pushTransport});
+  registerPush(app, db, auth, {clock: pushNow, sendTest: credentialId => push.sendTest(credentialId)});
   registerAdSets(app, db, auth, sourceEnv, creativeNow, adOptions, () => events.publish());
   registerScorecard(app, db, auth, shopify.store, sourceEnv, () => shopifyOptions.clock?.() ?? new Date());
   registerFulfilment(app, db, auth, shopify.mode, sourceNow, () => events.publish());
@@ -222,7 +279,17 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   }, () => events.publish(), adOptions.creativeReader, adOptions.creativeScan);
   app.get('/', async (request, reply) => {
     if (!await auth.session(request)) return reply.redirect('/login');
+    if (request.url === '/' && opensMorning(await readMorningFirst(db), request.cookies[MORNING_DAY_COOKIE], request.url, localNow()))
+      return reply.redirect('/morning');
     return reply.type('text/html; charset=utf-8').send(dashboardPage(await snapshot()));
+  });
+  app.get('/morning', async (request, reply) => {
+    if (!await auth.session(request)) return reply.redirect('/login');
+    const now = localNow();
+    reply.setCookie(MORNING_DAY_COOKIE, ukToday(now), { path: '/', httpOnly: true,
+      secure: config.secureCookies, sameSite: 'strict', maxAge: MORNING_DAY_COOKIE_SECONDS });
+    const deck = await morning.read(now);
+    return reply.type('text/html; charset=utf-8').send(morningPage(deck));
   });
   app.get('/api/dashboard', async (request, reply) => {
     if (!await auth.session(request)) return reply.code(401).send({ error: 'Sign in to continue.' });
@@ -285,8 +352,8 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   });
   // Fixed paths only; the server never exposes repository or environment files.
   const assets = [
-    ...['browser.js', 'dashboard.js', 'settings.js', 'fulfilment.js', 'creatives.js', 'adsets.js', 'ticker.js'].map(name => [name, 'text/javascript; charset=utf-8'] as const),
-    ...['styles.css', 'dashboard.css', 'settings.css', 'fulfilment.css', 'creatives.css', 'fonts.css', 'pull-refresh.css', 'adsets.css', 'scorecard.css', 'home-compact.css', 'home-panels.css', 'decisions.css', 'ticker.css'].map(name => [name, 'text/css; charset=utf-8'] as const),
+    ...['browser.js', 'dashboard.js', 'settings.js', 'fulfilment.js', 'creatives.js', 'adsets.js', 'ticker.js', 'morning.js'].map(name => [name, 'text/javascript; charset=utf-8'] as const),
+    ...['styles.css', 'dashboard.css', 'settings.css', 'fulfilment.css', 'creatives.css', 'fonts.css', 'pull-refresh.css', 'adsets.css', 'scorecard.css', 'home-compact.css', 'home-panels.css', 'decisions.css', 'ticker.css', 'morning.css'].map(name => [name, 'text/css; charset=utf-8'] as const),
     ...['logo.png', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'].map(name => [name, 'image/png'] as const),
     ...['outfit', 'plus-jakarta-sans'].flatMap(name => [
       [`fonts/${name}-latin-wght-normal.woff2`, 'font/woff2'] as const,
@@ -300,7 +367,10 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   app.get('/manifest.webmanifest', async (_request, reply) => reply.type('application/manifest+json').send(
     await readFile(new URL('../dist/public/manifest.webmanifest', import.meta.url)),
   ));
-  registerTicker(app, db, auth, shopify.mode, () => new Date());
+  app.get('/sw.js', async (_request, reply) => reply.header('Cache-Control', 'no-store').type('text/javascript; charset=utf-8').send(
+    await readFile(new URL('../dist/public/sw.js', import.meta.url)),
+  ));
+  registerTicker(app, db, auth, shopify.mode, localNow);
   auth.registerRoutes(app);
   const cleanup = setInterval(() => { void auth.cleanup().catch(() => {}); }, 60 * 60 * 1000);
   cleanup.unref();

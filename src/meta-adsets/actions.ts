@@ -1,3 +1,4 @@
+import {allowedBudgetChange} from './budget.js';
 import {randomUUID} from 'node:crypto';
 import type {Database} from '../db.js';
 import {readSettings} from '../settings.js';
@@ -41,7 +42,7 @@ export async function actOnAdSet(db:Database,id:string,input:unknown,who:string,
   const old=String(action==='budget'?set.daily_budget??'':set.status);
   if(action==='budget'){
    const base=Number(set.daily_budget),minor=Number(next);
-   if(!Number.isSafeInteger(base)||base<100||!Number.isSafeInteger(minor)||minor<100||!undo&&minor>Math.floor(base*13/10))throw new AdActionError(400);
+   if(!allowedBudgetChange(base,minor,!!undo))throw new AdActionError(400);
   }else if(!['ACTIVE','PAUSED'].includes(old))throw new AdActionError(400);
   if(old===next)throw new AdActionError(409);
   const actionId=randomUUID();

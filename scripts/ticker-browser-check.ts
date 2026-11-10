@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import type { BrowserContext, Locator, Page } from 'playwright';
 import type { TickerSnapshot } from '../src/ticker/model.js';
 
-const shells = ['/', '/settings', '/sources', '/ads', '/fulfilment', '/creatives', '/scorecard', '/audit'];
+const shells = ['/', '/settings', '/sources', '/ads', '/fulfilment', '/creatives', '/scorecard', '/audit', '/morning'];
 
 async function tapSizes(scope: Locator, label: string): Promise<void> {
   for (const control of await scope.locator('button,a').all()) {

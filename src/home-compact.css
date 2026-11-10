@@ -1,5 +1,7 @@
 /* Home's compact chapter layout. Sheets and source pages retain their own styles. */
 #table,#reviews,#tests,#dials{min-width:0}
+#table>.chapter-heading>.chapter-copy{min-width:150px}
+#table .morning-link{display:inline-flex;align-items:center;justify-content:center;align-self:center;text-decoration:none;padding:6px 12px}
 #table :is(button,a,summary),#reviews :is(button,a,summary),#tests :is(button,a,summary),#dials :is(button,a,summary),#foot :is(button,a,summary){min-height:44px}
 #table summary,#reviews summary,#tests summary,#dials summary{cursor:pointer}
 #table [hidden],#reviews [hidden],#tests [hidden],#dials [hidden]{display:none!important}
@@ -35,6 +37,16 @@
 #tests .test-more summary{display:flex;align-items:center;font-size:12px;color:var(--muted);padding:0 10px}
 #tests .test-more[open] .trow{padding:8px;grid-template-columns:auto 28px minmax(0,1fr);gap:8px}
 #tests .test-more .trow .d{grid-column:1/-1;text-align:left}
+#tests[data-hq-tests] .hq-test-status{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;overflow-wrap:anywhere}
+#tests[data-hq-tests] .test-list .trow{grid-template-columns:44px minmax(0,1fr) auto}
+#tests[data-hq-tests] .test-stage{overflow-wrap:anywhere;max-height:44px;overflow:hidden}
+#tests[data-hq-tests] #hq-tests-feedback:empty{display:none}
+#hq-tests-dialog .sheet-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+#hq-tests-dialog .sheet-head h2{min-width:0;overflow-wrap:anywhere}
+#hq-tests-dialog :is(button,a){min-height:44px;min-width:44px}
+#hq-tests-dialog .hq-test-detail dt{font-weight:700;margin-top:14px}
+#hq-tests-dialog .hq-test-detail dd{margin:4px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+#hq-tests-dialog .tbody{display:grid;grid-template-columns:minmax(0,1fr) 100px;gap:12px}
 #dials .tabs{overflow:visible;justify-content:space-between}
 #dials .tab{min-height:44px;min-width:44px;flex:1;justify-content:center}
 #dials .panel>.grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}

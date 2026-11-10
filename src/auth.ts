@@ -1,3 +1,4 @@
+import { validatePushEndpoint } from './push/validation.js';
 import { createECDH, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import {
   generateAuthenticationOptions, generateRegistrationOptions,
@@ -197,17 +198,29 @@ export class Auth {
       return { ok: true };
     });
 
-    app.post('/auth/logout', async (request, reply) => {
+    const logout = async (request: FastifyRequest, reply: FastifyReply) => {
+      const body = request.body;
+      let endpoint: string | undefined;
+      try { if (body && typeof body === 'object' && 'pushEndpoint' in body) endpoint = validatePushEndpoint(body.pushEndpoint).href; }
+      catch { /* Optional device cleanup cannot prevent session revocation. */ }
       const token = request.cookies[this.sessionCookie];
       if (token && /^[A-Za-z0-9_-]{43}$/.test(token)) {
         await this.db.transaction(async tx => {
           const deleted = await tx.query<{ credential_id: string }>('DELETE FROM pulse_private.sessions WHERE token_hash = $1 RETURNING credential_id', [this.hash(token)]);
-          if (deleted.rows[0]) await audit(tx, 'sign_out', deleted.rows[0].credential_id);
+          if (deleted.rows[0]) {
+            if (endpoint) await tx.query('DELETE FROM pulse.push_subscriptions WHERE endpoint=$1 AND credential_id=$2', [endpoint, deleted.rows[0].credential_id]);
+            await audit(tx, 'sign_out', deleted.rows[0].credential_id);
+          }
         });
       }
       this.clearCookie(reply, this.sessionCookie);
       this.clearCookie(reply, this.challengeCookie);
       return { ok: true };
-    });
+    };
+    app.post('/auth/logout', {bodyLimit: 4096, errorHandler: async (error, request, reply) => {
+      if (!error.code?.startsWith('FST_ERR_CTP_')) throw error;
+      request.body = undefined;
+      return logout(request, reply);
+    }}, logout);
   }
 }

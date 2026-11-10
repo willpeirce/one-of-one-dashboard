@@ -7,6 +7,7 @@ import { adSetName } from '../meta-adsets/name.js';
 import { checksHtml } from '../shopify/presentation.js';
 import { escapeCreative as e } from '../creatives/html.js';
 import { formatNumber } from '../money.js';
+import type { MorningHomeOmissions } from '../morning/model-types.js';
 
 export interface DecisionsState {
   shopify?: ShopifyDashboard;
@@ -14,6 +15,7 @@ export interface DecisionsState {
   creatives?: CreativeCard[];
   market?: string;
   amberDials?: number;
+  morningOmissions?: MorningHomeOmissions;
 }
 type Need = ShopifyDashboard['needs'][number];
 const sourceNames = { shopify: 'Shopify', 'j-and-j': 'J&J', meta: 'Meta', 'google-ads': 'Google Ads', mailchimp: 'Mailchimp', tiktok: 'TikTok', pulse: 'Pulse' };
@@ -22,7 +24,8 @@ function needLink(need: Need): string {
   const external = /^https?:\/\//.test(need.link);
   const shopify = /^https:\/\/(?:admin\.shopify\.com|[^/]+\.myshopify\.com)\//.test(need.link);
   const label = shopify ? 'Open in Shopify' : need.link.startsWith('/settings') ? 'Open settings'
-    : need.link.startsWith('/ads') ? 'Open ads' : need.link.startsWith('/fulfilment') ? 'Open fulfilment' : 'Open source health';
+    : need.link.startsWith('/ads') ? 'Open ads' : need.link.startsWith('/fulfilment') ? 'Open fulfilment'
+    : need.link.startsWith('/morning') ? 'Open Morning' : 'Open source health';
   return `<a class="btn" href="${e(need.link)}"${external ? ' target="_blank" rel="noopener noreferrer"' : ''}>${label}</a>`;
 }
 const figure = (value?: {value:string;label:string}, mark='') => value
@@ -78,10 +81,12 @@ function stockHtml(model:ShopifyDashboard):string {
   return `<div class="stock-heading"><h3>Days left</h3><button class="btn tab" type="button" data-tab="stock">Stock dials</button></div><div class="stock-grid"><span></span><strong>UK</strong><strong>US</strong>${rows(regular)}</div>${fine.length?`<details class="stock-fine"><summary>+${formatNumber(fine.length)} fine</summary><div class="stock-grid">${rows(fine)}</div></details>`:''}`;
 }
 export function decisionsHtml(state:DecisionsState):string {
-  const needs=(state.shopify?.needs??[]).filter(n=>!n.id.startsWith('stock:')&&!n.id.startsWith('attach:'));
+  const omittedNeeds=new Set(state.morningOmissions?.needs??[]),omittedCreatives=new Set(state.morningOmissions?.creatives??[]);
+  const omittedAds=new Set((state.morningOmissions?.adSets??[]).map(row=>`${row.id}\0${row.verdict}`));
+  const needs=(state.shopify?.needs??[]).filter(n=>!n.id.startsWith('stock:')&&!n.id.startsWith('attach:')&&(n.state==='alarm'||!omittedNeeds.has(n.id)));
   const adSets=state.adSets&&(!state.shopify||state.adSets.mode==='live')?state.adSets:undefined;
-  const ads=adSets?decisionRows(adSets,state.market??'all'):[];
-  const creatives=(state.creatives??[]).filter(c=>!state.shopify||c.mode==='live');
+  const ads=adSets?decisionRows(adSets,state.market??'all').filter(row=>!omittedAds.has(`${row.set.id}\0${row.verdict!.verdict}`)):[];
+  const creatives=(state.creatives??[]).filter(c=>(!state.shopify||c.mode==='live')&&!omittedCreatives.has(c.id));
   const ranked:{rank:number;html:string}[]=needs.filter(n=>n.state==='alarm').map(n=>({rank:0,html:needCard(n)}));
   for(const row of ads){const rank=({Kill:1,Slipping:2,Step:4} as Record<string,number>)[row.verdict!.verdict];if(rank!==undefined)ranked.push({rank,html:adCard(row,adSets!,rank)});}
   ranked.push(...creatives.filter(c=>c.kind==='decide').map(c=>({rank:3,html:creativeCard(c)})));

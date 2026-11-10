@@ -1,0 +1,3 @@
+export function pushDeviceHtml(): string {
+  return '<section class="push-device" id="notifications" aria-labelledby="push-device-title"><div id="push-device"><h3 id="push-device-title">Notifications on this device</h3><p id="push-device-status">Checking notifications…</p><p class="setting-help" id="push-device-help"></p><div class="push-device-actions"><button class="btn" id="push-turn-on" type="button" hidden>Turn on</button><button class="btn" id="push-turn-off" type="button" hidden>Turn off</button><button class="btn" id="push-send-test" type="button" hidden>Send a test</button></div><p id="push-device-message" role="status" aria-live="polite"></p></div></section>';
+}

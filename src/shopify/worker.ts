@@ -15,6 +15,7 @@ import { webhookTopics } from './webhooks.js';
 
 type Job = 'backfill' | 'poll' | 'inventory' | 'sessions' | 'subscriptions' | 'reconcile' | 'session_history' | 'stock_snapshot' | 'stock_daily' | 'series_pace' | 'shipping_refunds' | 'gross_history';
 export const WEBHOOK_MAX_ATTEMPTS = 5;
+export const SHIPPING_REFUND_SKIPPED_ID_LIMIT = 50;
 const intervals: Record<Job, number> = { backfill: 0, poll: 300_000, inventory: 300_000, sessions: 300_000, subscriptions: 3_600_000, reconcile: 86_400_000, session_history: 0, stock_snapshot: 0, stock_daily: 0, series_pace: 3_600_000, shipping_refunds: 60_000, gross_history: 60_000 };
 export function backfillWindow(now: Date, allOrders: boolean) {
   return { from: addDays(ukToday(now), -(allOrders ? 399 : 59)), olderFrom: addDays(ukToday(now), -399), olderTo: addDays(ukToday(now), -60) };
@@ -354,17 +355,20 @@ export class ShopifyWorker {
     }
     if (name === 'shipping_refunds') {
       if (this.mode !== 'live') return { skipped: 'sample_mode' };
-      // Keep distinct unresolved IDs across cursor sweeps; retrying one order is not another skipped order.
-      const skippedOrderIds = new Set<string>(Array.isArray(state.skippedOrderIds)
-        ? state.skippedOrderIds.filter((id: unknown): id is string => typeof id === 'string') : []);
-      const skippedState = () => ({ skippedOrders: skippedOrderIds.size, skippedOrderIds: [...skippedOrderIds] });
+      const versioned = state.countVersion === 2;
+      const nonnegative = (value: unknown) => Number.isSafeInteger(value) && Number(value) >= 0 ? Number(value) : 0;
+      let skippedOrders = nonnegative(state.skippedOrders);
+      let sweepSkippedOrders = versioned ? nonnegative(state.sweepSkippedOrders) : 0;
+      const skippedOrderIds = new Set<string>(versioned && Array.isArray(state.skippedOrderIds)
+        ? state.skippedOrderIds.filter((id: unknown): id is string => typeof id === 'string').slice(-SHIPPING_REFUND_SKIPPED_ID_LIMIT) : []);
+      const skippedState = () => ({countVersion: 2, skippedOrders, sweepSkippedOrders, skippedOrderIds: [...skippedOrderIds]});
       // One legacy order per run enriches totals, replacement tags and shipping refunds without blocking startup.
       const legacy = await this.db.query<{ source_id: string }>(`SELECT source_id FROM pulse.shopify_records
         WHERE mode = 'live' AND kind = 'order' AND source_id > $1 AND data->>'day' >= $2
           AND (NOT (data ? 'totalPence') OR NOT (data ? 'tags') OR EXISTS (SELECT 1 FROM jsonb_array_elements(data->'refunds') AS refund WHERE NOT (refund ? 'shippingNetPence') OR NOT (refund ? 'totalPence')))
-        ORDER BY source_id LIMIT 1`, [state.after ?? '', checkpoint.rows[0]?.state.from ?? day]);
+        ORDER BY source_id LIMIT 1`, [versioned ? state.after ?? '' : '', checkpoint.rows[0]?.state.from ?? day]);
       const id = legacy.rows[0]?.source_id;
-      if (!id) return { after: null, idle: true, ...skippedState() };
+      if (!id) return { after: null, idle: true, countVersion: 2, skippedOrders: sweepSkippedOrders, sweepSkippedOrders: 0, skippedOrderIds: [] };
       // Advance durably before the read: an inaccessible old order cannot block the rest.
       const nextState = { after: id, ...skippedState() };
       await this.db.query(`UPDATE pulse.shopify_jobs SET state = $1, next_run_at = $2 WHERE mode = 'live' AND name = 'shipping_refunds'`, [JSON.stringify(nextState), new Date(now.getTime() + intervals.shipping_refunds)]);
@@ -378,14 +382,17 @@ export class ShopifyWorker {
         if (!raw) throw new ShopifyError('denied');
       }
       catch (error) {
+        if (!skippedOrderIds.delete(id)) sweepSkippedOrders = Math.min(Number.MAX_SAFE_INTEGER, sweepSkippedOrders + 1);
+        skippedOrders = Math.max(skippedOrders, sweepSkippedOrders);
         skippedOrderIds.add(id);
+        if (skippedOrderIds.size > SHIPPING_REFUND_SKIPPED_ID_LIMIT) skippedOrderIds.delete(skippedOrderIds.values().next().value!);
         await this.db.query(`UPDATE pulse.shopify_jobs SET state = $1 WHERE mode = 'live' AND name = 'shipping_refunds'`,
           [JSON.stringify({ after: id, ...skippedState() })]);
         throw error;
       }
       if (raw.refunds.some((refund: any) => !refund.refundShippingLines)) throw new ShopifyError('invalid');
       await this.store.orders([raw], this.clock());
-      skippedOrderIds.delete(id);
+      if (skippedOrderIds.delete(id)) { sweepSkippedOrders = Math.max(0, sweepSkippedOrders - 1); skippedOrders = Math.max(0, skippedOrders - 1); }
       return { after: id, ...skippedState() };
     }
     if (name === 'backfill') {

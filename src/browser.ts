@@ -1,3 +1,4 @@
+import { cancelPushSignOut, unsubscribeForSignOut } from './push/browser.js';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import { installPullToRefresh, reloadPageForRefresh } from './pull-refresh.js';
 
@@ -75,8 +76,12 @@ register?.addEventListener('submit', (event) => {
 
 signOut?.addEventListener('click', () => {
   void perform(async () => {
-    await post('/auth/logout', {});
-    window.location.assign('/login');
+    let pushEndpoint: string | undefined;
+    try { pushEndpoint = await unsubscribeForSignOut(); } catch { /* Device cleanup cannot prevent logout. */ }
+    try {
+      await post('/auth/logout', pushEndpoint ? {pushEndpoint} : {});
+      window.location.assign('/login');
+    } catch (error) { cancelPushSignOut(); throw error; }
   }, 'Could not sign out. Try again.');
 });
 

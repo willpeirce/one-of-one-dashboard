@@ -7,7 +7,7 @@ import type { CreativeData } from './model.js';
 import type { CreativeCard } from './presentation-types.js';
 import { aggregateCreativeGroups, indexCreativeData } from './ranking.js';
 
-export interface CreativeBullet { text: string; confidence: LiftConfidence; liftIds: string[] }
+export interface CreativeBullet { text: string; instruction?: string; confidence: LiftConfidence; liftIds: string[] }
 export interface CreativeBrief {
   line: string; brief: string; bullets: CreativeBullet[];
   examples: { id: string; title: string }[]; footer: string; empty: string;
@@ -66,6 +66,7 @@ export function makeCreativeBrief(kind: CreativeKind, lifts: readonly CreativeLi
     if (cluster) cluster.push(lift); else clusters.push([lift]);
   }
   const bullets = clusters.slice(0, 3).map(group => ({
+    instruction: `${mergeInstructions(group.map(instruction))}.`,
     text: `${mergeInstructions(group.map(instruction))}. ${liftComparison(group[0]!)}`,
     confidence: group[0]!.confidence, liftIds: group.map(lift => lift.id),
   }));

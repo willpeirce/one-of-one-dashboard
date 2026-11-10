@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {dashboardPage} from '../src/dashboard-view.js';
 import type {DashboardSnapshot} from '../src/dashboard-types.js';
 import type {Page} from 'playwright';
+import {adSetName} from '../src/meta-adsets/name.js';
 export async function checkAdSets(page:Page,origin:string):Promise<void>{
  const response=await page.request.get(origin+'/api/dashboard');assert.equal(response.status(),200);
  const fixture=await response.json() as DashboardSnapshot;
@@ -28,4 +29,20 @@ export async function checkAdSets(page:Page,origin:string):Promise<void>{
  const top=(await page.locator('header.top').boundingBox())!,main=(await page.locator('main').boundingBox())!;assert.ok(main.y>=top.y+top.height,'Ads content clears the shared header');
  if(process.env.PULSE_SCREENSHOT_DIR)await page.screenshot({path:`${process.env.PULSE_SCREENSHOT_DIR}/adsets-${page.viewportSize()!.width}-${await page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')}.png`,fullPage:false});
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+ const linked=fixture.adSets!.rows.slice(0,2);
+ const firstId=linked[0]!.set.id;
+ await page.goto(`${origin}/ads#%${firstId.charCodeAt(0).toString(16)}${encodeURIComponent(firstId.slice(1))}`);
+ await page.locator('#adset-sheet[open]').waitFor();
+ assert.equal(await page.locator('#adset-sheet-content h2').innerText(),adSetName(linked[0]!.set.name));
+ await page.locator('[data-adset-close]').click();
+ await page.evaluate(id=>{location.hash=encodeURIComponent(id);},linked[1]!.set.id);
+ await page.locator('#adset-sheet[open]').waitFor();
+ assert.equal(await page.locator('#adset-sheet-content h2').innerText(),adSetName(linked[1]!.set.name));
+ await page.locator('[data-adset-close]').click();
+ for(const hash of ['','%E0%A4%A','invented-adset-not-listed']){
+  await page.evaluate(value=>new Promise<void>(resolve=>{addEventListener('hashchange',()=>requestAnimationFrame(()=>resolve()),{once:true});location.hash=value;}),hash);
+  assert.equal(await page.locator('#adset-sheet[open]').count(),0,'Unknown or malformed subject hashes do not open a sheet');
+ }
+ await page.goto(origin+'/ads');
+ assert.equal(await page.locator('#adset-sheet[open]').count(),0,'No-hash navigation keeps the sheet closed');
 }

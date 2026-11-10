@@ -11,6 +11,7 @@ import { dashboardTemplate } from './dashboard-template.js';
 import { formatNumber, formatMetricNumber, formatPounds } from './money.js';
 import { seriesPaceCardHtml } from './series-pace/presentation.js';
 import { reviewsFlagLabel, reviewsGreeting, reviewsPanelHtml } from './judgeme/presentation.js';
+import { homeTestsHtml } from './github-hq/view.js';
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({
@@ -30,7 +31,9 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
     return escapeHtml(value);
   });
   content = homeDialsHtml(content, snapshot.widgets);
-  content = content.replace('<div class="deck" id="deck"></div>', `<div class="deck" id="deck">${decisionsHtml({shopify: snapshot.shopify, adSets: snapshot.adSets, creatives: snapshot.creatives?.cards, market: 'all'})}</div>`);
+  if (snapshot.tests) content = content.replace(/(<section class="chapter tests" id="tests"[^>]*>)[\s\S]*?<\/section>/,
+    (_section, tag: string) => `${tag.replace('>', ' data-hq-tests="live">')}${homeTestsHtml(snapshot.tests!)}</section>`);
+  content = content.replace('<div class="deck" id="deck"></div>', `<div class="deck" id="deck">${decisionsHtml({shopify: snapshot.shopify, adSets: snapshot.adSets, creatives: snapshot.creatives?.cards, market: 'all', morningOmissions: snapshot.morningOmissions})}</div>`);
   if(snapshot.adSets){
     content=content.replace('<div id="adset-summary"></div>', `<div id="adset-summary">${adSetSummary(snapshot.adSets,'all',true)}</div>`);
     content+=adSetsDialog();

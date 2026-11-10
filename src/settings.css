@@ -25,3 +25,9 @@
 @media(max-width:760px){.settings-header{align-items:flex-start;gap:12px}.settings-wordmark{font-size:19px;line-height:1.4}.settings-wordmark span{display:none}.settings-nav{gap:5px}.settings-nav .btn{font-size:11px;padding:6px 9px;min-height:36px}.settings-intro h1{font-size:32px}.settings-section summary{padding:17px;font-size:20px}.settings-section-body{padding:0 17px 18px}.settings-grid,.settings-checks{grid-template-columns:1fr;gap:16px}.setting-row{padding:10px 12px 12px;gap:10px;flex-wrap:wrap}.setting-row-fields{grid-template-columns:1fr;gap:12px;flex-basis:100%}.setting-remove{margin-left:auto;font-size:12px}.settings-savebar{padding:14px;gap:12px;align-items:flex-start}.settings-savebar .setting-help{display:none}.settings-savebar p{font-size:12px}.settings-savebar .settings-save{min-height:44px;font-size:12px;padding:8px 12px}}
 @media(prefers-reduced-motion:reduce){.setting-chevron{transition:none}}
 .setting-actors{display:grid;gap:10px;margin-top:12px}.setting-actor{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border:1px solid var(--line);border-radius:12px}.setting-actor p{min-width:0;overflow-wrap:anywhere;font-size:13px}.setting-actor small{display:block;color:var(--muted);font-size:11px}.settings-page .setting-actor-pick{flex:none;min-height:44px;color:var(--decide);border-color:var(--decide)}.setting-row-fields .setting-warning{grid-column:1/-1;color:var(--warn)}
+.settings-page .push-device{border-top:1px solid var(--line);margin-top:16px;padding-top:16px}
+.settings-page .push-device h3{margin:0 0 8px}
+.settings-page .push-device-actions{display:flex;flex-wrap:wrap;gap:8px}
+.settings-page .push-device button{min-width:44px;min-height:44px}
+.settings-page .push-device [hidden]{display:none!important}
+.settings-page #push-device-message:empty,.settings-page #push-device-help:empty{display:none}

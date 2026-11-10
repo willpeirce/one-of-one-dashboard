@@ -101,6 +101,40 @@ test('ticker routes enforce session, origin, JSON, strict payload and the 512-by
   assert.equal((await h.db.query('SELECT 1 FROM pulse.ticker_passed')).rows.length, 0);
 });
 
+test('names at the Settings cap fit Next and Put back, including multibyte and expanding lowercase keys', async t => {
+  const h = await harness(t);
+  const names = ['Invented '.repeat(11) + 'x', '界'.repeat(100), 'İ'.repeat(100), '𐐀'.repeat(50)];
+  for (const name of names) {
+    assert.equal(name.length, 100, 'Settings measures UTF-16 code units');
+    const event = row(name);
+    await h.setDates([event]);
+    const key = tickerEventKey(event), payload = JSON.stringify({eventKey: key});
+    assert.ok(key.length <= 220, 'Even lowercase expansion fits the stored key and route cap');
+    assert.ok(Buffer.byteLength(payload) <= 512, 'The actual UTF-8 JSON body fits the unchanged route limit');
+    if (name.startsWith('İ')) {
+      assert.equal(key.length, 211);
+      assert.equal(Buffer.byteLength(payload), 326);
+    }
+    const snapshot = (await h.app.inject({url: '/api/ticker', headers: h.headers})).json<TickerSnapshot>();
+    assert.equal(snapshot.current!.name, name);
+    assert.equal(snapshot.current!.key, key);
+    for (const action of ['next', 'restore'] as const) {
+      const response = await h.app.inject({method: 'POST', url: `/api/ticker/${action}`, headers: h.headers, payload});
+      assert.equal(response.statusCode, 200, `${action} accepts the saved name`);
+      assert.equal(response.json<TickerSnapshot>().passed.length, action === 'next' ? 1 : 0);
+    }
+    // Rows saved by the original key format remain readable and can still be put back.
+    await h.db.query('INSERT INTO pulse.ticker_passed(mode,event_key,passed_at,credential_id) VALUES($1,$2,$3,$4)',
+      ['live', `${name.trim().replace(/\s+/g, ' ').toLowerCase()}|${event.date}`, now, h.credential]);
+    const stored = (await h.app.inject({url: '/api/ticker', headers: h.headers})).json<TickerSnapshot>();
+    assert.equal(stored.current, null);
+    assert.equal(stored.passed[0]!.key, key);
+    const restored = await h.app.inject({method: 'POST', url: '/api/ticker/restore', headers: h.headers, payload});
+    assert.equal(restored.statusCode, 200);
+    assert.equal(restored.json<TickerSnapshot>().current!.name, name);
+  }
+});
+
 test('Next and restore persist idempotently, act on the submitted item and audit every press', async t => {
   const h = await harness(t);
   const rows = [row('Invented first', '2032-04-06'), row('Invented second', '2032-04-07'), row('Invented third', '2032-04-08')];

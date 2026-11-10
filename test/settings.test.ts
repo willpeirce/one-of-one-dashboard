@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID, randomBytes } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { test } from 'node:test';
 import {
   defaultSettings, readSettings, saveSettings, validateSettings, SettingsConflictError,
@@ -51,6 +51,151 @@ test('key dates fill older Settings without writing them and migration replay re
   const permissions = await db.query(`SELECT 1 FROM pg_class c, LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl
     WHERE c.oid='pulse.ticker_passed'::regclass AND acl.grantee=0`);
   assert.equal(permissions.rows.length, 0);
+});
+
+test('key-date name limit counts UTF-16 units and names the field when a longer name is refused', () => {
+  const defaults = defaultSettings();
+  const names = ['Invented '.repeat(11) + 'x', '界'.repeat(100), 'İ'.repeat(100), '𐐀'.repeat(50)];
+  for (const name of names) {
+    const event = {name, date: '2032-04-07', note: '', kind: 'flag'};
+    assert.equal(name.length, 100);
+    assert.equal(validateSettings({...defaults, keyDates: [event]}).keyDates[0]!.name, name);
+    assert.throws(() => validateSettings({...defaults, keyDates: [{...event, name: `${name}界`}]}),
+      (error: unknown) => error instanceof SettingsValidationError && error.fields.length === 1 && error.fields[0] === 'keyDates.0.name');
+  }
+  assert.equal(Array.from(names[3]!).length, 50, 'Astral letters consume two UTF-16 units each');
+});
+
+test('Morning-first defaults off, accepts booleans only and renders its saved checkbox in Summary & brand', () => {
+  const defaults = defaultSettings();
+  assert.equal(defaults.morningOpensFirst, false);
+  for (const value of [false, true]) {
+    const values = validateSettings({...defaults, morningOpensFirst: value});
+    assert.equal(values.morningOpensFirst, value);
+    const preferences = settingsPage({version: 0, values}).split('Summary &amp; brand')[1]!.split('</details>')[0]!;
+    assert.match(preferences, /Open Morning first each day/);
+    const input = preferences.match(/<input[^>]*name="morningOpensFirst"[^>]*>/)![0];
+    assert.match(input, /type="checkbox"/);
+    assert.equal(input.includes(' checked'), value);
+  }
+  for (const value of ['true', 'false', 0, 1, null, undefined, [], {}]) {
+    assert.throws(() => validateSettings({...defaults, morningOpensFirst: value}), (error: unknown) =>
+      error instanceof SettingsValidationError && error.fields.length === 1 && error.fields[0] === 'morningOpensFirst');
+  }
+});
+
+test('Morning-first fills older Settings without writing and its guarded audit migration replays unchanged', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const initial = await readSettings(db);
+  const {morningOpensFirst: _morningOpensFirst, ...older} = initial.values;
+  await db.query('UPDATE pulse.settings SET values=$1', [JSON.stringify(older)]);
+  const before = (await db.query('SELECT * FROM pulse.settings')).rows;
+  const filled = await readSettings(db);
+  assert.equal(filled.values.morningOpensFirst, false);
+  assert.equal(filled.version, initial.version);
+  assert.deepEqual((await db.query('SELECT * FROM pulse.settings')).rows, before);
+  assert.equal((await db.query('SELECT 1 FROM pulse.audit_log')).rows.length, 0);
+  assert.equal((await db.query('SELECT 1 FROM pulse.settings_changes')).rows.length, 0);
+  const constraint = async () => (await db.query<{definition: string}>(`SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
+    WHERE conrelid='pulse.settings_changes'::regclass AND contype='c' AND pg_get_constraintdef(oid) LIKE '%goalOrdersPerDay%'`)).rows[0]!.definition;
+  const definition = await constraint();
+  const migration = await readFile(new URL('../migrations/063_morning_first.sql', import.meta.url), 'utf8');
+  const started = performance.now();
+  await db.query(migration);
+  await db.query(migration);
+  t.diagnostic(`Morning-first migration replay twice: ${Math.round(performance.now() - started)} ms`);
+  assert.equal(await constraint(), definition);
+  assert.equal((definition.match(/'morningOpensFirst'/g) ?? []).length, 1);
+  const enabled = await saveSettings(db, {version: filled.version, values: {...filled.values, morningOpensFirst: true}}, randomUUID());
+  assert.deepEqual(enabled.changedFields, ['morningOpensFirst']);
+  assert.equal((await readSettings(db)).values.morningOpensFirst, true);
+  const disabled = await saveSettings(db, {version: enabled.version, values: {...enabled.values, morningOpensFirst: false}}, randomUUID());
+  assert.deepEqual(disabled.changedFields, ['morningOpensFirst']);
+  assert.equal((await readSettings(db)).values.morningOpensFirst, false);
+  assert.deepEqual((await db.query('SELECT field FROM pulse.settings_changes ORDER BY audit_id')).rows,
+    [{field: 'morningOpensFirst'}, {field: 'morningOpensFirst'}]);
+});
+
+const googleJunkDefaults = {
+  googleContentShareMaxPct: 2, googleContentSpendFloorGbp: 5, googleNoSaleSpendFloorGbp: 25,
+  googleBreakEvenReturnUk: 0, googleBreakEvenReturnUs: 0, googleContactName: '',
+};
+
+test('Google junk Settings use invented defaults and enforce share, money, return and contact boundaries', () => {
+  const defaults = defaultSettings();
+  for (const [field, value] of Object.entries(googleJunkDefaults)) assert.equal(defaults[field as keyof Settings], value);
+  const numbers = [
+    ['googleContentShareMaxPct', 100], ['googleContentSpendFloorGbp', Number.MAX_SAFE_INTEGER],
+    ['googleNoSaleSpendFloorGbp', Number.MAX_SAFE_INTEGER], ['googleBreakEvenReturnUk', 20], ['googleBreakEvenReturnUs', 20],
+  ] as const;
+  for (const [field, maximum] of numbers) {
+    for (const value of [0, 0.01, maximum]) assert.equal(validateSettings({...defaults, [field]: value})[field], value);
+    for (const value of [-0.01, maximum + 1, 0.001, NaN, Infinity, -Infinity, null, undefined, true, '2']) {
+      assert.throws(() => validateSettings({...defaults, [field]: value}), (error: unknown) =>
+        error instanceof SettingsValidationError && error.fields.length === 1 && error.fields[0] === field);
+    }
+  }
+  for (const [value, expected] of [
+    ['', ''], ['   ', ''], [' Invented Partner ', 'Invented Partner'], ["Invented's & Team (UK)", "Invented's & Team (UK)"],
+    ['Invented '.repeat(4) + 'Team', 'Invented '.repeat(4) + 'Team'], ['界'.repeat(40), '界'.repeat(40)],
+  ]) assert.equal(validateSettings({...defaults, googleContactName: value}).googleContactName, expected);
+  for (const value of ['Invented '.repeat(4) + 'Teams', '界'.repeat(41), '<Invented>', 'Invented\nTeam', null, undefined, 7]) {
+    assert.throws(() => validateSettings({...defaults, googleContactName: value}), (error: unknown) =>
+      error instanceof SettingsValidationError && error.fields.length === 1 && error.fields[0] === 'googleContactName');
+  }
+});
+
+test('Google junk inputs share the existing Ad spend section and escape the optional contact', () => {
+  const html = settingsPage({version: 0, values: {...defaultSettings(), googleContactName: "Invented's & Team"}});
+  const adSpend = html.split('<span>Ad spend<small>')[1]!.split('</details>')[0]!;
+  assert.match(adSpend, /name="googleNetworkSpendFloorGbp"/);
+  for (const key of Object.keys(googleJunkDefaults)) assert.ok(adSpend.includes(`name="${key}"`));
+  assert.match(adSpend, /name="googleContentShareMaxPct"[^>]*min="0"[^>]*max="100"/);
+  for (const key of ['googleBreakEvenReturnUk', 'googleBreakEvenReturnUs']) {
+    assert.match(adSpend, new RegExp(`name="${key}"[^>]*min="0"[^>]*max="20"`));
+  }
+  const contact = adSpend.match(/<input[^>]*name="googleContactName"[^>]*>/)![0];
+  assert.match(contact, /value="Invented&#39;s &amp; Team"/); assert.match(contact, /maxlength="40"/);
+  assert.doesNotMatch(contact, / required/);
+});
+
+test('Google junk defaults fill without writes and migration adds each audit key once before ordinary saves', async t => {
+  const db = await createTestDatabase({migrate: false}); t.after(() => db.close());
+  await db.query('CREATE SCHEMA pulse_private; REVOKE ALL ON SCHEMA pulse_private FROM PUBLIC;');
+  const directory = new URL('../migrations/', import.meta.url);
+  const olderMigrations = (await readdir(directory)).filter(name => /^\d+_[a-z0-9_]+\.sql$/.test(name) && Number(name.split('_')[0]) < 64).sort();
+  for (const name of olderMigrations) await db.query(await readFile(new URL(name, directory), 'utf8'));
+  const initial = await readSettings(db);
+  const keys = Object.keys(googleJunkDefaults) as (keyof typeof googleJunkDefaults)[];
+  const older: Partial<Settings> = {...initial.values};
+  for (const key of keys) delete older[key];
+  await db.query('UPDATE pulse.settings SET values=$1', [JSON.stringify(older)]);
+  const before = (await db.query('SELECT * FROM pulse.settings')).rows;
+  const filled = await readSettings(db);
+  for (const key of keys) assert.equal(filled.values[key], googleJunkDefaults[key]);
+  assert.equal(filled.version, initial.version);
+  assert.deepEqual((await db.query('SELECT * FROM pulse.settings')).rows, before);
+  assert.equal((await db.query('SELECT 1 FROM pulse.audit_log')).rows.length, 0);
+  const constraint = async () => (await db.query<{definition: string}>(`SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
+    WHERE conrelid='pulse.settings_changes'::regclass AND contype='c' AND pg_get_constraintdef(oid) LIKE '%goalOrdersPerDay%'`)).rows[0]!.definition;
+  for (const key of keys) assert.ok(!(await constraint()).includes(`'${key}'`));
+  const migration = await readFile(new URL('064_google_junk.sql', directory), 'utf8');
+  const started = performance.now();
+  await db.query(migration);
+  t.diagnostic(`Google junk migration first application: ${Math.round(performance.now() - started)} ms`);
+  const definition = await constraint();
+  await db.query(migration); await db.query(migration);
+  assert.equal(await constraint(), definition);
+  for (const key of keys) assert.equal((definition.match(new RegExp(`'${key}'`, 'g')) ?? []).length, 1);
+  const values = {...filled.values, googleContentShareMaxPct: 4, googleContentSpendFloorGbp: 8.25,
+    googleNoSaleSpendFloorGbp: 35, googleBreakEvenReturnUk: 1.5, googleBreakEvenReturnUs: 1.8, googleContactName: 'Invented Partner'};
+  const saved = await saveSettings(db, {version: filled.version, values}, randomUUID());
+  assert.deepEqual(saved.changedFields.sort(), [...keys].sort());
+  assert.deepEqual((await readSettings(db)).values, values);
+  assert.deepEqual((await db.query<{field: string}>('SELECT field FROM pulse.settings_changes ORDER BY field')).rows.map(row => row.field), [...keys].sort());
+  const audit = (await db.query<{event: string}>('SELECT event FROM pulse.audit_log ORDER BY id')).rows;
+  assert.equal(audit.length, keys.length);
+  for (const row of audit) assert.ok(!row.event.includes(values.googleContactName));
 });
 
 test('settings initialize once with specified defaults, unknowns unset and no default-change audit', async (t) => {

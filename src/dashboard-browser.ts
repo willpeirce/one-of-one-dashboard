@@ -1,4 +1,5 @@
 import {setDecisions} from './decisions/browser.js';
+import { updateHomeTests } from './github-hq/browser.js';
 import {footerChipHtml} from './home-layout.js';
 import {arrangeHomeDials} from './home-layout-browser.js';
 import { hourLabel, hourlyTop, monotoneSegments } from './hourly-orders.js';
@@ -519,6 +520,8 @@ function filterDials(): void {
 
 function updateSnapshot(next: DashboardSnapshot, initial = false): void {
   snapshot = next;
+  updateHomeTests(snapshot.tests, () => refreshDashboard(new AbortController().signal));
+  setDecisions({morningOmissions:snapshot.morningOmissions});
   if(snapshot.adSets)updateAdSets(snapshot.adSets,selectedMarket);
   if (snapshot.creatives) updateCreativeSnapshot(snapshot.creatives);
   if (snapshot.reviews) get('#reviews').innerHTML = reviewsPanelHtml(snapshot.reviews);

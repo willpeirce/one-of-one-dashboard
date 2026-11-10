@@ -17,6 +17,8 @@ await build({
     creatives: 'src/creatives/browser.ts',
     adsets: 'src/meta-adsets/browser.ts',
     ticker: 'src/ticker/browser.ts',
+    morning: 'src/morning/browser.ts',
+    sw: 'src/push/service-worker.ts',
   },
   outdir: output,
   bundle: true,
@@ -28,6 +30,7 @@ await build({
 const assets = [
   ['src/styles.css', 'styles.css'],
   ['src/ticker/ticker.css', 'ticker.css'],
+  ['src/morning/morning.css', 'morning.css'],
   ['src/dashboard.css', 'dashboard.css'],
   ['src/home-compact.css', 'home-compact.css'],
   ['src/home-panels.css', 'home-panels.css'],

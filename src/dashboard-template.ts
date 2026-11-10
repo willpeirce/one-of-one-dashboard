@@ -108,7 +108,7 @@ ${tickerHtml()}
 </section>
 
 <section class="chapter tbl" id="table" aria-labelledby="table-title">
-  <header class="chapter-heading"><span class="chapter-number" aria-hidden="true">1</span><div class="chapter-copy"><p class="chapter-eyebrow">Decisions</p><h2 class="chapter-title" id="table-title"><span data-sample-text="t0123">{{sample:t0123}}</span></h2></div><span class="shm" id="deckcount"><span data-sample-text="t0124">{{sample:t0124}}</span></span></header>
+  <header class="chapter-heading"><span class="chapter-number" aria-hidden="true">1</span><div class="chapter-copy"><p class="chapter-eyebrow">Decisions</p><h2 class="chapter-title" id="table-title"><span data-sample-text="t0123">{{sample:t0123}}</span></h2></div><a class="btn morning-link" href="/morning">Morning ›</a><span class="shm" id="deckcount"><span data-sample-text="t0124">{{sample:t0124}}</span></span></header>
   <div class="deck" id="deck"></div>
   <div id="creative-feedback" role="status" aria-live="polite"></div>
 </section>

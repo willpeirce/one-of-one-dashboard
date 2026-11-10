@@ -5,6 +5,12 @@ import type {AdSetsView} from './presentation.js';
 let acting=false;
 let view:AdSetsView|undefined,market='all',opened:string|undefined;
 function show(id:string){const row=view?.rows.find(r=>r.set.id===id),dialog=document.querySelector<HTMLDialogElement>('#adset-sheet');if(!view||!row||!dialog)return;opened=id;document.querySelector('#adset-sheet-content')!.innerHTML=adSetSheet(row,view);if(!dialog.open)dialog.showModal();}
+function showLinkedSet():void {
+ if(location.pathname!=='/ads'||!location.hash)return;
+ let id:string;try{id=decodeURIComponent(location.hash.slice(1));}catch{return;}
+ if(!view?.rows.some(row=>row.set.id===id))return;
+ acting=false;show(id);
+}
 export function updateAdSets(next:AdSetsView,selectedMarket=market):void {
  view=next;market=selectedMarket;
  const cards=document.querySelector('#adset-cards'),summary=document.querySelector('#adset-summary'),table=document.querySelector('#adsets-table');
@@ -26,7 +32,8 @@ document.addEventListener('click',event=>{
 });
 document.addEventListener('keydown',event=>{if((event.key==='Enter'||event.key===' ')&&event.target instanceof HTMLElement&&event.target.matches('[data-adset-row]')){event.preventDefault();show(event.target.dataset.adsetRow!);}});
 const initial=document.querySelector('#adsets-data');
-if(initial?.textContent){updateAdSets(JSON.parse(initial.textContent));const refresh=async()=>{try{const response=await fetch('/api/meta/adsets',{credentials:'same-origin'});if(response.ok)updateAdSets(await response.json());}catch{}};setInterval(()=>{if(document.visibilityState==='visible')void refresh();},30_000);}
+if(initial?.textContent){updateAdSets(JSON.parse(initial.textContent));showLinkedSet();const refresh=async()=>{try{const response=await fetch('/api/meta/adsets',{credentials:'same-origin'});if(response.ok)updateAdSets(await response.json());}catch{}};setInterval(()=>{if(document.visibilityState==='visible')void refresh();},30_000);}
+window.addEventListener('hashchange',showLinkedSet);
 
 function confirmAction(id:string,body:{action:string;value?:unknown},summary:string):void {
  acting=true;const container=document.querySelector<HTMLElement>('#adset-sheet-content')!;container.replaceChildren();

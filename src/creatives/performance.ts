@@ -32,6 +32,7 @@ export interface FadingCreative {
   groupId: string;
   title: string;
   reasons: string[];
+  ruleIds: string[];
   frequency: number | null;
   ctrDropPercent: number | null;
 }
@@ -59,12 +60,14 @@ export function creativePerformance(data: CreativeData, settings: CreativePerfor
     const baseline = firstWeekEnd < today ? creativeTotals(history.filter(insight => insight.day >= firstWeekStart
       && insight.day <= firstWeekEnd)) : null;
     const ctrDropPercent = baseline?.ctr && recent.ctr !== null ? (1 - recent.ctr / baseline.ctr) * 100 : null;
-    const reasons: string[] = [];
-    if (frequency !== null && frequency > settings.creativeFadeFrequency + 1e-10)
-      reasons.push(`frequency ${frequency.toFixed(1)}, seen too often`);
-    if (ctrDropPercent !== null && ctrDropPercent + 1e-10 >= settings.creativeFadeCtrDropPercent)
-      reasons.push(`clicks ${Math.round(ctrDropPercent)}% under its first week`);
-    if (reasons.length) fading.push({ groupId: row.group.id, title: row.group.title, reasons,
+    const reasons: string[] = [], ruleIds: string[] = [];
+    if (frequency !== null && frequency > settings.creativeFadeFrequency + 1e-10) {
+      reasons.push(`frequency ${frequency.toFixed(1)}, seen too often`); ruleIds.push('frequency');
+    }
+    if (ctrDropPercent !== null && ctrDropPercent + 1e-10 >= settings.creativeFadeCtrDropPercent) {
+      reasons.push(`clicks ${Math.round(ctrDropPercent)}% under its first week`); ruleIds.push('ctr-drop');
+    }
+    if (reasons.length) fading.push({ groupId: row.group.id, title: row.group.title, reasons, ruleIds,
       frequency, ctrDropPercent });
   }
   const hitRate = { winners, killed, testing: cohort.length - winners - killed, total: cohort.length,

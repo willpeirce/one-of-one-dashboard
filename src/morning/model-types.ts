@@ -69,6 +69,7 @@ export interface MorningInput {
   liveTestIds?: string[]; brief?: MorningBrief | null;
 }
 export interface MorningSnapshot {
+  summaryEnabled?: boolean;
   mode: SourceMode; day: string; cards: MorningCard[]; more: number; fine: MorningFine[];
   parked: MorningAway[]; hidden: MorningAway[]; presses: MorningState[];
   metaActions: MorningMetaAction[]; passedDates: TickerPassed[]; answers: MorningState[];

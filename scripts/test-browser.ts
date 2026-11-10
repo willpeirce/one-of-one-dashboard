@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { createApp } from '../src/app.js';
 import { readRuntime } from '../src/runtime.js';
 import { createTestDatabase } from '../test/helpers/database.js';
+import { browserPushEndpoint, captureBrowserPushTransport } from './browser-push.js';
 
 async function freePort(): Promise<number> {
   const probe = createServer();
@@ -31,7 +32,8 @@ async function run(): Promise<void> {
       DATABASE_URL: 'postgresql://localhost/pulse_browser_test',
       DASHBOARD_SETUP_CODE: setupPhrase,
     });
-    app = await createApp(db, config, {});
+    const {transport, deliveries} = captureBrowserPushTransport();
+    app = await createApp(db, config, {}, {}, {}, {}, {}, {pushTransport: transport});
     await app.listen({ host: '127.0.0.1', port });
     const exitCode = await new Promise<number>((resolve, reject) => {
       const child = spawn(process.execPath, ['--import', 'tsx', 'scripts/browser-smoke.ts'], {
@@ -44,6 +46,8 @@ async function run(): Promise<void> {
     });
     process.exitCode = exitCode;
     if (exitCode === 0) {
+      assert.deepEqual(deliveries, [browserPushEndpoint], 'Send a test reaches the encrypted transport once; cooldown prevents another send');
+      assert.equal((await db.query('SELECT endpoint FROM pulse.push_subscriptions')).rowCount, 0, 'Browser device subscriptions are cleaned up');
       const sessions = await db.query<{ lifetime: string }>(
         'SELECT extract(epoch FROM expires_at - created_at) AS lifetime FROM pulse_private.sessions',
       );

@@ -248,6 +248,7 @@ export function morningDeck(input: MorningInput, rows: readonly MorningState[], 
   if (!input.ticker.ahead.some(item => item.days < 0)) fine.push({ id: 'dates-clear', label: 'No late dates' });
   const active = [...applicable.values()];
   return { candidates, openCards, clearKeys, deleteKeys, snapshot: { mode: input.mode, day, cards,
+    ...(input.settings.morningSummaryEnabled ? { summaryEnabled: true } : {}),
     more: openCards.length - cards.length, fine,
     parked: active.filter(row => row.state === 'parked' || row.state === 'answered' && row.answer === 'hold').map(away),
     hidden: active.filter(row => row.state === 'hidden').map(away), presses, metaActions, passedDates,

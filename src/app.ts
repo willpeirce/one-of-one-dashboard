@@ -63,12 +63,15 @@ import { HQWorker } from './github-hq/worker.js';
 import { readHQFacts } from './github-hq/store.js';
 import type { HQFacts } from './github-hq/model.js';
 import { addMorningHq, homeTestsFromHq } from './github-hq/presentation.js';
+import { PushService } from './push/service.js';
+import { registerPush } from './push/routes.js';
+import type { PushTransport } from './push/sender.js';
 
 declare module 'fastify' {
   interface FastifyInstance { startBackgroundWork(): Promise<void> }
 }
 
-export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: NodeJS.ProcessEnv = {}, shopifyOptions: ConstructorParameters<typeof ShopifyWorker>[3] = {}, adOptions:SpendWorkerOptions = {}, reviewOptions: ReviewsWorkerOptions = {}, mailchimpOptions: MailchimpWorkerOptions = {}, localOptions: { clock?: () => Date } = {}) {
+export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: NodeJS.ProcessEnv = {}, shopifyOptions: ConstructorParameters<typeof ShopifyWorker>[3] = {}, adOptions:SpendWorkerOptions = {}, reviewOptions: ReviewsWorkerOptions = {}, mailchimpOptions: MailchimpWorkerOptions = {}, localOptions: { clock?: () => Date; pushTransport?: PushTransport } = {}) {
   // Request/error logging is deliberately off: authentication bodies contain private material.
   const app = Fastify({ logger: false, bodyLimit: 32_768, trustProxy: false, requestTimeout: 15_000 });
   await app.register(cookie);
@@ -124,6 +127,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     google.start();
     mailchimp.start();
     hq.start();
+    push.start();
     reviews.start();
     void shopify.startOrderCleanup();
     observationTimer = setInterval(() => { void observe(); }, 60_000);
@@ -146,6 +150,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     await google.stop();
     await mailchimp.stop();
     await hq.stop();
+    await push.stop();
     await ads.stop();
     await reviews.stop();
     await startupRun;
@@ -247,6 +252,9 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     return shopify.mode === 'sample' ? curateMorningSample(input, now) : input;
   }
   const morning = registerMorning(app, db, auth, morningInputs, localNow);
+  const push = new PushService(db, {origin: config.origin, clock: localNow, loadMorning: now => morning.summary(now),
+    transport: localOptions.pushTransport});
+  registerPush(app, db, auth, {clock: localNow, sendTest: credentialId => push.sendTest(credentialId)});
   registerAdSets(app, db, auth, sourceEnv, creativeNow, adOptions, () => events.publish());
   registerScorecard(app, db, auth, shopify.store, sourceEnv, () => shopifyOptions.clock?.() ?? new Date());
   registerFulfilment(app, db, auth, shopify.mode, sourceNow, () => events.publish());
@@ -344,6 +352,9 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   }
   app.get('/manifest.webmanifest', async (_request, reply) => reply.type('application/manifest+json').send(
     await readFile(new URL('../dist/public/manifest.webmanifest', import.meta.url)),
+  ));
+  app.get('/sw.js', async (_request, reply) => reply.header('Cache-Control', 'no-store').type('text/javascript; charset=utf-8').send(
+    await readFile(new URL('../dist/public/sw.js', import.meta.url)),
   ));
   registerTicker(app, db, auth, shopify.mode, localNow);
   auth.registerRoutes(app);

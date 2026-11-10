@@ -5,6 +5,7 @@ import { installPullToRefresh, reloadPageForRefresh } from './pull-refresh.js';
 import { seriesPaceDates } from './series-pace/dates.js';
 import { paceDate } from './series-pace/model.js';
 import { inboundProductWarning } from './shopify/stock-gap.js';
+import { initializePushDevice } from './push/browser.js';
 
 type SettingInput = HTMLInputElement | HTMLSelectElement;
 type JsonObject = { [key: string]: unknown };
@@ -387,4 +388,4 @@ function initializeSettings(form: HTMLFormElement): void {
 }
 
 const settingsForm = document.querySelector<HTMLFormElement>('#settings-form');
-if (settingsForm) initializeSettings(settingsForm);
+if (settingsForm) { initializeSettings(settingsForm); initializePushDevice(); }

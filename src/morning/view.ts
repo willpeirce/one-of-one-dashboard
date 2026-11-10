@@ -79,7 +79,8 @@ export function morningProgressHtml(snapshot: MorningSnapshot): string {
 }
 export function morningLinesHtml(snapshot: MorningSnapshot): string {
   const brief = snapshot.brief;
-  return `${snapshot.more ? `<a class="mn-more-line" id="mn-more-home" href="/?from=morning">△ Watch · ${snapshot.more} more on Home ›</a>` : ''}${brief ? `<button type="button" class="mn-brief-line" id="mn-brief" data-mn-brief="${brief.status}" aria-haspopup="dialog">${brief.status === 'ok' ? '✓ Good · ' : brief.status === 'unreadable' || brief.tone === 'warn' ? '△ Watch · ' : ''}${e(brief.text)}${brief.mode === 'sample' ? ' · Sample data' : ''}</button>` : ''}${snapshot.metaActions.length ? '<a class="mn-log-line" id="mn-log" href="/audit">Meta actions today · Log ›</a>' : ''}`;
+  const nudge = snapshot.summaryEnabled ? '<a id="mn-push-nudge" href="/settings#notifications" hidden>Notifications are off on this device</a>' : '';
+  return `${snapshot.more ? `<a class="mn-more-line" id="mn-more-home" href="/?from=morning">△ Watch · ${snapshot.more} more on Home ›</a>` : ''}${brief ? `<button type="button" class="mn-brief-line" id="mn-brief" data-mn-brief="${brief.status}" aria-haspopup="dialog">${brief.status === 'ok' ? '✓ Good · ' : brief.status === 'unreadable' || brief.tone === 'warn' ? '△ Watch · ' : ''}${e(brief.text)}${brief.mode === 'sample' ? ' · Sample data' : ''}</button>` : ''}${nudge}${snapshot.metaActions.length ? '<a class="mn-log-line" id="mn-log" href="/audit">Meta actions today · Log ›</a>' : ''}`;
 }
 export function morningBriefHtml(brief: MorningBrief): string {
   const status = brief.status === 'ok' ? '✓ Good' : brief.status === 'needs' ? '△ Watch'

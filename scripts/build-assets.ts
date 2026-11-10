@@ -18,6 +18,7 @@ await build({
     adsets: 'src/meta-adsets/browser.ts',
     ticker: 'src/ticker/browser.ts',
     morning: 'src/morning/browser.ts',
+    sw: 'src/push/service-worker.ts',
   },
   outdir: output,
   bundle: true,

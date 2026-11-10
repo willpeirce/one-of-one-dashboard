@@ -13,6 +13,7 @@ import { creativeFeatureFlags } from './creatives/config.js';
 import type { ActorChoices } from './meta-adsets/activity.js';
 import { appConfig } from './config.js';
 import { inboundProductWarning } from './shopify/stock-gap.js';
+import { pushDeviceHtml } from './push/view.js';
 
 function escapeHtml(value: string | number): string {
   return String(value).replace(/[&<>"']/g, (character) => ({
@@ -245,9 +246,9 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
   ], values.keyExpiryDates, 'Dates only. Key values stay in hosting Secrets.')}`);
   const preferences = section('Summary & brand', 'The morning summary starts switched off.', `<div class="settings-grid">${fields([
     { key: 'brand', label: 'Brand', options: [{ value: 'one-of-one', label: 'One of One' }], hint: 'Kinda Rare comes in a later stage.' },
-    { ...checkbox('morningSummaryEnabled', 'Enable the 08:00 UK summary'), hint: 'Saves your preference. Summary delivery is built in stage 7.' },
+    { ...checkbox('morningSummaryEnabled', 'Enable the 08:00 UK summary'), hint: 'One push at 08:00 UK with what needs you.' },
     { ...checkbox('morningOpensFirst', 'Open Morning first each day'), hint: 'Your first Home visit each UK day opens Morning on this device.' },
-  ], values)}</div>`);
+  ], values)}</div>${pushDeviceHtml()}`);
   return `<!doctype html>
 <html lang="en" data-theme="dark">
 <head>

@@ -1,5 +1,6 @@
 import { escapeCreative as e } from '../creatives/html.js';
 import { addDays } from '../hero-range.js';
+import { updateMorningPushNudge } from '../push/browser.js';
 import type { TickerSnapshot } from '../ticker/model.js';
 import type { MorningAction, MorningButton, MorningCard, MorningLiveButton, MorningSnapshot, MorningState } from './model-types.js';
 import { morningBriefHtml, morningChip, morningDay, morningDeckHtml, morningFineHtml, morningLinesHtml, morningMenuHtml, morningProgressHtml, morningWhyHtml, type MorningWindow } from './view.js';
@@ -39,6 +40,7 @@ function setup(root: HTMLElement): void {
     get<HTMLElement>('#mn-day').textContent = `${morningDay(snapshot.day)}${snapshot.mode === 'sample' ? ' · Sample data' : ''}`;
     get<HTMLElement>('#mn-good').innerHTML = `${morningChip('good')}<span>${snapshot.more ? `${snapshot.fine.length} checks are fine` : 'Everything else is fine'}</span><span aria-hidden="true">›</span>`;
     get<HTMLElement>('#mn-lines').innerHTML = morningLinesHtml(snapshot);
+    updateMorningPushNudge(snapshot.summaryEnabled === true);
     if (dialog.open && sheet === 'fine') sheetBody.innerHTML = morningFineHtml(snapshot, expanded);
     setBusy(busy);
     root.dataset.mnReady = 'true';
@@ -244,5 +246,6 @@ function setup(root: HTMLElement): void {
   new ResizeObserver(density).observe(stage); density();
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') void read(); });
   document.querySelector('#tk-strip')?.addEventListener('pulse:ticker-saved', () => { void read(); });
+  updateMorningPushNudge(snapshot.summaryEnabled === true);
   void read();
 }

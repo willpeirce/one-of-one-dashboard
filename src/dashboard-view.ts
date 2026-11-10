@@ -30,7 +30,7 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
     return escapeHtml(value);
   });
   content = homeDialsHtml(content, snapshot.widgets);
-  content = content.replace('<div class="deck" id="deck"></div>', `<div class="deck" id="deck">${decisionsHtml({shopify: snapshot.shopify, adSets: snapshot.adSets, creatives: snapshot.creatives?.cards, market: 'all'})}</div>`);
+  content = content.replace('<div class="deck" id="deck"></div>', `<div class="deck" id="deck">${decisionsHtml({shopify: snapshot.shopify, adSets: snapshot.adSets, creatives: snapshot.creatives?.cards, market: 'all', morningOmissions: snapshot.morningOmissions})}</div>`);
   if(snapshot.adSets){
     content=content.replace('<div id="adset-summary"></div>', `<div id="adset-summary">${adSetSummary(snapshot.adSets,'all',true)}</div>`);
     content+=adSetsDialog();

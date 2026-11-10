@@ -5,6 +5,7 @@ import type { Check } from '../shopify/watchdogs.js';
 import type { AdSetsView } from '../meta-adsets/presentation.js';
 import type { MetaActivity } from '../meta-adsets/activity.js';
 import type { MetaAction } from '../meta-adsets/actions.js';
+import type { VerdictWord } from '../meta-adsets/rules.js';
 import type { CreativeCard } from '../creatives/presentation-types.js';
 import type { TickerPassed, TickerSnapshot } from '../ticker/model.js';
 
@@ -79,4 +80,10 @@ export interface MorningResult {
   openCards: MorningCard[];
   clearKeys: string[];
   deleteKeys: string[];
+}
+/** Only the Home Decisions renderer consumes these identities; source views remain complete. */
+export interface MorningHomeOmissions {
+  needs: string[];
+  adSets: { id: string; verdict: VerdictWord }[];
+  creatives: string[];
 }

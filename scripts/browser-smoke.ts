@@ -28,6 +28,7 @@ import { checkMailchimpWidgets } from './browser-mailchimp.js';
 import { checkInboundSettings } from './browser-inbound-settings.js';
 import { checkTicker } from './ticker-browser-check.js';
 import { checkMorning } from './morning-browser-check.js';
+import { checkMorningHome } from './morning-home-browser-check.js';
 
 let step = 'read test configuration';
 
@@ -1788,6 +1789,8 @@ async function run(): Promise<void> {
 
     step = 'check compact Home budgets and re-rendered actions on the dense fixture';
     await checkHomeCompact(context);
+    step = 'check Morning omissions affect only Home Decisions and clear on full snapshot refresh';
+    await checkMorningHome(context);
     step = 'check Google tiles, independent live promotion and market choices';
     await checkGoogleWidgets(context);
     step = 'check separate Shopify and Mailchimp views, sample flow labels and audience promotion';
@@ -1804,8 +1807,6 @@ async function run(): Promise<void> {
     await checkScorecard(context);
     step = 'check shared Next up strip, local persistence and accessible modal at phone and desktop widths';
     await checkTicker(context);
-    step = 'check Morning cards, first-screen fit, local answers and the once-per-device daily redirect';
-    await checkMorning(context);
 
     step = 'check same-origin manifest and installation icons';
     await checkManifest(page, context, origin);
@@ -2105,6 +2106,9 @@ async function run(): Promise<void> {
     await page.locator('html[data-dashboard-ready="true"]').waitFor();
     await assertHero(page, await dashboardSnapshot(context), 'today');
     rejectingAuthentication = false;
+    // Morning keeps its required audit entries, so run its many presses after the existing audit checks.
+    step = 'check Morning cards, first-screen fit, local answers and the once-per-device daily redirect';
+    await checkMorning(context);
     assert.equal(scriptErrors.length, 0);
     assert.equal(consoleErrors.length, 0);
     assert.equal(externalRequests, 0);

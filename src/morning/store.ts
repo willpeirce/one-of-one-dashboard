@@ -11,7 +11,7 @@ export class MorningPressError extends Error {
   constructor(readonly statusCode: 404 | 409, message: string) { super(message); }
 }
 
-async function readStates(db: Database, mode: SourceMode): Promise<MorningState[]> {
+export async function readMorningStates(db: Database, mode: SourceMode): Promise<MorningState[]> {
   const rows = (await db.query<{
     mode: SourceMode; card_key: string; state: MorningState['state']; until_day: string | null;
     facts_hash: string; answer: MorningState['answer']; credential_id: string; pressed_at: Date | string;
@@ -25,7 +25,7 @@ async function readStates(db: Database, mode: SourceMode): Promise<MorningState[
 }
 
 async function resolve(db: Database, input: MorningInput, now: Date): Promise<{states: MorningState[]; result: MorningResult}> {
-  const states = await readStates(db, input.mode);
+  const states = await readMorningStates(db, input.mode);
   const result = morningDeck(input, states, now);
   if (result.clearKeys.length) await db.query(`UPDATE pulse.morning_card_states SET cleared_at=$3
     WHERE mode=$1 AND card_key=ANY($2::text[]) AND cleared_at IS NULL`, [input.mode, result.clearKeys, now]);

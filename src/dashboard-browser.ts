@@ -519,6 +519,7 @@ function filterDials(): void {
 
 function updateSnapshot(next: DashboardSnapshot, initial = false): void {
   snapshot = next;
+  setDecisions({morningOmissions:snapshot.morningOmissions});
   if(snapshot.adSets)updateAdSets(snapshot.adSets,selectedMarket);
   if (snapshot.creatives) updateCreativeSnapshot(snapshot.creatives);
   if (snapshot.reviews) get('#reviews').innerHTML = reviewsPanelHtml(snapshot.reviews);

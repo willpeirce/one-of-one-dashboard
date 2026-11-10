@@ -5,6 +5,7 @@ import { morningPage } from './morning/view.js';
 import { MORNING_DAY_COOKIE, MORNING_DAY_COOKIE_SECONDS, opensMorning, readMorningFirst } from './morning/entry.js';
 import { morningInputFromDashboard, readMorningCoverage } from './morning/inputs.js';
 import { curateMorningSample } from './morning/sample.js';
+import { readHomeMorningOmissions } from './morning/home.js';
 import { activityActors, readActivity } from './meta-adsets/activity.js';
 import {readMetaActions} from './meta-adsets/actions.js';
 import {registerAdSets} from './meta-adsets/routes.js';
@@ -216,6 +217,11 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     if (unconfirmedCampaigns?.scope === campaignScope) result.metaCampaigns = { unconfirmedCount: unconfirmedCampaigns.count };
     result.fulfilment = await fulfilmentSummary(db, shopify.mode, sourceNow());
     result.shopify?.needs.push(...result.fulfilment.needs.map(n => ({ ...n, state: 'warn' as const, source: 'j-and-j' as const })));
+    if (!options.morning) {
+      const omissions = await readHomeMorningOmissions(db, result, settings.values, shopify.mode, localNow(),
+        { metaNow: creativeNow(), googleNow: googleNow() });
+      if (omissions) result.morningOmissions = omissions;
+    }
     return result;
   }
   const events = registerDashboardEvents(app, auth, snapshot);

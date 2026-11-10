@@ -149,6 +149,7 @@ export interface SampleText extends SampleProvenance {
 
 /** Presentation data is deliberately independent of source-key readiness in stage 0b. */
 export interface DashboardSnapshot {
+  morningOmissions?: import('./morning/model-types.js').MorningHomeOmissions;
   adSets?: import('./meta-adsets/presentation.js').AdSetsView;
   schemaVersion: 1;
   mode: 'sample';

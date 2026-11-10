@@ -13,13 +13,15 @@ export type MorningAction = 'park' | 'remind' | 'hold' | 'hide' | 'ack' | 'call'
 export type MorningAnswer = 'hold' | 'a' | 'b' | 'draw';
 export type MorningTone = 'alarm' | 'decide' | 'warn' | 'info' | 'done';
 export type MorningKind = 'need' | 'meta-kill' | 'meta-slipping' | 'meta-step' | 'meta-watch'
-  | 'date' | 'fading' | 'make-next' | 'google' | 'test-call' | 'new-verdict' | 'done-for-you';
+  | 'date' | 'fading' | 'make-next' | 'google' | 'test-call' | 'new-verdict' | 'done-for-you' | 'pause-all';
 
 interface ButtonLabel { label: string; subline?: string }
 export interface MorningLiveButton extends ButtonLabel {
   kind: 'live'; adSetId: string; action: 'pause' | 'budget' | 'undo'; value?: number | string; confirm: string;
 }
+export interface MorningPauseMember { cardKey: string; factsHash: string; adSetId: string }
 export type MorningButton = MorningLiveButton
+  | (ButtonLabel & { kind: 'pause-all'; confirm: string; members: MorningPauseMember[] })
   | (ButtonLabel & { kind: 'link'; href: string })
   | (ButtonLabel & { kind: 'copy'; text: string })
   | (ButtonLabel & { kind: 'save'; target: 'morning'; action: MorningAction; answer?: 'a' | 'b' | 'draw'; days?: 3 | 7; confirm?: string })
@@ -31,6 +33,7 @@ export interface MorningBriefVariant {
   footer: string;
 }
 export type MorningFigure = { kind: 'plain'; value: string; label: string }
+  | { kind: 'list'; rows: { label: string; value: string }[]; more: number }
   | { kind: 'dial'; value: number; bar: number; label: string; formattedValue: string; formattedBar: string }
   | { kind: 'rail'; value: number; label: string; range?: number }
   | { kind: 'thumb'; src: string; alt: string; value: string; label: string }
@@ -72,6 +75,8 @@ export interface MorningInput {
 }
 export interface MorningSnapshot {
   summaryEnabled?: boolean;
+  /** Current eligible members remain available below the grouping threshold for a confirmed sequence. */
+  pauseAll?: { cardKey: string; members: MorningPauseMember[]; deferred: boolean };
   mode: SourceMode; day: string; cards: MorningCard[]; more: number; watchOnHome: number; fine: MorningFine[];
   datedFromCheck?: { text: string; lines?: string[] }[];
   parked: MorningAway[]; hidden: MorningAway[]; presses: MorningState[];

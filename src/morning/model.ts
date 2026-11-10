@@ -5,6 +5,8 @@ import { adSetName } from '../meta-adsets/name.js';
 import { allowedBudgetChange } from '../meta-adsets/budget.js';
 import { decisionRows } from '../meta-adsets/decision-rows.js';
 import { activityObjectType } from '../meta-adsets/activity.js';
+import { morningPauseAll } from './pause-all.js';
+import {parsePauseUncertainty,pauseUncertaintyNote} from '../meta-adsets/pause-uncertainty.js';
 import type { AdSetRow } from '../meta-adsets/presentation.js';
 import type { DashboardNeed } from '../shopify/dashboard.js';
 import type { MorningAction, MorningAway, MorningButton, MorningCard, MorningFigure, MorningInput,
@@ -79,7 +81,12 @@ function adCard(row: AdSetRow, input: MorningInput, order: number, today: string
   const kind: MorningKind = word === 'Kill' ? 'meta-kill' : word === 'Slipping' ? 'meta-slipping' : word === 'Step' ? 'meta-step' : 'meta-watch';
   const state = kind === 'meta-watch' ? 'warn' : 'decide';
   const ruleId = verdict.reasons.find(reason => reason.verdict === word)?.rule ?? word;
-  const view = input.adSets!, actions = view.mode === 'live' && view.actionsEnabled && row.set.owner === 'ours';
+  const uncertain = input.metaActions.find(action => action.adSetId === row.set.id
+    && (action.result === 'pending' && parsePauseUncertainty(action.errorCode)?.phase === 'waiting'
+      || action.result === 'failed' && parsePauseUncertainty(action.errorCode)?.phase === 'active')
+    && !input.metaActions.some(later => later.adSetId === action.adSetId && later.result === 'success' && later.time >= action.time));
+  const waiting = uncertain?.result === 'pending';
+  const view = input.adSets!, actions = view.mode === 'live' && view.actionsEnabled && row.set.owner === 'ours' && !waiting;
   const open = link('Open set', `/ads#${encodeURIComponent(row.set.id)}`);
   const pause: MorningButton = { kind: 'live', label: `Pause ${name}`, adSetId: row.set.id, action: 'pause', value: 'PAUSED', confirm: `Pause ${name} now?` };
   let primary: MorningButton = open, secondary = park(), menu: MorningButton[] = [], allowedPresses: MorningAction[] = ['park'];
@@ -101,7 +108,9 @@ function adCard(row: AdSetRow, input: MorningInput, order: number, today: string
     title: word === 'Kill' ? `${name} is over its kill bar` : word === 'Slipping' ? `${name} is slipping`
       : word === 'Step' ? `${name} has earned a step` : `${name} · ${word}`,
     lane: `Meta · ${row.set.market === 'unknown' ? 'market unknown' : row.set.market.toUpperCase()}`, source: 'meta',
-    figure: adFigure(row, input), whyLine: verdict.reason, why: verdict.reason,
+    figure: adFigure(row, input), whyLine: verdict.reason,
+    ...(uncertain ? {flag: pauseUncertaintyNote(uncertain.errorCode) ?? undefined} : {}),
+    why: [verdict.reason, uncertain ? pauseUncertaintyNote(uncertain.errorCode) : null].filter(Boolean).join('\n'),
     rule: `${ruleId}: ${verdict.reasons.filter(reason => reason.verdict === word).map(reason => reason.text).join(' · ') || verdict.reason}${word === 'Step' ? ' Hold stops this proposal on this screen. It does not stop a change made outside this app.' : ''}`,
     sourceLine: `Meta · ${view.mode === 'sample' ? 'sample data' : 'stored ad-set read'}${view.lastRead ? ` · ${view.lastRead}` : ''}`, sourceHref: open.href,
     primary, secondary, menu, allowedPresses,
@@ -234,6 +243,7 @@ export function morningDeckMember(card: MorningCard): boolean {
 }
 function deckPriority(card: MorningCard): number {
   if (card.state === 'alarm') return 0;
+  if (card.kind === 'pause-all') return 1;
   if (card.kind === 'meta-kill') return 2;
   if (card.kind === 'meta-slipping') return 3;
   if (card.kind === 'meta-step' || card.kind === 'test-call') return 4;
@@ -242,6 +252,8 @@ function deckPriority(card: MorningCard): number {
   return 7;
 }
 function answeredDeckCard(row: MorningState, card: MorningCard | undefined): boolean {
+  // One by one changes presentation; the individual decisions still need answers.
+  if (row.kind === 'pause-all') return false;
   if (row.kind === 'need') return row.state === 'seen';
   if (card) return morningDeckMember(card);
   return ['meta-kill', 'meta-slipping', 'meta-step', 'test-call', 'done-for-you'].includes(row.kind);
@@ -270,7 +282,14 @@ export function morningDeck(input: MorningInput, rows: readonly MorningState[], 
     const saved = applicable.get(card.key);
     return !saved || card.state === 'alarm' && saved.state !== 'seen';
   });
-  const cards = openCards.filter(morningDeckMember).sort((a, b) => deckPriority(a) - deckPriority(b));
+  const group = morningPauseAll(input, openCards, applicable);
+  if (group.card) {
+    candidates.push(group.card);
+    if (!group.coverage!.deferred) openCards.push(group.card);
+  }
+  const covered = new Set(group.card && !group.coverage!.deferred ? group.coverage!.members.map(member => member.cardKey) : []);
+  const cards = openCards.filter(card => morningDeckMember(card) && !covered.has(card.key))
+    .sort((a, b) => deckPriority(a) - deckPriority(b));
   const watchOnHome = openCards.filter(card => !morningDeckMember(card) && card.state === 'warn').length;
   const fine = input.checks.filter(check => check.status === 'pass').map(check => ({ id: check.id, label: check.name }));
   const clearSets = input.adSets?.rows.filter(row => row.set.owner === 'ours' && row.verdict?.verdict === 'Clear').length ?? 0;
@@ -281,6 +300,7 @@ export function morningDeck(input: MorningInput, rows: readonly MorningState[], 
   const active = [...applicable.values()];
   return { candidates, openCards, clearKeys, deleteKeys, snapshot: { mode: input.mode, day, cards,
     ...(input.settings.morningSummaryEnabled ? { summaryEnabled: true } : {}),
+    ...(group.coverage ? {pauseAll: group.coverage} : {}),
     more: 0, watchOnHome, fine,
     parked: active.filter(row => row.state === 'parked' || row.state === 'answered' && row.answer === 'hold').map(away),
     hidden: active.filter(row => row.state === 'hidden').map(away), presses, metaActions, passedDates,

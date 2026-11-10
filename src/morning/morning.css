@@ -58,6 +58,12 @@
 .mn-root .mn-dial-value{stroke:var(--mn-tone)}
 .mn-root .mn-dial-tick{stroke:#fff;stroke-width:3}
 .mn-root .mn-figure-dial .mn-number{font-size:29px;margin-top:-29px}
+.mn-root .mn-figure-list .mn-figure-button{gap:4px;padding-inline:10px}
+.mn-root .mn-list{display:grid;gap:4px;width:100%;min-height:0;text-align:left}
+.mn-root .mn-list-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;font:500 12px/1.3 var(--mn-display)}
+.mn-root .mn-list-row>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mn-root .mn-list-row strong{font-weight:600;white-space:nowrap}
+.mn-root .mn-list-more{font:500 11px/1.2 var(--mn-display);color:var(--mn-muted)}
 .mn-root .mn-rail{display:flex;justify-content:space-between;align-items:center;width:90%;height:8px;border-radius:999px;background:rgba(255,255,255,.15);position:relative;margin:12px 0}
 .mn-root .mn-rail>i{position:absolute;inset:0 auto 0 0;background:var(--mn-tone);border-radius:999px}
 .mn-root .mn-rail>b{z-index:1;width:9px;height:9px;background:#fff;border-radius:50%;box-shadow:0 0 0 3px rgba(255,255,255,.12)}
@@ -130,6 +136,9 @@
 .mn-root #mn-done-list button,.mn-root .mn-dialog button,.mn-root .mn-sheet-link{min-width:44px;min-height:44px;padding:6px 11px;border:1px solid var(--mn-line);border-radius:999px;background:rgba(255,255,255,.08);font:600 12px/1.3 var(--mn-display);text-decoration:none}
 .mn-root .mn-toast{position:fixed;top:calc(var(--mn-top) + env(safe-area-inset-top,0px) + 4px);left:50%;transform:translateX(-50%);z-index:8;width:min(410px,calc(100% - 20px));min-height:52px;display:flex;align-items:center;gap:10px;padding:5px 8px 8px 14px;background:rgba(28,16,57,.98);border:1px solid rgba(76,240,160,.55);border-radius:15px;box-shadow:0 8px 20px rgba(10,0,30,.25);overflow:hidden}
 .mn-root .mn-toast p{flex:1;margin:0;font:600 12px/1.35 var(--mn-display);color:var(--mn-good)}
+.mn-root .mn-toast[data-state=alarm]{border-color:var(--mn-alarm)}
+.mn-root .mn-toast[data-state=alarm] p{color:var(--mn-alarm)}
+.mn-root .mn-toast[data-state=alarm] .mn-toast-drain{background:var(--mn-alarm)}
 .mn-root #mn-undo{min-width:68px;min-height:44px;padding:5px 12px;border:1px solid rgba(76,240,160,.6);border-radius:999px;background:rgba(76,240,160,.14);color:var(--mn-good);font:600 12px/1 var(--mn-display)}
 .mn-root .mn-toast-drain{position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--mn-good);transform-origin:left;animation:mn-drain 8s linear forwards}
 .mn-root .mn-dialog{position:fixed;inset:auto 0 0;margin:0 auto;padding:16px 16px max(16px,env(safe-area-inset-bottom,0px));width:min(470px,100%);max-width:none;max-height:85svh;border:1px solid var(--mn-line);border-radius:24px 24px 0 0;background:rgba(34,16,78,.98);color:var(--mn-ink);box-shadow:0 24px 60px rgba(10,0,40,.38);overflow:auto;overscroll-behavior:contain}
@@ -176,6 +185,10 @@
   .mn-root .mn-flag{font-size:10.5px;padding:3px 7px}
   .mn-root .mn-why-line,.mn-root .mn-error{font-size:10.5px;line-height:1.25}
   .mn-root .mn-figure-button{gap:4px;padding:7px 9px 19px}
+  .mn-root .mn-figure-list .mn-figure-button{gap:3px;padding:4px 9px 17px}
+  .mn-root .mn-list{gap:1px}
+  .mn-root .mn-list-row{font-size:11px;line-height:1.2}
+  .mn-root .mn-list-more{font-size:10.5px}
   .mn-root .mn-window{padding:0 5px}
   .mn-root .mn-figure-brief .mn-figure-button{padding:5px 9px 18px;gap:4px}
   .mn-root .mn-bullets{gap:3px}

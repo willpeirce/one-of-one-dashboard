@@ -6,14 +6,21 @@ import {MetaSpend} from '../ad-spend/clients.js';
 import {adErrorCode} from '../ad-spend/model.js';
 import {MetaActionsClient} from './actions-client.js';
 import {AD_SET_FIELDS,adSetOwner,parseAdSet,saveAdSets} from './catalogue.js';
-export class AdActionError extends Error {constructor(readonly statusCode:number){super('Ad-set action refused.');}}
+import {PAUSE_UNCERTAINTY_PREFIX,PAUSE_WAITING_MESSAGE,parsePauseUncertainty,pauseMayHaveApplied,pauseUncertaintyCode} from './pause-uncertainty.js';
+export class AdActionError extends Error {constructor(readonly statusCode:number,readonly publicMessage?:string){super('Ad-set action refused.');}}
 export interface MetaAction {id:string;time:string;adSetId:string;action:'pause'|'resume'|'budget';oldValue:string;newValue:string;result:string;undoneAt:string|null;undoOf:string|null;errorCode:string|null}
 export async function readMetaActions(db:Database,account?:string):Promise<MetaAction[]> {
- const rows=await db.query<any>(`SELECT * FROM pulse.meta_actions ${account?'WHERE account_id=$1':''} ORDER BY time DESC,id DESC LIMIT 50`,account?[account]:[]);
+ const rows=await db.query<any>(`WITH recent AS (
+   SELECT * FROM pulse.meta_actions ${account?'WHERE account_id=$1':''} ORDER BY time DESC,id DESC LIMIT 50
+ ) SELECT * FROM recent UNION SELECT a.* FROM pulse.meta_actions a
+ WHERE ${account?'a.account_id=$1 AND ':''}(a.result='pending' OR (
+   a.action='pause' AND a.result='failed' AND a.error_code LIKE '${PAUSE_UNCERTAINTY_PREFIX}active|%'
+   AND NOT EXISTS (SELECT 1 FROM pulse.meta_actions later WHERE later.account_id=a.account_id AND later.ad_set_id=a.ad_set_id
+     AND later.result='success' AND later.time>=a.time AND later.id<>a.id))) ORDER BY time DESC,id DESC`,account?[account]:[]);
  return rows.rows.map(r=>({id:r.id,time:new Date(r.time).toISOString(),adSetId:r.ad_set_id,action:r.action,oldValue:r.old_value,newValue:r.new_value,result:r.result,undoneAt:r.undone_at?new Date(r.undone_at).toISOString():null,undoOf:r.undo_of,errorCode:r.error_code}));
 }
 /** Reserve and commit the audit row before contacting Meta; a pending row excludes concurrent writes. */
-export async function actOnAdSet(db:Database,id:string,input:unknown,who:string,now:Date,client:MetaActionsClient,reader:MetaSpend):Promise<{id:string;refreshed:boolean}> {
+export async function actOnAdSet(db:Database,id:string,input:unknown,who:string,now:Date,client:MetaActionsClient,reader:MetaSpend,clock:()=>Date=()=>new Date()):Promise<{id:string;refreshed:boolean}> {
  if(!/^\d{1,24}$/.test(id)||!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(k=>!['action','value'].includes(k)))throw new AdActionError(400);
  const body=input as {action:unknown;value?:unknown};
  if(!['pause','resume','budget','undo'].includes(String(body.action)))throw new AdActionError(400);
@@ -24,7 +31,8 @@ export async function actOnAdSet(db:Database,id:string,input:unknown,who:string,
   const set=(await tx.query<any>('SELECT * FROM pulse.meta_ad_sets WHERE account_id=$1 AND ad_set_id=$2 FOR UPDATE',[account,id])).rows[0];
   if(!set||adSetOwner(set.campaign_id,settings)!=='ours')throw new AdActionError(403);
   if(set.currency!=='GBP')throw new AdActionError(400);
-  if((await tx.query("SELECT id FROM pulse.meta_actions WHERE account_id=$1 AND ad_set_id=$2 AND result='pending'",[account,id])).rowCount)throw new AdActionError(409);
+  const pending=(await tx.query<{error_code:string|null}>("SELECT error_code FROM pulse.meta_actions WHERE account_id=$1 AND ad_set_id=$2 AND result='pending'",[account,id])).rows[0];
+  if(pending)throw new AdActionError(409,parsePauseUncertainty(pending.error_code)?.phase==='waiting'?PAUSE_WAITING_MESSAGE:undefined);
   let action=body.action as 'pause'|'resume'|'budget',undo:any=null;
   let next=body.action==='pause'?'PAUSED':body.action==='resume'?'ACTIVE':'';
   if(body.action==='undo'){
@@ -50,7 +58,12 @@ export async function actOnAdSet(db:Database,id:string,input:unknown,who:string,
   return {id:actionId,action,next,account,settings,currency:set.currency,undoId:undo?.id as string|undefined};
  });
  try{if(result.action==='pause')await client.pause(id);else if(result.action==='resume')await client.resume(id);else await client.setDailyBudget(id,Number(result.next));}
- catch(error){await db.query("UPDATE pulse.meta_actions SET result='failed',error_code=$2 WHERE id=$1",[result.id,adErrorCode(error,'meta')]);throw new AdActionError(502);}
+ catch(error){
+   const uncertain=result.action==='pause'&&pauseMayHaveApplied(error),code=adErrorCode(error,'meta');
+   await db.query('UPDATE pulse.meta_actions SET result=$2,error_code=$3 WHERE id=$1',
+     [result.id,uncertain?'pending':'failed',uncertain?pauseUncertaintyCode('waiting',clock(),code):code]);
+   throw new AdActionError(502,uncertain?PAUSE_WAITING_MESSAGE:undefined);
+ }
  await db.transaction(async tx=>{
    await tx.query("UPDATE pulse.meta_actions SET result='success' WHERE id=$1",[result.id]);
    if(result.action==='budget')await tx.query('UPDATE pulse.meta_ad_sets SET daily_budget=$3 WHERE account_id=$1 AND ad_set_id=$2',[result.account,id,Number(result.next)]);
@@ -60,7 +73,17 @@ export async function actOnAdSet(db:Database,id:string,input:unknown,who:string,
  let refreshed=false;
  try{
    const raw=await reader.readGraph(id,{fields:AD_SET_FIELDS});
-   await saveAdSets(db,result.account,[parseAdSet(raw,result.currency,result.settings)],result.settings,now,{id,field:result.action==='budget'?'daily_budget':'status',value:result.next});refreshed=true;
+   const parsed=parseAdSet(raw,result.currency,result.settings);
+   await db.transaction(async tx=>{
+    const current=(await tx.query<{status:string;effective_status:string;daily_budget:string|number|null}>(
+      'SELECT status,effective_status,daily_budget FROM pulse.meta_ad_sets WHERE account_id=$1 AND ad_set_id=$2 FOR UPDATE',[result.account,id])).rows[0];
+    if(!current)throw new AdActionError(409);
+    // A slow or stale metadata read must not reverse this write or a later device's action.
+    if(parsed.status!==current.status)parsed.effectiveStatus=current.effective_status;
+    parsed.status=current.status;
+    parsed.dailyBudget=current.daily_budget===null?null:Number(current.daily_budget);
+    await saveAdSets(tx,result.account,[parsed],result.settings,now,{id,field:result.action==='budget'?'daily_budget':'status',value:result.next});
+   });refreshed=true;
  }catch{console.info('Meta action saved; ad-set refresh pending.');}
  return {id:result.id,refreshed};
 }

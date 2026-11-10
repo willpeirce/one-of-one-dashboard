@@ -3,6 +3,7 @@ import type { BrowserContext, Locator, Page } from 'playwright';
 import { addDays } from '../src/hero-range.js';
 import { morningDay } from '../src/morning/view.js';
 import { checkMorningRuleSettings } from './morning-rules-browser-check.js';
+import { checkMorningPauseAll } from './morning-pause-all-browser-check.js';
 import type { MorningButton, MorningCard, MorningFigure, MorningSnapshot, MorningState } from '../src/morning/model-types.js';
 import type { SettingsSnapshot } from '../src/settings.js';
 import type { TickerSnapshot } from '../src/ticker/model.js';
@@ -477,6 +478,7 @@ export async function checkMorning(signedIn: BrowserContext): Promise<void> {
       await fixturePage.waitForFunction(day => document.querySelector('#mn-day')?.textContent?.includes(day), expectedDay);
     } finally { await fixturePage.close(); }
 
+    await checkMorningPauseAll(context);
     await checkMorningRuleSettings(context);
     const settingsPage = await context.newPage();
     try {

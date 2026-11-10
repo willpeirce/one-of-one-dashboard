@@ -1,13 +1,16 @@
 import { escapeCreative as e } from '../creatives/html.js';
 import { addDays, ukToday } from '../hero-range.js';
 import { updateMorningPushNudge } from '../push/browser.js';
+import { pauseAllSequential, undoPausesSequential, type PausedMorningSet } from './pause-all-browser.js';
 import type { TickerSnapshot } from '../ticker/model.js';
 import type { MorningAction, MorningButton, MorningCard, MorningLiveButton, MorningSnapshot, MorningState } from './model-types.js';
 import { morningBriefHtml, morningDay, morningDeckHtml, morningFineHtml, morningLinesHtml, morningMenuHtml, morningProgressHtml, morningWhyHtml, type MorningWindow } from './view.js';
 
 type PressUndo = {kind: 'morning'; cardKey: string; action: MorningAction | 'undo'; answer?: 'a' | 'b' | 'draw'; days?: 3 | 7};
-type Undo = PressUndo | {kind: 'ticker'; eventKey: string; action: 'next' | 'restore'} | {kind: 'live'; button: MorningLiveButton};
-type Command = {cardKey: string; button: MorningButton};
+type Undo = PressUndo | {kind: 'ticker'; eventKey: string; action: 'next' | 'restore'} | {kind: 'live'; button: MorningLiveButton}
+  | {kind: 'pauses'; paused: PausedMorningSet[]};
+type UndoPausesButton = {kind: 'undo-pauses'; label: string; confirm: string; paused: PausedMorningSet[]};
+type Command = {cardKey: string; button: MorningButton | UndoPausesButton};
 type SheetKind = 'why' | 'menu' | 'copy' | 'fine' | 'brief' | 'confirm';
 const root = document.querySelector<HTMLElement>('#mn-root');
 if (root) setup(root);
@@ -35,7 +38,7 @@ function setup(root: HTMLElement): void {
     stage.setAttribute('aria-busy', String(value));
   }
   function render(error?: string): void {
-    stage.innerHTML = morningDeckHtml(snapshot, {window: selectedWindow(), ...(confirmation ? {confirm: confirmation.button.kind === 'live' || confirmation.button.kind === 'save' && confirmation.button.target === 'morning' ? confirmation.button.confirm : undefined} : {}), error});
+    stage.innerHTML = morningDeckHtml(snapshot, {window: selectedWindow(), ...(confirmation ? {confirm: 'confirm' in confirmation.button ? confirmation.button.confirm : undefined} : {}), error});
     get<HTMLElement>('#mn-progress').innerHTML = morningProgressHtml(snapshot);
     get<HTMLElement>('#mn-day').textContent = `${morningDay(snapshot.day)}${snapshot.mode === 'sample' ? ' · Sample data' : ''}`;
     get<HTMLElement>('#mn-lines').innerHTML = morningLinesHtml(snapshot);
@@ -66,10 +69,11 @@ function setup(root: HTMLElement): void {
     if (toastTimer) clearTimeout(toastTimer);
     toastTimer = undefined; undo = null; toast.hidden = true;
   }
-  function saved(message: string, reverse: Undo | null): void {
+  function saved(message: string, reverse: Undo | null, failed = false): void {
     hideToast(); undo = reverse; toast.hidden = false; undoButton.hidden = !reverse;
     undoButton.textContent = reverse?.kind === 'morning' && reverse.action === 'hold' ? 'Hold again' : 'Undo';
-    get<HTMLElement>('#mn-toast-message').textContent = `✓ ${message}`;
+    toast.dataset.state = failed ? 'alarm' : 'good';
+    get<HTMLElement>('#mn-toast-message').textContent = `${failed ? '✕' : '✓'} ${message}`;
     const drain = get<HTMLElement>('.mn-toast-drain'); drain.replaceWith(drain.cloneNode());
     toastTimer = setTimeout(hideToast, 8_000);
     if (dialog.open) sheetStatus.textContent = message;
@@ -106,9 +110,9 @@ function setup(root: HTMLElement): void {
     if (dialog.open && sheet === 'confirm') dialog.close();
     ++revision; setBusy(true);
     const button = command.button;
-    if (button.kind === 'live' && button.action === 'undo') hideToast();
+    if (button.kind === 'undo-pauses' || button.kind === 'live' && button.action === 'undo') hideToast();
     try {
-      let next: MorningSnapshot | null = null, reverse: Undo | null = null, message = 'Saved', stamp = 'Saved';
+      let next: MorningSnapshot | null = null, reverse: Undo | null = null, message = 'Saved', stamp = 'Saved', failed = false;
       if (button.kind === 'save' && button.target === 'morning') {
         next = await request<MorningSnapshot>('/api/morning/press', {cardKey: command.cardKey, action: button.action, ...(button.answer ? {answer: button.answer} : {}), ...(button.action === 'hold' && button.days !== undefined ? {days: button.days} : {})});
         reverse = {kind: 'morning', cardKey: command.cardKey, action: 'undo'};
@@ -117,6 +121,30 @@ function setup(root: HTMLElement): void {
         tickerState(await request<TickerSnapshot>(`/api/ticker/${button.action}`, {eventKey: button.eventKey}));
         reverse = {kind: 'ticker', eventKey: button.eventKey, action: button.action === 'next' ? 'restore' : 'next'};
         next = await afterSourceSave(); stamp = button.action === 'next' ? 'Covered' : 'Put back';
+      } else if (button.kind === 'pause-all') {
+        const result = await pauseAllSequential(button.members, {
+          read: () => request<MorningSnapshot>('/api/morning'),
+          pause: member => request<{id: string}>(`/api/meta/adset/${encodeURIComponent(member.adSetId)}`, {action: 'pause', value: 'PAUSED'}, false),
+          defer: cardKey => request<MorningSnapshot>('/api/morning/press', {cardKey, action: 'park'}),
+          progress: (count, total) => {
+            get<HTMLElement>('#mn-feedback').textContent = `Paused ${count} of ${total} ad sets`;
+            const confirm = root.querySelector<HTMLButtonElement>('#mn-confirm');
+            if (confirm) confirm.textContent = `Paused ${count} of ${total}`;
+          },
+        });
+        next = result.snapshot;
+        reverse = result.paused.length ? {kind: 'pauses', paused: result.paused} : null;
+        failed = !!result.error;
+        message = `${result.paused.length} ad sets paused${result.error ? `. ${result.error}` : result.deferred ? '. The rest are one by one.' : result.skipped ? '. Changed sets were skipped.' : ''}`;
+        stamp = result.paused.length ? 'Paused' : 'Updated';
+        if (!next) get<HTMLElement>('#mn-read-status').textContent = 'ⓘ The deck could not refresh. Reload to check the saved actions.';
+      } else if (button.kind === 'undo-pauses') {
+        const result = await undoPausesSequential(button.paused, paused => request(`/api/meta/adset/${encodeURIComponent(paused.member.adSetId)}`,
+          {action: 'undo', value: paused.actionId}, false));
+        next = await afterSourceSave();
+        failed = !!result.error;
+        message = `${result.undone} ${result.undone === 1 ? 'pause' : 'pauses'} undone${result.error ? `. ${result.error}` : ''}`;
+        stamp = 'Undone';
       } else if (button.kind === 'live') {
         const result = await request<{id: string; refreshed: boolean}>(`/api/meta/adset/${encodeURIComponent(button.adSetId)}`, {action: button.action, ...(button.value !== undefined ? {value: button.value} : {})}, false);
         if (button.action !== 'undo') reverse = {kind: 'live', button: {kind: 'live', label: 'Undo', adSetId: button.adSetId, action: 'undo', value: result.id, confirm: 'Undo this saved Meta action?'}};
@@ -124,10 +152,10 @@ function setup(root: HTMLElement): void {
       }
       if (next) await update(next, stamp);
       else { confirmation = null; render(); }
-      saved(message, reverse);
+      saved(message, reverse, failed);
     } catch (error) {
       // A failed response can follow a committed source write. Reconcile before offering another action.
-      if (button.kind === 'live') {
+      if (['live', 'pause-all', 'undo-pauses'].includes(button.kind)) {
         try { snapshot = await request<MorningSnapshot>('/api/morning'); }
         catch { get<HTMLElement>('#mn-read-status').textContent = 'ⓘ Could not refresh Morning. Check the saved actions before trying again.'; }
       }
@@ -148,6 +176,11 @@ function setup(root: HTMLElement): void {
   async function restore(command: Undo): Promise<void> {
     if (busy) return;
     if (command.kind === 'live') { choose({cardKey: '', button: command.button}); return; }
+    if (command.kind === 'pauses') {
+      choose({cardKey: '', button: {kind: 'undo-pauses', label: 'Undo', paused: command.paused,
+        confirm: `Undo these ${command.paused.length} pauses?`}}, undoButton);
+      return;
+    }
     ++revision; setBusy(true);
     try {
       let next: MorningSnapshot | null, reverse: Undo | null = null;
@@ -191,7 +224,7 @@ function setup(root: HTMLElement): void {
       openSheet('copy', source ?? get<HTMLElement>('#mn-primary'), card ?? undefined);
       get<HTMLElement>('#mn-sheet-title').textContent = 'Copy a note';
       sheetBody.innerHTML = `<label for="mn-copy-text">Your text to send</label><textarea id="mn-copy-text" readonly>${e(text)}</textarea><button type="button" id="mn-copy">Copy</button>`;
-    } else if (button.kind === 'live' || button.kind === 'save' && button.target === 'morning' && button.confirm) {
+    } else if (button.kind === 'live' || button.kind === 'pause-all' || button.kind === 'undo-pauses' || button.kind === 'save' && button.target === 'morning' && button.confirm) {
       if (!command.cardKey) {
         // A previous action's Undo must not inherit a different card's inline question.
         confirmation = null; render();
@@ -209,7 +242,7 @@ function setup(root: HTMLElement): void {
     if (!target) return;
     if (target.closest('#mn-close')) { dialog.close(); return; }
     if (busy) { if (target.closest('#mn-stage a,#mn-stage button,#mn-dialog button,#mn-undo')) event.preventDefault(); return; }
-    if (target.closest('#mn-undo') && undo) { const command = undo; if (command.kind !== 'live') hideToast(); void restore(command); return; }
+    if (target.closest('#mn-undo') && undo) { const command = undo; if (command.kind !== 'live' && command.kind !== 'pauses') hideToast(); void restore(command); return; }
     if (target.closest('#mn-confirm') && confirmation) { void perform(confirmation); return; }
     if (target.closest('#mn-cancel')) { confirmation = null; if (dialog.open) dialog.close(); render(); focusCard(); return; }
     const windowButton = target.closest<HTMLButtonElement>('[data-mn-window]');
@@ -246,7 +279,7 @@ function setup(root: HTMLElement): void {
     const replacedOpener = opener && (['mn-brief', 'mn-good'].includes(opener.id)
       || sameCard && ['mn-menu', 'mn-figure', 'mn-primary'].includes(opener.id));
     const returnTo = opener?.isConnected ? opener : replacedOpener ? root.querySelector<HTMLElement>(`#${opener!.id}`) : null;
-    if (returnTo) returnTo.focus({preventScroll: true}); else focusCard();
+    if (returnTo?.getClientRects().length) returnTo.focus({preventScroll: true}); else focusCard();
   });
   dialog.addEventListener('click', event => {
     if (event.target !== dialog) return;

@@ -10,6 +10,7 @@ import { campaignSyncText } from './ad-spend/campaign-status.js';
 import type { ShopifyDashboard } from './shopify/dashboard.js';
 import { dayCount } from './hero-range.js';
 import type { CreativeHealth } from './creatives/store.js';
+import {pauseUncertaintyNote} from './meta-adsets/pause-uncertainty.js';
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({
@@ -170,5 +171,5 @@ export function auditPage(events: readonly { event: string; occurred_at: Date | 
         <thead><tr><th scope="col">When</th><th scope="col">Activity</th></tr></thead>
         <tbody>${events.length === 0 ? '<tr><td colspan="2">No activity yet.</td></tr>' : events.map((event) => `<tr><td>${timestamp(event.occurred_at)}</td><td>${escapeHtml(event.event.replaceAll('_', ' '))}${event.field ? ` · ${escapeHtml(event.field)}` : ''}</td></tr>`).join('')}</tbody>
       </table>
-    </div><section aria-label="Meta actions"><h2>Actions</h2><p>Last 50 · pending means check Meta before retrying.</p><ul>${actions.map(a=>`<li>${timestamp(a.time)} · ${escapeHtml(a.adSetId)} · ${a.undoOf?'Undo ':''}${escapeHtml(a.action)}: ${escapeHtml(a.oldValue)} → ${escapeHtml(a.newValue)} · ${escapeHtml(a.result)}${a.undoneAt?' · undone':''}${a.errorCode?` · ${escapeHtml(a.errorCode)}`:''}</li>`).join('')||'<li>No actions yet.</li>'}</ul></section>`, true);
+    </div><section aria-label="Meta actions"><h2>Actions</h2><p>Recent 50, plus unresolved actions · pending means check Meta before retrying.</p><ul>${actions.map(a=>`<li>${timestamp(a.time)} · ${escapeHtml(a.adSetId)} · ${a.undoOf?'Undo ':''}${escapeHtml(a.action)}: ${escapeHtml(a.oldValue)} → ${escapeHtml(a.newValue)} · ${escapeHtml(a.result)}${a.undoneAt?' · undone':''}${a.errorCode?` · ${escapeHtml(pauseUncertaintyNote(a.errorCode)??a.errorCode)}`:''}</li>`).join('')||'<li>No actions yet.</li>'}</ul></section>`, true);
 }

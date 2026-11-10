@@ -19,10 +19,10 @@ export function registerAdSets(app:FastifyInstance,db:Database,auth:Auth,env:Nod
   const who=await auth.session(request);if(!who)return reply.code(401).send({error:'Sign in to continue.'});
   const {id}=request.params as {id:string};
   try {
-    const result=await actOnAdSet(db,id,request.body,who,clock(),client,reader);
+    const result=await actOnAdSet(db,id,request.body,who,clock(),client,reader,clock);
     await publish().catch(()=>console.info('Meta action saved; dashboard refresh pending.'));return result;
   } catch(error) {
-    if(error instanceof AdActionError)return reply.code(error.statusCode).send({error:error.statusCode===502?'Meta action failed.':'Ad-set action refused.'});
+    if(error instanceof AdActionError)return reply.code(error.statusCode).send({error:error.publicMessage??(error.statusCode===502?'Meta action failed.':'Ad-set action refused.')});
     throw error;
   }
  });

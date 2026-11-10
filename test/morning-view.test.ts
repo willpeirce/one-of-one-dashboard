@@ -19,8 +19,8 @@ const snapshot = (cards: MorningCard[] = [card()]): MorningSnapshot => ({
 const state = (index: number): MorningState => ({mode: 'sample', cardKey: `invented-${index}`, state: 'parked', untilDay: '2032-04-07', factsHash: 'invented',
   answer: null, credentialId: 'invented-browser', pressedAt: '2032-04-06T10:00:00Z', clearedAt: null, title: `Invented card ${index}`, kind: 'need', subjectId: `invented-${index}`, sourceScope: 'needs:pulse'});
 
-test('Morning renders every card kind and state with a heading, icon-word state and four button kinds', () => {
-  const kinds: MorningKind[] = ['need', 'meta-kill', 'meta-slipping', 'meta-step', 'meta-watch', 'date', 'fading', 'make-next', 'google', 'test-call', 'new-verdict', 'done-for-you'];
+test('Morning renders every card kind and state with a heading, icon-word state and five button kinds', () => {
+  const kinds: MorningKind[] = ['need', 'meta-kill', 'meta-slipping', 'meta-step', 'meta-watch', 'date', 'fading', 'make-next', 'google', 'test-call', 'new-verdict', 'done-for-you', 'pause-all'];
   const tones: [MorningTone, string][] = [['alarm', 'Alarm'], ['decide', 'Decide'], ['warn', 'Watch'], ['info', 'Info'], ['done', 'Done for you']];
   for (const kind of kinds) for (const [tone, word] of tones) {
     const html = morningCardHtml(card({kind, state: tone}));
@@ -34,6 +34,7 @@ test('Morning renders every card kind and state with a heading, icon-word state 
     {kind: 'copy', label: 'Copy brief', text: 'Invented note'},
     {kind: 'save', target: 'morning', label: 'Not today', action: 'park'},
     {kind: 'live', label: 'Pause invented set', adSetId: '710000001', action: 'pause', confirm: 'Pause the invented set now?'},
+    {kind: 'pause-all', label: 'Pause all 3', confirm: 'Pause these 3 ad sets now?', members: []},
   ];
   for (const primary of buttons) {
     const html = morningCardHtml(card({primary}));
@@ -142,4 +143,13 @@ test('Morning check coverage, item lines and dated fine rows render without trea
   const fine = morningFineHtml(data);
   assert.ok(fine.indexOf('Dated, from the check') < fine.indexOf('Parked and hidden'));
   assert.match(fine, /Invented date detail/);
+});
+
+test('Pause all list figure caps eight escaped rows and adds the overflow to its more count', () => {
+  const figure: MorningFigure = {kind: 'list', rows: Array.from({length: 10}, (_, index) => ({label: `Invented <fern> ${index}`, value: `£${80 + index} spend`})), more: 2};
+  const html = morningCardHtml(card({kind: 'pause-all', state: 'decide', figure, why: 'Invented first set\nInvented last set'}));
+  assert.equal((html.match(/class="mn-list-row"/g) ?? []).length, 8);
+  assert.match(html, /\+4 more/); assert.match(html, /Invented &lt;fern&gt; 0/);
+  assert.doesNotMatch(html, /<fern>|Invented &lt;fern&gt; 8/);
+  assert.match(morningWhyHtml(card({figure})), /class="mn-brief-evidence"/);
 });

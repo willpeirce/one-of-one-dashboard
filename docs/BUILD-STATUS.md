@@ -4,6 +4,7 @@ Updated in every pull request.
 
 | Stage | What | Code | Keys in Replit | Live check ("Done when") |
 |---|---|---|---|---|
+| Build 10 Nov · A | Bounded skipped-order history and ticker name-limit regression coverage | built on `build-10-nov`; no migration | none | Check retained unreadable-order counts on Sources after merge |
 | Build 9 Nov · C | Shared Next up strip and Coming up list, keyDates Settings, persisted Next/Undo/Put back and audited local state | built on `build-9-nov`; additive migration 061; unchanged Home budgets | none | Populate live keyDates after merge, then check persistence and phone/desktop display |
 | Build 9 Nov · B | Mailchimp sample/key/probe fixes, private table grants, source warnings, capital Google markets and campaign coverage, honest stock arrivals and inbound sheet rows | built on `build-9-nov`; additive migration 060 | none | Check Sources warnings, actual inbound rows and expected campaign coverage after merge |
 | Build 9 Nov · A | Capped webhook retries and skipped truncated creative scans; terminal failures remain visible without blocking Self-check | built on `build-9-nov`; additive migration 059 | none | Check terminal warnings and a changed creative after merge and Republish |
@@ -89,11 +90,11 @@ Updated in every pull request.
 
 ## Next step
 
-Review **build-9-nov** as one pull request with separate lettered commits. Part A caps terminal webhook and creative-scan retries while retaining their warnings. Part B completes carries 31–34, 37, 39 and 42–45. Part C adds the shared Next up strip and gives Home's Coming up the same dates. All pinned Home counts, heights, controls and fold budgets remain in force.
+Build **build-10-nov** from merged main as one pull request with separate lettered commits. Part A bounds skipped-order history and verifies the existing key-date name limits. Continue with the Morning deck and page, then Google checks, HQ reads and phone push. All pinned Home counts, heights, controls and fold budgets remain in force.
 
-After an approved merge, the deployment maintainer runs the Shell merge, `npm run migrate` (059–061), Republish, populates live `keyDates`, and runs live acceptance. The builder used invented fixtures, PostgreSQL and browser checks; no live source access or deployment was performed.
+After an approved merge, the deployment maintainer runs the Shell merge, any migrations from 062, Republish, live Settings and acceptance. Part A needs no migration. The builder uses invented fixtures, PostgreSQL and browser checks; no live source access or deployment is performed.
 
-**Not done or known gaps:** No in-scope part is omitted. Sample dates move with the UK day, so a sample pass can reset when its date moves. Historical passed keys with no matching Settings row are ignored. The task-provided Mailchimp observation confirms flow-email reports answer, but matching them to the report page and automatic per-flow ingestion remain outside this build. Existing unavailable-source and historical-stock limitations continue to apply.
+**Not done or known gaps:** Parts B–F are still to follow. The bounded skipped-order count retains older unreadable observations: once an ID has left the retained 50, its later recovery cannot be identified and does not lower the count. Existing unavailable-source and historical-stock limitations continue to apply.
 
 ## Needs from Will
 

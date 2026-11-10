@@ -751,3 +751,13 @@ Migration 061 adds `pulse.ticker_passed`, keyed by mode and normalized name/date
 Use the dashboard's existing Decide token (`#7fd8ff`) and dark fonts across both shell stylesheets. Late dates are amber, real save failures use Alarm, and coral stays decorative. Reduced motion uses a static line; the modal uses the native top layer, Escape and focus restoration. Failed reads preserve the reserved height, and failed saves preserve the list. Only page load and a return to visible trigger reads.
 
 Reclaim the strip's 40px desktop/44px phone height from Home's wrap, greeting and control/column gaps, leaving chart height and the market-row's 12px margin untouched. Dense-fixture hero tops remain 499.0625px at 390px and 405.625px at 1280px, within the unchanged 500px/410px budgets. Migration 060 took 0.24ms and 061 took 3.29ms on disposable PostgreSQL 17.6. No dependency, source-client write method, spec refresh or extra Home section was introduced.
+
+## 2026-11-10, build A–F: one pull request for this task
+
+The explicit task instruction permits one large pull request on `build-10-nov`, starting from the merged previous build. Keep lettered commits in part order, with typecheck, tests, build and browser checks passing before each part is pushed. Parts A, D, E and F stay separately revertible; B and C provide the shared Morning foundation. The spec, key storage, dependencies and Home budgets remain unchanged.
+
+## 2026-11-10, Part A: bounded skipped orders and verified date-name limits
+
+Retain the 50 most recently failed shipping-refund order IDs and a separate non-negative count. A retained retry refreshes its position without another count; a retained recovery lowers the count. Older IDs are discarded from the list, so their later recovery leaves the historical count unchanged and a later failure is a new observation. This bounds stored state while preserving the Sources warning and avoiding guesses about evicted IDs. Older long lists trim on their next bounded job run without losing their count.
+
+The reported ticker overflow did not reproduce through valid Settings. Names are limited to 100 UTF-16 code units. Maximum-length invented ASCII, CJK, dotted-capital-I and astral-letter names save and pass Next and Put back, including existing stored keys. The tested lowercase expansion reaches 211 code units and a 326-byte JSON body, within the unchanged 220-character key and 512-byte request limits. Keep the original key format and limits; regression tests reject longer names with `keyDates.0.name`. No migration is needed.

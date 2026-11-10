@@ -193,3 +193,5 @@ Stage 2 part A (`stage-2-meta`, after PR #37) requires migrations **041–042**.
 
 
 The `build-9-nov` update requires additive migrations **059–061**. Exhausted Shopify inbox events and repeatedly truncated creative scans remain visible on Sources without keeping Self-check in error. Settings → Next up dates supplies hard deadlines and launches to the shared signed-in strip and Home's Coming up. Next marks a date covered locally; Undo and the sheet's Put back restore it. Sample and live passes are separate, and no source is changed. Sample dates move with the UK day; live `keyDates` starts empty and is populated after merge. No new keys or dependencies are required.
+
+The `build-10-nov` carry fixes bound stored unreadable-order IDs to the latest 50 while retaining their count. Part A needs no migration; existing key-date names and passed keys remain compatible.

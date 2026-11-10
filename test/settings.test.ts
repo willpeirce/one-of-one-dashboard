@@ -53,6 +53,19 @@ test('key dates fill older Settings without writing them and migration replay re
   assert.equal(permissions.rows.length, 0);
 });
 
+test('key-date name limit counts UTF-16 units and names the field when a longer name is refused', () => {
+  const defaults = defaultSettings();
+  const names = ['Invented '.repeat(11) + 'x', '界'.repeat(100), 'İ'.repeat(100), '𐐀'.repeat(50)];
+  for (const name of names) {
+    const event = {name, date: '2032-04-07', note: '', kind: 'flag'};
+    assert.equal(name.length, 100);
+    assert.equal(validateSettings({...defaults, keyDates: [event]}).keyDates[0]!.name, name);
+    assert.throws(() => validateSettings({...defaults, keyDates: [{...event, name: `${name}界`}]}),
+      (error: unknown) => error instanceof SettingsValidationError && error.fields.length === 1 && error.fields[0] === 'keyDates.0.name');
+  }
+  assert.equal(Array.from(names[3]!).length, 50, 'Astral letters consume two UTF-16 units each');
+});
+
 test('settings initialize once with specified defaults, unknowns unset and no default-change audit', async (t) => {
   const db = await createTestDatabase();
   t.after(() => db.close());

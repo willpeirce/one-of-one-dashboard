@@ -129,6 +129,33 @@ test('Morning refuses unavailable presses and keeps server-owned reminder, seen,
   assert.ok(afterWriteup.presses.find(row => row.cardKey === call.key)!.clearedAt, 'A cleared answer retains today’s slot');
 });
 
+test('Home can confirm a ready test beyond the Morning cap, while parked, answered and wrong calls stay refused', async t => {
+  const alarms = Array.from({length: 7}, (_, index) => card(`invented-urgent-${index}`, {state: 'alarm', tier: 0, order: index, allowedPresses: ['ack']}));
+  const call = card('invented-overflow-test', {kind: 'test-call', state: 'decide', tier: 1, sourceScope: 'tests',
+    callAnswer: 'a', allowedPresses: ['call', 'park']});
+  const data = {...input([...alarms, call]), liveTestIds: [call.subjectId]};
+  const h = await harness(t, data), initial = await h.read();
+  assert.equal(initial.cards.length, 7); assert.equal(initial.more, 1);
+  assert.ok(initial.cards.every(row => row.key !== call.key));
+  const post = (action: string, answer?: string) => h.app.inject({method: 'POST', url: '/api/morning/press', headers: h.headers,
+    payload: {cardKey: call.key, action, ...(answer ? {answer} : {})}});
+  assert.equal((await post('park')).statusCode, 409, 'Only the ready test Call can be offered outside the Morning cap');
+  assert.equal((await post('call', 'b')).statusCode, 409);
+  const called = await h.press('call', call.key, 'a');
+  assert.equal(called.answers.find(row => row.cardKey === call.key)?.answer, 'a');
+  assert.equal(called.completed, 1); assert.equal(called.cards.length, 6);
+  assert.equal((await post('call', 'a')).statusCode, 409, 'An answered call cannot be repeated');
+  assert.equal((await h.db.query('SELECT 1 FROM pulse.audit_log')).rowCount, 1);
+  await h.press('undo', call.key);
+  h.setInput({...data, extensions: [call]});
+  await h.press('park', call.key);
+  h.setInput(data);
+  assert.equal((await post('call', 'a')).statusCode, 409, 'An effective parked answer also applies on Home');
+  await h.press('undo', call.key);
+  h.setInput({...data, extensions: [...alarms, {...call, allowedPresses: [], callAnswer: undefined}]});
+  assert.equal((await post('call', 'a')).statusCode, 409, 'The current rule must still offer the call');
+});
+
 test('Morning hidden state survives changed figures and failed reads, then clears safely without refilling today', async t => {
   const original = card(), data = input([original]), h = await harness(t, data);
   await h.press('hide');

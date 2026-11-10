@@ -29,6 +29,7 @@ import { checkInboundSettings } from './browser-inbound-settings.js';
 import { checkTicker } from './ticker-browser-check.js';
 import { checkMorning } from './morning-browser-check.js';
 import { checkGoogleJunk } from './browser-google-junk.js';
+import { checkHQ } from './browser-hq.js';
 import { checkMorningHome } from './morning-home-browser-check.js';
 
 let step = 'read test configuration';
@@ -2112,6 +2113,8 @@ async function run(): Promise<void> {
     await checkMorning(context);
     step = 'check Google junk Settings and the sample Morning note';
     await checkGoogleJunk(context);
+    step = 'check the HQ brief and unchanged sample Tests chapter';
+    await checkHQ(context);
     assert.equal(scriptErrors.length, 0);
     assert.equal(consoleErrors.length, 0);
     assert.equal(externalRequests, 0);

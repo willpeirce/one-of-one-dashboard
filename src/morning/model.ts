@@ -41,7 +41,8 @@ function needCard(need: DashboardNeed, input: MorningInput, order: number): Morn
   const alarm = need.state === 'alarm', watchdog = input.checks.some(check => check.id === need.id && check.status === 'tripped');
   const source = sourceName(need.source);
   const title = need.link.startsWith('/settings') ? 'Open settings' : need.link.startsWith('/ads') ? 'Open ads'
-    : need.link.startsWith('/fulfilment') ? 'Open fulfilment' : need.link.startsWith('/sources') ? 'Open source health' : 'Open source';
+    : need.link.startsWith('/fulfilment') ? 'Open fulfilment' : need.link.startsWith('/sources') ? 'Open source health'
+    : need.link.startsWith('/morning') ? 'Open Morning' : 'Open source';
   return { ...identity('need', need.id, alarm ? 'alarm' : 'warn', need.id), sourceScope: `needs:${need.source}`,
     tier: alarm ? 0 : watchdog ? 2 : 5, order: watchdog ? order : 100 + order,
     title: need.title, lane: source, source: need.source,

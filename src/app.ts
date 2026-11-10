@@ -6,6 +6,7 @@ import { MORNING_DAY_COOKIE, MORNING_DAY_COOKIE_SECONDS, opensMorning, readMorni
 import { morningInputFromDashboard, readMorningCoverage } from './morning/inputs.js';
 import { curateMorningSample } from './morning/sample.js';
 import { readHomeMorningOmissions } from './morning/home.js';
+import { readMorningStates } from './morning/store.js';
 import { activityActors, readActivity } from './meta-adsets/activity.js';
 import {readMetaActions} from './meta-adsets/actions.js';
 import {registerAdSets} from './meta-adsets/routes.js';
@@ -58,6 +59,10 @@ import { MailchimpWorker, type MailchimpWorkerOptions } from './mailchimp/worker
 import { readMailchimpFacts } from './mailchimp/store.js';
 import { applyMailchimpDashboard, applyMailchimpHero } from './mailchimp/dashboard.js';
 import { mailchimpBillingNeeds } from './mailchimp/needs.js';
+import { HQWorker } from './github-hq/worker.js';
+import { readHQFacts } from './github-hq/store.js';
+import type { HQFacts } from './github-hq/model.js';
+import { addMorningHq, homeTestsFromHq } from './github-hq/presentation.js';
 
 declare module 'fastify' {
   interface FastifyInstance { startBackgroundWork(): Promise<void> }
@@ -71,17 +76,19 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   const localNow = localOptions.clock ?? (() => new Date());
   await auth.cleanup();
   await syncSourceHealth(db, sourceEnv);
+  const hq = new HQWorker(db, sourceEnv, { clock: localNow });
   const shopify = new ShopifyWorker(db, sourceEnv, config.origin, shopifyOptions);
   await shopify.initialize();
   if (shopify.mode === 'sample') await shopify.tick();
   const sourceNow = () => shopifyOptions.clock?.() ?? (shopify.mode === 'sample' ? new Date(appConfig.shopify.sampleNow) : new Date());
   async function runWatchdogs() {
     const facts = await shopify.store.facts(sourceNow());
-    const [settings, context] = await Promise.all([readSettings(db), readWatchdogContext(db, facts)]);
+    const hqNow = localNow();
+    const [settings, context, hqFacts] = await Promise.all([readSettings(db), readWatchdogContext(db, facts), readHQFacts(db, hqNow, hq.mode)]);
     const health = await creativeSourceHealth(settings.values);
     const now = sourceNow();
     const observation = await updateObservation(db, shopify.mode, facts, now);
-    const checks = evaluateWatchdogs(facts, now, settings.values, observation, context.holidays, health);
+    const checks = evaluateWatchdogs(facts, now, settings.values, observation, context.holidays, health, { entry: hqFacts.report, now: hqNow });
     await db.query('UPDATE pulse.shopify_watchdog_state SET data = data || $2::jsonb WHERE mode = $1', [shopify.mode, JSON.stringify({ checks, evaluatedAt: now.toISOString() })]);
   }
   await seedFulfilment(db, shopify.mode, sourceNow());
@@ -116,6 +123,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     ads.start();
     google.start();
     mailchimp.start();
+    hq.start();
     reviews.start();
     void shopify.startOrderCleanup();
     observationTimer = setInterval(() => { void observe(); }, 60_000);
@@ -137,6 +145,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     if (observationTimer) clearInterval(observationTimer);
     await google.stop();
     await mailchimp.stop();
+    await hq.stop();
     await ads.stop();
     await reviews.stop();
     await startupRun;
@@ -191,12 +200,13 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     return {activity:shopify.mode==='live' ? metaActivity?.events ?? [] : [],metaActivity,googleNow:googleAt,google:await readGoogleFacts(db,settings,sourceEnv,googleAt),spend:await spendFacts(db,settings,sourceEnv,shopify.mode,dataset(facts,today).min,today,now),costs:await shopify.store.costHistory(),estimates:await readEstimates(db,shopify.mode),now};
   }
   let unconfirmedCampaigns: { scope: string; count: number } | undefined;
-  async function snapshot(options: { morning?: boolean; settings?: Awaited<ReturnType<typeof readSettings>> } = {}) {
+  async function snapshot(options: { morning?: boolean; settings?: Awaited<ReturnType<typeof readSettings>>; hq?: HQFacts } = {}) {
     const settings = options.settings ?? await readSettings(db, { seed: !options.morning });
+    const hqNow = localNow(), hqFacts = options.hq ?? await readHQFacts(db, hqNow, hq.mode);
     const sourceHealth = await creativeSourceHealth(settings.values);
     const facts=await shopify.store.facts(sourceNow());
     const adInputs=await heroInputs(facts,settings.values);
-    const result = await applyShopifyDashboard({ ...getSampleDashboard(settings.values), generatedAt: new Date().toISOString(), sourceHealth }, db, facts, settings.values, sourceHealth, sourceNow(), adInputs, shopifyOptions.clock?.() ?? new Date());
+    const result = await applyShopifyDashboard({ ...getSampleDashboard(settings.values), generatedAt: new Date().toISOString(), sourceHealth }, db, facts, settings.values, sourceHealth, sourceNow(), adInputs, shopifyOptions.clock?.() ?? new Date(), { entry: hqFacts.report, now: hqNow });
     applyGoogleDashboard(result, adInputs.google, googleShopifyContext(facts,adInputs.now), settings.values, adInputs.metaActivity, adInputs.googleNow, adInputs.spend);
     const mailchimpAt = mailchimpNow(), mailchimpFacts = await readMailchimpFacts(db,mailchimp.mode,mailchimpAt);
     applyMailchimpDashboard(result,mailchimpFacts,settings.values,mailchimpAt);
@@ -218,6 +228,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     result.fulfilment = await fulfilmentSummary(db, shopify.mode, sourceNow());
     result.shopify?.needs.push(...result.fulfilment.needs.map(n => ({ ...n, state: 'warn' as const, source: 'j-and-j' as const })));
     if (!options.morning) {
+      if (shopify.mode === 'live') result.tests = homeTestsFromHq(hqFacts, await readMorningStates(db, shopify.mode), hqNow);
       const omissions = await readHomeMorningOmissions(db, result, settings.values, shopify.mode, localNow(),
         { metaNow: creativeNow(), googleNow: googleNow() });
       if (omissions) result.morningOmissions = omissions;
@@ -226,13 +237,13 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   }
   const events = registerDashboardEvents(app, auth, snapshot);
   async function morningInputs(now: Date) {
-    const settings = await readSettings(db, { seed: false });
+    const [settings, hqFacts] = await Promise.all([readSettings(db, { seed: false }), readHQFacts(db, now, hq.mode)]);
     const [dashboard, ticker, coverage] = await Promise.all([
-      snapshot({ morning: true, settings }), readTicker(db, shopify.mode, now),
+      snapshot({ morning: true, settings, hq: hqFacts }), readTicker(db, shopify.mode, now),
       shopify.mode === 'live' ? readMorningCoverage(db, settings.values.metaAdAccountId, creativeNow(),
         { googleAccount: settings.values.googleCustomerId, googleNow: googleNow() }) : undefined,
     ]);
-    const input = morningInputFromDashboard(dashboard, settings.values, ticker, shopify.mode, coverage);
+    const input = addMorningHq(morningInputFromDashboard(dashboard, settings.values, ticker, shopify.mode, coverage), hqFacts, now);
     return shopify.mode === 'sample' ? curateMorningSample(input, now) : input;
   }
   const morning = registerMorning(app, db, auth, morningInputs, localNow);

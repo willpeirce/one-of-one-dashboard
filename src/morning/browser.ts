@@ -2,7 +2,7 @@ import { escapeCreative as e } from '../creatives/html.js';
 import { addDays } from '../hero-range.js';
 import type { TickerSnapshot } from '../ticker/model.js';
 import type { MorningAction, MorningButton, MorningCard, MorningLiveButton, MorningSnapshot, MorningState } from './model-types.js';
-import { morningChip, morningDay, morningDeckHtml, morningFineHtml, morningLinesHtml, morningMenuHtml, morningProgressHtml, morningWhyHtml, type MorningWindow } from './view.js';
+import { morningBriefHtml, morningChip, morningDay, morningDeckHtml, morningFineHtml, morningLinesHtml, morningMenuHtml, morningProgressHtml, morningWhyHtml, type MorningWindow } from './view.js';
 
 type PressUndo = {kind: 'morning'; cardKey: string; action: MorningAction | 'undo'; answer?: 'a' | 'b' | 'draw'};
 type Undo = PressUndo | {kind: 'ticker'; eventKey: string; action: 'next' | 'restore'} | {kind: 'live'; button: MorningLiveButton};
@@ -168,7 +168,7 @@ function setup(root: HTMLElement): void {
     if (kind === 'fine') { title.textContent = 'The rest of this morning'; expanded = false; sheetBody.innerHTML = morningFineHtml(snapshot); }
     if (kind === 'brief' && snapshot.brief) {
       const brief = snapshot.brief; title.textContent = 'Morning check';
-      sheetBody.innerHTML = `<p>${e(brief.day ? morningDay(brief.day) : snapshot.day)}</p><p>${e(brief.runLabel ?? brief.text)}</p><p>${e(brief.status)}${brief.count !== undefined ? ` · ${brief.count} items` : ''}</p>${brief.items?.length ? `<ol>${brief.items.map(item => `<li>${e(item.text)}</li>`).join('')}</ol>` : ''}${brief.firstLines?.length ? `<pre>${e(brief.firstLines.join('\n'))}</pre>` : ''}${brief.href ? `<a class="mn-sheet-link" href="${e(brief.href)}">Open source ›</a>` : ''}`;
+      sheetBody.innerHTML = morningBriefHtml(brief);
     }
     if (!dialog.open) dialog.showModal(); close.focus({preventScroll: true});
   }
@@ -231,7 +231,9 @@ function setup(root: HTMLElement): void {
     if (dialog.open) return;
     if (sheet === 'confirm') { confirmation = null; render(); }
     sheet = null; sheetCard = null; sheetBody.replaceChildren(); sheetStatus.textContent = '';
-    if (opener?.isConnected) opener.focus({preventScroll: true}); else focusCard();
+    // A pending page-load read can replace the slim line while its sheet is open.
+    const returnTo = opener?.isConnected ? opener : opener?.id === 'mn-brief' ? root.querySelector<HTMLElement>('#mn-brief') : null;
+    if (returnTo) returnTo.focus({preventScroll: true}); else focusCard();
   });
   dialog.addEventListener('click', event => {
     if (event.target !== dialog) return;

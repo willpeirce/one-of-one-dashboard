@@ -56,6 +56,7 @@ export interface MorningMetaAction extends MetaAction { title: string; undo: Mor
 /** Later parts supply this slim-line presentation without adding a deck card. */
 export interface MorningBrief {
   text: string; status: 'ok' | 'needs' | 'unreadable' | 'missing' | 'key'; mode: SourceMode;
+  tone?: 'info' | 'warn';
   day?: string; runLabel?: string; count?: number; items?: { text: string; label?: string }[];
   firstLines?: string[]; href?: string;
 }

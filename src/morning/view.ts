@@ -1,6 +1,6 @@
 import { escapeCreative as e } from '../creatives/html.js';
 import { tickerHead, tickerHtml } from '../ticker/view.js';
-import type { MorningAway, MorningButton, MorningCard, MorningFigure, MorningSnapshot, MorningTone } from './model-types.js';
+import type { MorningAway, MorningBrief, MorningButton, MorningCard, MorningFigure, MorningSnapshot, MorningTone } from './model-types.js';
 
 export type MorningWindow = '1' | '3' | '7';
 export interface MorningViewOptions { window?: MorningWindow; confirm?: string; error?: string }
@@ -63,7 +63,7 @@ export function morningCardHtml(card: MorningCard, options: MorningViewOptions =
 }
 function historyHtml(snapshot: MorningSnapshot): string {
   const rows = [
-    ...snapshot.presses.map(row => `<li><span><strong>${e(row.title)}</strong><small>${row.state === 'hidden' ? 'Hidden' : row.answer === 'hold' ? `Held until ${e(morningDay(row.untilDay!))}` : row.answer ? `Called ${e(row.answer.toUpperCase())}` : row.state === 'parked' ? 'Parked' : 'Seen'}</small></span><button type="button" data-mn-put-back="${e(row.cardKey)}">Put back</button></li>`),
+    ...snapshot.presses.map(row => `<li><span><strong>${e(row.title)}</strong><small>${row.state === 'hidden' ? 'Hidden' : row.answer === 'hold' ? `Held until ${e(morningDay(row.untilDay!))}` : row.answer ? `Called ${e(row.answer.toUpperCase())} · waiting for the write-up` : row.state === 'parked' ? 'Parked' : 'Seen'}</small></span><button type="button" data-mn-put-back="${e(row.cardKey)}">Put back</button></li>`),
     ...snapshot.passedDates.map(row => `<li><span><strong>${e(row.name)}</strong><small>Date covered</small></span><button type="button" data-mn-ticker-restore="${e(row.key)}">Put back</button></li>`),
     ...snapshot.metaActions.map(row => `<li><span><strong>${e(row.title)}</strong><small>${row.undoneAt ? 'Undone' : 'Saved in Meta'}</small></span>${row.undo ? `<button type="button" data-mn-live-undo="${e(row.id)}">Undo</button>` : ''}</li>`),
   ];
@@ -79,7 +79,13 @@ export function morningProgressHtml(snapshot: MorningSnapshot): string {
 }
 export function morningLinesHtml(snapshot: MorningSnapshot): string {
   const brief = snapshot.brief;
-  return `${snapshot.more ? `<a class="mn-more-line" id="mn-more-home" href="/?from=morning">△ Watch · ${snapshot.more} more on Home ›</a>` : ''}${brief ? `<button type="button" class="mn-brief-line" id="mn-brief" data-mn-brief="${brief.status}" aria-haspopup="dialog">${brief.status === 'ok' ? '✓ Good · ' : brief.status === 'unreadable' ? '△ Watch · ' : ''}${e(brief.text)}${brief.mode === 'sample' ? ' · Sample data' : ''}</button>` : ''}${snapshot.metaActions.length ? '<a class="mn-log-line" id="mn-log" href="/audit">Meta actions today · Log ›</a>' : ''}`;
+  return `${snapshot.more ? `<a class="mn-more-line" id="mn-more-home" href="/?from=morning">△ Watch · ${snapshot.more} more on Home ›</a>` : ''}${brief ? `<button type="button" class="mn-brief-line" id="mn-brief" data-mn-brief="${brief.status}" aria-haspopup="dialog">${brief.status === 'ok' ? '✓ Good · ' : brief.status === 'unreadable' || brief.tone === 'warn' ? '△ Watch · ' : ''}${e(brief.text)}${brief.mode === 'sample' ? ' · Sample data' : ''}</button>` : ''}${snapshot.metaActions.length ? '<a class="mn-log-line" id="mn-log" href="/audit">Meta actions today · Log ›</a>' : ''}`;
+}
+export function morningBriefHtml(brief: MorningBrief): string {
+  const status = brief.status === 'ok' ? '✓ Good' : brief.status === 'needs' ? '△ Watch'
+    : brief.status === 'unreadable' ? "△ Watch · Couldn't read"
+    : brief.status === 'key' ? 'i Info · Needs its key' : `${brief.tone === 'warn' ? '△ Watch' : 'i Info'} · Not here yet`;
+  return `<p>${e(brief.day ? morningDay(brief.day) : 'Morning check')}</p><p>${e(brief.runLabel ?? brief.text)}</p><p>${e(status)}${brief.count !== undefined ? ` · ${brief.count} ${brief.count === 1 ? 'item' : 'items'}` : ''}</p>${brief.items?.length ? `<ol>${brief.items.map(item => `<li>${e(item.text)}</li>`).join('')}</ol>` : ''}${brief.firstLines?.length ? `<pre>${e(brief.firstLines.join('\n'))}</pre>` : ''}${brief.href ? `<a class="mn-sheet-link" href="${e(href(brief.href))}">${brief.status === 'key' ? 'Open source health' : 'Open source'} ›</a>` : ''}`;
 }
 export function morningFineHtml(snapshot: MorningSnapshot, expanded = false): string {
   const away = [...snapshot.parked, ...snapshot.hidden];

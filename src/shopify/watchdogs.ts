@@ -10,6 +10,9 @@ import type { Order, Sessions } from './model.js';
 import { geoNotice } from './geo-notice.js';
 
 export interface Check { id: string; name: string; status: 'pass' | 'tripped' | 'unknown'; why: string; link: string }
+export interface AdsCheckEntryState { day: string; status: 'ok' | 'needs' | 'unreadable' }
+/** HQ uses the real UK day even while Shopify retains its fixed sample clock. */
+export interface AdsCheckContext { entry: AdsCheckEntryState | null; now: Date }
 export interface Observation {
   day?: string; fetched?: string; us?: number; carts?: number; checkouts?: number; completed?: number; initialized?: boolean;
   cartless: number; checkoutSince: string | null; lastObserved?: string;
@@ -35,6 +38,7 @@ function zonedParts(now: Date, zone: string): { day: string; time: string } {
   return { day: `${p('year')}-${p('month')}-${p('day')}`, time: `${p('hour')}:${p('minute')}` };
 }
 export function usDaytime(now: Date): boolean { const { time } = zonedParts(now, 'America/New_York'); return time >= '09:00' && time < '23:00'; }
+export function adsCheckDue(now: Date): boolean { return zonedParts(now, 'Europe/London').time >= '09:00'; }
 const weekday = (day: string) => new Date(`${day}T12:00:00Z`).getUTCDay();
 export function dispatchLate(order: Order, now: Date, settings: Settings, holidays: { warehouse: string; day: string }[]): boolean | null {
   if (['FULFILLED', 'RESTOCKED', 'ON_HOLD', 'SCHEDULED'].includes(order.fulfillmentStatus) || order.financialStatus === 'REFUNDED' && order.fulfillmentStatus === 'UNFULFILLED') return false;
@@ -55,10 +59,11 @@ export function dispatchLate(order: Order, now: Date, settings: Settings, holida
   return current.day > due || current.day === due && current.time >= cutoff;
 }
 export function evaluateWatchdogs(facts: Facts, now: Date, settings: Settings, observation: Observation,
-  holidays: { warehouse: string; day: string }[], health: SourceHealth[]): Check[] {
+  holidays: { warehouse: string; day: string }[], health: SourceHealth[], adsCheck?: AdsCheckContext): Check[] {
   const day = ukToday(now), data = dataset(facts, day), checks: Check[] = [];
   const link = `https://admin.shopify.com/store/${appConfig.shopify.storeDomain.split('.')[0]}`;
-  const add = (id: string, name: string, status: Check['status'], why: string, path = '/orders') => checks.push({ id, name, status, why, link: `${link}${path}` });
+  const add = (id: string, name: string, status: Check['status'], why: string, path = '/orders') => checks.push({ id, name, status, why,
+    link: path === '/sources' || path === '/morning' ? path : `${link}${path}` });
   const sessionRow = facts.records.find(r => r.kind === 'sessions' && r.data.day === day);
   const s = sessionRow?.data as Sessions | undefined;
   const lastGood = facts.jobs.find(j => j.name === 'poll')?.last_success_at;
@@ -111,6 +116,15 @@ export function evaluateWatchdogs(facts: Facts, now: Date, settings: Settings, o
   const geo = geoNotice(data.sessions, now);
   add('geo', 'Session geo', geo ? 'tripped' : !s || !freshSessions ? 'unknown' : 'pass',
     geo?.why ?? (s ? 'No unreliable country days in the last 7 UK dates. Store-wide conversion is unaffected.' : 'Today’s session report is unavailable.'), '/analytics');
+  const hqLive = health.some(source => source.source === 'github-hq' && source.mode === 'live');
+  const checkNow = adsCheck?.now ?? now, reportDay = addDays(zonedParts(checkNow, 'Europe/London').day, -1);
+  const entry = adsCheck?.entry?.day === reportDay ? adsCheck.entry : null;
+  const due = adsCheckDue(checkNow), unreadable = entry?.status === 'unreadable';
+  add('ads_check', 'Ads check', !hqLive ? 'unknown' : due && (!entry || unreadable) ? 'tripped' : 'pass',
+    !hqLive ? 'GitHub HQ is not live; the morning check needs its key.'
+      : !entry ? `No stored morning check for ${reportDay}${due ? ' by 09:00 UK.' : '; due at 09:00 UK.'}`
+      : unreadable ? `The morning check for ${reportDay} could not be read${due ? '.' : '; due at 09:00 UK.'}`
+      : `The stored morning check for ${reportDay} is readable.`, '/morning');
   const intervals: Record<string, number> = { poll: 300_000, inventory: 300_000, sessions: 300_000, reconcile: 86_400_000, subscriptions: 3_600_000 };
   const failed = facts.jobs.filter(j => !['shipping_refunds','stock_daily'].includes(j.name) && (j.failures >= 2 || j.name in intervals && j.last_success_at && now.getTime() - new Date(j.last_success_at).getTime() > 3 * (j.name === 'sessions' && j.state.cadence === 'daily' ? 86_400_000 : intervals[j.name]!)));
   // Reviews remain a reading decision; their connection status never changes business health.

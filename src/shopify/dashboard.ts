@@ -14,7 +14,7 @@ import { readSeriesPaceFacts } from '../series-pace/store.js';
 import { sampleSeriesPaceCard, type SeriesPaceCard, type SeriesPaceMarketView } from '../series-pace/presentation.js';
 import { formatNumber, formatMetricNumber, formatPounds } from '../money.js';
 import { dailyRows, dataset, emailFlow, isLastVisitEmail, isRefill, isUpgrade, isKit, kitIds, orderNet, ratio, shopifyHero, stockCover, type Facts, type StockCover } from './metrics.js';
-import { blankObservation, evaluateWatchdogs, type Check, type Observation } from './watchdogs.js';
+import { blankObservation, evaluateWatchdogs, type AdsCheckContext, type Check, type Observation } from './watchdogs.js';
 import { isFreeOrder } from './model.js';
 import { emailCoverageKnown } from './email-coverage.js';
 import { calculateStockGaps, stockGapNeeds } from './stock-gap.js';
@@ -39,11 +39,11 @@ export async function readWatchdogContext(db: Database, facts: Facts) {
   ]);
   return { observation: observations.rows[0]?.data ?? blankObservation(), holidays: holidays.rows };
 }
-export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Database, facts: Facts, settings: Settings, health: SourceHealth[], now: Date, adInputs?:AdHeroInputs, greetingNow: Date = new Date()): Promise<DashboardSnapshot> {
+export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Database, facts: Facts, settings: Settings, health: SourceHealth[], now: Date, adInputs?:AdHeroInputs, greetingNow: Date = new Date(), adsCheck?: AdsCheckContext): Promise<DashboardSnapshot> {
   const today = ukToday(now), data = dataset(facts, today);
   snapshot.adSources = adInputs?.spend.sources.map(({ source, live, status, fetchedAt, stale, failures }) => ({ source, live, status, fetchedAt, stale, failures }));
   const context = await readWatchdogContext(db, facts);
-  const checks = evaluateWatchdogs(facts, now, settings, context.observation, context.holidays, health);
+  const checks = evaluateWatchdogs(facts, now, settings, context.observation, context.holidays, health, adsCheck);
   const stock = stockCover(facts, today, settings);
   const preparedRows = dailyRows(facts, today);
   const ranges: Record<Period, [string, string, string]> = {
@@ -159,7 +159,7 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
     checkout: detail(session ? `${formatNumber(session.sessions)} sessions → ${formatNumber(session.carts)} carts → ${formatNumber(session.checkouts)} checkout starts → ${formatNumber(session.completed)} completed. Today so far.` : 'Today’s sessions are unavailable.', 'Completed session checkouts ÷ session checkouts started, by market. Geo guards preserve store-wide totals.', session ? [['UK', session.marketReliable ? `${formatNumber(session.ukCheckouts)} started · ${formatNumber(session.ukCompleted)} completed · ${session.ukCheckouts ? formatNumber(percentage(session.ukCompleted, session.ukCheckouts)!, 1) : 'unknown'}%` : 'Unknown · geo guard'], ['US', session.marketReliable ? `${formatNumber(session.usCheckouts)} started · ${formatNumber(session.usCompleted)} completed · ${session.usCheckouts ? formatNumber(percentage(session.usCompleted, session.usCheckouts)!, 1) : 'unknown'}%` : 'Unknown · geo guard']] : []),
     stock: detail('Available stock, cover and run-out by configured product and warehouse.', 'TikTok duplicate stock excluded. Missing rate/multiplier or stock stays unknown. Never plan J&J transfers.', stockDetails),
   };
-  const needs: DashboardNeed[] = checks.filter(c => c.status === 'tripped').map(c => ({ id: c.id, source: c.id === 'self' ? 'pulse' : 'shopify', state: (c.id === 'self' || c.id === 'webhooks' ? 'alarm' : 'warn') as State, title: c.name, why: c.why, link: c.link }));
+  const needs: DashboardNeed[] = checks.filter(c => c.status === 'tripped').map(c => ({ id: c.id, source: c.id === 'self' || c.id === 'ads_check' ? 'pulse' : 'shopify', state: (c.id === 'self' || c.id === 'webhooks' ? 'alarm' : 'warn') as State, title: c.name, why: c.why, link: c.link }));
   for (const row of stock) if (row.cover !== null && row.cover < 60) needs.push({ source: 'shopify', id: `stock:${row.productId}:${row.locationId}`, state: row.cover < 21 ? 'alarm' : 'warn', title: row.name, why: `${formatNumber(Math.floor(row.cover))} days of cover; run-out ${row.runOut}. Series 1 kits are not restocked.`, link: `https://admin.shopify.com/store/${appConfig.shopify.storeDomain.split('.')[0]}/products/${row.productId.split('/').at(-1)}` });
   for (const row of stock) if (row.available !== null && row.required !== null && row.available < row.required) needs.push({ source: 'shopify', id: `attach:${row.productId}:${row.locationId}`, state: 'warn', title: row.name, why: `${formatNumber(row.available)} available; ${formatNumber(Math.ceil(row.required))} needed at the measured attach rate for remaining kits. Source-owned stock only; TikTok gift stock awaits its source.`, link: `https://admin.shopify.com/store/${appConfig.shopify.storeDomain.split('.')[0]}/products/${row.productId.split('/').at(-1)}` });
   for (const n of facts.noticeDetails) if (['reports_unavailable', 'address_unavailable'].includes(n.kind)) needs.push({ source: 'shopify', id: n.source_id, state: 'warn', title: n.kind === 'reports_unavailable' ? 'Shopify reports unavailable' : 'Address access unavailable', why: n.kind === 'reports_unavailable' ? 'ShopifyQL was denied. Sessions may be daily routine data or unavailable; older order detail needs read_all_orders. Check granted Level 2 access.' : 'Order markets use currency/warehouse fallback. Check the app’s address permission; no personal address is stored.', link: `https://admin.shopify.com/store/${appConfig.shopify.storeDomain.split('.')[0]}/settings/apps` });

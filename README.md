@@ -204,3 +204,6 @@ Home's Decisions deck omits cards parked, hidden or held on Morning. Alarms alwa
 
 
 Part D adds migration **064** and six fields in **Settings → Ad spend** for Google's content share/spend bars, no-sale spend floor, UK/US break-even returns and optional contact name. Both break-even returns start at zero (off). Morning gathers Google Watch flags into one card with a note to copy and send yourself; the app does not send it or change Google.
+
+
+Part E adds migration **065**. Optional `GITHUB_HQ_TOKEN` enables GET-only reads of the configured HQ repository's monthly morning report and test register after listen. Morning shows a report line/sheet; live Home replaces sample Tests with stored register rows. The worker polls hourly, or every ten minutes during the morning report window while yesterday is missing. It stores capped summaries and cells, never the whole files. A strict register Reading can enable a confirmed local call with Undo; the app does not measure tests or write the register. Without the key, live tests wait and Morning links to Sources; app sample mode retains invented, labelled examples.

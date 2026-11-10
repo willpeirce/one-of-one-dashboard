@@ -4,6 +4,7 @@ Updated in every pull request.
 
 | Stage | What | Code | Keys in Replit | Live check ("Done when") |
 |---|---|---|---|---|
+| Build 10 Nov · E | Read-only HQ morning report/register, Ads check watchdog and confirmed local test calls | built on `build-10-nov`; additive migration 065; sample Home Tests unchanged | optional GITHUB_HQ_TOKEN | Compare parsed reports/register and real eligible calls after merge; HQ writing and test measurement remain outside this build |
 | Build 10 Nov · D | Google content/no-sale/break-even Watch checks and one Morning copy note | built on `build-10-nov`; additive migration 064; six Settings keys | existing Google keys only | Set real bars/contact in Settings after merge; compare complete-day flags with Google |
 | Build 10 Nov · C | Signed-in Morning screen, card actions/sheets, opt-in daily entry and Home omissions | built on `build-10-nov`; additive migration 063; Home follows saved answers without hiding Alarms | none | Enable Open Morning first after merge; check real phone layout and allowed Meta actions |
 | Build 10 Nov · B | Ranked seven-a-day Morning data, audited local answers and subject links | built on `build-10-nov`; additive migration 062 | none | Morning page follows in C; live ownership, freshness and source agreement follow merge |
@@ -93,15 +94,15 @@ Updated in every pull request.
 
 ## Next step
 
-Build **build-10-nov** from merged main as one pull request with separate lettered commits. Parts A–D provide the carry fixes, Morning foundation and Google checks. Continue with HQ reads and phone push. All pinned Home counts, heights, controls and fold budgets remain in force.
+Build **build-10-nov** from merged main as one pull request with separate lettered commits. Parts A–E provide the carry fixes, Morning foundation, Google checks and HQ reads. Continue with phone push. All pinned Home counts, heights, controls and fold budgets remain in force.
 
 After an approved merge, the deployment maintainer runs the Shell merge, any migrations from 062, Republish, live Settings and acceptance. Part A needs no migration. The builder uses invented fixtures, PostgreSQL and browser checks; no live source access or deployment is performed.
 
-**Not done or known gaps:** Parts E–F are still to follow. The bounded skipped-order count retains older unreadable observations: once an ID has left the retained 50, its later recovery cannot be identified and does not lower the count. Existing unavailable-source and historical-stock limitations continue to apply.
+**Not done or known gaps:** Part F is still to follow. HQ/routine writing and measuring tests from orders or insights are not built. The bounded skipped-order count retains older unreadable observations: once an ID has left the retained 50, its later recovery cannot be identified and does not lower the count. Existing unavailable-source and historical-stock limitations continue to apply.
 
 ## Needs from Will
 
-None for this build: no new keys or pre-merge Settings values are required. Live key dates and acceptance belong to the post-merge deployment handover.
+Optional `GITHUB_HQ_TOKEN` enables the HQ reader. Live Settings can supply Google share/spend bars, UK/US break-even returns, an optional Google contact and key dates; `morningOpensFirst` is off by default. No pre-merge values are required.
 
 The existing source-mode boundaries and labelled samples remain. No new Home section, automatic budget change or source write is introduced. The spec, AGENTS.md, replit.md and key handling remain unchanged.
 

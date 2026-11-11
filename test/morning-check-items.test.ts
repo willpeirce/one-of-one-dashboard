@@ -112,6 +112,28 @@ test('dated and freelancer labels follow explicit tag precedence, with dated evi
   assert.equal(result.brief!.allInDeck, false, 'Dated items live in Fine, so the literal all-in-deck claim would be false');
 });
 
+test('a bare Dated heading goes to Fine, and a card face leads with the item decision line', () => {
+  const data = input([
+    item(0, { text: 'Dated.' }), item(1, { text: 'dated' }), item(2, { text: 'Dated:' }),
+    item(3, { text: 'Dated stock arrives.' }), item(4, { text: 'Dated.', tag: { type: 'info' } }),
+    item(5, { lines: ['Invented reading 5.', 'Decision: pause the invented set, or give it a day.', 'Decision: a later line never wins.'] }),
+    item(6, { lines: ['Invented reading 6.', 'decision for the owner: keep the invented guard on?'] }),
+    item(7, { lines: ['Decisions were not asked here.', 'Invented reading 7.'] }),
+    item(8, { label: 'Google', lines: ['Invented reading 8.', 'Decision: ask the freelancer about the invented campaign.'] }),
+  ]), result = morningDeck(data, [], now);
+  assert.deepEqual(result.snapshot.datedFromCheck!.map(dated => dated.text), ['Dated.', 'dated', 'Dated:']);
+  const face = (index: number): string | undefined => result.candidates.find(card => card.kind === 'check-item' && card.order === index)?.whyLine;
+  assert.equal(face(3), 'Invented first detail 3.', 'A longer title that starts with the word is still a card');
+  assert.equal(face(4), 'Invented first detail 4.', 'An explicit tag overrides the bare heading');
+  assert.equal(face(5), 'Decision: pause the invented set, or give it a day.');
+  assert.equal(face(6), 'decision for the owner: keep the invented guard on?');
+  assert.equal(face(7), 'Decisions were not asked here.', 'Without a decision line the first line stays on the face');
+  const freelancer = result.candidates.find(card => card.kind === 'google')!;
+  assert.equal(freelancer.whyLine, 'Decision: ask the freelancer about the invented campaign.');
+  assert.match(freelancer.why, /Invented reading 8\./, 'The sheet keeps every line');
+  assert.match(result.candidates.find(card => card.order === 5 && card.kind === 'check-item')!.why, /Invented reading 5\.\nDecision: pause/);
+});
+
 test('freelancer items fold into the existing card or create one weekly message decision when no loss card exists', () => {
   const items = [item(0, { tag: { type: 'freelancer' } }), item(1, { label: 'Google' }), item(2, { label: 'TikTok' })];
   const data = input(items), fallback = morningDeck(data, [], now).snapshot;

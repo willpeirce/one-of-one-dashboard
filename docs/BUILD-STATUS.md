@@ -105,9 +105,21 @@ Updated in every pull request.
 
 Branch **morning-nav**. Every signed-in page header links to Morning: a pill on Home (first in the top bar, plus the account menu), a link on Source health and Audit log, a button on Settings, Ads, Creatives, Fulfilment costs and Scorecard. No migration, no new dependency, no new Setting, no source read. Runs the same on sample and live. The browser suite now requires a visible Morning link in the header of all nine shells at 390px and 1280px, a 44px tap area on Home's Morning pill, and no sideways scroll on Home at seven further widths; Home's fold budgets and its markup pin are unchanged. Known gap carried from main: Home's top bar scrolls sideways at about 861px to 1020px wide.
 
+## Small change: Morning card fixes · 11 Nov
+
+Branch **morning-card-fixes**. Three fixes from the first morning on the decisions deck.
+
+1. **Test calls.** A test call states its question: the face line reads "Day N · question" from the register row, and the reason it is ready moves to the top of the Why sheet. A test whose register row holds no reading is no longer a deck decision. It is a Watch that stays in Home's Tests chapter, where the call is still offered, and Morning counts it in "Watch · N on Home". Its figure is worded ("Day N", "No reading stored"), and an arms figure with no arms renders words, never an empty panel.
+2. **The dated list.** A check item headed with the bare word "Dated" (with or without a full stop or colon) goes to the Good sheet, as a tagged or labelled dated item already did.
+3. **The decision line.** A check-item card, and the freelancer card created from check items, lead with the item's first line that starts "Decision", falling back to its first line. The Why sheet keeps every line.
+
+No migration, Setting, dependency or source read. Sample mode is unchanged: its test call has a reading. Validation: typecheck, all 1,166 tests on disposable PostgreSQL, the production build, the full Chromium suite and the unchanged secret scanner pass locally. Known gap: a test left on Home has no park or hide control there; it stays counted until it is called or its register row moves to History.
+
 ## Next step
 
-**Morning decisions · A–F** is built on `morning-decisions` for [PR #48](https://github.com/willpeirce/one-of-one-dashboard/pull/48). After an approved merge, the deployment maintainer runs the normal migration command (adding 068), republishes, checks the decision order and actions on a phone, and measures warm Morning first byte against the half-second target. Local typecheck, all 1,164 PostgreSQL tests, build, full browser checks and secret scanning pass; GitHub CI verifies the pushed head.
+**Morning card fixes** is built on `morning-card-fixes` for review. It adds no migration: after an approved merge the deployment maintainer merges, runs the normal migration command (nothing to apply) and republishes, then checks on a phone that a test with no reading is absent from the deck and present on Home, and that the next morning's check items show their decision line.
+
+**Morning decisions · A–F** merged on 11 Nov as [PR #48](https://github.com/willpeirce/one-of-one-dashboard/pull/48), adding migration 068. Installed-phone acceptance of the decision order and actions remains a post-deployment check, with the warm Morning first byte against the half-second target. Local typecheck, all 1,164 PostgreSQL tests, build, full browser checks and secret scanning pass; GitHub CI verifies the pushed head.
 
 **Morning decisions gaps:** TikTok has no stored attributable freelancer ad-purchase counts; the existing twelve-item parser bound remains; live figure agreement, installed-phone acceptance and the latency target need post-deployment checks. Retain migration 068 on an E rollback. If the older parser processes changed month content while E is removed, increment the month parser version before re-enabling E. The independent rollback commands and validation are recorded in DECISIONS and the pull request.
 

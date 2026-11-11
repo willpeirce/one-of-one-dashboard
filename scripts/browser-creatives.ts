@@ -245,7 +245,17 @@ export async function checkCreatives(context: BrowserContext): Promise<void> {
       await page.locator('[data-creative-close]').click();
       await page.locator('[data-creative-tag="sample-video-3"]').waitFor();
       const filter = async (key: string, value: string) => {
-        const response = page.waitForResponse(response => /\/api\/creatives\?/.test(response.url()));
+        const expected = await page.locator('#creative-filters select').evaluateAll(selects =>
+          Object.fromEntries(selects.map(select => [(select as HTMLSelectElement).name, (select as HTMLSelectElement).value])));
+        expected[key] = value;
+        if (key === 'kind') expected.attribute = '';
+        if (key === 'kind' || key === 'attribute' || !expected.attribute) expected.value = '';
+        // A completed note save can still have an unfiltered gallery refresh in flight.
+        const response = page.waitForResponse(response => {
+          const url = new URL(response.url());
+          return response.request().method() === 'GET' && url.pathname === '/api/creatives'
+            && Object.entries(expected).every(([name, selected]) => (url.searchParams.get(name) ?? '') === selected);
+        });
         await page.locator(`#creative-filters [name="${key}"]`).selectOption(value);
         const view = await (await response).json() as CreativeView;
         await page.waitForFunction(ids => {

@@ -953,3 +953,7 @@ Pause/hold check decisions remain uncapped and sit after Kill and Slipping. The 
 The invented sample has exactly three check items: a pause-tagged numeric ID absent from the current stored read, which safely offers Seen; an untagged item; and Dated. No sample action writes to Meta, no source client gains a write method, and there is no new dependency, secret or outbound call kind.
 
 Part E validation: typecheck, all 1,128 tests on disposable PostgreSQL, production build, the full Chromium suite and the unchanged secret scanner pass. Tests cover parser/store compatibility and reparsing, every tag and fallback, folds and state identity, both Watch-cap branches, overflow evidence, selected inactive sets, and confirmed guarded actions. A long figure label is clamped to two display lines and long detail tokens wrap inside the sheet; full stored evidence remains available. Home and Morning tap/height limits remain unchanged.
+
+## Morning decisions · Part A review
+
+Uncapped progress also requires an uncapped current-day receipt read. Morning now includes every successful Meta action in the current UK calendar day, retaining all individual Undo controls even after more than fifty actions. The ordinary Audit read keeps its existing fifty-row history, and pending or unresolved actions remain available beyond that window. The database boundary uses Europe/London midnight, including summer time, and stays scoped to the selected account. This avoids silently losing completed decisions while preserving the existing audit display. No migration is needed.

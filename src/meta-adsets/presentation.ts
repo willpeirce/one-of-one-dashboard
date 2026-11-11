@@ -56,7 +56,7 @@ export async function readAdSetsView(db:Database,settings:Settings,env:NodeJS.Pr
  const view=buildAdSetsView(sets,days,settings,today,{recentActionIds:actions.rows.filter(a=>now.getTime()-new Date(a.time).getTime()<=86_400_000).map(a=>a.ad_set_id),mode:'live',lastRead,stale:!!lastRead&&now.getTime()-Date.parse(lastRead)>2*60*60_000,accountYesterday:coverage.rows.some(r=>r.day===yesterday)?stored.rows.filter(r=>r.day===yesterday).reduce((s,r)=>s+Number(r.spend_amount),0):null,contexts,...(selectedId?{selectedId}:{})});
  view.activity=await readActivity(db,account,settings,now);
  view.actionsEnabled=creativeFeatureFlags(env).metaActionsEnabled;
- view.actions=await readMetaActions(db,account);
+ view.actions=await readMetaActions(db,account,now);
  for(const row of view.rows){
    const times=actions.rows.filter(a=>a.ad_set_id===row.set.id).map(a=>new Date(a.time).toISOString());
    const context=contexts.get(row.set.id)??{};context.changes=[...(context.changes??[]),...times];

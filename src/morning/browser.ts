@@ -115,6 +115,7 @@ function setup(root: HTMLElement): void {
       let next: MorningSnapshot | null = null, reverse: Undo | null = null, message = 'Saved', stamp = 'Saved', failed = false;
       if (button.kind === 'save' && button.target === 'morning') {
         next = await request<MorningSnapshot>('/api/morning/press', {cardKey: command.cardKey, action: button.action, ...(button.answer ? {answer: button.answer} : {}), ...(button.action === 'hold' && button.days !== undefined ? {days: button.days} : {})});
+        if (button.action === 'hold' && sheet === 'copy' && sheetCard?.kind === 'google' && sheetCard.key === command.cardKey) dialog.close();
         reverse = {kind: 'morning', cardKey: command.cardKey, action: 'undo'};
         ({message, stamp} = pressMessage(button.action, next, command.cardKey));
       } else if (button.kind === 'save' && button.target === 'ticker') {
@@ -162,7 +163,7 @@ function setup(root: HTMLElement): void {
       const message = error instanceof Error ? error.message : 'Could not save. Try again.';
       confirmation = null; render(message);
       if (!current()) get<HTMLElement>('#mn-read-status').textContent = `✕ ${message}`;
-      if (dialog.open) sheetStatus.textContent = 'Could not save. Try again.';
+      if (dialog.open) sheetStatus.textContent = message;
     } finally { setBusy(false); if (dialog.open) close.focus({preventScroll: true}); else focusCard(); }
   }
   function priorAction(row: MorningState, next: MorningSnapshot): PressUndo | null {
@@ -263,11 +264,30 @@ function setup(root: HTMLElement): void {
       const position = control.dataset.mnButton!, button = position === 'primary' ? card.primary : position === 'secondary' ? card.secondary : card.menu[Number(position.slice(5))];
       if (button) choose({cardKey: card.key, button}, control);
     }
+    if (target.closest('#mn-copy-sent') && sheet === 'copy' && sheetCard?.kind === 'google' && sheetCard.allowedPresses.includes('hold')) {
+      void perform({cardKey: sheetCard.key, button: {kind: 'save', target: 'morning', action: 'hold', days: 7, label: 'Sent, ask again in a week'}});
+      return;
+    }
     if (target.closest('#mn-copy')) {
-      const text = get<HTMLTextAreaElement>('#mn-copy-text');
-      const fallback = (): void => { text.focus(); text.select(); sheetStatus.textContent = 'Copy was unavailable. Text selected — copy it, then send it yourself.'; };
-      try { void (navigator.clipboard?.writeText(text.value) ?? Promise.reject()).then(() => { dialog.close(); saved('Copied. You send it.', null); }).catch(fallback); }
-      catch { fallback(); }
+      const text = get<HTMLTextAreaElement>('#mn-copy-text'), copy = get<HTMLButtonElement>('#mn-copy'), card = sheetCard;
+      const sameSheet = (): boolean => dialog.open && sheet === 'copy' && sheetCard === card && sheetBody.contains(text);
+      const fallback = (): void => {
+        if (!sameSheet()) return;
+        text.focus(); text.select(); sheetStatus.textContent = 'Copy was unavailable. Text selected — copy it, then send it yourself.';
+      };
+      sheetBody.querySelector('#mn-copy-sent')?.remove(); copy.disabled = true;
+      const copied = (): void => {
+        if (!sameSheet()) return;
+        if (card?.kind === 'google' && card.allowedPresses.includes('hold')) {
+          if (!sheetBody.querySelector('#mn-copy-sent')) {
+            const sent = document.createElement('button'); sent.type = 'button'; sent.id = 'mn-copy-sent';
+            sent.textContent = 'Sent, ask again in a week'; sheetBody.append(sent);
+          }
+        } else dialog.close();
+        saved('Copied. You send it.', null);
+      };
+      try { void (navigator.clipboard?.writeText(text.value) ?? Promise.reject()).then(copied).catch(fallback).finally(() => { if (sameSheet()) copy.disabled = false; }); }
+      catch { fallback(); if (sameSheet()) copy.disabled = false; }
     }
   });
   dialog.addEventListener('close', () => {

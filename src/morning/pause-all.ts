@@ -1,11 +1,25 @@
 import { adSetName } from '../meta-adsets/name.js';
+import { activityObjectType, type MetaActivity } from '../meta-adsets/activity.js';
 import {parsePauseUncertainty} from '../meta-adsets/pause-uncertainty.js';
+import type { AdSetRow } from '../meta-adsets/presentation.js';
 import { morningFacts, morningKey } from './model.js';
 import type { MorningCard, MorningInput, MorningSnapshot, MorningState } from './model-types.js';
 
 interface PauseAllProjection {
   card?: MorningCard;
   coverage?: NonNullable<MorningSnapshot['pauseAll']>;
+}
+
+function externallyResumed(row: AdSetRow | undefined, events: readonly MetaActivity[], pausedAt: string): boolean {
+  if (!row) return false;
+  const since = Date.parse(pausedAt);
+  // A later observation of old ACTIVE data is insufficient: Meta must also report a later edit.
+  const changed = Date.parse(row.set.updatedTime) > since && row.changes.some(change => change.field === 'status'
+    && change.old === 'PAUSED' && change.value === 'ACTIVE' && Date.parse(change.time) > since);
+  return changed || events.some(event => event.objectId === row.set.id && activityObjectType(event.objectType) === 'Ad set'
+    && ['update_ad_set_run_status', 'update_campaign_run_status'].includes(event.type)
+    && event.old === 'PAUSED' && event.value === 'ACTIVE'
+    && Date.parse(event.time) > since);
 }
 
 /** Group resolved open decisions; source observations and individual card identities stay unchanged. */
@@ -19,7 +33,8 @@ export function morningPauseAll(input: MorningInput, openCards: readonly Morning
   const pending = new Set(input.metaActions.filter(action => action.result === 'pending').map(action => action.adSetId));
   const paused = new Set(input.metaActions.filter(action => action.action === 'pause' && action.result === 'success'
     && !action.undoneAt && !input.metaActions.some(later => later.adSetId === action.adSetId
-      && later.result === 'success' && later.action === 'resume' && later.time >= action.time)).map(action => action.adSetId));
+      && later.result === 'success' && later.action === 'resume' && later.time >= action.time)
+    && !externallyResumed(byId.get(action.adSetId), input.activity, action.time)).map(action => action.adSetId));
   const uncertain = new Set(input.metaActions.filter(action => action.action === 'pause' && action.result === 'failed'
     && parsePauseUncertainty(action.errorCode)?.phase === 'active' && !input.metaActions.some(later => later.adSetId === action.adSetId
       && later.result === 'success' && later.time >= action.time)).map(action => action.adSetId));

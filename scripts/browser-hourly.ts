@@ -6,8 +6,15 @@ export async function checkHourly(context: BrowserContext): Promise<void> {
   const page = await context.newPage();
   try {
     const fixture = await (await context.request.get('/api/dashboard')).json() as DashboardSnapshot;
+    // This invented midday scenario must keep a future hour at every host time.
+    for (const view of [fixture.hero.today, ...Object.values(fixture.hero.today.markets ?? {})]) {
+      if (!view.hourly) continue;
+      view.hourly.nowHour = 12;
+      view.hourly.today = view.hourly.today.map((value, hour) => hour <= 12 ? value ?? 0 : null);
+    }
     await page.route('**/api/dashboard', route => route.fulfill({ json: fixture }));
-    await page.route('**/api/events', route => route.fulfill({ contentType: 'text/event-stream', body: `event: dashboard\ndata: ${JSON.stringify(fixture)}\n\n` }));
+    // The closed synthetic stream must not replay and reset keyboard selection mid-check.
+    await page.route('**/api/events', route => route.fulfill({ contentType: 'text/event-stream', body: `retry: 600000\nevent: dashboard\ndata: ${JSON.stringify(fixture)}\n\n` }));
     for (const width of [390, 1280]) {
       await page.setViewportSize({ width, height: 960 }); await page.goto('/');
       await page.locator('html[data-dashboard-ready=true]').waitFor();

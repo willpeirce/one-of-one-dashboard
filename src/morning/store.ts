@@ -3,8 +3,9 @@ import { addDays, ukToday } from '../hero-range.js';
 import type { SourceMode } from '../sources.js';
 import { morningDeck } from './model.js';
 import type { MorningAction, MorningCard, MorningInput, MorningResult, MorningSnapshot, MorningState } from './model-types.js';
+import {timed,type MorningTiming} from './timing.js';
 
-export type MorningInputLoader = (now: Date) => Promise<MorningInput>;
+export type MorningInputLoader = (now: Date,timing?: MorningTiming) => Promise<MorningInput>;
 export interface MorningPress { cardKey: string; action: MorningAction | 'undo'; answer?: 'a' | 'b' | 'draw'; days?: 3 | 7 }
 
 export class MorningPressError extends Error {
@@ -44,16 +45,16 @@ async function lock(db: Database, mode: SourceMode): Promise<void> {
   await db.query('SELECT pg_advisory_xact_lock(1668244583,hashtext($1))', [`morning:${mode}`]);
 }
 
-export async function readMorningResult(db: Database, loadInputs: MorningInputLoader, now: Date): Promise<MorningResult> {
-  const input = await loadInputs(now);
-  return db.transaction(async tx => {
+export async function readMorningResult(db: Database, loadInputs: MorningInputLoader, now: Date,timing?: MorningTiming): Promise<MorningResult> {
+  const input = await loadInputs(now,timing);
+  return timed(timing,'state',() => db.transaction(async tx => {
     await lock(tx, input.mode);
     return (await resolve(tx, input, now)).result;
-  });
+  }));
 }
 
-export async function readMorning(db: Database, loadInputs: MorningInputLoader, now: Date): Promise<MorningSnapshot> {
-  return (await readMorningResult(db, loadInputs, now)).snapshot;
+export async function readMorning(db: Database, loadInputs: MorningInputLoader, now: Date,timing?: MorningTiming): Promise<MorningSnapshot> {
+  return (await readMorningResult(db, loadInputs, now,timing)).snapshot;
 }
 
 function answerState(card: MorningCard, press: MorningPress, credentialId: string, mode: SourceMode, now: Date): MorningState {
@@ -78,9 +79,9 @@ const caption = (press: MorningPress) => ({park: 'parked', remind: 'reminder set
   call: `called ${press.answer?.toUpperCase()}`, undo: 'put back'}[press.action]);
 
 export async function pressMorning(db: Database, loadInputs: MorningInputLoader, press: MorningPress,
-  credentialId: string, now: Date): Promise<MorningSnapshot> {
-  const input = await loadInputs(now);
-  return db.transaction(async tx => {
+  credentialId: string, now: Date,timing?: MorningTiming): Promise<MorningSnapshot> {
+  const input = await loadInputs(now,timing);
+  return timed(timing,'state',() => db.transaction(async tx => {
     await lock(tx, input.mode);
     const {states, result} = await resolve(tx, input, now);
     let title: string;
@@ -108,5 +109,5 @@ export async function pressMorning(db: Database, loadInputs: MorningInputLoader,
     await tx.query('INSERT INTO pulse.audit_log(event,credential_id,occurred_at) VALUES($1,$2,$3)',
       [Array.from(`Morning ${caption(press)}: ${title}`).slice(0, 80).join(''), credentialId, now]);
     return (await resolve(tx, input, now)).result.snapshot;
-  });
+  }));
 }

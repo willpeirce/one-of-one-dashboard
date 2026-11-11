@@ -19,6 +19,7 @@ export function registerDashboardEvents(
   app: FastifyInstance,
   auth: Pick<Auth, 'session' | 'config'>,
   snapshot: () => Promise<unknown>,
+  options: {onPublish?: () => void} = {},
 ) {
   const subscribers = new Set<Subscriber>();
   let publishing: Promise<void> | undefined;
@@ -75,7 +76,7 @@ export function registerDashboardEvents(
     }
   }
 
-  async function publish(): Promise<void> {
+  async function refresh(): Promise<void> {
     if (publishing) {
       publishAgain = true;
       return await publishing;
@@ -88,6 +89,11 @@ export function registerDashboardEvents(
     })();
     try { await publishing; }
     finally { publishing = undefined; }
+  }
+
+  async function publish(): Promise<void> {
+    options.onPublish?.();
+    await refresh();
   }
 
   app.get('/api/events', async (request, reply) => {
@@ -122,12 +128,12 @@ export function registerDashboardEvents(
   const heartbeat = setInterval(() => {
     // Source workers commit in the background, so check for changed content here
     // as well as after actions. Unchanged dashboards receive only the comment.
-    if (!pinging) pinging = (async () => { await publish(); await ping(); })()
+    if (!pinging) pinging = (async () => { await refresh(); await ping(); })()
       .finally(() => { pinging = undefined; });
   }, 15_000);
   heartbeat.unref();
   app.addHook('onResponse', async (request) => {
-    if (request.method === 'POST' && request.routeOptions.url === '/auth/logout') await publish();
+    if (request.method === 'POST' && request.routeOptions.url === '/auth/logout') await refresh();
   });
   app.addHook('preClose', async () => {
     closing = true;
@@ -136,5 +142,5 @@ export function registerDashboardEvents(
     await publishing;
     await pinging;
   });
-  return { publish };
+  return { publish,refresh };
 }

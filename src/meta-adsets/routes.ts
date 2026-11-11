@@ -21,10 +21,13 @@ export function registerAdSets(app:FastifyInstance,db:Database,auth:Auth,env:Nod
   const {id}=request.params as {id:string};
   try {
     const result=await actOnAdSet(db,id,request.body,who,clock(),client,reader,clock);
-    await publish().catch(()=>console.info('Meta action saved; dashboard refresh pending.'));return result;
+    return result;
   } catch(error) {
     if(error instanceof AdActionError)return reply.code(error.statusCode).send({error:error.publicMessage??(error.statusCode===502?'Meta action failed.':'Ad-set action refused.')});
     throw error;
+  } finally {
+    // A failed acknowledgement can still have reserved or changed a local action row.
+    await publish().catch(()=>console.info('Meta action saved; dashboard refresh pending.'));
   }
  });
  app.post('/api/meta/adset/:id/flags',{bodyLimit:1024},async(request,reply)=>{

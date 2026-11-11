@@ -2,7 +2,7 @@ import type { DashboardSnapshot } from '../dashboard-types.js';
 import type { Settings } from '../settings.js';
 import type { SourceMode } from '../sources.js';
 import type { TickerSnapshot } from '../ticker/model.js';
-import type { CreativeView } from '../creatives/presentation-types.js';
+import type { CreativeOverview } from '../creatives/presentation-types.js';
 import { formatPounds } from '../money.js';
 import { addDays, ukToday } from '../hero-range.js';
 import type { Database } from '../db.js';
@@ -85,7 +85,7 @@ export async function readMorningCoverage(db: Database, account: string, now: Da
     ...googleCoverage(googleJobs, options.googleNow ?? now) };
 }
 
-function creativeFigures(view: CreativeView | undefined): Record<string, MorningFigure> {
+function creativeFigures(view: CreativeOverview | undefined): Record<string, MorningFigure> {
   if (!view) return {};
   const strengths = { Hint: 1, Likely: 2, Strong: 3 } as const;
   return Object.fromEntries(view.cards.map(card => {

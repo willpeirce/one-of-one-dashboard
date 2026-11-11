@@ -1,6 +1,6 @@
 import type { CreativeData, MediaGroup } from './model.js';
 import { attributesForKind, resolveAttributes, type AttributeDefinition, type AttributeRow } from './attributes.js';
-import { aggregateCreativeGroups, indexCreativeData } from './ranking.js';
+import { summarizeCreativeGroups, indexCreativeData } from './ranking.js';
 import type { GroupPerformance } from './presentation-types.js';
 
 export interface TaggingQueueEntry { groupId: string; title: string; picture: string; unsure: boolean }
@@ -24,7 +24,7 @@ export function creativeTaggingQueue(data: CreativeData, rows: readonly Attribut
     const attributes = byGroup.get(row.groupId) ?? [];
     attributes.push(row); byGroup.set(row.groupId, attributes);
   }
-  return aggregateCreativeGroups(data, { to: today }, index).filter(group => group.totals.spend > floor
+  return summarizeCreativeGroups(data, { to: today }, index).filter(group => group.totals.spend > floor
     && !(byGroup.get(group.group.id) ?? []).some(row => row.source === 'will')).map(group => ({
       group, unsure: resolveAttributes(group.group.kind, byGroup.get(group.group.id) ?? []).some(attribute => attribute.unsure),
     })).sort((a, b) => Number(b.unsure) - Number(a.unsure)
@@ -32,7 +32,7 @@ export function creativeTaggingQueue(data: CreativeData, rows: readonly Attribut
     .map(({ group, unsure }) => ({ groupId: group.group.id, title: group.group.title, picture: group.group.thumbnailUrl, unsure }));
 }
 
-export function filterCreativeAttributes(groups: GroupPerformance[], rows: readonly AttributeRow[], key?: string, value?: string): GroupPerformance[] {
+export function filterCreativeAttributes<Row extends Pick<GroupPerformance, 'group'>>(groups: Row[], rows: readonly AttributeRow[], key?: string, value?: string): Row[] {
   if (!key || !value) return groups;
   return groups.filter(group => resolveAttributes(group.group.kind, rows.filter(row => row.groupId === group.group.id))
     .some(attribute => attribute.key === key && attribute.value === value));

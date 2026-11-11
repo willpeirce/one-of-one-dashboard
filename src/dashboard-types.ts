@@ -165,8 +165,8 @@ export interface DashboardSnapshot {
   adSources?: import('./radar.js').RadarAdSource[];
   shopify?: import('./shopify/dashboard.js').ShopifyDashboard;
   banner?: string;
-  fulfilment?: import('./fulfilment/view.js').Summary;
+  fulfilment?: import('./fulfilment/store.js').FulfilmentOverview;
   metaCampaigns?: { unconfirmedCount: number };
   reviews?: import('./judgeme/model.js').ReviewsPanel;
-  creatives?: import('./creatives/presentation-types.js').CreativeView;
+  creatives?: import('./creatives/presentation-types.js').CreativeOverview;
 }

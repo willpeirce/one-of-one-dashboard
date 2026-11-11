@@ -1,13 +1,13 @@
 import {setDecisions} from '../decisions/browser.js';
 import { fullEvidenceHtml } from './lift-view.js';
 import type { LiftWindowDays } from './lifts.js';
-import type { CreativeView, CreativeSheet, CreativeSelection } from './presentation-types.js';
+import type { CreativeView, CreativeOverview, CreativeSheet, CreativeSelection } from './presentation-types.js';
 import { creativePanelHtml, creativeGalleryHtml, creativeCardsHtml, creativeSheetHtml, creativeAttributesHtml, creativeTagRowHtml, creativeAttributeFiltersHtml } from './view.js';
 import type { ResolvedAttribute } from './attributes.js';
 import { creativeScanControlHtml, type CreativeScanView } from './scan-view.js';
 import type { ScanResult } from './scan.js';
 
-let view: CreativeView | undefined;
+let view: CreativeOverview | undefined;
 const knownGroups = new Set<string>();
 let selection: CreativeSelection = { window: '3d', market: 'all', owner: 'all' };
 let rememberedWindow: LiftWindowDays = 7;
@@ -33,7 +33,7 @@ function status(message: string): void {
     const target = element(selector); if (target) target.textContent = message;
   }
 }
-function render(next: CreativeView): void {
+function render(next: CreativeOverview): void {
   if (view?.accountId !== next.accountId || view?.mode !== next.mode) knownGroups.clear();
   for (const row of next.groups) knownGroups.add(row.group.id);
   for (const row of next.merged) knownGroups.add(row.id);
@@ -51,7 +51,7 @@ function render(next: CreativeView): void {
     if (input) input.value = String(selection[key] ?? 'all');
   }
 }
-export function updateCreativeSnapshot(next: CreativeView): void {
+export function updateCreativeSnapshot(next: CreativeOverview): void {
   if (!view) selection = { ...next.selection, liftWindow: rememberedWindow };
   if ((selection.liftWindow ?? 7) === (next.selection.liftWindow ?? 7) && (selection.window ?? '3d') === (next.selection.window ?? '3d') && (selection.market ?? 'all') === 'all' && (selection.owner ?? 'all') === 'all' && !selection.attribute && !selection.value && (selection.kind ?? 'all') === 'all' && (selection.live ?? 'all') === 'all') render(next);
   else void refresh();

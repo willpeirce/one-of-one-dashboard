@@ -42,7 +42,7 @@ test('Morning reuses read-only Home inputs and only mutates its state and audit,
   const initial = response.json<MorningSnapshot>();
   assert.equal(initial.day, '2032-04-07');
   assert.equal(initial.mode, 'sample');
-  assert.deepEqual(initial.cards.map(card => card.kind), ['meta-kill', 'check-item', 'test-call', 'done-for-you', 'google', 'check-item']);
+  assert.deepEqual(initial.cards.map(card => card.kind), ['meta-kill', 'check-item', 'test-call', 'done-for-you', 'check-item']);
   assert.equal(initial.brief!.items!.length, 3);
   assert.equal(initial.brief!.items![0]!.tag!.type, 'pause');
   assert.equal(initial.datedFromCheck!.length, 1);

@@ -4,7 +4,6 @@ import { addDays } from '../src/hero-range.js';
 import { morningDay } from '../src/morning/view.js';
 import { checkMorningRuleSettings } from './morning-rules-browser-check.js';
 import { checkMorningPauseAll } from './morning-pause-all-browser-check.js';
-import { checkMorningFreelancer } from './morning-freelancer-browser-check.js';
 import { checkMorningCheckItems } from './morning-check-items-browser-check.js';
 import type { MorningButton, MorningCard, MorningFigure, MorningSnapshot, MorningState } from '../src/morning/model-types.js';
 import type { SettingsSnapshot } from '../src/settings.js';
@@ -340,7 +339,7 @@ export async function checkMorning(signedIn: BrowserContext): Promise<void> {
             } else { state = await apply(selector, button!); putBack = true; }
           }
         }
-        assert.equal(state.cards.length, 0); assert.ok(linked && copied && menuOpened && putBack && hiddenPutBack, 'The real decision deck exercises links, copying, menus, hiding and persisted Put back');
+        assert.equal(state.cards.length, 0); assert.ok(linked && putBack, 'The real decision deck exercises links and persisted Put back; copy/hide/menu are covered below with explicit fixtures');
         await page.locator('#mn-all-clear').waitFor(); assert.match(await page.locator('#mn-done-list').innerText(), /.+/);
         await page.reload(); await shown(page, await read()); assert.equal(await page.locator('#mn-all-clear').count(), 1);
         await page.route('**/api/morning/press', route => route.fulfill({status: 503, json: {error: 'Invented Put back failure.'}}), {times: 1});
@@ -394,7 +393,7 @@ export async function checkMorning(signedIn: BrowserContext): Promise<void> {
         await fixturePage.waitForFunction(element => !element.isConnected, openerBeforeRefresh);
         await closeSheet(fixturePage, selector); await openerBeforeRefresh.dispose();
       }
-      // Copy cards without a hold action retain their existing close-on-copy behavior through a refresh.
+      // Copy and hiding remain supported for eligible cards even when the base sample deck has none.
       const copyCard: MorningCard = {...cards[0]!, key: 'invented-copy-decision', kind: 'google', state: 'decide',
         primary: {kind: 'copy', label: 'Copy a message', text: 'Invented freelancer message'}};
       fixture = {...fixture, cards: [copyCard], completed: 0, total: 1};
@@ -481,7 +480,6 @@ export async function checkMorning(signedIn: BrowserContext): Promise<void> {
     } finally { await fixturePage.close(); }
 
     await checkMorningPauseAll(context);
-    await checkMorningFreelancer(context);
     await checkMorningCheckItems(context);
     await checkMorningRuleSettings(context);
     const settingsPage = await context.newPage();

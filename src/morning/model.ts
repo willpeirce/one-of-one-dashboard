@@ -261,7 +261,7 @@ function answeredDeckCard(row: MorningState, card: MorningCard | undefined): boo
   if (row.kind === 'check-item') return true;
   if (row.kind === 'google' && row.sourceScope === 'check') return true;
   if (card) return morningDeckMember(card);
-  return ['meta-kill', 'meta-slipping', 'meta-step', 'test-call', 'done-for-you', 'google'].includes(row.kind);
+  return ['meta-kill', 'meta-slipping', 'meta-step', 'test-call', 'done-for-you'].includes(row.kind);
 }
 
 /** One deterministic projection: no reads, writes, wall clock or external calls. */

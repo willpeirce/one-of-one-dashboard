@@ -2,8 +2,8 @@ import type { Database } from '../db.js';
 import { addDays, ukToday } from '../hero-range.js';
 import type { SourceMode } from '../sources.js';
 import { hqTargetInfo, HQReadError, type HQErrorCode, type HQTarget } from './client.js';
-import { HQ_REGISTER_PARSER_VERSION, HQ_MONTH_PARSER_VERSION, hqCut, hqDate, HQ_CELL_LIMIT, HQ_ITEM_LIMIT, HQ_ITEM_LINES_LIMIT, HQ_ITEM_TEXT_LIMIT, HQ_SECTION_ROW_LIMIT,
-  type HQBriefEntry, type HQBriefItem, type HQBriefTag, type HQFacts, type HQRegisterResult, type HQStoredBriefEntry, type HQStoredTestRow } from './model.js';
+import { HQ_REGISTER_PARSER_VERSION, hqCut, hqDate, HQ_CELL_LIMIT, HQ_ITEM_LIMIT, HQ_ITEM_TEXT_LIMIT, HQ_SECTION_ROW_LIMIT,
+  type HQBriefEntry, type HQFacts, type HQRegisterResult, type HQStoredBriefEntry, type HQStoredTestRow } from './model.js';
 
 export interface HQSync {
   key: string; etag: string | null; lastAttemptAt: string | null; lastSuccessAt: string | null;
@@ -36,11 +36,10 @@ export async function beginHQRead(db: Database, target: HQTarget, now: Date): Pr
 async function success(db: Database, target: HQTarget, etag: string | null, now: Date, skippedRows = 0, initialized = true): Promise<void> {
   const {key, path, ref} = hqTargetInfo(target);
   await db.query(`INSERT INTO pulse.github_hq_reads(target_key,path,ref,etag,last_attempt_at,last_success_at,
-      parsed_available,readable,initialized,skipped_rows,parser_version) VALUES($1,$2,$3,$4,$5,$5,true,true,$7,$6,$8)
+      parsed_available,readable,initialized,skipped_rows) VALUES($1,$2,$3,$4,$5,$5,true,true,$7,$6)
     ON CONFLICT(target_key) DO UPDATE SET etag=EXCLUDED.etag,last_attempt_at=EXCLUDED.last_attempt_at,
       last_success_at=EXCLUDED.last_success_at,error_code=NULL,retry_after_at=NULL,parsed_available=true,
-      readable=true,initialized=EXCLUDED.initialized,skipped_rows=EXCLUDED.skipped_rows,parser_version=EXCLUDED.parser_version`,
-    [key, path, ref, etag, now, skippedRows, initialized, target.kind === 'month' ? HQ_MONTH_PARSER_VERSION : HQ_REGISTER_PARSER_VERSION]);
+      readable=true,initialized=EXCLUDED.initialized,skipped_rows=EXCLUDED.skipped_rows`, [key, path, ref, etag, now, skippedRows, initialized]);
 }
 export async function failHQRead(db: Database, target: HQTarget, error: HQReadError, now: Date): Promise<void> {
   const {key} = hqTargetInfo(target);
@@ -48,28 +47,6 @@ export async function failHQRead(db: Database, target: HQTarget, error: HQReadEr
   const retryAt = delay ? new Date(now.getTime() + delay) : null;
   await db.query('UPDATE pulse.github_hq_reads SET error_code=$2,retry_after_at=$3 WHERE target_key=$1', [key, error.code, retryAt]);
 }
-function storedTag(value: unknown): HQBriefTag | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return;
-  const tag = value as Record<string, unknown>;
-  if ((tag.type === 'pause' || tag.type === 'hold') && Object.keys(tag).length === 2
-    && typeof tag.adSetId === 'string' && /^\d{5,25}$/.test(tag.adSetId))
-    return {type: tag.type, adSetId: tag.adSetId};
-  if (Object.keys(tag).length === 1 && typeof tag.type === 'string' && ['freelancer', 'dated', 'info'].includes(tag.type))
-    return {type: tag.type as 'freelancer' | 'dated' | 'info'};
-}
-function storedItem(value: unknown): HQBriefItem | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return;
-  const item = value as Record<string, unknown>;
-  if (typeof item.text !== 'string') return;
-  const tag = storedTag(item.tag);
-  return {text: hqCut(item.text, HQ_ITEM_TEXT_LIMIT),
-    ...(typeof item.label === 'string' && item.label ? {label: hqCut(item.label, HQ_ITEM_TEXT_LIMIT)} : {}),
-    lines: (Array.isArray(item.lines) ? item.lines : []).filter((line): line is string => typeof line === 'string')
-      .slice(0, HQ_ITEM_LINES_LIMIT).map(line => hqCut(line, HQ_ITEM_TEXT_LIMIT)), ...(tag ? {tag} : {})};
-}
-const reportItems = (values: unknown): HQBriefItem[] => (Array.isArray(values) ? values : []).slice(0, HQ_ITEM_LIMIT)
-  .map(storedItem).filter((item): item is HQBriefItem => !!item);
-const diagnosticCount = (value: number | undefined): number => Number.isFinite(value) ? Math.min(2_147_483_647, Math.max(0, Math.floor(value!))) : 0;
 export async function saveHQMonth(db: Database, target: Extract<HQTarget, {kind: 'month'}>, entries: readonly HQBriefEntry[], etag: string | null, now: Date): Promise<void> {
   const {path, ref} = hqTargetInfo(target);
   // The file's target month is authoritative; an unrelated heading cannot replace another month.
@@ -77,13 +54,14 @@ export async function saveHQMonth(db: Database, target: Extract<HQTarget, {kind:
   await db.transaction(async tx => {
     await tx.query('DELETE FROM pulse.github_hq_reports WHERE path=$1 AND ref=$2', [path, ref]);
     for (const row of last.values()) {
-      const items = reportItems(row.items);
+      const items = row.items.slice(0, HQ_ITEM_LIMIT).map(item => ({text: hqCut(item.text, HQ_ITEM_TEXT_LIMIT),
+        ...(item.label ? {label: hqCut(item.label, HQ_ITEM_TEXT_LIMIT)} : {})}));
       const lines = row.status === 'unreadable' ? row.firstLines.slice(0, 3).map(line => hqCut(line, HQ_ITEM_TEXT_LIMIT)) : [];
-      await tx.query(`INSERT INTO pulse.github_hq_reports(report_day,run_label,status,item_count,items,first_lines,ref,path,read_at,malformed_card_tags)
-        VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7,$8,$9,$10)
+      await tx.query(`INSERT INTO pulse.github_hq_reports(report_day,run_label,status,item_count,items,first_lines,ref,path,read_at)
+        VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7,$8,$9)
         ON CONFLICT(report_day,ref) DO UPDATE SET run_label=EXCLUDED.run_label,status=EXCLUDED.status,item_count=EXCLUDED.item_count,
-          items=EXCLUDED.items,first_lines=EXCLUDED.first_lines,path=EXCLUDED.path,read_at=EXCLUDED.read_at,malformed_card_tags=EXCLUDED.malformed_card_tags`,
-      [row.day, hqCut(row.runLabel, 100), row.status, Math.min(2_147_483_647, Math.max(0, Math.floor(row.count))), JSON.stringify(items), JSON.stringify(lines), ref, path, now, diagnosticCount(row.malformedCardTags)]);
+          items=EXCLUDED.items,first_lines=EXCLUDED.first_lines,path=EXCLUDED.path,read_at=EXCLUDED.read_at`,
+      [row.day, hqCut(row.runLabel, 100), row.status, Math.min(2_147_483_647, Math.max(0, Math.floor(row.count))), JSON.stringify(items), JSON.stringify(lines), ref, path, now]);
     }
     await success(tx, target, etag, now);
   });
@@ -147,7 +125,7 @@ export async function touchHQRead(db: Database, target: HQTarget, etag: string |
   const {key, path, ref} = hqTargetInfo(target);
   await db.transaction(async tx => {
     const previous = (await readHQSync(tx, [target])).get(key);
-    if (previous?.parserVersion !== (target.kind === 'month' ? HQ_MONTH_PARSER_VERSION : HQ_REGISTER_PARSER_VERSION)) throw new HQReadError('invalid', 304);
+    if (target.kind === 'register' && previous?.parserVersion !== HQ_REGISTER_PARSER_VERSION) throw new HQReadError('invalid', 304);
     if (!previous?.parsedAvailable) throw new HQReadError('invalid', 304);
     if (!previous.readable) throw new HQReadError('unreadable', 304);
     await success(tx, target, etag ?? previous.etag, now, previous.skippedRows, previous.initialized);
@@ -156,14 +134,13 @@ export async function touchHQRead(db: Database, target: HQTarget, etag: string |
 }
 interface ReportRow extends Record<string, unknown> {
   report_day: string; run_label: string; status: HQBriefEntry['status']; item_count: number; items: HQBriefEntry['items'];
-  first_lines: string[]; ref: HQStoredBriefEntry['ref']; path: string; read_at: Date | string; malformed_card_tags: number;
+  first_lines: string[]; ref: HQStoredBriefEntry['ref']; path: string; read_at: Date | string;
 }
 export async function readHQReports(db: Database, day: string): Promise<HQStoredBriefEntry[]> {
-  const result = await db.query<ReportRow>(`SELECT report_day::text,run_label,status,item_count,items,first_lines,ref,path,read_at,malformed_card_tags
+  const result = await db.query<ReportRow>(`SELECT report_day::text,run_label,status,item_count,items,first_lines,ref,path,read_at
     FROM pulse.github_hq_reports WHERE report_day=$1 ORDER BY CASE ref WHEN 'main' THEN 0 ELSE 1 END LIMIT 2`, [day]);
   return result.rows.map(row => ({day: row.report_day, runLabel: row.run_label, status: row.status, count: row.item_count,
-    items: reportItems(row.items), firstLines: row.first_lines, malformedCardTags: diagnosticCount(row.malformed_card_tags),
-    ref: row.ref, path: row.path, readAt: iso(row.read_at)!}));
+    items: row.items, firstLines: row.first_lines, ref: row.ref, path: row.path, readAt: iso(row.read_at)!}));
 }
 export async function readHQFacts(db: Database, now: Date, sourceMode: SourceMode): Promise<HQFacts> {
   if (sourceMode === 'sample') return {sourceMode, report: null, tests: [], registerReadAt: null, registerReadOk: false, registerSkippedRows: 0, monthReadAt: null};

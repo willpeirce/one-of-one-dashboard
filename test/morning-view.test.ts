@@ -20,7 +20,7 @@ const state = (index: number): MorningState => ({mode: 'sample', cardKey: `inven
   answer: null, credentialId: 'invented-browser', pressedAt: '2032-04-06T10:00:00Z', clearedAt: null, title: `Invented card ${index}`, kind: 'need', subjectId: `invented-${index}`, sourceScope: 'needs:pulse'});
 
 test('Morning renders every card kind and state with a heading, icon-word state and five button kinds', () => {
-  const kinds: MorningKind[] = ['need', 'meta-kill', 'meta-slipping', 'meta-step', 'meta-watch', 'date', 'fading', 'make-next', 'google', 'test-call', 'new-verdict', 'done-for-you', 'pause-all', 'check-item'];
+  const kinds: MorningKind[] = ['need', 'meta-kill', 'meta-slipping', 'meta-step', 'meta-watch', 'date', 'fading', 'make-next', 'google', 'test-call', 'new-verdict', 'done-for-you', 'pause-all'];
   const tones: [MorningTone, string][] = [['alarm', 'Alarm'], ['decide', 'Decide'], ['warn', 'Watch'], ['info', 'Info'], ['done', 'Done for you']];
   for (const kind of kinds) for (const [tone, word] of tones) {
     const html = morningCardHtml(card({kind, state: tone}));
@@ -133,13 +133,12 @@ test('Morning progress keeps counts beyond eight and only draws pips up to eight
 test('Morning check coverage, item lines and dated fine rows render without treating text as markup', () => {
   const data = snapshot();
   data.brief = {text: 'Morning check · 4 items', status: 'needs', mode: 'live', allInDeck: true,
-    malformedCardTags: 2, items: [{text: 'Invented detail', lines: ['Invented <b>line</b>']}]};
+    items: [{text: 'Invented detail', lines: ['Invented <b>line</b>']}]};
   assert.match(morningLinesHtml(data), /· all in the deck/);
   data.brief.moreHere = 2;
   assert.match(morningLinesHtml(data), /· 2 more here/);
   assert.doesNotMatch(morningLinesHtml(data), /all in the deck/);
   assert.match(morningBriefHtml(data.brief), /Invented &lt;b&gt;line&lt;\/b&gt;/);
-  assert.match(morningBriefHtml(data.brief), /Morning check · 2 malformed Card tags ignored/);
   data.datedFromCheck = [{text: 'Invented deadline', lines: ['Invented date detail']}];
   const fine = morningFineHtml(data);
   assert.ok(fine.indexOf('Dated, from the check') < fine.indexOf('Parked and hidden'));

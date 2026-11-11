@@ -2,10 +2,8 @@ import {setDecisions} from '../decisions/browser.js';
 import {adSetName} from './name.js';
 import {adSetCards,adSetSummary,adSetTable,adSetSheet,actionForm} from './view.js';
 import type {AdSetsView} from './presentation.js';
-import {selectedAdSetsApiPath} from './selected-set.js';
 let acting=false;
 let view:AdSetsView|undefined,market='all',opened:string|undefined;
-const readPath=()=>selectedAdSetsApiPath(location.pathname==='/ads'?location.search:'');
 function show(id:string){const row=view?.rows.find(r=>r.set.id===id),dialog=document.querySelector<HTMLDialogElement>('#adset-sheet');if(!view||!row||!dialog)return;opened=id;document.querySelector('#adset-sheet-content')!.innerHTML=adSetSheet(row,view);if(!dialog.open)dialog.showModal();}
 function showLinkedSet():void {
  if(location.pathname!=='/ads'||!location.hash)return;
@@ -34,7 +32,7 @@ document.addEventListener('click',event=>{
 });
 document.addEventListener('keydown',event=>{if((event.key==='Enter'||event.key===' ')&&event.target instanceof HTMLElement&&event.target.matches('[data-adset-row]')){event.preventDefault();show(event.target.dataset.adsetRow!);}});
 const initial=document.querySelector('#adsets-data');
-if(initial?.textContent){updateAdSets(JSON.parse(initial.textContent));showLinkedSet();const refresh=async()=>{try{const response=await fetch(readPath(),{credentials:'same-origin'});if(response.ok)updateAdSets(await response.json());}catch{}};setInterval(()=>{if(document.visibilityState==='visible')void refresh();},30_000);}
+if(initial?.textContent){updateAdSets(JSON.parse(initial.textContent));showLinkedSet();const refresh=async()=>{try{const response=await fetch('/api/meta/adsets',{credentials:'same-origin'});if(response.ok)updateAdSets(await response.json());}catch{}};setInterval(()=>{if(document.visibilityState==='visible')void refresh();},30_000);}
 window.addEventListener('hashchange',showLinkedSet);
 
 function confirmAction(id:string,body:{action:string;value?:unknown},summary:string):void {
@@ -47,7 +45,7 @@ function confirmAction(id:string,body:{action:string;value?:unknown},summary:str
   try{const response=await fetch(`/api/meta/adset/${encodeURIComponent(id)}`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
    if(!response.ok){text.textContent=response.status===409?'This set changed or Undo expired. Close and refresh.':'Action refused or Meta unavailable. Close and refresh before trying again.';return;}
    const result=await response.json() as {id:string;refreshed:boolean};text.textContent=result.refreshed?'Saved. Catalogue refreshed.':'Saved. Catalogue refresh pending.';
-   const refreshed=await fetch(readPath(),{credentials:'same-origin'});if(refreshed.ok)updateAdSets(await refreshed.json());
+   const refreshed=await fetch('/api/meta/adsets',{credentials:'same-origin'});if(refreshed.ok)updateAdSets(await refreshed.json());
    if(body.action!=='undo'){const undo=document.createElement('button');undo.className='btn';undo.textContent='Undo';undo.dataset.adsetUndo=result.id;undo.dataset.adsetId=id;container.append(undo);}
   }catch{text.textContent='Connection interrupted. Check the Actions list before trying again.';}
  };
@@ -64,7 +62,7 @@ document.addEventListener('submit',async event=>{
   const response=await fetch(`/api/meta/adset/${encodeURIComponent(form.dataset.adsetId!)}/flags`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({flatBudget:form.querySelector<HTMLInputElement>('[name=flatBudget]')!.checked})});
   if(!response.ok){status.textContent='Budget flag could not be saved.';return;}
   status.textContent='Saved.';
-  const refreshed=await fetch(readPath(),{credentials:'same-origin'});if(refreshed.ok)updateAdSets(await refreshed.json());
+  const refreshed=await fetch('/api/meta/adsets',{credentials:'same-origin'});if(refreshed.ok)updateAdSets(await refreshed.json());
  }catch{status.textContent='Connection interrupted. Refresh to check the flag.';}
  finally{acting=false;button.disabled=false;}
 });

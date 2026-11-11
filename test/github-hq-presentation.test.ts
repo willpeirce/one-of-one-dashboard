@@ -41,7 +41,7 @@ test('Morning brief represents all report states as a slim line and escapes its 
   assert.match(brief.href!, /blob\/claude%2Fads-daily\/ops\/ads-daily\/2032-04\.md$/);
   assert.match(morningBriefHtml(brief), /&lt;invented item&gt;/); assert.doesNotMatch(morningBriefHtml(brief), /<invented item>/);
   const result = morningDeck(addMorningHq(input(), source, now), [], now);
-  assert.deepEqual(result.candidates.map(card => card.kind), ['check-item'], 'The item becomes a card while its source brief stays a slim line');
+  assert.equal(result.candidates.length, 0, 'The brief never becomes a deck card');
   assert.match(morningLinesHtml(result.snapshot), /id="mn-brief"/);
   source.report = { ...report, status: 'ok', count: 0, items: [] };
   brief = morningBrief('live', source, now);
@@ -51,10 +51,6 @@ test('Morning brief represents all report states as a slim line and escapes its 
   brief = morningBrief('live', source, now);
   assert.equal(brief.text, "Morning check: couldn't read"); assert.match(morningBriefHtml(brief), /&lt;invented heading&gt;/);
   assert.match(morningLinesHtml({ ...result.snapshot, brief }), /△ Watch/);
-  assert.equal(morningDeck(addMorningHq(input(), source, now), [], now).candidates.length, 0, 'Unreadable reports make no check cards');
-  source.report = { ...report, day: '2032-04-18' };
-  assert.equal(morningBrief('live', source, now).status, 'missing');
-  assert.equal(morningDeck(addMorningHq(input(), source, now), [], now).candidates.length, 0, 'Older reports make no check cards');
   const key = morningBrief('live', { ...source, sourceMode: 'sample' }, now);
   assert.equal(key.status, 'key'); assert.equal(key.href, '/sources');
 });
@@ -67,9 +63,6 @@ test('missing brief switches at 09:00 UK in summer and winter, and sample remain
   const source = facts(); source.tests = [live()];
   const sample = addMorningHq(input('sample'), source, now);
   assert.equal(sample.brief?.mode, 'sample'); assert.match(sample.brief!.runLabel!, /invented/);
-  assert.equal(sample.brief?.count, 3); assert.equal(sample.brief?.items?.length, 3);
-  assert.deepEqual(sample.brief?.items?.[0]?.tag, {type: 'pause', adSetId: '120000000000000001'});
-  assert.equal(sample.brief?.items?.[1]?.tag, undefined); assert.equal(sample.brief?.items?.[2]?.label, 'Dated');
   assert.match(sample.brief!.href!, /ops\/ads-daily\/2032-04\.md$/);
   assert.equal(sample.extensions, undefined, 'Live register rows never enter the sample demonstration');
   const curated = curateMorningSample(sample, now);

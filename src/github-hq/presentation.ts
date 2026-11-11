@@ -28,12 +28,10 @@ const details = (row: HQStoredTestRow): string => row.section === 'history'
 
 export function morningBrief(mode: MorningInput['mode'], facts: HQFacts, now: Date): MorningBrief {
   const day = addDays(ukToday(now), -1);
-  if (mode === 'sample') return { mode, status: 'needs', text: 'Morning check · 07:41 · 3 items', day,
-    runLabel: 'run · 07:41 · invented example', count: 3, malformedCardTags: 0, items: [
-      { label: 'Kill (purchase cost)', text: 'Kill (purchase cost): Invented Fern UK `120000000000000001`.',
-        lines: ['Life £80.00 / 2 = £40.00 a purchase against the £30.00 bar.'], tag: {type: 'pause', adSetId: '120000000000000001'} },
-      { label: 'Creative', text: 'Creative: compare the invented new opening.', lines: ['Read the invented comparison before choosing the next opening.'] },
-      { label: 'Dated', text: 'Dated: the invented sample delivery.', lines: ['The invented delivery is already on the dates strip.'] },
+  if (mode === 'sample') return { mode, status: 'needs', text: 'Morning check · 07:41 · 2 items', day,
+    runLabel: 'run · 07:41 · invented example', count: 2, items: [
+      { label: 'Review', text: 'Review: the invented sample campaign.' },
+      { label: 'Creative', text: 'Creative: compare the invented new opening.' },
     ], href: hqFileLink('main', `ops/ads-daily/${day.slice(0, 7)}.md`) };
   if (facts.sourceMode !== 'live') return { mode, status: 'key', text: 'Morning check: needs its key', href: '/sources' };
   const entry = facts.report?.day === day ? facts.report : null;
@@ -42,7 +40,7 @@ export function morningBrief(mode: MorningInput['mode'], facts: HQFacts, now: Da
   const text = entry.status === 'unreadable' ? "Morning check: couldn't read"
     : `Morning check${time ? ` · ${time}` : ''} · ${entry.status === 'ok' ? 'nothing needs you' : `${entry.count} ${entry.count === 1 ? 'item' : 'items'}`}`;
   return { mode, status: entry.status, text, day, runLabel: entry.runLabel, count: entry.count,
-    items: entry.items, firstLines: entry.firstLines, malformedCardTags: entry.malformedCardTags ?? 0, href: hqFileLink(entry.ref, entry.path) };
+    items: entry.items, firstLines: entry.firstLines, href: hqFileLink(entry.ref, entry.path) };
 }
 
 function hqCards(facts: HQFacts, now: Date): MorningCard[] {

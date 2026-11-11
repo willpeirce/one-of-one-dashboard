@@ -201,7 +201,7 @@ test('Google flags and two freelancer Meta losses make one copy-only decision wi
     for (const figure of ['£150', '£75', '£120', '£40', '£30']) assert.ok(text.includes(figure), `${figure} stays in the full evidence`);
   }
   assert.match(card.rule, /never changes the freelancer.s ads/i);
-  assert.ok([card.primary, card.secondary, ...card.menu].every(button => button?.kind === 'copy' || button?.kind === 'save'));
+  assert.ok([card.primary, card.secondary, ...card.menu].every(button => button?.kind !== 'live' && button?.kind !== 'pause-all'));
   assert.deepEqual(data, before, 'Projection does not mutate the stored read');
   assert.deepEqual(addMorningGoogle(decorated), decorated);
 });

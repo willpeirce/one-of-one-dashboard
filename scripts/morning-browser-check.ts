@@ -5,7 +5,6 @@ import { morningDay } from '../src/morning/view.js';
 import { checkMorningRuleSettings } from './morning-rules-browser-check.js';
 import { checkMorningPauseAll } from './morning-pause-all-browser-check.js';
 import { checkMorningFreelancer } from './morning-freelancer-browser-check.js';
-import { checkMorningCheckItems } from './morning-check-items-browser-check.js';
 import type { MorningButton, MorningCard, MorningFigure, MorningSnapshot, MorningState } from '../src/morning/model-types.js';
 import type { SettingsSnapshot } from '../src/settings.js';
 import type { TickerSnapshot } from '../src/ticker/model.js';
@@ -93,7 +92,7 @@ function fixtureCards(base: MorningSnapshot): MorningCard[] {
     {kind: 'brief', variants: {'1': {...variant, text: 'Invented one-day evidence: 12 observations.'}, '3': {...variant, text: 'Invented three-day evidence: 24 observations.'}, '7': {...variant, text: 'Invented seven-day evidence: 48 observations.'}}},
     {kind: 'arms', arms: [{label: 'A', value: 4.2, formatted: '4.2%', count: 50}, {label: 'B', value: 5.8, formatted: '5.8%', count: 52}], sure: 97, eligible: true},
   ];
-  const kinds: MorningCard['kind'][] = ['need', 'meta-kill', 'meta-slipping', 'meta-step', 'meta-watch', 'date', 'fading', 'make-next', 'google', 'test-call', 'new-verdict', 'done-for-you', 'check-item'];
+  const kinds: MorningCard['kind'][] = ['need', 'meta-kill', 'meta-slipping', 'meta-step', 'meta-watch', 'date', 'fading', 'make-next', 'google', 'test-call', 'new-verdict', 'done-for-you'];
   return kinds.map((kind, index) => ({...original, key: `invented-browser-${kind}`, kind, subjectId: `invented-${kind}`,
     state: kind === 'need' ? 'alarm' : kind === 'done-for-you' ? 'done' : kind === 'make-next' || kind === 'date' || kind === 'new-verdict' ? 'info' : kind.startsWith('meta-') || kind === 'test-call' ? 'decide' : 'warn',
     title: `Invented ${kind} card with a deliberately long title to exercise the three-line clamp before the controls leave the screen`,
@@ -482,7 +481,6 @@ export async function checkMorning(signedIn: BrowserContext): Promise<void> {
 
     await checkMorningPauseAll(context);
     await checkMorningFreelancer(context);
-    await checkMorningCheckItems(context);
     await checkMorningRuleSettings(context);
     const settingsPage = await context.newPage();
     try {

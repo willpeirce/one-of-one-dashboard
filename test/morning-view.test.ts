@@ -122,6 +122,15 @@ test('Morning lines show one Good and Watch row, with a quiet non-link when none
   assert.equal((morningPage(data).match(/id="mn-good"/g) ?? []).length, 1);
 });
 
+test('an arms figure with no arms is worded and never draws an empty panel', () => {
+  const empty = morningCardHtml(card({kind: 'test-call', figure: {kind: 'arms', arms: [], sure: null, eligible: true}}));
+  assert.match(empty, /<strong class="mn-number">No reading<\/strong><span class="mn-figure-label">No reading stored<\/span>/);
+  assert.doesNotMatch(empty, /class="mn-arms"|class="mn-sure/);
+  const filled = morningCardHtml(card({kind: 'test-call', figure: {kind: 'arms', sure: 96, eligible: true,
+    arms: [{label: 'A', value: 12, formatted: '12%', count: 80}, {label: 'B', value: 17, formatted: '17%', count: 80}]}}));
+  assert.match(filled, /class="mn-arms"/); assert.match(filled, /96%/);
+});
+
 test('Morning progress keeps counts beyond eight and only draws pips up to eight', () => {
   const data = snapshot(); data.completed = 2; data.total = 8;
   assert.equal((morningProgressHtml(data).match(/<i class=/g) ?? []).length, 8);

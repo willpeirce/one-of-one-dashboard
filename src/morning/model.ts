@@ -241,7 +241,8 @@ export function morningDeckMember(card: MorningCard): boolean {
   if (card.kind === 'need') return card.state === 'alarm';
   if (card.kind === 'check-item') return true;
   if (['meta-watch', 'date', 'fading', 'make-next', 'new-verdict'].includes(card.kind)) return false;
-  return card.state === 'decide' || card.kind === 'test-call' || card.kind === 'done-for-you';
+  // A test call is a decision only when a stored reading backs it; one with no reading stays on Home.
+  return card.state === 'decide' || card.kind === 'done-for-you';
 }
 function deckPriority(card: MorningCard): number {
   if (card.state === 'alarm') return 0;

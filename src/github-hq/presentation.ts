@@ -51,13 +51,16 @@ function hqCards(facts: HQFacts, now: Date): MorningCard[] {
     const sourceLine = `HQ test register · ${facts.registerReadAt ? `last read ${facts.registerReadAt}` : 'waiting for a successful read'}`;
     if (row.section === 'live' && assessment.answer) {
       const answer = assessment.answer, ruleId = `test-call:${answer}`, reading = assessment.reading;
-      const unmeasured = answer === 'draw' && !reading, state = unmeasured ? 'info' : 'decide';
+      // A test the register holds no reading for is a Watch on Home, never a deck decision.
+      const unmeasured = answer === 'draw' && !reading, state = unmeasured ? 'warn' : 'decide';
+      const reason = answer === 'draw' ? 'The test has reached its 28-day stopping point.' : 'The stored reading has held its call bar.';
+      const dayRun = assessment.daysRun === null ? '' : `Day ${assessment.daysRun}`, question = (row.cells[2] ?? '').trim();
       return [{ key: morningKey('test-call', row.id), kind: 'test-call', subjectId: row.id, sourceScope: 'tests',
         factsHash: morningFacts('test-call', row.id, state, ruleId), ruleId, state, tier: unmeasured ? 3 : 1, order: 20_000 + index,
         title: `${title} is ready to call`, lane: `${row.cells[1] || 'Test'} · register`, source: 'github-hq',
-        figure: { kind: 'arms', arms: reading?.arms.map(arm => ({ label: arm.key.toUpperCase(), value: arm.value, formatted: arm.formatted, count: arm.count })) ?? [],
-          sure: reading?.sure ?? null, eligible: true },
-        why: details(row), whyLine: answer === 'draw' ? 'The test has reached its 28-day stopping point.' : 'The stored reading has held its call bar.',
+        figure: reading ? { kind: 'arms', arms: reading.arms.map(arm => ({ label: arm.key.toUpperCase(), value: arm.value, formatted: arm.formatted, count: arm.count })),
+          sure: reading.sure, eligible: true } : { kind: 'plain', value: dayRun || 'No reading', label: 'No reading stored' },
+        why: `${reason}\n${details(row)}`, whyLine: [reading ? dayRun : '', question].filter(Boolean).join(' · ') || reason,
         rule: answer === 'draw' ? 'After 28 UK days with no eligible A/B call, call a draw. The app does not measure this test.'
           : 'A stored reading from today or yesterday, at least 95% sure on two mornings, 30 events per arm and 7 full UK days; no spike day or Leaning cap. The app does not measure this test.',
         sourceLine, sourceHref: href,
@@ -103,7 +106,7 @@ export function homeTestsFromHq(facts: HQFacts, states: readonly MorningState[],
     const model: TestModel | null = row.section !== 'live' ? null : {
       metric: row.cells[4] || '', unit: '', arms: reading?.arms.map(arm => ({ k: arm.key.toUpperCase(), l: arm.key.toUpperCase(), x: arm.value })) ?? [],
       day: assessment.daysRun ?? 0, min: 7, max: 28, minx: 30, prev: 0, denom: 'events per arm', strip: [], note: row.cells[8] || '',
-      presentation: { sure: reading?.sure ?? 0, state: decide ? 'decide' : 'info', chipText: decide ? '◆ Decide' : 'i Info',
+      presentation: { sure: reading?.sure ?? 0, state: decide ? 'decide' : assessment.answer ? 'warn' : 'info', chipText: decide ? '◆ Decide' : assessment.answer ? '△ Watch' : 'i Info',
         say: status, homeSay: status, small: assessment.reasons.join(' · '), progress: assessment.daysRun === null ? '' : `Day ${assessment.daysRun}`,
         buttonText: assessment.answer ? callLabel(assessment.answer) : 'Call', sureZones: [[0, 95, 'info'], [95, 100, 'good']], sureLabel: 'How sure',
         stripLabel: 'Stored reading', sureCaption: reading ? `Reading ${reading.day}` : 'No well-formed reading' },

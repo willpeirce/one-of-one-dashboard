@@ -153,19 +153,29 @@ test('live Home features the first Live row then folds other Live, Queue and His
   assert.deepEqual(sample, before, 'Adding a live chapter does not mutate the fixture');
 });
 
-test('unmeasured draw offers are hideable Info; measured draw offers remain Decide', () => {
+test('an unmeasured draw is a worded Watch left on Home; measured draw offers remain Decide and state their question', () => {
   const source = facts(), row = live(); row.cells[5] = '2032-03-23'; row.cells[8] = 'No reading yet'; source.tests = [row];
   const unmeasured = morningDeck(addMorningHq(input(), source, now), [], now);
   let card = unmeasured.candidates[0]!;
-  assert.equal(card.state, 'info'); assert.equal(card.tier, 3); assert.equal(card.primary.label, 'Call a draw');
-  assert.deepEqual(unmeasured.snapshot.cards.map(item => item.key), [card.key], 'A ready unmeasured draw remains an actionable test call in the decision deck');
-  assert.equal(unmeasured.snapshot.cards[0]!.state, 'info', 'Offering the call does not invent measured certainty or change its Info state');
-  assert.equal(unmeasured.snapshot.total, 1);
+  assert.equal(card.state, 'warn'); assert.equal(card.tier, 3); assert.equal(card.primary.label, 'Call a draw');
+  assert.deepEqual(card.figure, { kind: 'plain', value: 'Day 28', label: 'No reading stored' }, 'A test with no reading never draws an empty arms panel');
+  assert.equal(card.whyLine, 'Does the invented button help?', 'The card states the test question');
+  assert.deepEqual(unmeasured.snapshot.cards, [], 'A test with no stored reading is not a deck decision');
+  assert.equal(unmeasured.snapshot.total, 0); assert.equal(unmeasured.snapshot.watchOnHome, 1, 'Morning points to it as a Watch on Home');
+  assert.ok(unmeasured.openCards.some(item => item.key === card.key), 'The candidate stays open so Home can still offer the call');
   assert.ok(card.allowedPresses.includes('hide')); assert.equal(card.menu[0]!.label, 'Stop showing this');
-  assert.equal(homeTestsFromHq(source, [], now).rows[0]!.model!.presentation!.state, 'info');
+  const home = homeTestsFromHq(source, [], now).rows[0]!;
+  assert.equal(home.call?.label, 'Call a draw'); assert.equal(home.model!.presentation!.state, 'warn'); assert.equal(home.model!.presentation!.chipText, '△ Watch');
+  row.cells[2] = '';
+  assert.equal(morningDeck(addMorningHq(input(), source, now), [], now).candidates[0]!.whyLine, 'The test has reached its 28-day stopping point.', 'A missing question falls back to the reason');
+  row.cells[2] = 'Does the invented button help?';
   row.cells[8] = 'Reading 2032-04-20: A 12% n=4; B 17% n=3; ahead none; sure 60%; mornings 1';
   card = morningDeck(addMorningHq(input(), source, now), [], now).candidates[0]!;
   assert.equal(card.state, 'decide'); assert.equal(card.tier, 1); assert.ok(!card.allowedPresses.includes('hide'));
+  assert.equal(card.figure.kind, 'arms'); assert.equal(card.figure.kind === 'arms' && card.figure.arms.length, 2);
+  assert.equal(card.whyLine, 'Day 28 · Does the invented button help?', 'A measured call states how long it has run and its question');
+  assert.match(card.why, /^The test has reached its 28-day stopping point\.\nQuestion: Does the invented button help\?\nArms: A: plain; B: bright\n/);
+  assert.deepEqual(morningDeck(addMorningHq(input(), source, now), [], now).snapshot.cards.map(item => item.key), [card.key], 'A measured draw is a deck decision');
   assert.equal(homeTestsFromHq(source, [], now).rows[0]!.model!.presentation!.state, 'decide');
   const brief = addMorningHq(input(), {...source, registerSkippedRows: 2, registerCappedRows: 3}, now).brief!;
   assert.match(morningBriefHtml(brief), /2 malformed rows skipped · 3 rows beyond the section cap/);

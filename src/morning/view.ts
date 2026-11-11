@@ -46,6 +46,8 @@ function figureBody(figure: MorningFigure, window: MorningWindow): string {
     return `${selected.bullets.length ? `<ol class="mn-bullets">${selected.bullets.slice(0, 3).map(bullet => `<li><span class="mn-bullet-text">${e(bullet.text)}</span>${meter(bullet.strength)}</li>`).join('')}</ol>` : `<p class="mn-brief-empty">${e(selected.text)}</p>`}<small class="mn-brief-footer">${e(selected.footer)}</small>`;
   }
   if (figure.kind === 'arms') {
+    // Never an empty picture: a call card with no arms says so in words.
+    if (!figure.arms.length) return '<strong class="mn-number">No reading</strong><span class="mn-figure-label">No reading stored</span>';
     const maximum = Math.max(...figure.arms.map(arm => Math.abs(arm.value)), 1);
     return `<span class="mn-arms">${figure.arms.slice(0, 2).map(arm => `<span class="mn-arm"><span><b>${e(arm.label)}</b><strong>${e(arm.formatted)}</strong></span><i><b style="width:${bounded(Math.abs(arm.value) / maximum * 100)}%"></b></i><small>n=${e(arm.count)}</small></span>`).join('')}</span><span class="mn-sure${figure.eligible ? ' mn-eligible' : ''}"><svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="26" pathLength="100"></circle><circle class="mn-sure-value" cx="32" cy="32" r="26" pathLength="100" style="stroke-dasharray:${bounded(figure.sure ?? 0)} 100"></circle></svg><strong>${figure.sure === null ? '—' : `${e(figure.sure)}%`}</strong><small>How sure</small></span>`;
   }

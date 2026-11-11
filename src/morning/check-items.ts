@@ -30,6 +30,10 @@ const runTime = (brief: MorningBrief): string => /\b(?:[01]\d|2[0-3]):[0-5]\d\b/
 const save = (label: string, action: MorningAction): MorningButton => ({kind: 'save',target: 'morning',label,action});
 const week = (): MorningButton => ({kind: 'save',target: 'morning',label: 'Leave it, ask in a week',action: 'hold',days: 7});
 const hide = (): MorningButton => save('Stop showing this','hide');
+/** The card face asks the question: the item's own decision line wins over its first evidence line. */
+const faceLine = (lines: readonly string[]): string | undefined => lines.find(line => /^decision\b[^:]{0,40}:/i.test(line)) ?? lines[0];
+/** The check may head its dated list with the bare word, with or without a full stop or colon. */
+const datedHeading = (text: string): boolean => /^dated[.:]?$/i.test(text.trim());
 
 function namedSet(item: HQBriefItem): string | undefined {
   if (item.tag && 'adSetId' in item.tag) return /^\d{5,25}$/.test(item.tag.adSetId) ? item.tag.adSetId : undefined;
@@ -86,12 +90,12 @@ function standalone(input: MorningInput,brief: MorningBrief,entry: CheckItem,set
     primary = save('Hold, look tomorrow','park'); secondary = live ? {...live,label: 'Pause it now'} : undefined;
     menu = []; allowedPresses = ['park'];
   }
-  const decide = type === 'pause' || type === 'hold';
+  const decide = type === 'pause' || type === 'hold', face = faceLine(lines);
   return {key: morningKey('check-item',subjectId),kind: 'check-item',subjectId,factsHash,sourceScope: 'check',
     state: decide ? 'decide' : 'warn',ruleId: `daily-check:${type ?? 'info'}`,tier: decide ? 1 : 5,order: index,
     title: title(item.text),lane: `Morning check${input.mode === 'sample' ? ' · sample data' : ''}`,source: 'github-hq',
     figure: {kind: 'plain',value: item.label || 'Morning check',label: runTime(brief)},
-    ...(lines[0] ? {whyLine: lines[0]} : {}),why: detail(entry),rule: CHECK_RULE,
+    ...(face ? {whyLine: face} : {}),why: detail(entry),rule: CHECK_RULE,
     sourceLine: `Daily check · ${brief.runLabel ?? 'stored entry'}${input.mode === 'sample' ? ' · sample data' : ''}`,
     ...(brief.href ? {sourceHref: brief.href} : {}),primary,secondary,menu,allowedPresses};
 }
@@ -110,7 +114,7 @@ function freelancer(input: MorningInput,brief: MorningBrief,items: CheckItem[],e
     factsHash: morningFacts('google',subjectId,'warn',rules),ruleId: rules.join('|'),state: 'decide',tier: 1,order: 20_000,
     title: title(items[0]!.item.text),lane: `The freelancer${input.mode === 'sample' ? ' · sample data' : ''}`,source: 'github-hq',
     figure: {kind: 'plain',value: 'Morning check',label: runTime(brief)},
-    whyLine: items[0]!.lines[0],why: notes,
+    whyLine: faceLine(items[0]!.lines),why: notes,
     rule: `${CHECK_RULE} This app never changes the freelancer's ads. The only action is a message you send.`,
     sourceLine: `Daily check · ${brief.runLabel ?? 'stored entry'}${input.mode === 'sample' ? ' · sample data' : ''}`,
     ...(brief.href ? {sourceHref: brief.href} : {}),primary: {kind: 'copy',label,text: note},
@@ -132,7 +136,7 @@ export function morningCheckItems(input: MorningInput,ordinaryCandidates: readon
   const folded = new Map<string,CheckItem[]>(), freelancerItems: CheckItem[] = [];
   for (const entry of items) {
     const {item} = entry, tag = item.tag?.type, label = item.label?.trim().toLowerCase();
-    if (tag === 'dated' || !tag && label === 'dated') {
+    if (tag === 'dated' || !tag && (label === 'dated' || datedHeading(item.text))) {
       result.datedFromCheck.push({text: item.text,lines: [...entry.lines]}); continue;
     }
     result.representedItemCount++;

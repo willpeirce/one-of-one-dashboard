@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import { HQReadError, type HQTarget } from '../src/github-hq/client.js';
-import type { HQBriefEntry, HQTestRow } from '../src/github-hq/model.js';
+import { HQ_MONTH_PARSER_VERSION, type HQBriefEntry, type HQTestRow } from '../src/github-hq/model.js';
 import { beginHQRead, failHQRead, readHQFacts, readHQReports, readHQSync, saveHQMonth, saveHQRegister, touchHQRead } from '../src/github-hq/store.js';
 import { createTestDatabase } from './helpers/database.js';
 
@@ -51,6 +51,78 @@ test('HQ stores capped report summaries per day/ref, prefers main, and refreshes
   const permissions = await db.query(`SELECT 1 FROM pg_class c, LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl
     WHERE c.oid IN ('pulse.github_hq_reports'::regclass,'pulse.github_hq_reads'::regclass,'pulse.github_hq_tests'::regclass) AND acl.grantee=0`);
   assert.equal(permissions.rows.length, 0); assert.equal((await db.query('SELECT 1 FROM pulse.audit_log')).rowCount, 0);
+});
+
+test('HQ check items keep bounded Unicode lines and tags with diagnostics belonging to their own report', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const current: HQBriefEntry = {...entry(), malformedCardTags: 3, items: [{text: 'Invented Fern review',
+    label: 'Review', lines: Array.from({length: 11}, (_, index) => `${index} ${'𐐀'.repeat(400)}`),
+    tag: {type: 'pause', adSetId: '120000000000000001'}}]};
+  const older: HQBriefEntry = {...entry('2032-04-04'), malformedCardTags: 8, items: [{text: 'Invented earlier note',
+    lines: ['An invented earlier line.'], tag: {type: 'info'}}]};
+  await saveHQMonth(db, target, [older, current], '"invented-lines"', now);
+  const stored = (await readHQReports(db, current.day))[0]!;
+  assert.equal(stored.malformedCardTags, 3);
+  assert.equal(stored.items[0]!.lines!.length, 8);
+  for (const line of stored.items[0]!.lines!) {
+    assert.equal(Array.from(line).length, 300);
+    assert.ok(!line.endsWith('\uD801'), 'A line bound never splits a Unicode code point');
+  }
+  assert.deepEqual(stored.items[0]!.tag, {type: 'pause', adSetId: '120000000000000001'});
+  assert.equal((await readHQReports(db, older.day))[0]!.malformedCardTags, 8);
+  assert.equal((await readHQFacts(db, now, 'live')).report!.malformedCardTags, 3,
+    'The selected report does not inherit another day’s malformed tags');
+  await touchHQRead(db, target, null, new Date(+now + 3_600_000));
+  const touched = (await readHQReports(db, current.day))[0]!;
+  assert.deepEqual(touched.items, stored.items); assert.equal(touched.malformedCardTags, 3);
+  assert.equal((await readHQSync(db, [target])).get('month:2032-04:main')!.parserVersion, HQ_MONTH_PARSER_VERSION);
+});
+
+test('legacy stored check items load empty lines and the additive diagnostics migration preserves existing reports', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  await db.query(`INSERT INTO pulse.github_hq_reports(report_day,run_label,status,item_count,items,first_lines,ref,path,read_at)
+    VALUES($1,$2,'needs',1,$3::jsonb,'[]'::jsonb,'main','ops/ads-daily/2032-04.md',$4)`,
+  ['2032-04-05', 'run 6 Apr 07:41', JSON.stringify([{text: 'Invented legacy item', label: 'Review'}]), now]);
+  const stored = (await readHQReports(db, '2032-04-05'))[0]!;
+  assert.deepEqual(stored.items, [{text: 'Invented legacy item', label: 'Review', lines: []}]);
+  assert.equal(stored.malformedCardTags, 0);
+  const migration = await readFile(new URL('../migrations/068_hq_check_items.sql', import.meta.url), 'utf8');
+  await db.query(migration); await db.query(migration);
+  assert.deepEqual((await readHQReports(db, '2032-04-05'))[0], stored);
+  await assert.rejects(db.query('UPDATE pulse.github_hq_reports SET malformed_card_tags=-1'));
+  assert.equal((await readHQReports(db, '2032-04-05'))[0]!.malformedCardTags, 0);
+});
+
+test('stored check tags discard extra keys without changing valid tags or report diagnostics', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  await saveHQMonth(db, target, [entry()], null, now);
+  const tags = [
+    {type: 'pause', adSetId: '120000000000000001', extra: 'invented'},
+    {type: 'freelancer', adSetId: '120000000000000002'},
+    {type: 'pause', adSetId: '120000000000000003'},
+    {type: 'freelancer'},
+  ];
+  await db.query('UPDATE pulse.github_hq_reports SET items=$1::jsonb,item_count=$2',
+    [JSON.stringify(tags.map((tag, index) => ({text: `Invented stored item ${index + 1}`, tag}))), tags.length]);
+  const stored = (await readHQReports(db, '2032-04-05'))[0]!;
+  assert.deepEqual(stored.items.map(item => item.tag), [undefined, undefined, tags[2], tags[3]]);
+  assert.ok(stored.items.every(item => Array.isArray(item.lines)));
+  assert.equal(stored.malformedCardTags, 0, 'Stored JSON validation does not invent source parser diagnostics');
+});
+
+test('an obsolete month parse cannot be refreshed by 304 until a full parse stores the current version', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  await saveHQMonth(db, target, [entry()], '"invented-old-parse"', now);
+  const original = (await readHQReports(db, '2032-04-05'))[0]!;
+  await db.query("UPDATE pulse.github_hq_reads SET parser_version=0 WHERE target_key='month:2032-04:main'");
+  const later = new Date(+now + 1000);
+  await assert.rejects(touchHQRead(db, target, '"invented-304"', later),
+    (error: unknown) => error instanceof HQReadError && error.code === 'invalid' && error.status === 304);
+  assert.deepEqual((await readHQReports(db, '2032-04-05'))[0], original, 'A refused 304 cannot freshen an obsolete report');
+  await saveHQMonth(db, target, [{...entry(), items: [{text: 'Invented parsed item', lines: ['Invented retained detail.']}]}], '"invented-current-parse"', later);
+  assert.equal((await readHQSync(db, [target])).get('month:2032-04:main')!.parserVersion, HQ_MONTH_PARSER_VERSION);
+  await touchHQRead(db, target, null, new Date(+later + 1000));
+  assert.deepEqual((await readHQReports(db, '2032-04-05'))[0]!.items[0]!.lines, ['Invented retained detail.']);
 });
 
 test('HQ first register read marks existing rows seen; new rows and Live-to-History transitions get a new section time', async t => {

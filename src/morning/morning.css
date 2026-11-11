@@ -53,6 +53,7 @@
 .mn-root .mn-figure-hint{position:absolute;bottom:6px;left:0;right:0;font:500 9.5px/1.2 var(--mn-display);color:var(--mn-muted)}
 .mn-root .mn-number{font:700 34px/1.05 var(--mn-display);letter-spacing:-.025em;max-width:100%;overflow-wrap:anywhere}
 .mn-root .mn-figure-label{font:500 11.5px/1.35 var(--mn-display);color:var(--mn-ink-2);max-width:100%}
+.mn-root .mn-card[data-mn-kind=check-item] .mn-number{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
 .mn-root .mn-dial{width:100%;max-width:220px;min-height:0;flex:1;max-height:150px;overflow:visible;fill:none;stroke-width:12;stroke-linecap:round}
 .mn-root .mn-dial-track{stroke:rgba(255,255,255,.12)}
 .mn-root .mn-dial-value{stroke:var(--mn-tone)}
@@ -150,6 +151,7 @@
 .mn-root .mn-sheet-body section{display:grid;gap:4px}
 .mn-root .mn-sheet-body h3{font:700 13px/1.25 var(--mn-display);margin:0;color:var(--mn-ink-2)}
 .mn-root .mn-sheet-body p{margin:0;overflow-wrap:anywhere}
+.mn-root .mn-sheet-body li{overflow-wrap:anywhere}
 .mn-root .mn-brief-evidence{white-space:pre-line}
 .mn-root .mn-sheet-link{display:inline-flex;align-items:center;justify-self:start}
 .mn-root .mn-fine-list{padding:0;list-style:none;margin:0;display:grid;gap:9px;color:var(--mn-good)}

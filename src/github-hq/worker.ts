@@ -1,7 +1,7 @@
 import type { Database } from '../db.js';
 import { addDays, ukToday } from '../hero-range.js';
 import { HQClient, HQReadError, hqTargetInfo, type HQClientOptions, type HQTarget } from './client.js';
-import { HQ_REGISTER_PARSER_VERSION } from './model.js';
+import { HQ_REGISTER_PARSER_VERSION, HQ_MONTH_PARSER_VERSION } from './model.js';
 import { parseMonth } from './parse-month.js';
 import { parseRegister } from './parse-register.js';
 import { beginHQRead, failHQRead, hqRateLimited, readHQReports, readHQSync, saveHQMonth, saveHQRegister, touchHQRead, type HQSync } from './store.js';
@@ -16,9 +16,10 @@ export function hqMonthInterval(now: Date, foundYesterday: boolean): number {
 }
 const good = (job: HQSync | undefined): boolean => !!job?.parsedAvailable && job.readable && job.errorCode === null
   && !!job.lastSuccessAt && job.lastSuccessAt === job.lastAttemptAt;
-function due(job: HQSync | undefined, now: Date, interval: number): boolean {
+function due(job: HQSync | undefined, now: Date, interval: number, parserVersion: number): boolean {
   if (job?.retryAfterAt && Date.parse(job.retryAfterAt) > now.getTime()) return false;
-  return !job?.lastAttemptAt || now.getTime() - Date.parse(job.lastAttemptAt) >= interval;
+  return !job?.lastAttemptAt || job.parsedAvailable && job.errorCode === null && job.parserVersion !== parserVersion
+    || now.getTime() - Date.parse(job.lastAttemptAt) >= interval;
 }
 
 /** No constructor/initialization read: the app calls start only after listen resolves. */
@@ -51,7 +52,8 @@ export class HQWorker {
   private async read(target: HQTarget, previous: HQSync | undefined, now: Date): Promise<void> {
     await beginHQRead(this.db, target, now);
     try {
-      const result = await this.client!.read(target, {etag: target.kind !== 'register' || previous?.parserVersion === HQ_REGISTER_PARSER_VERSION ? previous?.etag : null});
+      const version = target.kind === 'month' ? HQ_MONTH_PARSER_VERSION : HQ_REGISTER_PARSER_VERSION;
+      const result = await this.client!.read(target, {etag: previous?.parserVersion === version ? previous.etag : null});
       if (result.status === 'not-modified') await touchHQRead(this.db, target, result.etag, now);
       else if (target.kind === 'month') await saveHQMonth(this.db, target, parseMonth(result.text), result.etag, now);
       else {
@@ -75,7 +77,8 @@ export class HQWorker {
     const targets = [main, branch, register];
     let reads = await readHQSync(this.db, targets), reports = await readHQReports(this.db, day), attempted = false;
     const mainKey = hqTargetInfo(main).key, branchKey = hqTargetInfo(branch).key;
-    if (due(reads.get(mainKey), now, hqMonthInterval(now, reports.length > 0))) {
+    const mainDue = due(reads.get(mainKey), now, hqMonthInterval(now, reports.length > 0), HQ_MONTH_PARSER_VERSION);
+    if (mainDue) {
       attempted = true; await this.read(main, reads.get(mainKey), now);
       reads = await readHQSync(this.db, targets); reports = await readHQReports(this.db, day);
       const mainRead = reads.get(mainKey);
@@ -85,8 +88,16 @@ export class HQWorker {
         reads = await readHQSync(this.db, targets);
       }
     }
+    const mainReadBeforeRegister = reads.get(mainKey), branchReadBeforeRegister = reads.get(branchKey);
+    // A restart between parsing main and its fallback must not leave the selected branch on the old parser.
+    if (!mainDue && !this.closing && branchReadBeforeRegister?.parsedAvailable && branchReadBeforeRegister.errorCode === null
+      && branchReadBeforeRegister.parserVersion !== HQ_MONTH_PARSER_VERSION
+      && (good(mainReadBeforeRegister) && !reports.some(report => report.ref === 'main') || mainReadBeforeRegister?.errorCode === 'not_found')
+      && ![...reads.values()].some(row => row.retryAfterAt && Date.parse(row.retryAfterAt) > now.getTime())) {
+      attempted = true; await this.read(branch, branchReadBeforeRegister, now); reads = await readHQSync(this.db, targets);
+    }
     if (!this.closing && ![...reads.values()].some(row => row.retryAfterAt && Date.parse(row.retryAfterAt) > now.getTime())
-      && due(reads.get('register'), now, HQ_HOURLY_MS)) {
+      && due(reads.get('register'), now, HQ_HOURLY_MS, HQ_REGISTER_PARSER_VERSION)) {
       attempted = true; await this.read(register, reads.get('register'), now);
     }
     reads = await readHQSync(this.db, targets); reports = await readHQReports(this.db, day);

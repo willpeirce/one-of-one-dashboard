@@ -293,7 +293,7 @@ export function morningDeck(input: MorningInput, rows: readonly MorningState[], 
     const saved = applicable.get(card.key);
     return !saved || card.state === 'alarm' && saved.state !== 'seen';
   });
-  const group = morningPauseAll(input, openCards, applicable);
+  const group: ReturnType<typeof morningPauseAll> = {};
   if (group.card) {
     candidates.push(group.card);
     if (!group.coverage!.deferred) openCards.push(group.card);

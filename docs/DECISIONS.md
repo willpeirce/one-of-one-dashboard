@@ -960,6 +960,8 @@ Uncapped progress also requires an uncapped current-day receipt read. Morning no
 
 The hourly browser check now uses an invented noon fixture and a long reconnect interval only on its closed synthetic event stream. Previously the future-hour assertion could run at 11 PM, or a fixture replay could reset keyboard selection halfway through its arrow-key sequence. All original assertions, application clocks, real event-stream behavior and geometry budgets remain unchanged. The same check passes with upstream fixtures at both 11 PM and midnight, at phone and desktop widths.
 
+The creative filter browser check waits for the response matching every selected filter value. A preceding note save can start its own refresh; accepting that unrelated response could make the check wait for an obsolete gallery even though the application's existing generation guard correctly shows the new selection. All image, ownership, market, status, attribute, count and overflow assertions remain unchanged, and the full creative browser check passes at both widths.
+
 ## Morning decisions · Part C review and rollback
 
 A successful old pause stops automatic grouping until a later app resume or explicit source evidence establishes an external resume. That evidence is either a stored PAUSED-to-ACTIVE transition with a later Meta edit timestamp, or a later matching ad-set run-status activity event. A merely later read of stale ACTIVE data is insufficient. Pending and uncertain actions continue to block grouping. This lets a genuinely resumed set be judged again without replaying a pause whose acknowledgement was lost.
@@ -969,3 +971,9 @@ The aggregate's activation is isolated in a final Part C commit. Reverting that 
 ## Morning decisions · Part D rollback
 
 The freelancer feature is isolated again after E's shared presentation changes, so its final activation commit has a clean independent reverse patch. Reverting it restores the original Google Watch behavior while retaining check-item parsing, folds, fallback message cards and evidence formatting. Shared source safety and the check feature do not depend on D's implementation. This avoids asking a future rollback to resolve intertwined browser/test edits by hand. The activation commit is identified in the pull request; the final enabled behavior is unchanged.
+
+## Morning decisions · Independent rollback
+
+**Independent rollback commands.** Revert `5e7b59c` to remove Pause all, `667c255` to remove the freelancer feature, or `cc8a83e` to remove check-item cards/parser changes. These activation commits contain only their own code and checks, leaving subsequent records and the other parts intact. The paired isolation commits leave the final enabled tree unchanged. E's activation was separated from its original feature/documentation commit so later records cannot cause a rollback conflict. Retain applied migration 068 and its harmless column byte-for-byte. C retains the single-action pending barrier/reconciler needed by uncertain actions already in the database. For F, revert the single `Part F: share background observations for fast Morning` commit identified in the pull request. A and B remain the base.
+
+If E is later re-enabled after the older parser has processed changed month content during a rollback, increment `HQ_MONTH_PARSER_VERSION` before that re-enable. The older writer can retain the newer version marker while storing title-only items, allowing a 304 to retain those items until another body change. An isolated rollback/re-enable check reproduces this; the version increment forces the normal fresh parse. Rollback itself and loading older stored items remain safe. This is a future re-enable step, not a migration to run for this build.

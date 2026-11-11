@@ -107,6 +107,10 @@ Branch **morning-nav**. Every signed-in page header links to Morning: a pill on 
 
 ## Next step
 
+**Morning decisions · A–F** is built on `morning-decisions` for [PR #48](https://github.com/willpeirce/one-of-one-dashboard/pull/48). After an approved merge, the deployment maintainer runs the normal migration command (adding 068), republishes, checks the decision order and actions on a phone, and measures warm Morning first byte against the half-second target. Local typecheck, all 1,164 PostgreSQL tests, build, full browser checks and secret scanning pass; GitHub CI verifies the pushed head.
+
+**Morning decisions gaps:** TikTok has no stored attributable freelancer ad-purchase counts; the existing twelve-item parser bound remains; live figure agreement, installed-phone acceptance and the latency target need post-deployment checks. Retain migration 068 on an E rollback. If the older parser processes changed month content while E is removed, increment the month parser version before re-enabling E. The independent rollback commands and validation are recorded in DECISIONS and the pull request.
+
 **build-10-nov** is merged (10 Nov), as one pull request with separate lettered commits. Parts A–H provide the carry fixes, Morning foundation and screen, Google checks, HQ reads, phone push, G’s eleven fixes and H’s eight follow-up fixes. All pinned Home counts, heights, controls and fold budgets remain in force.
 
 After an approved merge, the deployment maintainer runs the Shell merge, any migrations from 062, Republish, live Settings and acceptance. Part A needs no migration. The builder uses invented fixtures, PostgreSQL and browser checks; no live source access or deployment is performed.
@@ -116,6 +120,8 @@ After an approved merge, the deployment maintainer runs the Shell merge, any mig
 **Not done or known gaps:** HQ/routine writing, machine access to local answers, measuring tests from orders or insights, watchdog/recovery pushes, the Monday upload push and Ask are not built. No Creative Diversity column, Home Dismiss control, ad-level pause or change to Meta action route rules/limits is included. Push delivery is tested through an injected transport; delivery to a real installed phone remains a live check. Manual push tests are limited per credential within the running process; restarting resets that minute cooldown. The daily summary claim persists across restarts and is retained even if all deliveries fail or no devices are registered. Unreadable-order counts are replaced at each cursor wrap, so recovery can take one sweep to appear; old state restarts a sweep and retains its previous displayed count until that wrap. The shared Step rule now requires no change today on Home, Ads and Morning; Undo still counts as a change today and does not restore Step. Kill and Slipping are unchanged. Push summaries expire at noon UK; manual tests keep a one-hour TTL and no replacement tag. Actual delivery still depends on device/provider availability, and delivery already in flight cannot be recalled. Failed local removal is remembered by a nonprivate boolean and retried before automatic repair on a later page load. Existing unavailable-source and historical-stock limitations continue to apply.
 
 ## Needs from Will
+
+For Morning decisions, no new key or pre-merge value is needed. Review the invented `adRules.flatJudgeGbp` default of £60 when configuring flat-budget tests. Live actions continue to use the existing switches and guards.
 
 Optional `GITHUB_HQ_TOKEN` enables the HQ reader; record its expiry in Settings. Live Settings can supply Google share/spend bars, UK/US break-even returns, an optional Google contact and key dates; `morningOpensFirst` and `morningSummaryEnabled` are off by default. No pre-merge values are required.
 

@@ -41,7 +41,7 @@ test('Morning brief represents all report states as a slim line and escapes its 
   assert.match(brief.href!, /blob\/claude%2Fads-daily\/ops\/ads-daily\/2032-04\.md$/);
   assert.match(morningBriefHtml(brief), /&lt;invented item&gt;/); assert.doesNotMatch(morningBriefHtml(brief), /<invented item>/);
   const result = morningDeck(addMorningHq(input(), source, now), [], now);
-  assert.equal(result.candidates.length, 0, 'The brief never becomes a deck card');
+  assert.deepEqual(result.candidates.map(card => card.kind), ['check-item'], 'The item becomes a card while its source brief stays a slim line');
   assert.match(morningLinesHtml(result.snapshot), /id="mn-brief"/);
   source.report = { ...report, status: 'ok', count: 0, items: [] };
   brief = morningBrief('live', source, now);
@@ -51,6 +51,10 @@ test('Morning brief represents all report states as a slim line and escapes its 
   brief = morningBrief('live', source, now);
   assert.equal(brief.text, "Morning check: couldn't read"); assert.match(morningBriefHtml(brief), /&lt;invented heading&gt;/);
   assert.match(morningLinesHtml({ ...result.snapshot, brief }), /△ Watch/);
+  assert.equal(morningDeck(addMorningHq(input(), source, now), [], now).candidates.length, 0, 'Unreadable reports make no check cards');
+  source.report = { ...report, day: '2032-04-18' };
+  assert.equal(morningBrief('live', source, now).status, 'missing');
+  assert.equal(morningDeck(addMorningHq(input(), source, now), [], now).candidates.length, 0, 'Older reports make no check cards');
   const key = morningBrief('live', { ...source, sourceMode: 'sample' }, now);
   assert.equal(key.status, 'key'); assert.equal(key.href, '/sources');
 });
@@ -63,6 +67,9 @@ test('missing brief switches at 09:00 UK in summer and winter, and sample remain
   const source = facts(); source.tests = [live()];
   const sample = addMorningHq(input('sample'), source, now);
   assert.equal(sample.brief?.mode, 'sample'); assert.match(sample.brief!.runLabel!, /invented/);
+  assert.equal(sample.brief?.count, 3); assert.equal(sample.brief?.items?.length, 3);
+  assert.deepEqual(sample.brief?.items?.[0]?.tag, {type: 'pause', adSetId: '120000000000000001'});
+  assert.equal(sample.brief?.items?.[1]?.tag, undefined); assert.equal(sample.brief?.items?.[2]?.label, 'Dated');
   assert.match(sample.brief!.href!, /ops\/ads-daily\/2032-04\.md$/);
   assert.equal(sample.extensions, undefined, 'Live register rows never enter the sample demonstration');
   const curated = curateMorningSample(sample, now);
@@ -99,10 +106,10 @@ test('Morning and Home share the exact supplied test call and effective saved-st
   assert.equal(homeTestsFromHq(source, [parked], now).rows[0]!.call?.answer, 'a', 'A changed call rule returns a parked test');
 });
 
-test('Home offers eligible calls outside the seven-card cap and renders unmeasured status without invented bars', () => {
+test('Home and Morning offer every eligible call and render unmeasured status without invented bars', () => {
   const source = facts(); source.tests = Array.from({ length: 8 }, (_, index) => live(`T${index + 1}`));
   const data = addMorningHq(input(), source, now);
-  assert.equal(morningDeck(data, [], now).snapshot.cards.length, 7);
+  assert.equal(morningDeck(data, [], now).snapshot.cards.length, 8);
   assert.ok(homeTestsFromHq(source, [], now).rows[7]!.call);
   source.tests[0]!.cells[8] = '<invented status> without a reading';
   const row = homeTestsFromHq(source, [], now).rows[0]!, html = homeTestReadingHtml(row);
@@ -147,9 +154,13 @@ test('live Home features the first Live row then folds other Live, Queue and His
 });
 
 test('unmeasured draw offers are hideable Info; measured draw offers remain Decide', () => {
-  const source = facts(), row = live(); row.cells[5] = '2032-03-01'; row.cells[8] = 'No reading yet'; source.tests = [row];
-  let card = morningDeck(addMorningHq(input(), source, now), [], now).candidates[0]!;
+  const source = facts(), row = live(); row.cells[5] = '2032-03-23'; row.cells[8] = 'No reading yet'; source.tests = [row];
+  const unmeasured = morningDeck(addMorningHq(input(), source, now), [], now);
+  let card = unmeasured.candidates[0]!;
   assert.equal(card.state, 'info'); assert.equal(card.tier, 3); assert.equal(card.primary.label, 'Call a draw');
+  assert.deepEqual(unmeasured.snapshot.cards.map(item => item.key), [card.key], 'A ready unmeasured draw remains an actionable test call in the decision deck');
+  assert.equal(unmeasured.snapshot.cards[0]!.state, 'info', 'Offering the call does not invent measured certainty or change its Info state');
+  assert.equal(unmeasured.snapshot.total, 1);
   assert.ok(card.allowedPresses.includes('hide')); assert.equal(card.menu[0]!.label, 'Stop showing this');
   assert.equal(homeTestsFromHq(source, [], now).rows[0]!.model!.presentation!.state, 'info');
   row.cells[8] = 'Reading 2032-04-20: A 12% n=4; B 17% n=3; ahead none; sure 60%; mornings 1';

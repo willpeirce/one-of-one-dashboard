@@ -1,6 +1,6 @@
 import type { SourceMode } from '../sources.js';
 import type { CreativeAd } from './model.js';
-import type { aggregateCreativeGroups, topCreatives, CreativeWindow, CreativeFilter } from './ranking.js';
+import type { aggregateCreativeGroups, topCreatives, topCreativeSummaries, CreativeGroupSummary, CreativeWindow, CreativeFilter } from './ranking.js';
 import type { creativePerformance } from './performance.js';
 import type { AttributeDefinition, ResolvedAttribute } from './attributes.js';
 import type { TaggingQueueEntry } from './tagging.js';
@@ -23,6 +23,11 @@ export interface CreativeView {
   targets: { uk: number; us: number }; freelancerInitial: string;
   merged: { id: string; title: string; parentId: string }[];
 }
+/** Home and Morning retain the evidence and links, without each group's full ad list. */
+export type CreativeOverview = Omit<CreativeView, 'groups' | 'top'> & {
+  groups: CreativeGroupSummary[];
+  top: ReturnType<typeof topCreativeSummaries>;
+};
 export interface CreativeSheet {
   mode: SourceMode; group: GroupPerformance; scan: CreativeScanView;
   windows: { window: CreativeWindow; totals: GroupPerformance['totals'] }[];

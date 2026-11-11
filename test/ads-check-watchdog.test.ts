@@ -108,7 +108,7 @@ test('HQ connection failure remains a separate Self-check and does not erase a r
   assert.equal(checks(now, health).find(row => row.id === 'ads_check')!.status, 'tripped', 'A failed read with no stored report is overdue');
 });
 
-test('Ads check is a Pulse Watch with an app-local Morning action in both decks and Sources', async t => {
+test('Ads check stays a Pulse Watch on Home and Sources with an app-local Morning link, outside the decision deck', async t => {
   const db = await createTestDatabase(); t.after(() => db.close());
   const snapshot = await applyShopifyDashboard(getSampleDashboard(), db, facts(now), settings, [hq()], now,
     undefined, now, {entry: null, now});
@@ -117,9 +117,12 @@ test('Ads check is a Pulse Watch with an app-local Morning action in both decks 
   assert.match(decisionsHtml({shopify: model}), /Pulse · Ads check/);
   assert.match(decisionsHtml({shopify: model}), /href="\/morning">Open Morning<\/a>/);
   const input = morningInputFromDashboard(snapshot, settings, tickerState([], [], now, 'live'), 'live');
-  const card = morningDeck(input, [], now).snapshot.cards.find(row => row.subjectId === 'ads_check')!;
+  const morning = morningDeck(input, [], now), card = morning.candidates.find(row => row.subjectId === 'ads_check')!;
   assert.ok(card); assert.equal(card.tier, 2); assert.equal(card.source, 'pulse'); assert.equal(card.state, 'warn');
   assert.deepEqual(card.primary, {kind: 'link', label: 'Open Morning', href: '/morning'});
+  assert.equal(morning.snapshot.cards.some(row => row.key === card.key), false);
+  assert.ok(morning.openCards.some(row => row.key === card.key), 'The Watch is still an open candidate');
+  assert.equal(morning.snapshot.watchOnHome, morning.openCards.filter(row => row.state === 'warn').length);
   assert.match(checksHtml(model), /△ Watch · Ads check/);
   const sources = sourceHealthPage([hq()], undefined, undefined, undefined, {summary: 'Invented source check', shopify: model, checkedAt: now.toISOString()});
   assert.match(sources, /△ Watch · Ads check/);

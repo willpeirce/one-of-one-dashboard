@@ -8,21 +8,25 @@ import type { MetaAction } from '../meta-adsets/actions.js';
 import type { VerdictWord } from '../meta-adsets/rules.js';
 import type { CreativeCard } from '../creatives/presentation-types.js';
 import type { TickerPassed, TickerSnapshot } from '../ticker/model.js';
+import type { HQBriefItem } from '../github-hq/model.js';
 
 export type MorningAction = 'park' | 'remind' | 'hold' | 'hide' | 'ack' | 'call';
 export type MorningAnswer = 'hold' | 'a' | 'b' | 'draw';
 export type MorningTone = 'alarm' | 'decide' | 'warn' | 'info' | 'done';
 export type MorningKind = 'need' | 'meta-kill' | 'meta-slipping' | 'meta-step' | 'meta-watch'
-  | 'date' | 'fading' | 'make-next' | 'google' | 'test-call' | 'new-verdict' | 'done-for-you';
+  | 'date' | 'fading' | 'make-next' | 'google' | 'test-call' | 'new-verdict' | 'done-for-you' | 'pause-all'
+  | 'check-item';
 
 interface ButtonLabel { label: string; subline?: string }
 export interface MorningLiveButton extends ButtonLabel {
   kind: 'live'; adSetId: string; action: 'pause' | 'budget' | 'undo'; value?: number | string; confirm: string;
 }
+export interface MorningPauseMember { cardKey: string; factsHash: string; adSetId: string }
 export type MorningButton = MorningLiveButton
+  | (ButtonLabel & { kind: 'pause-all'; confirm: string; members: MorningPauseMember[] })
   | (ButtonLabel & { kind: 'link'; href: string })
   | (ButtonLabel & { kind: 'copy'; text: string })
-  | (ButtonLabel & { kind: 'save'; target: 'morning'; action: MorningAction; answer?: 'a' | 'b' | 'draw'; confirm?: string })
+  | (ButtonLabel & { kind: 'save'; target: 'morning'; action: MorningAction; answer?: 'a' | 'b' | 'draw'; days?: 3 | 7; confirm?: string })
   | (ButtonLabel & { kind: 'save'; target: 'ticker'; eventKey: string; action: 'next' | 'restore' });
 
 export interface MorningBriefVariant {
@@ -31,6 +35,7 @@ export interface MorningBriefVariant {
   footer: string;
 }
 export type MorningFigure = { kind: 'plain'; value: string; label: string }
+  | { kind: 'list'; rows: { label: string; value: string }[]; more: number }
   | { kind: 'dial'; value: number; bar: number; label: string; formattedValue: string; formattedBar: string }
   | { kind: 'rail'; value: number; label: string; range?: number }
   | { kind: 'thumb'; src: string; alt: string; value: string; label: string }
@@ -55,10 +60,12 @@ export interface MorningFine { id: string; label: string }
 export interface MorningMetaAction extends MetaAction { title: string; undo: MorningLiveButton | null }
 /** Later parts supply this slim-line presentation without adding a deck card. */
 export interface MorningBrief {
+  malformedCardTags?: number;
   registerDiagnostics?: { malformed: number; capped: number; missingHeadings?: boolean };
   text: string; status: 'ok' | 'needs' | 'unreadable' | 'missing' | 'key'; mode: SourceMode;
   tone?: 'info' | 'warn';
-  day?: string; runLabel?: string; count?: number; items?: { text: string; label?: string }[];
+  day?: string; runLabel?: string; count?: number; items?: HQBriefItem[];
+  allInDeck?: boolean; moreHere?: number;
   firstLines?: string[]; href?: string;
 }
 export interface MorningInput {
@@ -71,7 +78,10 @@ export interface MorningInput {
 }
 export interface MorningSnapshot {
   summaryEnabled?: boolean;
-  mode: SourceMode; day: string; cards: MorningCard[]; more: number; fine: MorningFine[];
+  /** Current eligible members remain available below the grouping threshold for a confirmed sequence. */
+  pauseAll?: { cardKey: string; members: MorningPauseMember[]; deferred: boolean };
+  mode: SourceMode; day: string; cards: MorningCard[]; more: number; watchOnHome: number; fine: MorningFine[];
+  datedFromCheck?: { text: string; lines?: string[] }[];
   parked: MorningAway[]; hidden: MorningAway[]; presses: MorningState[];
   metaActions: MorningMetaAction[]; passedDates: TickerPassed[]; answers: MorningState[];
   brief: MorningBrief | null; completed: number; total: number;
@@ -79,7 +89,7 @@ export interface MorningSnapshot {
 export interface MorningResult {
   snapshot: MorningSnapshot;
   candidates: MorningCard[];
-  /** Every unsuppressed card, including cards beyond the daily cap, for the summary. */
+  /** Every unsuppressed candidate, including Watch cards shown on Home. */
   openCards: MorningCard[];
   clearKeys: string[];
   deleteKeys: string[];

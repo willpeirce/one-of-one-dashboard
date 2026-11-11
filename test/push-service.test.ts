@@ -16,7 +16,7 @@ const origin = 'https://pulse.example.test';
 const quiet = {log: () => {}, sleep: async () => {}};
 function morning(count: number, at = now, mode: 'sample' | 'live' = 'live', completed = 0) {
   const input: MorningInput = {mode, needs: Array.from({length: count}, (_, index) => ({id: `invented-need-${index}`,
-    state: 'warn', source: 'pulse', title: `Invented task ${index + 1}`, why: 'An invented rule.', link: '/sources'})),
+    state: 'alarm', source: 'pulse', title: `Invented task ${index + 1}`, why: 'An invented rule.', link: '/sources'})),
   checks: [], creativeCards: [], settings: defaultSettings(), ticker: tickerState([], [], at, mode),
   activity: [], metaActions: [], sourceReadOk: {'needs:pulse': true}};
   const states = Array.from({length: completed}, (_, index): MorningState => ({mode, cardKey: `invented-completed-${index}`,
@@ -53,22 +53,37 @@ async function claims(db: Database): Promise<number> {
   return Number((await db.query<{count: string}>('SELECT count(*)::text FROM pulse.push_sent')).rows[0]!.count);
 }
 
-test('summary text uses all ranked open cards, including the more list after the daily cap, and bounds Unicode titles', () => {
+test('summary text follows the uncapped deck and bounds Unicode titles', () => {
   assert.deepEqual(morningSummaryPayload(morning(0)), {kind: 'summary', title: 'All clear this morning', body: '', path: '/morning', day: '2032-04-20'});
   assert.deepEqual(morningSummaryPayload(morning(1)), {kind: 'summary', title: 'Needs you: 1 item', body: '1. Invented task 1', path: '/morning', day: '2032-04-20'});
   const result = morning(9, now, 'live', 7);
-  assert.equal(result.snapshot.cards.length, 0); assert.equal(result.snapshot.more, 9);
+  assert.equal(result.snapshot.cards.length, 9); assert.equal(result.snapshot.more, 0);
   assert.deepEqual(morningSummaryPayload(result), {kind: 'summary', title: 'Needs you: 9 items',
     body: '1. Invented task 1\n2. Invented task 2\n3. Invented task 3', path: '/morning', day: '2032-04-20'});
   assert.equal(morningSummaryPayload(morning(0, now, 'sample')).title, 'Sample · All clear this morning');
   assert.equal(morningSummaryPayload(morning(9, now, 'sample')).title, 'Sample · Needs you: 9 items');
-  result.openCards[0]!.title = `  ${'𐐀'.repeat(100)}\n   invented suffix `;
-  result.openCards[1]!.title = 'Invented\n   title\twith whitespace';
+  result.snapshot.cards[0]!.title = `  ${'𐐀'.repeat(100)}\n   invented suffix `;
+  result.snapshot.cards[1]!.title = 'Invented\n   title\twith whitespace';
   const payload = morningSummaryPayload(result), first = payload.body.split('\n')[0]!.slice(3);
   assert.equal(Array.from(first).length, 60); assert.ok(first.endsWith('…'));
   assert.match(payload.body, /2\. Invented title with whitespace/);
   assert.equal(payload.body.split('\n').length, 3);
   assert.ok(Buffer.byteLength(JSON.stringify(payload), 'utf8') < 3_000);
+});
+
+test('summary never includes a Home-only Watch title, including when the deck is empty', () => {
+  const data: MorningInput = {mode: 'live', needs: [{id: 'invented-watch', state: 'warn', source: 'pulse',
+    title: 'Invented Watch title', why: 'An invented rule.', link: '/sources'}], checks: [], creativeCards: [],
+    settings: defaultSettings(), ticker: tickerState([], [], now, 'live'), activity: [], metaActions: [], sourceReadOk: {}};
+  assert.equal(morningSummaryPayload(morningDeck(data, [], now)).title, 'All clear this morning');
+  const alarm = morning(1).snapshot.cards[0]!;
+  data.extensions = [1, 2].map(index => ({...alarm, key: `invented-decision-${index}`, kind: 'test-call', state: 'decide',
+    title: `Invented decision ${index}`, subjectId: `invented-decision-${index}`, order: index}));
+  const result = morningDeck(data, [], now), payload = morningSummaryPayload(result);
+  assert.equal(result.openCards.length, 3); assert.equal(result.snapshot.cards.length, 2);
+  assert.equal(payload.title, 'Needs you: 2 items');
+  assert.equal(payload.body, '1. Invented decision 1\n2. Invented decision 2');
+  assert.doesNotMatch(payload.body, /Watch/);
 });
 
 test('summary window includes 08:00 through 09:59 UK in summer and winter, including both clock-change dates', () => {

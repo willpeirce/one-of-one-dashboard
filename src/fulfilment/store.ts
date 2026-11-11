@@ -1,4 +1,5 @@
 import { formatNumber } from '../money.js';
+import { appConfig } from '../config.js';
 import { ukToday } from '../hero-range.js';
 import { randomUUID } from 'node:crypto';
 import type { Database } from '../db.js';
@@ -23,8 +24,9 @@ export async function readParcels(db:Database,mode:SourceMode):Promise<Parcel[]>
 }
 export async function readUploads(db:Database,mode:SourceMode):Promise<Upload[]> {
   // Despatches are warehouse wall times, not instants. Text avoids pg applying the host timezone.
-  return (await db.query<any>('SELECT *, despatch_from::text AS despatch_from, despatch_to::text AS despatch_to FROM pulse.fulfilment_uploads WHERE mode=$1 ORDER BY uploaded_at DESC,id',[mode])).rows.map(r=>({id:r.id,fileName:r.file_name,rowCount:r.row_count,savedCount:r.saved_count,despatchFrom:localTime(r.despatch_from),despatchTo:localTime(r.despatch_to),uploadedAt:new Date(r.uploaded_at).toISOString(),gbpPerUsd:Number(r.gbp_per_usd),errorPence:r.error_pence===null?null:Number(r.error_pence),errorCount:r.error_count,changes:r.changes,coverageFrom:r.coverage_from?coverageDay(r.coverage_from):null,coverageTo:r.coverage_to?coverageDay(r.coverage_to):null}));
+  return (await db.query<any>('SELECT *, despatch_from::text AS despatch_from, despatch_to::text AS despatch_to FROM pulse.fulfilment_uploads WHERE mode=$1 ORDER BY uploaded_at DESC,id',[mode])).rows.map(uploadFromStored);
 }
+const uploadFromStored = (r:any):Upload => ({id:r.id,fileName:r.file_name,rowCount:r.row_count,savedCount:r.saved_count,despatchFrom:localTime(r.despatch_from),despatchTo:localTime(r.despatch_to),uploadedAt:new Date(r.uploaded_at).toISOString(),gbpPerUsd:Number(r.gbp_per_usd),errorPence:r.error_pence===null?null:Number(r.error_pence),errorCount:r.error_count,changes:r.changes,coverageFrom:r.coverage_from?coverageDay(r.coverage_from):null,coverageTo:r.coverage_to?coverageDay(r.coverage_to):null});
 export async function readModel(db:Database,mode:SourceMode):Promise<Model> {
   return (await db.query<{data:Model}>('SELECT data FROM pulse.fulfilment_models WHERE mode=$1',[mode])).rows[0]?.data as Model ?? emptyModel();
 }
@@ -155,13 +157,8 @@ export async function confirmImport(db:Database,mode:SourceMode,rows:ParcelRow[]
     return {saved:pending.length,skipped:rows.length-pending.length,uploadId:id};
   });
 }
-export async function fulfilmentSummary(db:Database,mode:SourceMode,now:Date) {
-  const [parcels,uploads,count,model]=await Promise.all([readParcels(db,mode),readUploads(db,mode),db.query<{count:string}>("SELECT count(*) FROM pulse.shopify_records WHERE mode=$1 AND kind='order'",[mode]),readModel(db,mode)]);
-  const month=ukToday(now).slice(0,7);
-  const averages=(['uk','us'] as const).map(w=>{
-    const rows=parcels.filter(p=>p.warehouse===w&&despatchDay(p).startsWith(month));
-    return {warehouse:w,count:rows.length,currency:w==='uk'?'GBP':'USD',exportedMinor:rows.length?rows.reduce((s,p)=>s+p.postageMinor+p.pickPackMinor,0)/rows.length:null,gbpPence:rows.length?rows.reduce((s,p)=>s+actualPence(p)!,0)/rows.length:null};
-  });
+type NeedParcel = Pick<Parcel,'id'|'orderNumber'|'centre'|'service'|'flags'>;
+function summaryNeeds(parcels:readonly NeedParcel[],uploads:readonly Pick<Upload,'coverageFrom'|'coverageTo'>[],now:Date) {
   const unknown = new Map<string,{title:string;spelling:string;count:number}>();
   const needs=parcels.flatMap(p=>p.flags.flatMap(flag=>{
     if (flag === 'Unknown service' || flag === 'Unknown fulfilment centre') {
@@ -173,7 +170,53 @@ export async function fulfilmentSummary(db:Database,mode:SourceMode,now:Date) {
   }));
   for (const [key,group] of unknown) needs.push({id:`unknown:${key}`,title:group.title,why:`${group.spelling} · ${formatNumber(group.count)} ${group.count === 1 ? 'parcel' : 'parcels'}`,link:'/fulfilment'});
   if (monthlyReminder(now,uploads)) needs.unshift({id:'jj-monthly',title:"Upload last month's J&J export",why:'First working day, 09:00 UK: confirm a complete export covering the previous month, 1st to last day.',link:'/fulfilment'});
+  return needs;
+}
+export async function fulfilmentSummary(db:Database,mode:SourceMode,now:Date) {
+  const [parcels,uploads,count,model]=await Promise.all([readParcels(db,mode),readUploads(db,mode),db.query<{count:string}>("SELECT count(*) FROM pulse.shopify_records WHERE mode=$1 AND kind='order'",[mode]),readModel(db,mode)]);
+  const month=ukToday(now).slice(0,7);
+  const averages=(['uk','us'] as const).map(w=>{
+    const rows=parcels.filter(p=>p.warehouse===w&&despatchDay(p).startsWith(month));
+    return {warehouse:w,count:rows.length,currency:w==='uk'?'GBP':'USD',exportedMinor:rows.length?rows.reduce((s,p)=>s+p.postageMinor+p.pickPackMinor,0)/rows.length:null,gbpPence:rows.length?rows.reduce((s,p)=>s+actualPence(p)!,0)/rows.length:null};
+  });
+  const needs=summaryNeeds(parcels,uploads,now);
   return {mode,averages,lastUpload:uploads[0]??null,unmatched:parcels.filter(p=>!p.orderId),needs,model,recent:parcels.slice(-20).reverse().map(p=>({...p,actualPence:actualPence(p)})),orderCount:Number(count.rows[0]!.count)};
+}
+export type FulfilmentOverview = Pick<Awaited<ReturnType<typeof fulfilmentSummary>>,'mode'|'averages'|'lastUpload'|'needs'>;
+
+/** Home and Morning need the glance and flags, not the full parcel/model detail. */
+export async function fulfilmentOverview(db:Database,mode:SourceMode,now:Date):Promise<FulfilmentOverview> {
+  const first=ukToday(now).slice(0,7)+'-01';
+  const [money,flagged,latest,coverage]=await Promise.all([
+    db.query<{warehouse:'uk'|'us';currency:Parcel['currency'];postage_minor:string;pick_pack_minor:string;gbp_per_usd:string}>(
+      `SELECT warehouse,currency,postage_minor,pick_pack_minor,gbp_per_usd FROM pulse.fulfilment_parcels
+       WHERE mode=$1 AND warehouse IN ('uk','us')
+       AND despatched_at >= $4::date - interval '1 day' AND despatched_at < $4::date + interval '1 month 1 day'
+       AND (despatched_at AT TIME ZONE (CASE WHEN warehouse='us' THEN $2 ELSE $3 END) AT TIME ZONE 'Europe/London') >= $4::date
+       AND (despatched_at AT TIME ZONE (CASE WHEN warehouse='us' THEN $2 ELSE $3 END) AT TIME ZONE 'Europe/London') < $4::date + interval '1 month'
+       ORDER BY despatched_at,id`,[mode,appConfig.fulfilment.us.timezone,appConfig.fulfilment.uk.timezone,first]),
+    db.query<{id:string;order_number:string;centre:string;service:string;flags:string[]}>(
+      `SELECT id,order_number,centre,service,flags FROM pulse.fulfilment_parcels
+       WHERE mode=$1 AND jsonb_array_length(flags)>0 ORDER BY despatched_at,id`,[mode]),
+    db.query<any>(`SELECT id,file_name,row_count,saved_count,despatch_from::text AS despatch_from,despatch_to::text AS despatch_to,
+       uploaded_at,gbp_per_usd,error_pence,error_count,changes,coverage_from,coverage_to
+       FROM pulse.fulfilment_uploads WHERE mode=$1 ORDER BY uploaded_at DESC,id LIMIT 1`,[mode]),
+    db.query<{coverageFrom:string;coverageTo:string}>(
+      `SELECT coverage_from::text AS "coverageFrom",coverage_to::text AS "coverageTo" FROM pulse.fulfilment_uploads
+       WHERE mode=$1 AND coverage_from < $2::date AND coverage_to >= $2::date - interval '1 month'`,[mode,first]),
+  ]);
+  const averages=(['uk','us'] as const).map(warehouse=>{
+    const rows=money.rows.filter(row=>row.warehouse===warehouse);
+    // Preserve per-parcel JS rounding, including the stored invoice's own conversion rate.
+    const sums=rows.reduce((sum,row)=>{
+      const postage=Number(row.postage_minor),pickPack=Number(row.pick_pack_minor);
+      return {exported:sum.exported+postage+pickPack,gbp:sum.gbp+(gbpMinor(postage+pickPack,row.currency,Number(row.gbp_per_usd))??0)};
+    },{exported:0,gbp:0});
+    return {warehouse,count:rows.length,currency:warehouse==='uk'?'GBP':'USD',
+      exportedMinor:rows.length?sums.exported/rows.length:null,gbpPence:rows.length?sums.gbp/rows.length:null};
+  });
+  const parcels=flagged.rows.map(row=>({id:String(row.id),orderNumber:row.order_number,centre:row.centre,service:row.service,flags:row.flags}));
+  return {mode,averages,lastUpload:latest.rows[0]?uploadFromStored(latest.rows[0]):null,needs:summaryNeeds(parcels,coverage.rows,now)};
 }
 export async function readEstimates(db:Database,mode:SourceMode):Promise<(Estimate&{orderId:string})[]> {
   return (await db.query<any>('SELECT * FROM pulse.fulfilment_estimates WHERE mode=$1',[mode])).rows.map(r=>({orderId:r.order_id,costPence:r.cost_pence===null?null:Number(r.cost_pence),source:r.source,warehouse:r.warehouse,service:r.service,guess:r.guess}));

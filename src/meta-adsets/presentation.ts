@@ -10,11 +10,12 @@ import { readAdSets, type StoredAdSet } from './catalogue.js';
 import {judgeAdSet,totalDays,type SetDay,type SetVerdict,type RuleContext} from './rules.js';
 import {breakEven,weekdayBudget} from './settings.js';
 export interface AdSetRow { set: StoredAdSet; days: SetDay[]; verdict: SetVerdict|null; yesterday: number|null; spend: number; purchases: number|null; cpp: number|null; cpatc:number|null; breakEven:number|null; breakEvenNote:string; weekdayBudget:number|null; freelancer: {window:3|7; cpp:number|null; oursCpp:number|null; over:boolean|null}[]; changes: {time:string;field:string;old:string;value:string}[] }
-export interface AdSetsView { mode:'sample'|'live';today:string;lastRead:string|null;stale:boolean;count:number;rows:AdSetRow[];accountYesterday:number|null;actionsEnabled:boolean; actions?:MetaAction[]; activity?:ActivityView }
-export function buildAdSetsView(sets:StoredAdSet[],days:Map<string,SetDay[]>,settings:Settings,today:string,options:{mode:'sample'|'live';lastRead:string|null;stale?:boolean;accountYesterday:number|null;contexts?:Map<string,RuleContext>;recentActionIds?:string[]}):AdSetsView {
+export type AdSetCatalogueEntry = Pick<StoredAdSet,'id'|'name'|'owner'|'status'|'effectiveStatus'|'currency'>;
+export interface AdSetsView { mode:'sample'|'live';today:string;lastRead:string|null;stale:boolean;count:number;rows:AdSetRow[];accountYesterday:number|null;actionsEnabled:boolean; actions?:MetaAction[]; activity?:ActivityView; catalogue?:AdSetCatalogueEntry[] }
+export function buildAdSetsView(sets:StoredAdSet[],days:Map<string,SetDay[]>,settings:Settings,today:string,options:{mode:'sample'|'live';lastRead:string|null;stale?:boolean;accountYesterday:number|null;contexts?:Map<string,RuleContext>;recentActionIds?:string[];selectedId?:string}):AdSetsView {
  const yesterday=addDays(today,-1),ownerOrder={ours:0,freelancer:1,unassigned:2};
  const ours=(market:string,window:number)=>totalDays(sets.filter(s=>s.owner==='ours'&&s.market===market).flatMap(s=>(days.get(s.id)??[]).filter(d=>d.day>=addDays(today,-window)&&d.day<today)));
- const rows=sets.filter(s=>s.effectiveStatus==='ACTIVE'||options.recentActionIds?.includes(s.id)).map(set=>{
+ const rows=sets.filter(s=>s.effectiveStatus==='ACTIVE'||options.recentActionIds?.includes(s.id)||s.id===options.selectedId).map(set=>{
   const data=days.get(set.id)??[],last=data.find(d=>d.day===yesterday),week=totalDays(data.filter(d=>d.day>=addDays(today,-7)&&d.day<today));
   const be=set.market==='unknown'?null:breakEven(settings,set.market,today);
   return {set,days:data.filter(d=>d.day>=addDays(today,-7)&&d.day<today),
@@ -24,7 +25,8 @@ export function buildAdSetsView(sets:StoredAdSet[],days:Map<string,SetDay[]>,set
     freelancer:set.owner!=='freelancer'?[]:([3,7] as const).map(window=>{const t=totalDays(data.filter(d=>d.day>=addDays(today,-window)&&d.day<today)),o=ours(set.market,window);return {window,cpp:t.purchases?t.spend/t.purchases:null,oursCpp:o.purchases?o.spend/o.purchases:null,over:t.purchases===null||t.spend===0?null:t.purchases===0||t.spend/t.purchases>settings.adRules.freelancerTriggerGbp};}),changes:[],
   };
  }).sort((a,b)=>ownerOrder[a.set.owner]-ownerOrder[b.set.owner]||b.spend-a.spend||a.set.id.localeCompare(b.set.id));
- return {...options,today,count:sets.length,stale:options.stale??false,rows,actionsEnabled:false};
+ const catalogue=sets.map(({id,name,owner,status,effectiveStatus,currency})=>({id,name,owner,status,effectiveStatus,currency}));
+ return {...options,today,count:sets.length,stale:options.stale??false,rows,catalogue,actionsEnabled:false};
 }
 
 export function liveSummary(view:AdSetsView,settings:Settings,market='all') {
@@ -32,7 +34,7 @@ export function liveSummary(view:AdSetsView,settings:Settings,market='all') {
  const budgets=ours.map(r=>r.set.market==='unknown'?null:weekdayBudget(r.set.dailyBudget,r.set.market,addDays(view.today,-1),settings,r.set.flatBudget));
  return {count:ours.length,decisions:decisionRows(view,market).length,spend:ours.some(r=>r.yesterday===null)?null:ours.reduce((s,r)=>s+r.yesterday!,0),expected:budgets.some(b=>b===null)?null:budgets.reduce<number>((s,b)=>s+b!,0)};
 }
-export async function readAdSetsView(db:Database,settings:Settings,env:NodeJS.ProcessEnv,now:Date):Promise<AdSetsView> {
+export async function readAdSetsView(db:Database,settings:Settings,env:NodeJS.ProcessEnv,now:Date,selectedId?:string):Promise<AdSetsView> {
  if(!settings.metaAdAccountId||!env.META_ACCESS_TOKEN)return sampleAdSetsView(settings);
  const account=settings.metaAdAccountId,today=ukToday(now);
  const [sets,sync,stored,coverage,ads,changes,actions]=await Promise.all([
@@ -51,10 +53,10 @@ export async function readAdSetsView(db:Database,settings:Settings,env:NodeJS.Pr
   contexts.set(set.id,{changes:changes.rows.filter(r=>r.ad_set_id===set.id).map(r=>new Date(r.observed_at).toISOString()),ads:ads.rows.filter(r=>r.ad_set_id===set.id).map(r=>({effectiveStatus:r.effective_status,statusSince:new Date(r.status_since).toISOString()}))});
  }
  const lastRead=sync.rows[0]?new Date(sync.rows[0].last_read).toISOString():null,yesterday=addDays(today,-1);
- const view=buildAdSetsView(sets,days,settings,today,{recentActionIds:actions.rows.filter(a=>now.getTime()-new Date(a.time).getTime()<=86_400_000).map(a=>a.ad_set_id),mode:'live',lastRead,stale:!!lastRead&&now.getTime()-Date.parse(lastRead)>2*60*60_000,accountYesterday:coverage.rows.some(r=>r.day===yesterday)?stored.rows.filter(r=>r.day===yesterday).reduce((s,r)=>s+Number(r.spend_amount),0):null,contexts});
+ const view=buildAdSetsView(sets,days,settings,today,{recentActionIds:actions.rows.filter(a=>now.getTime()-new Date(a.time).getTime()<=86_400_000).map(a=>a.ad_set_id),mode:'live',lastRead,stale:!!lastRead&&now.getTime()-Date.parse(lastRead)>2*60*60_000,accountYesterday:coverage.rows.some(r=>r.day===yesterday)?stored.rows.filter(r=>r.day===yesterday).reduce((s,r)=>s+Number(r.spend_amount),0):null,contexts,...(selectedId?{selectedId}:{})});
  view.activity=await readActivity(db,account,settings,now);
  view.actionsEnabled=creativeFeatureFlags(env).metaActionsEnabled;
- view.actions=await readMetaActions(db,account);
+ view.actions=await readMetaActions(db,account,now);
  for(const row of view.rows){
    const times=actions.rows.filter(a=>a.ad_set_id===row.set.id).map(a=>new Date(a.time).toISOString());
    const context=contexts.get(row.set.id)??{};context.changes=[...(context.changes??[]),...times];

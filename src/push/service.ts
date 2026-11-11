@@ -23,11 +23,11 @@ function shortTitle(title: string): string {
   const characters = Array.from(title.replace(/\s+/g, ' ').trim());
   return characters.length > 60 ? `${characters.slice(0, 59).join('')}…` : characters.join('');
 }
-/** Use every ranked open card, even when today's seven-card allowance is already spent. */
+/** Share the exact offered deck membership and order. */
 export function morningSummaryPayload(result: MorningResult): PushPayload {
-  const count = result.openCards.length, prefix = result.snapshot.mode === 'sample' ? 'Sample · ' : '';
+  const count = result.snapshot.cards.length, prefix = result.snapshot.mode === 'sample' ? 'Sample · ' : '';
   return {kind: 'summary', title: `${prefix}${count ? `Needs you: ${count} ${count === 1 ? 'item' : 'items'}` : 'All clear this morning'}`,
-    body: result.openCards.slice(0, 3).map((card, index) => `${index + 1}. ${shortTitle(card.title)}`).join('\n'), path: '/morning', day: result.snapshot.day};
+    body: result.snapshot.cards.slice(0, 3).map((card, index) => `${index + 1}. ${shortTitle(card.title)}`).join('\n'), path: '/morning', day: result.snapshot.day};
 }
 
 /** One queue owns all deliveries; the separate minute timer starts only after app listen. */

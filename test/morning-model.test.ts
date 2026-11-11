@@ -7,7 +7,7 @@ import type { MetaActivity } from '../src/meta-adsets/activity.js';
 import { readActivity, syncActivity } from '../src/meta-adsets/activity.js';
 import type { MetaAction } from '../src/meta-adsets/actions.js';
 import { sampleKeyDates, tickerState } from '../src/ticker/model.js';
-import { morningDeck, morningFacts, morningKey, MORNING_LIMIT, type MorningCard, type MorningInput, type MorningState } from '../src/morning/model.js';
+import { morningDeck, morningFacts, morningKey, type MorningCard, type MorningInput, type MorningState } from '../src/morning/model.js';
 import { curateMorningSample } from '../src/morning/sample.js';
 import { createTestDatabase } from './helpers/database.js';
 
@@ -35,55 +35,75 @@ function sampleInput(): MorningInput {
   return data;
 }
 
-test('Morning sorts all six tiers, preserves Home order and leaves stock and attach needs out', () => {
+test('Morning retains all candidates but offers only alarms, decisions and done cards in priority order', () => {
   const data = sampleInput(); data.needs = [need('first-alarm', 'alarm'), need('second-alarm', 'alarm'), need('ordinary'), need('watchdog'), need('stock:invented'), need('attach:invented')];
   data.checks = [{ id: 'watchdog', status: 'tripped', name: 'Invented watchdog', why: 'Invented reason', link: '/sources' }];
   data.extensions = curateMorningSample(inputWithMode('sample'), now).extensions;
   const result = morningDeck(data, [], now), cards = result.candidates;
   assert.deepEqual(cards.filter(card => card.tier === 0).map(card => card.subjectId), ['first-alarm', 'second-alarm']);
-  assert.deepEqual(cards.filter(card => card.tier === 1).map(card => card.kind), ['meta-kill', 'meta-slipping', 'test-call', 'meta-step']);
-  assert.deepEqual(cards.filter(card => card.tier === 2).map(card => card.kind), ['need', 'date', 'google', 'fading']);
+  assert.deepEqual(cards.filter(card => card.tier === 1).map(card => card.kind), ['meta-kill', 'meta-slipping', 'test-call', 'google', 'meta-step']);
+  assert.deepEqual(cards.filter(card => card.tier === 2).map(card => card.kind), ['need', 'date', 'fading']);
   assert.ok(cards.findIndex(card => card.kind === 'make-next') < cards.findIndex(card => card.kind === 'new-verdict'));
   assert.ok(cards.findIndex(card => card.kind === 'done-for-you') < cards.findIndex(card => card.subjectId === 'ordinary'));
   assert.equal(cards.some(card => /^(stock|attach):/.test(card.subjectId)), false);
-  assert.equal(result.snapshot.cards.length, MORNING_LIMIT);
-  assert.equal(result.snapshot.more, cards.length - MORNING_LIMIT);
+  assert.deepEqual(result.snapshot.cards.map(card => card.kind), ['need', 'need', 'meta-kill', 'meta-slipping', 'test-call', 'meta-step', 'done-for-you', 'google']);
+  assert.equal(result.snapshot.more, 0);
+  assert.equal(result.snapshot.total, 8);
 });
 function inputWithMode(mode: 'sample' | 'live'): MorningInput { const result = input(); result.mode = mode; return result; }
 
-test('the Morning sample shows all tall figures in its first seven without modifying Home or ticker fixtures', () => {
+test('the Morning sample offers decisions without modifying Home or ticker fixtures', () => {
   const source = sampleInput(), original = structuredClone(source);
   source.needs = [need('sample-alarm', 'alarm')]; original.needs = structuredClone(source.needs);
   const curated = curateMorningSample(source, now), result = morningDeck(curated, [], now);
   assert.deepEqual(source, original);
-  assert.deepEqual(result.snapshot.cards.map(card => card.kind), ['meta-kill', 'test-call', 'date', 'google', 'fading', 'date', 'make-next']);
-  for (const kind of ['dial', 'arms', 'thumb', 'brief']) assert.ok(result.snapshot.cards.some(card => card.figure.kind === kind));
-  assert.equal(result.snapshot.more, 2);
+  assert.deepEqual(result.snapshot.cards.map(card => card.kind), ['meta-kill', 'test-call', 'done-for-you', 'google']);
+  for (const kind of ['dial', 'arms', 'thumb', 'brief']) assert.ok(result.candidates.some(card => card.figure.kind === kind), 'Excluded figures remain available as candidates');
+  assert.equal(result.snapshot.more, 0);
   assert.equal(source.ticker.ahead.length, 6);
   assert.equal(curated.ticker.ahead.length, 2);
   assert.equal(curateMorningSample(input(), now).mode, 'live');
   assert.equal(morningDeck(input(), [], now).candidates.some(card => card.title.includes('Sample')), false);
 });
 
-test('daily cap counts states, successful un-undone app actions and passed dates; undo gives a slot back', () => {
-  const data = input(); data.needs = Array.from({ length: 10 }, (_, i) => need(`need-${i}`));
+function decisions(count: number): MorningCard[] {
+  const base = morningDeck(sampleInput(), [], now).candidates.find(card => card.kind === 'meta-kill')!;
+  return Array.from({ length: count }, (_, index) => ({ ...base, key: morningKey('meta-kill', `invented-decision-${index}`),
+    subjectId: `invented-decision-${index}`, title: `Invented decision ${index + 1}`, order: index }));
+}
+
+test('one alarm and two decisions lead five Watch candidates, with only three cards in the deck', () => {
+  const data = input(); data.needs = [need('watch-first'), need('alarm', 'alarm'), ...Array.from({ length: 4 }, (_, i) => need(`watch-${i}`))];
+  data.extensions = decisions(2);
+  const result = morningDeck(data, [], now);
+  assert.equal(result.candidates.length, 8); assert.equal(result.openCards.length, 8);
+  assert.deepEqual(result.snapshot.cards.map(card => card.kind), ['need', 'meta-kill', 'meta-kill']);
+  assert.equal(result.snapshot.cards[0]!.state, 'alarm');
+  assert.equal(result.snapshot.watchOnHome, 5);
+  assert.equal(result.snapshot.total, 3);
+});
+
+test('nine decisions remain uncapped and progress counts decisions answered today without consuming open slots', () => {
+  const data = input(); data.extensions = decisions(9);
   const first = morningDeck(data, [], now).candidates[0]!;
   const stored = state(first);
   const after = morningDeck(data, [stored], now);
-  assert.equal(after.snapshot.completed, 1); assert.equal(after.snapshot.cards.length, 6); assert.equal(after.snapshot.more, 3);
-  assert.equal(morningDeck(data, [], now).snapshot.cards.length, 7);
+  assert.equal(after.snapshot.completed, 1); assert.equal(after.snapshot.cards.length, 8); assert.equal(after.snapshot.more, 0);
+  assert.equal(after.snapshot.total, 9);
+  assert.equal(morningDeck(data, [], now).snapshot.cards.length, 9);
   const action: MetaAction = { id: 'invented-action', time: now.toISOString(), adSetId: 'invented-set', action: 'pause', oldValue: 'ACTIVE', newValue: 'PAUSED', result: 'success', undoneAt: null, undoOf: null, errorCode: null };
   data.metaActions = [action, { ...action, id: 'invented-failed', result: 'failed' }, { ...action, id: 'invented-undo', undoOf: 'invented-prior' }];
   const date = { name: 'Invented passed date', date: ukToday(now), kind: 'flag' as const, note: '' };
   data.ticker = tickerState([date], [{ event_key: `${date.name.toLowerCase()}|${date.date}`, passed_at: now }], now, 'live');
-  assert.equal(morningDeck(data, [stored], now).snapshot.completed, 3);
+  assert.equal(morningDeck(data, [stored], now).snapshot.completed, 2, 'Passed dates stay in history but no longer count as deck answers');
   data.metaActions[0] = { ...action, undoneAt: now.toISOString() };
-  assert.equal(morningDeck(data, [stored], now).snapshot.completed, 2);
+  assert.equal(morningDeck(data, [stored], now).snapshot.completed, 1);
   const seven = morningDeck({ ...data, metaActions: [], ticker: input().ticker }, Array.from({ length: 7 }, (_, i) => state(morningDeck(data, [], now).candidates[i]!)), now);
-  assert.equal(seven.snapshot.cards.length, 0); assert.equal(seven.snapshot.more, 3); assert.equal(seven.openCards.length, 3);
+  assert.equal(seven.snapshot.cards.length, 2); assert.equal(seven.snapshot.more, 0); assert.equal(seven.openCards.length, 2);
+  assert.equal(seven.snapshot.completed, 7); assert.equal(seven.snapshot.total, 9);
 });
 
-test('park expires on next UK day and a worse state returns immediately without losing today’s slot', () => {
+test('old Watch parks expire on the next UK day and a worse alarm immediately enters the deck', () => {
   const data = input(); data.needs = [need('same-rule')];
   const original = morningDeck(data, [], now).candidates[0]!, saved = state(original);
   assert.equal(morningDeck(data, [saved], now).snapshot.cards.length, 0);
@@ -91,10 +111,10 @@ test('park expires on next UK day and a worse state returns immediately without 
   assert.equal(morningDeck(data, [saved], now).snapshot.parked.length, 1, 'An absent card stays parked for its day even after a good read');
   data.needs = [need('same-rule')];
   assert.equal(morningDeck(data, [saved], now).snapshot.cards.length, 0);
-  assert.equal(morningDeck(data, [saved], new Date('2032-04-08T08:00:00Z')).snapshot.cards.length, 1);
+  assert.equal(morningDeck(data, [saved], new Date('2032-04-08T08:00:00Z')).openCards.length, 1);
   data.needs[0]!.state = 'alarm';
   const result = morningDeck(data, [saved], now);
-  assert.equal(result.snapshot.cards[0]?.state, 'alarm'); assert.equal(result.snapshot.completed, 1);
+  assert.equal(result.snapshot.cards[0]?.state, 'alarm'); assert.equal(result.snapshot.completed, 0);
   assert.deepEqual(result.clearKeys, [original.key]);
 });
 
@@ -105,7 +125,7 @@ test('hidden survives moving figures, ends on a changed rule and never clears on
   assert.equal(morningDeck(data, [hidden], now).snapshot.cards.length, 0);
   const changed = { ...card, ruleId: 'another-rule', factsHash: morningFacts(card.kind, card.subjectId, card.state, 'another-rule') };
   const changedInput = { ...data, needs: [], extensions: [changed] };
-  assert.equal(morningDeck(changedInput, [hidden], now).snapshot.cards.length, 1);
+  assert.equal(morningDeck(changedInput, [hidden], now).openCards.length, 1);
   changedInput.sourceReadOk['needs:shopify'] = false;
   assert.equal(morningDeck(changedInput, [hidden], now).snapshot.hidden.length, 0, 'Present changed facts restore hidden cards even during failed reads');
   changedInput.extensions[0] = { ...changed, state: 'alarm' };
@@ -115,10 +135,10 @@ test('hidden survives moving figures, ends on a changed rule and never clears on
   data.sourceReadOk['needs:shopify'] = true;
   const cleared = morningDeck(data, [hidden], now);
   assert.equal(cleared.snapshot.hidden.length, 0); assert.equal(cleared.snapshot.presses.length, 1);
-  assert.equal(cleared.snapshot.completed, 1); assert.deepEqual(cleared.clearKeys, [card.key]);
+  assert.equal(cleared.snapshot.completed, 0); assert.deepEqual(cleared.clearKeys, [card.key]);
   const recorded = { ...hidden, clearedAt: now.toISOString() };
   data.needs = [need('hidden')];
-  assert.equal(morningDeck(data, [recorded], now).snapshot.cards.length, 1, 'a cleared rule cannot silently become hidden again');
+  assert.equal(morningDeck(data, [recorded], now).openCards.length, 1, 'a cleared rule cannot silently become hidden again');
   assert.deepEqual(morningDeck(data, [recorded], new Date('2032-04-08T08:00:00Z')).deleteKeys, [card.key]);
 });
 
@@ -176,6 +196,12 @@ test('buttons enforce alarm restrictions, sample action safety, exact Step amoun
   assert.equal(live.find(card => card.kind === 'meta-kill')!.primary.kind, 'live');
   const slipping = live.find(card => card.kind === 'meta-slipping')!;
   assert.equal(slipping.primary.kind, 'link'); assert.equal(slipping.menu[0]?.kind, 'live');
+  const kill = live.find(card => card.kind === 'meta-kill')!;
+  assert.equal(kill.secondary?.label, 'One more day');
+  assert.equal(slipping.secondary?.label, 'One more day');
+  assert.deepEqual(kill.menu, [3, 7].map(days => ({kind: 'save', target: 'morning', label: `Hold ${days} days`, action: 'hold', days})));
+  assert.ok(kill.allowedPresses.includes('hold'));
+  assert.equal(sample.find(card => card.kind === 'meta-kill')!.primary.kind, 'link');
   const step = live.find(card => card.kind === 'meta-step')!;
   assert.equal(step.primary.kind, 'live');
   if (step.primary.kind === 'live') assert.equal(step.primary.value, view.rows.find(row => row.set.id === step.subjectId)!.verdict!.proposedBase);
@@ -302,8 +328,8 @@ test('fading facts retain hidden state across moving measures and return for a d
   assert.equal(morningDeck(data, [], now).candidates.find(candidate => candidate.key === card.key)!.factsHash, both);
 });
 
-test('mode boundaries and UK-day slot accounting hold around summer and winter midnight', () => {
-  const data = input(); data.needs = [need('clock')]; const card = morningDeck(data, [], now).candidates[0]!;
+test('mode boundaries and UK-day progress hold around summer and winter midnight', () => {
+  const data = input(); data.extensions = decisions(1); const card = morningDeck(data, [], now).candidates[0]!;
   const otherMode = state(card, { mode: 'sample', state: 'hidden', untilDay: null });
   assert.equal(morningDeck(data, [otherMode], now).snapshot.cards.length, 1);
   for (const [before, after, day] of [['2032-06-07T22:59:00Z', '2032-06-07T23:01:00Z', '2032-06-08'], ['2032-01-07T23:59:00Z', '2032-01-08T00:01:00Z', '2032-01-08']]) {

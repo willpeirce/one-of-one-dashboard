@@ -92,6 +92,7 @@ export interface GroupPerformance {
   markets: CreativeMarket[];
   owners: CreativeOwner[];
 }
+export type CreativeGroupSummary = Omit<GroupPerformance, 'ads'>;
 
 export interface CreativeIndex {
   parentById: ReadonlyMap<string, MediaGroup | null>;
@@ -123,22 +124,28 @@ export function indexCreativeData(data: CreativeData): CreativeIndex {
   return { parentById, adsByGroup: allAdsByGroup, rowsByGroup: allRowsByGroup };
 }
 
-function aggregateGroup(group: MediaGroup, filter: CreativeRange, index: CreativeIndex): GroupPerformance | null {
+function aggregateGroup(group: MediaGroup, filter: CreativeRange, index: CreativeIndex): GroupPerformance | null;
+function aggregateGroup(group: MediaGroup, filter: CreativeRange, index: CreativeIndex, retainAds: false): CreativeGroupSummary | null;
+function aggregateGroup(group: MediaGroup, filter: CreativeRange, index: CreativeIndex, retainAds = true): CreativeGroupSummary | GroupPerformance | null {
   if (filter.kind && filter.kind !== 'all' && filter.kind !== group.kind) return null;
   const allAds = index.adsByGroup.get(group.id) ?? [];
-  const ads = allAds.filter(ad => matchesCreativeAd(ad, filter));
-  if (!ads.length && (allAds.length > 0 || filter.market && filter.market !== 'all'
+  // Overview calculations need membership, not a second retained list of each group's ads.
+  const ads = retainAds ? [] as CreativeAd[] : undefined;
+  const ids = new Set<string>(), markets = new Set<CreativeMarket>(), owners = new Set<CreativeOwner>();
+  for (const ad of allAds) if (matchesCreativeAd(ad, filter)) {
+    ads?.push(ad); ids.add(ad.id); markets.add(ad.market); owners.add(ad.owner);
+  }
+  if (!ids.size && (allAds.length > 0 || filter.market && filter.market !== 'all'
     || filter.owner && filter.owner !== 'all' || typeof filter.live === 'boolean')) return null;
-  const ids = new Set(ads.map(ad => ad.id));
   const historical = (index.rowsByGroup.get(group.id) ?? []).filter(row => !filter.to || row.day <= filter.to);
   const selected = historical.filter(row => ids.has(row.adId) && (!filter.from || row.day >= filter.from));
   // Cohort age belongs to the parent, not the currently selected market or ad.
   const firstDays = [...allAds.flatMap(ad => ad.firstSpendDay && (!filter.to || ad.firstSpendDay <= filter.to) ? [ad.firstSpendDay] : []),
     ...historical.filter(row => row.spend > 0).map(row => row.day)].sort();
   const selectedSpendDays = [...new Set(selected.filter(row => row.spend > 0).map(row => row.day))].sort();
-  return { group, ads, totals: creativeTotals(selected,group.kind), firstSpendDay: firstDays[0] ?? null,
+  return { group, ...(ads ? {ads} : {}), totals: creativeTotals(selected,group.kind), firstSpendDay: firstDays[0] ?? null,
     lastSpendDay: selectedSpendDays.at(-1) ?? null, spendDays: selectedSpendDays.length,
-    markets: [...new Set(ads.map(ad => ad.market))].sort(), owners: [...new Set(ads.map(ad => ad.owner))].sort() };
+    markets: [...markets].sort(), owners: [...owners].sort() };
 }
 
 /** Select ads before summing their rows; a shared parent can run in both markets. */
@@ -150,6 +157,15 @@ export function aggregateCreativeGroups(data: CreativeData, filter: CreativeRang
   });
 }
 
+/** Same totals and selection as the full rows, without materializing their ad lists. */
+export function summarizeCreativeGroups(data: CreativeData, filter: CreativeRange = {}, index = indexCreativeData(data)): CreativeGroupSummary[] {
+  return data.groups.filter(group => !group.mergedIntoId
+    && (!filter.kind || filter.kind === 'all' || filter.kind === group.kind)).flatMap(group => {
+    const row = aggregateGroup(group, filter, index, false);
+    return row ? [row] : [];
+  });
+}
+
 /** A sheet needs only its parent and merged children, not every group's four windows. */
 export function aggregateCreativeGroup(data: CreativeData, id: string, filter: CreativeRange = {}, index = indexCreativeData(data)): GroupPerformance | null {
   const parent = index.parentById.get(id);
@@ -157,11 +173,23 @@ export function aggregateCreativeGroup(data: CreativeData, id: string, filter: C
 }
 
 export type CreativeRankingSettings = Pick<Settings, 'creativeDefaultWindow' | 'creativeSpendFloorGbp' | 'creativePurchaseMinimum'>;
+type RankingOptions = CreativeFilter & { today: string; window?: Exclude<CreativeWindow, 'lifetime'> };
 export function topCreatives(data: CreativeData, settings: CreativeRankingSettings,
-  options: CreativeFilter & { today: string; window?: Exclude<CreativeWindow, 'lifetime'> }, index = indexCreativeData(data)) {
+  options: RankingOptions, index = indexCreativeData(data)) {
+  const range = creativeWindowRange(options.window ?? settings.creativeDefaultWindow, options.today);
+  return rankedCreatives(data, settings, options, aggregateCreativeGroups(data, { ...options, ...range }, index));
+}
+
+export function topCreativeSummaries(data: CreativeData, settings: CreativeRankingSettings,
+  options: RankingOptions, index = indexCreativeData(data)) {
+  const range = creativeWindowRange(options.window ?? settings.creativeDefaultWindow, options.today);
+  return rankedCreatives(data, settings, options, summarizeCreativeGroups(data, { ...options, ...range }, index));
+}
+
+function rankedCreatives<Row extends CreativeGroupSummary>(data: CreativeData, settings: CreativeRankingSettings,
+  options: RankingOptions, all: Row[]) {
   const window = options.window ?? settings.creativeDefaultWindow;
   const range = creativeWindowRange(window, options.today);
-  const all = aggregateCreativeGroups(data, { ...options, ...range }, index);
   const eligible = all.filter(row => row.totals.spend > 0 && row.totals.spend >= settings.creativeSpendFloorGbp
     && row.totals.purchases >= settings.creativePurchaseMinimum);
   const ranked = eligible.sort((a, b) => (b.totals.roas ?? 0) - (a.totals.roas ?? 0)

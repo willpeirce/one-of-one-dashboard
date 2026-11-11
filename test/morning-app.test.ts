@@ -5,6 +5,12 @@ import type { Database } from '../src/db.js';
 import { createApp } from '../src/app.js';
 import { readRuntime } from '../src/runtime.js';
 import type { MorningSnapshot } from '../src/morning/model-types.js';
+import { morningInputFromDashboard } from '../src/morning/inputs.js';
+import { morningDeck } from '../src/morning/model.js';
+import { tickerState } from '../src/ticker/model.js';
+import { defaultSettings } from '../src/settings.js';
+import { getSampleDashboard } from '../src/sample-dashboard.js';
+import { readCreativeView } from '../src/creatives/routes.js';
 import { createTestDatabase } from './helpers/database.js';
 
 test('Morning reuses read-only Home inputs and only mutates its state and audit, including missing Settings', async t => {
@@ -36,9 +42,18 @@ test('Morning reuses read-only Home inputs and only mutates its state and audit,
   const initial = response.json<MorningSnapshot>();
   assert.equal(initial.day, '2032-04-07');
   assert.equal(initial.mode, 'sample');
-  assert.equal(initial.cards.length, 7);
-  for (const kind of ['dial', 'thumb', 'brief', 'arms']) assert.ok(initial.cards.some(card => card.figure.kind === kind), `First sample deck includes ${kind}`);
-  const brief = initial.cards.find(card => card.figure.kind === 'brief')!;
+  assert.deepEqual(initial.cards.map(card => card.kind), ['meta-kill', 'check-item', 'test-call', 'done-for-you', 'google', 'check-item']);
+  assert.equal(initial.brief!.items!.length, 3);
+  assert.equal(initial.brief!.items![0]!.tag!.type, 'pause');
+  assert.equal(initial.datedFromCheck!.length, 1);
+  assert.equal(initial.brief!.allInDeck, false, 'The sample Dated item is in the fine sheet');
+  assert.ok(initial.cards.filter(card => card.kind === 'check-item').every(card => card.primary.kind !== 'live'));
+  for (const kind of ['dial', 'arms']) assert.ok(initial.cards.some(card => card.figure.kind === kind), `Sample decision deck includes ${kind}`);
+  assert.ok(initial.cards.every(card => !['fading', 'make-next', 'date', 'new-verdict', 'meta-watch'].includes(card.kind)));
+  const dashboard = getSampleDashboard();
+  dashboard.creatives = await readCreativeView(observed(db), defaultSettings(), {}, now, {}, {seedSample: false, briefWindows: true});
+  const candidates = morningDeck(morningInputFromDashboard(dashboard, defaultSettings(), tickerState([], [], now, 'sample'), 'sample'), [], now).candidates;
+  const brief = candidates.find(card => card.figure.kind === 'brief')!;
   assert.equal(brief.figure.kind, 'brief');
   if (brief.figure.kind === 'brief') for (const variant of Object.values(brief.figure.variants)) {
     for (const bullet of variant.bullets) assert.doesNotMatch(bullet.text, /£|a purchase against|Hook \d+%/);

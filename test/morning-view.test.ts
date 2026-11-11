@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { MorningButton, MorningCard, MorningFigure, MorningKind, MorningSnapshot, MorningState, MorningTone } from '../src/morning/model-types.js';
-import { morningCardHtml, morningDeckHtml, morningFineHtml, morningMenuHtml, morningPage, morningProgressHtml, morningWhyHtml } from '../src/morning/view.js';
+import { morningBriefHtml, morningCardHtml, morningDeckHtml, morningFineHtml, morningLinesHtml, morningMenuHtml, morningPage, morningProgressHtml, morningWhyHtml } from '../src/morning/view.js';
 
 const card = (overrides: Partial<MorningCard> = {}): MorningCard => ({
   key: 'invented-card', kind: 'need', subjectId: 'invented-subject', sourceScope: 'needs:pulse', factsHash: 'invented-facts', ruleId: 'invented-rule',
@@ -13,14 +13,14 @@ const card = (overrides: Partial<MorningCard> = {}): MorningCard => ({
   ...overrides,
 });
 const snapshot = (cards: MorningCard[] = [card()]): MorningSnapshot => ({
-  mode: 'sample', day: '2032-04-06', cards, more: 0, fine: [{id: 'invented-check', label: 'Invented source read is fine'}],
+  mode: 'sample', day: '2032-04-06', cards, more: 0, watchOnHome: 0, fine: [{id: 'invented-check', label: 'Invented source read is fine'}],
   parked: [], hidden: [], presses: [], metaActions: [], passedDates: [], answers: [], brief: null, completed: 0, total: cards.length,
 });
 const state = (index: number): MorningState => ({mode: 'sample', cardKey: `invented-${index}`, state: 'parked', untilDay: '2032-04-07', factsHash: 'invented',
   answer: null, credentialId: 'invented-browser', pressedAt: '2032-04-06T10:00:00Z', clearedAt: null, title: `Invented card ${index}`, kind: 'need', subjectId: `invented-${index}`, sourceScope: 'needs:pulse'});
 
-test('Morning renders every card kind and state with a heading, icon-word state and four button kinds', () => {
-  const kinds: MorningKind[] = ['need', 'meta-kill', 'meta-slipping', 'meta-step', 'meta-watch', 'date', 'fading', 'make-next', 'google', 'test-call', 'new-verdict', 'done-for-you'];
+test('Morning renders every card kind and state with a heading, icon-word state and five button kinds', () => {
+  const kinds: MorningKind[] = ['need', 'meta-kill', 'meta-slipping', 'meta-step', 'meta-watch', 'date', 'fading', 'make-next', 'google', 'test-call', 'new-verdict', 'done-for-you', 'pause-all', 'check-item'];
   const tones: [MorningTone, string][] = [['alarm', 'Alarm'], ['decide', 'Decide'], ['warn', 'Watch'], ['info', 'Info'], ['done', 'Done for you']];
   for (const kind of kinds) for (const [tone, word] of tones) {
     const html = morningCardHtml(card({kind, state: tone}));
@@ -34,6 +34,7 @@ test('Morning renders every card kind and state with a heading, icon-word state 
     {kind: 'copy', label: 'Copy brief', text: 'Invented note'},
     {kind: 'save', target: 'morning', label: 'Not today', action: 'park'},
     {kind: 'live', label: 'Pause invented set', adSetId: '710000001', action: 'pause', confirm: 'Pause the invented set now?'},
+    {kind: 'pause-all', label: 'Pause all 3', confirm: 'Pause these 3 ad sets now?', members: []},
   ];
   for (const primary of buttons) {
     const html = morningCardHtml(card({primary}));
@@ -91,7 +92,7 @@ test('Morning server renders the first card, shares the ticker and escapes its i
 });
 
 test('All clear, progress and the fine sheet retain press history, Put back and bounded away rows', () => {
-  const data = snapshot([]); data.completed = 2; data.total = 2; data.more = 4;
+  const data = snapshot([]); data.completed = 2; data.total = 2; data.watchOnHome = 4;
   data.presses = [state(1)];
   data.passedDates = [{name: 'Invented launch', date: '2032-04-06', note: '', kind: 'flag', key: 'invented launch|2032-04-06', days: 0, chip: 'today', dateLabel: 'Tue 6 Apr', passed_at: '2032-04-06T10:00:00Z'}];
   data.parked = Array.from({length: 5}, (_, index) => ({stateRow: state(index), title: `Invented card ${index}`, reason: 'Not today', untilDay: '2032-04-07'}));
@@ -103,6 +104,53 @@ test('All clear, progress and the fine sheet retain press history, Put back and 
   assert.equal((morningFineHtml(data).match(/data-mn-put-back=/g) ?? []).length, 3);
   assert.match(morningFineHtml(data), /\+2 more/);
   assert.equal((morningFineHtml(data, true).match(/data-mn-put-back=/g) ?? []).length, 5);
-  assert.match(morningPage(data), /1 checks are fine/); assert.match(morningPage(data), /4 more on Home/);
+  assert.match(morningPage(data), /Good · 1 fine/); assert.match(morningPage(data), /Watch · 4 on Home/);
+  assert.match(html, /Your Morning deck is clear. 4 Watch cards are on Home/);
   assert.doesNotMatch(morningPage(data), /Everything else is fine/);
+});
+
+
+test('Morning lines show one Good and Watch row, with a quiet non-link when none are on Home', () => {
+  const data = snapshot();
+  const none = morningLinesHtml(data);
+  assert.match(none, /<button[^>]+id="mn-good"[^>]+aria-haspopup="dialog"/);
+  assert.match(none, /✓<\/span> Good · 1 fine/);
+  assert.match(none, /<span class="mn-watch-line" id="mn-watch-none"><span aria-hidden="true">△<\/span> Watch · none<\/span>/);
+  assert.doesNotMatch(none, /id="mn-more-home"/);
+  data.watchOnHome = 5;
+  assert.match(morningLinesHtml(data), /<a[^>]+id="mn-more-home" href="\/\?from=morning"[^>]*><span aria-hidden="true">△<\/span> Watch · 5 on Home<\/a>/);
+  assert.equal((morningPage(data).match(/id="mn-good"/g) ?? []).length, 1);
+});
+
+test('Morning progress keeps counts beyond eight and only draws pips up to eight', () => {
+  const data = snapshot(); data.completed = 2; data.total = 8;
+  assert.equal((morningProgressHtml(data).match(/<i class=/g) ?? []).length, 8);
+  assert.match(morningProgressHtml(data), /3 of 8/);
+  data.total = 11;
+  assert.equal(morningProgressHtml(data), '<span>3 of 11</span>');
+});
+
+test('Morning check coverage, item lines and dated fine rows render without treating text as markup', () => {
+  const data = snapshot();
+  data.brief = {text: 'Morning check · 4 items', status: 'needs', mode: 'live', allInDeck: true,
+    malformedCardTags: 2, items: [{text: 'Invented detail', lines: ['Invented <b>line</b>']}]};
+  assert.match(morningLinesHtml(data), /· all in the deck/);
+  data.brief.moreHere = 2;
+  assert.match(morningLinesHtml(data), /· 2 more here/);
+  assert.doesNotMatch(morningLinesHtml(data), /all in the deck/);
+  assert.match(morningBriefHtml(data.brief), /Invented &lt;b&gt;line&lt;\/b&gt;/);
+  assert.match(morningBriefHtml(data.brief), /Morning check · 2 malformed Card tags ignored/);
+  data.datedFromCheck = [{text: 'Invented deadline', lines: ['Invented date detail']}];
+  const fine = morningFineHtml(data);
+  assert.ok(fine.indexOf('Dated, from the check') < fine.indexOf('Parked and hidden'));
+  assert.match(fine, /Invented date detail/);
+});
+
+test('Pause all list figure caps eight escaped rows and adds the overflow to its more count', () => {
+  const figure: MorningFigure = {kind: 'list', rows: Array.from({length: 10}, (_, index) => ({label: `Invented <fern> ${index}`, value: `£${80 + index} spend`})), more: 2};
+  const html = morningCardHtml(card({kind: 'pause-all', state: 'decide', figure, why: 'Invented first set\nInvented last set'}));
+  assert.equal((html.match(/class="mn-list-row"/g) ?? []).length, 8);
+  assert.match(html, /\+4 more/); assert.match(html, /Invented &lt;fern&gt; 0/);
+  assert.doesNotMatch(html, /<fern>|Invented &lt;fern&gt; 8/);
+  assert.match(morningWhyHtml(card({figure})), /class="mn-brief-evidence"/);
 });

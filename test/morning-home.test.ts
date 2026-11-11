@@ -36,12 +36,12 @@ function saved(card: MorningCard, changes: Partial<MorningState> = {}): MorningS
     title: card.title, kind: card.kind, subjectId: card.subjectId, sourceScope: card.sourceScope, ...changes };
 }
 
-test('Home projects every current parked, hidden and held identity beyond the Morning cap, keeping source arrays whole', () => {
+test('Home preserves parked, hidden and held candidate omissions after Watch cards leave the deck', () => {
   const data = input(), original = structuredClone(data), cards = morningDeck(data, [], now).candidates;
   const rows = cards.map(card => saved(card, card.kind === 'meta-step'
     ? { state: 'answered', answer: 'hold', untilDay: '2032-04-14' }
-    : card.state === 'warn' ? { state: 'hidden', untilDay: null } : {}));
-  assert.equal(morningDeck(data, rows, now).snapshot.cards.length, 0, 'Saved presses have filled the daily cap');
+    : card.state === 'warn' ? { state: 'hidden', untilDay: null } : card.state === 'alarm' ? { state: 'seen' } : {}));
+  assert.equal(morningDeck(data, rows, now).snapshot.cards.length, 0, 'All eligible deck cards have saved answers');
   const omissions = homeMorningOmissions(data, rows, now)!;
   assert.deepEqual(omissions.needs, ['watch']);
   assert.deepEqual(omissions.creatives.sort(), ['invented-fading', 'invented-next']);
@@ -123,13 +123,17 @@ test('Home without Morning state performs one read, adds no property and retains
   });
 });
 
-test('Home reads persisted answers without cleanup writes, isolates modes and restores after Undo', async t => {
+test('Home keeps a Watch parked before this build, reads without cleanup writes and restores after Undo', async t => {
   const db = await createTestDatabase(); t.after(() => db.close());
   const settings = defaultSettings(), dashboard = getSampleDashboard(settings);
   dashboard.shopify = { ...shopify([need('stored-watch')]), mode: 'sample' };
   const data = morningInputFromDashboard(dashboard, settings, tickerState([], [], now, 'sample'), 'sample');
   const card = morningDeck(data, [], now).candidates[0]!;
-  await pressMorning(db, async () => data, { cardKey: card.key, action: 'hide' }, 'invented-device', now);
+  // Historical state remains valid although this Watch card no longer offers a new Morning press.
+  await db.query(`INSERT INTO pulse.morning_card_states(mode,card_key,state,until_day,facts_hash,answer,credential_id,
+    pressed_at,cleared_at,title,card_kind,subject_id,source_scope) VALUES('sample',$1,'parked','2032-04-08',$2,NULL,
+    'invented-device',$3,NULL,$4,$5,$6,$7)`, [card.key, card.factsHash, now, card.title, card.kind, card.subjectId, card.sourceScope]);
+  assert.equal(morningDeck(data, [], now).snapshot.cards.length, 0, 'The old Watch remains a Home-only candidate');
   const queries: string[] = [];
   const readOnly: Database = {
     query(sql, values) { queries.push(sql); assert.match(sql.trim(), /^SELECT\b/); return db.query(sql, values); },

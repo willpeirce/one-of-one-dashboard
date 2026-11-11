@@ -8,8 +8,8 @@ import { addDays, ukToday } from '../hero-range.js';
 import { MetaSpend } from '../ad-spend/clients.js';
 import { MetaCreativeClient } from './client.js';
 import type { CreativeData, CreativeReader } from './model.js';
-import type { CreativeView, CreativeSheet, CreativeSelection } from './presentation-types.js';
-import { aggregateCreativeGroup, aggregateCreativeGroups, creativeWindowRange, indexCreativeData, parentGroup, topCreatives } from './ranking.js';
+import type { CreativeView, CreativeOverview, CreativeSheet, CreativeSelection } from './presentation-types.js';
+import { aggregateCreativeGroup, aggregateCreativeGroups, summarizeCreativeGroups, creativeWindowRange, indexCreativeData, parentGroup, topCreatives, topCreativeSummaries } from './ranking.js';
 import { creativePerformance } from './performance.js';
 import { exactCreativeFrequency, hasFadingHistory } from './frequency.js';
 import { readCreativeData, readMedia, ensureGroupMedia, mergeMediaGroups, splitMediaGroup, undoMediaMerge } from './store.js';
@@ -47,11 +47,20 @@ async function refreshSavedLifts(db: Database, account: string, data: CreativeDa
   catch { console.error('Creative lifts could not be refreshed.'); }
 }
 export function buildCreativeView(data: CreativeData, settings: Settings, today: string, selection: CreativeSelection = {}, attributes = sampleAttributeRows(data), lifts = sampleLifts(data, today)): CreativeView {
+  return buildCreativeProjection(data, settings, today, selection, attributes, lifts, false);
+}
+export function buildCreativeOverview(data: CreativeData, settings: Settings, today: string, selection: CreativeSelection = {}, attributes = sampleAttributeRows(data), lifts = sampleLifts(data, today)): CreativeOverview {
+  return buildCreativeProjection(data, settings, today, selection, attributes, lifts, true);
+}
+function buildCreativeProjection(data: CreativeData, settings: Settings, today: string, selection: CreativeSelection, attributes: AttributeRow[], lifts: CreativeLift[], compact: false): CreativeView;
+function buildCreativeProjection(data: CreativeData, settings: Settings, today: string, selection: CreativeSelection, attributes: AttributeRow[], lifts: CreativeLift[], compact: true): CreativeOverview;
+function buildCreativeProjection(data: CreativeData, settings: Settings, today: string, selection: CreativeSelection, attributes: AttributeRow[], lifts: CreativeLift[], compact: boolean): CreativeView | CreativeOverview {
   const selected = { ...selection, window: selection.window ?? settings.creativeDefaultWindow };
   const index = indexCreativeData(data);
-  const top = topCreatives(data, settings, { ...selected, today }, index);
+  const top = compact ? topCreativeSummaries(data, settings, { ...selected, today }, index) : topCreatives(data, settings, { ...selected, today }, index);
   const performance = creativePerformance(data, settings, { ...selected, today }, index);
-  const groups = filterCreativeAttributes(aggregateCreativeGroups(data, { ...selected, to: today }, index), attributes, selected.attribute, selected.value)
+  const projectedGroups = compact ? summarizeCreativeGroups(data, { ...selected, to: today }, index) : aggregateCreativeGroups(data, { ...selected, to: today }, index);
+  const groups = filterCreativeAttributes(projectedGroups, attributes, selected.attribute, selected.value)
     .sort((a, b) => b.group.firstSeen.localeCompare(a.group.firstSeen) || a.group.id.localeCompare(b.group.id));
   const cards: CreativeView['cards'] = performance.fading.map(row => ({
     id: `fading:${row.groupId}`, kind: 'watch', groupId: row.groupId,
@@ -67,21 +76,35 @@ export function buildCreativeView(data: CreativeData, settings: Settings, today:
     targets: { uk: settings.cppUkTargetGbp, us: settings.cppUsTargetGbp }, freelancerInitial: settings.creativeFreelancerInitial,
     merged: data.groups.filter(group => group.mergedIntoId).map(group => ({ id: group.id, title: group.title, parentId: group.mergedIntoId! })) };
 }
-export async function readCreativeView(db: Database, settings: Settings, env: NodeJS.ProcessEnv, now: Date, selection: CreativeSelection = {}, options: { seedSample?: boolean; briefWindows?: boolean } = {}): Promise<CreativeView> {
+interface CreativeReadOptions { seedSample?: boolean; briefWindows?: boolean }
+export function readCreativeView(db: Database, settings: Settings, env: NodeJS.ProcessEnv, now: Date, selection: CreativeSelection = {}, options: CreativeReadOptions = {}): Promise<CreativeView> {
+  return readCreativeProjection(db, settings, env, now, selection, options, false);
+}
+export function readCreativeOverview(db: Database, settings: Settings, env: NodeJS.ProcessEnv, now: Date, selection: CreativeSelection = {}, options: CreativeReadOptions = {}): Promise<CreativeOverview> {
+  return readCreativeProjection(db, settings, env, now, selection, options, true);
+}
+function readCreativeProjection(db: Database, settings: Settings, env: NodeJS.ProcessEnv, now: Date, selection: CreativeSelection, options: CreativeReadOptions, compact: false): Promise<CreativeView>;
+function readCreativeProjection(db: Database, settings: Settings, env: NodeJS.ProcessEnv, now: Date, selection: CreativeSelection, options: CreativeReadOptions, compact: true): Promise<CreativeOverview>;
+async function readCreativeProjection(db: Database, settings: Settings, env: NodeJS.ProcessEnv, now: Date, selection: CreativeSelection, options: CreativeReadOptions, compact: boolean): Promise<CreativeView | CreativeOverview> {
   const data = await readCreativeData(db, settings, env, now);
   if (data.mode === 'sample' && options.seedSample !== false) await seedCreativeSample(db, settings, now);
-  const attributes = await readAttributeRows(db, data.mode, accountFor(data, settings));
-  const lifts = await storedLifts(db, accountFor(data, settings), data, ukToday(now));
-  const view = buildCreativeView(data, settings, ukToday(now), selection, attributes, lifts);
+  const accountId = accountFor(data, settings);
+  const [attributes, lifts, scan, states] = await Promise.all([
+    readAttributeRows(db, data.mode, accountId),
+    storedLifts(db, accountId, data, ukToday(now)),
+    readScanHealth(db, settings, {mode: data.mode, accountId, now}),
+    db.query<{ card_id: string; done_at: Date | null; snoozed_until: Date | null }>(
+      'SELECT card_id,done_at,snoozed_until FROM pulse.creative_card_states WHERE account_id=$1 AND mode=$2', [accountId, data.mode]),
+  ]);
+  const view = compact ? buildCreativeOverview(data, settings, ukToday(now), selection, attributes, lifts)
+    : buildCreativeView(data, settings, ukToday(now), selection, attributes, lifts);
   if (options.briefWindows) {
     const index = indexCreativeData(data), today = ukToday(now), market = selection.market ?? 'all';
     view.briefWindows = Object.fromEntries(([1, 3, 7] as const).map(windowDays => [windowDays,
       Object.fromEntries((['video', 'image'] as const).map(kind => [kind, makeCreativeBrief(kind, lifts, data, windowDays, market, today, index)])),
     ])) as NonNullable<CreativeView['briefWindows']>;
   }
-  view.scan = scanView(await readScanHealth(db, settings, { mode: data.mode, accountId: view.accountId, now }));
-  const states = await db.query<{ card_id: string; done_at: Date | null; snoozed_until: Date | null }>(
-    'SELECT card_id,done_at,snoozed_until FROM pulse.creative_card_states WHERE account_id=$1 AND mode=$2', [view.accountId, view.mode]);
+  view.scan = scanView(scan);
   const hidden = new Set(states.rows.filter(row => row.done_at || row.snoozed_until && new Date(row.snoozed_until).getTime() > now.getTime()).map(row => row.card_id));
   view.cards = view.cards.filter(card => !hidden.has(card.id));
   return view;

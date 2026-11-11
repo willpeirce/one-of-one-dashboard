@@ -3,6 +3,7 @@ import type { Settings } from '../settings.js';
 import type { MetaSpend } from '../ad-spend/clients.js';
 import { AdError } from '../ad-spend/model.js';
 import { spendMarket } from '../ad-spend/placement.js';
+import {PAUSE_UNCERTAINTY_PREFIX,parsePauseUncertainty,pauseUncertaintyCode} from './pause-uncertainty.js';
 
 export interface AdSet {
   targetCountries?: string[];
@@ -58,9 +59,26 @@ export async function saveAdSets(db: Database, account: string, rows: AdSet[], s
     const campaigns = await tx.query<{campaign_id: string; name: string}>('SELECT campaign_id,name FROM pulse.meta_campaigns WHERE account_id=$1', [account]);
     for (const row of rows) {
       const previous=(await tx.query<any>('SELECT status,daily_budget FROM pulse.meta_ad_sets WHERE account_id=$1 AND ad_set_id=$2 FOR UPDATE',[account,row.id])).rows[0];
+      let reconciledPause=false;
+      if(!appAction&&['ACTIVE','PAUSED'].includes(row.status)){
+        const uncertain=(await tx.query<{id:string;error_code:string;undo_of:string|null}>(
+          `SELECT id,error_code,undo_of FROM pulse.meta_actions WHERE account_id=$1 AND ad_set_id=$2
+           AND action='pause' AND result='pending' AND error_code LIKE $3 FOR UPDATE`,
+          [account,row.id,`${PAUSE_UNCERTAINTY_PREFIX}waiting|%`])).rows[0];
+        const marker=parsePauseUncertainty(uncertain?.error_code??null);
+        // `now` is the full poll's start, so an overlapping read cannot settle a failed acknowledgement.
+        if(uncertain&&marker&&now.getTime()>Date.parse(marker.finishedAt)){
+          const paused=row.status==='PAUSED';
+          await tx.query('UPDATE pulse.meta_actions SET result=$2,error_code=$3 WHERE id=$1',
+            [uncertain.id,paused?'success':'failed',pauseUncertaintyCode(paused?'paused':'active',new Date(marker.finishedAt),marker.code)]);
+          reconciledPause=paused;
+          if(paused&&uncertain.undo_of)await tx.query('UPDATE pulse.meta_actions SET undone_at=$2 WHERE id=$1',[uncertain.undo_of,now]);
+        }
+      }
       if(previous && adSetOwner(row.campaignId,settings)==='ours') for(const [field,value] of [['status',row.status],['daily_budget',row.dailyBudget]] as const) {
         const old=String(previous[field]??''),next=String(value??'');
-        if(old===next || appAction?.id===row.id && appAction.field===field && appAction.value===next)continue;
+        if(old===next || reconciledPause && field==='status' && next==='PAUSED'
+          || appAction?.id===row.id && appAction.field===field && appAction.value===next)continue;
         const own=await tx.query(`SELECT id FROM pulse.meta_actions WHERE account_id=$1 AND ad_set_id=$2 AND result='success' AND action=ANY($3::text[]) AND old_value=$4 AND new_value=$5 AND time>(SELECT last_read FROM pulse.meta_ad_sets WHERE account_id=$1 AND ad_set_id=$2) LIMIT 1`,[account,row.id,field==='status'?['pause','resume']:['budget'],old,next]);
         if(own.rowCount)continue;
         const audit=await tx.query<{id:string}>("INSERT INTO pulse.audit_log(event,occurred_at) VALUES('ad set changed outside the app',$1) RETURNING id",[now]);

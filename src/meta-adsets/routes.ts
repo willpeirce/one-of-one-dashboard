@@ -10,6 +10,7 @@ import type {Auth} from '../auth.js';
 import {readSettings} from '../settings.js';
 import {readAdSetsView} from './presentation.js';
 import {adsPage} from './view.js';
+import {selectedAdSetId} from './selected-set.js';
 export function registerAdSets(app:FastifyInstance,db:Database,auth:Auth,env:NodeJS.ProcessEnv,clock:()=>Date,options:AdTransportOptions={},publish:()=>Promise<void>=async()=>{}):void {
  const enabled=creativeFeatureFlags(env).metaActionsEnabled;
  const client=enabled?new MetaActionsClient(options.fetch):null;
@@ -19,11 +20,14 @@ export function registerAdSets(app:FastifyInstance,db:Database,auth:Auth,env:Nod
   const who=await auth.session(request);if(!who)return reply.code(401).send({error:'Sign in to continue.'});
   const {id}=request.params as {id:string};
   try {
-    const result=await actOnAdSet(db,id,request.body,who,clock(),client,reader);
-    await publish().catch(()=>console.info('Meta action saved; dashboard refresh pending.'));return result;
+    const result=await actOnAdSet(db,id,request.body,who,clock(),client,reader,clock);
+    return result;
   } catch(error) {
-    if(error instanceof AdActionError)return reply.code(error.statusCode).send({error:error.statusCode===502?'Meta action failed.':'Ad-set action refused.'});
+    if(error instanceof AdActionError)return reply.code(error.statusCode).send({error:error.publicMessage??(error.statusCode===502?'Meta action failed.':'Ad-set action refused.')});
     throw error;
+  } finally {
+    // A failed acknowledgement can still have reserved or changed a local action row.
+    await publish().catch(()=>console.info('Meta action saved; dashboard refresh pending.'));
   }
  });
  app.post('/api/meta/adset/:id/flags',{bodyLimit:1024},async(request,reply)=>{
@@ -33,6 +37,6 @@ export function registerAdSets(app:FastifyInstance,db:Database,auth:Auth,env:Nod
    await publish().catch(()=>{});return {saved:true};
   }catch(error){if(error instanceof AdActionError)return reply.code(error.statusCode).send({error:'Ad-set flag refused.'});throw error;}
  });
- app.get('/ads',async(request,reply)=>{if(!await auth.session(request))return reply.redirect('/login');return reply.type('text/html; charset=utf-8').send(adsPage(await readAdSetsView(db,(await readSettings(db)).values,env,clock())));});
- app.get('/api/meta/adsets',async(request,reply)=>{if(!await auth.session(request))return reply.code(401).send({error:'Sign in to continue.'});return readAdSetsView(db,(await readSettings(db)).values,env,clock());});
+ app.get('/ads',async(request,reply)=>{if(!await auth.session(request))return reply.redirect('/login');const selectedId=selectedAdSetId(request.query);return reply.type('text/html; charset=utf-8').send(adsPage(await readAdSetsView(db,(await readSettings(db)).values,env,clock(),selectedId)));});
+ app.get('/api/meta/adsets',async(request,reply)=>{if(!await auth.session(request))return reply.code(401).send({error:'Sign in to continue.'});const selectedId=selectedAdSetId(request.query);return readAdSetsView(db,(await readSettings(db)).values,env,clock(),selectedId);});
 }

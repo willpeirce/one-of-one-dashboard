@@ -3,9 +3,10 @@ import { addDays, ukToday } from '../hero-range.js';
 import type { SourceMode } from '../sources.js';
 import { morningDeck } from './model.js';
 import type { MorningAction, MorningCard, MorningInput, MorningResult, MorningSnapshot, MorningState } from './model-types.js';
+import {timed,type MorningTiming} from './timing.js';
 
-export type MorningInputLoader = (now: Date) => Promise<MorningInput>;
-export interface MorningPress { cardKey: string; action: MorningAction | 'undo'; answer?: 'a' | 'b' | 'draw' }
+export type MorningInputLoader = (now: Date,timing?: MorningTiming) => Promise<MorningInput>;
+export interface MorningPress { cardKey: string; action: MorningAction | 'undo'; answer?: 'a' | 'b' | 'draw'; days?: 3 | 7 }
 
 export class MorningPressError extends Error {
   constructor(readonly statusCode: 404 | 409, message: string) { super(message); }
@@ -44,16 +45,16 @@ async function lock(db: Database, mode: SourceMode): Promise<void> {
   await db.query('SELECT pg_advisory_xact_lock(1668244583,hashtext($1))', [`morning:${mode}`]);
 }
 
-export async function readMorningResult(db: Database, loadInputs: MorningInputLoader, now: Date): Promise<MorningResult> {
-  const input = await loadInputs(now);
-  return db.transaction(async tx => {
+export async function readMorningResult(db: Database, loadInputs: MorningInputLoader, now: Date,timing?: MorningTiming): Promise<MorningResult> {
+  const input = await loadInputs(now,timing);
+  return timed(timing,'state',() => db.transaction(async tx => {
     await lock(tx, input.mode);
     return (await resolve(tx, input, now)).result;
-  });
+  }));
 }
 
-export async function readMorning(db: Database, loadInputs: MorningInputLoader, now: Date): Promise<MorningSnapshot> {
-  return (await readMorningResult(db, loadInputs, now)).snapshot;
+export async function readMorning(db: Database, loadInputs: MorningInputLoader, now: Date,timing?: MorningTiming): Promise<MorningSnapshot> {
+  return (await readMorningResult(db, loadInputs, now,timing)).snapshot;
 }
 
 function answerState(card: MorningCard, press: MorningPress, credentialId: string, mode: SourceMode, now: Date): MorningState {
@@ -63,7 +64,7 @@ function answerState(card: MorningCard, press: MorningPress, credentialId: strin
     if (!card.eventDate) throw new MorningPressError(409, 'This card does not offer a reminder.');
     untilDay = addDays(card.eventDate, -3);
   } else if (press.action === 'hold') {
-    state = 'answered'; answer = 'hold'; untilDay = addDays(today, 7);
+    state = 'answered'; answer = 'hold'; untilDay = addDays(today, press.days ?? 7);
   } else if (press.action === 'hide') { state = 'hidden'; untilDay = null; }
   else if (press.action === 'ack') { state = 'seen'; untilDay = card.seenUntilDay ?? addDays(today, 1); }
   else if (press.action === 'call') {
@@ -78,9 +79,9 @@ const caption = (press: MorningPress) => ({park: 'parked', remind: 'reminder set
   call: `called ${press.answer?.toUpperCase()}`, undo: 'put back'}[press.action]);
 
 export async function pressMorning(db: Database, loadInputs: MorningInputLoader, press: MorningPress,
-  credentialId: string, now: Date): Promise<MorningSnapshot> {
-  const input = await loadInputs(now);
-  return db.transaction(async tx => {
+  credentialId: string, now: Date,timing?: MorningTiming): Promise<MorningSnapshot> {
+  const input = await loadInputs(now,timing);
+  return timed(timing,'state',() => db.transaction(async tx => {
     await lock(tx, input.mode);
     const {states, result} = await resolve(tx, input, now);
     let title: string;
@@ -92,7 +93,7 @@ export async function pressMorning(db: Database, loadInputs: MorningInputLoader,
     } else {
       const card = result.candidates.find(row => row.key === press.cardKey);
       if (!card) throw new MorningPressError(404, 'This card is no longer listed.');
-      // Home also offers eligible test calls beyond Morning's seven-card display cap.
+      // Home offers eligible test calls through the same current candidate guard.
       const offered = card.kind === 'test-call' && press.action === 'call' ? result.openCards : result.snapshot.cards;
       if (!card.allowedPresses.includes(press.action) || !offered.some(row => row.key === card.key))
         throw new MorningPressError(409, 'This card does not offer that press.');
@@ -108,5 +109,5 @@ export async function pressMorning(db: Database, loadInputs: MorningInputLoader,
     await tx.query('INSERT INTO pulse.audit_log(event,credential_id,occurred_at) VALUES($1,$2,$3)',
       [Array.from(`Morning ${caption(press)}: ${title}`).slice(0, 80).join(''), credentialId, now]);
     return (await resolve(tx, input, now)).result.snapshot;
-  });
+  }));
 }

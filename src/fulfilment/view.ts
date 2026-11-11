@@ -1,15 +1,15 @@
 import { tickerHead, tickerHtml } from '../ticker/view.js';
 import { formatNumber, formatDollars, formatPounds } from '../money.js';
-import type { fulfilmentSummary } from './store.js';
+import type { fulfilmentSummary, FulfilmentOverview } from './store.js';
 import type { ParcelRow } from './parser.js';
 import { knownService } from './model.js';
 export const escape = (v:unknown) => String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]!);
 const money=(minor:number|null,currency='GBP')=>minor===null?'Unknown':currency==='GBP'?formatPounds(minor/100):formatDollars(minor/100);
 export type Summary=Awaited<ReturnType<typeof fulfilmentSummary>>;
-export function glance(s:Summary):string {
+export function glance(s:FulfilmentOverview):string {
   return `<section class="glass fulfilment-glance" aria-label="Fulfilment costs"><p class="eyebrow">J&amp;J · ${s.mode==='sample'?'Sample data':'Uploaded charges'} · this month</p><h2>Fulfilment costs</h2><div class="grid">${s.averages.map(a=>`<div class="tile stat"><span class="sl">${a.warehouse.toUpperCase()} per parcel</span><strong>${money(a.exportedMinor,a.currency)}</strong><span class="ss">${a.currency} as exported · ${money(a.gbpPence)} in GBP · ${formatNumber(a.count)} parcels</span></div>`).join('')}</div><p>Last upload: ${s.lastUpload?escape(new Intl.DateTimeFormat('en-GB', {timeZone:'Europe/London',dateStyle:'medium',timeStyle:'short'}).format(new Date(s.lastUpload.uploadedAt))):'None'} · Error: ${money(s.lastUpload?.errorPence??null)}${s.lastUpload?` (${formatNumber(s.lastUpload.errorCount)} orders)`:' · no comparisons yet'}</p><a class="btn" href="/fulfilment">Upload / detail</a></section>`;
 }
-export function fulfilmentNeeds(s:Summary):string {
+export function fulfilmentNeeds(s:Pick<FulfilmentOverview,'mode'|'needs'>):string {
   return s.needs.slice(0,5).map(n=>`<article class="dcard pulse-need" data-state="warn"><span class="chip warn">△ Watch</span><h3>${escape(n.title)}</h3><p>${escape(n.why)}</p><small>J&amp;J · ${s.mode==='sample'?'Sample data':'Uploaded charges'}</small><a class="act" href="/fulfilment">Review fulfilment costs</a></article>`).join('')+(s.needs.length>5?`<a class="btn" href="/fulfilment">Show ${formatNumber(s.needs.length-5)} more fulfilment items</a>`:'');
 }
 export function rowsHtml(rows:readonly (ParcelRow&{orderId:string|null;duplicate:boolean})[]):string {

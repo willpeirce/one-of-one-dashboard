@@ -52,7 +52,8 @@ test('live Home and Morning share stored HQ facts and audited calls without read
   const undo = await app.inject({method: 'POST', url: '/api/morning/press', headers, payload: {cardKey: card.key, action: 'undo'}});
   assert.equal(undo.statusCode, 200); assert.ok((await morning()).cards.some(item => item.key === card.key));
   await saveHQRegister(db, {readable: true, rows: [{id: row.id, section: 'history', cells: [row.cells[0]!, row.cells[2]!, 'A wins', 'Invented rule', 'Invented evidence']}], skippedRows: 0}, '"invented-history"', now);
-  assert.ok((await morning()).cards.some(item => item.kind === 'new-verdict'));
+  assert.equal((await morning()).cards.some(item => item.kind === 'new-verdict'), false, 'New verdicts leave the decision deck');
+  assert.match(await home(), /A wins/, 'The stored verdict remains available in Home history');
 });
 
 test('live app without the HQ key shows a key reminder and waiting tests, with no invented test cards', async t => {

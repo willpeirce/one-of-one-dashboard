@@ -5,7 +5,7 @@ import type { CreativeLift, LiftConfidence, LiftMarket, LiftWindowDays } from '.
 import { creativeLiftLabel, mergeInstructions } from './lift-phrasing.js';
 import type { CreativeData } from './model.js';
 import type { CreativeCard } from './presentation-types.js';
-import { aggregateCreativeGroups, indexCreativeData } from './ranking.js';
+import { summarizeCreativeGroups, indexCreativeData } from './ranking.js';
 
 export interface CreativeBullet { text: string; instruction?: string; confidence: LiftConfidence; liftIds: string[] }
 export interface CreativeBrief {
@@ -76,7 +76,7 @@ export function makeCreativeBrief(kind: CreativeKind, lifts: readonly CreativeLi
     if (!group || group.kind !== kind || seenExamples.has(group.id)) return [];
     seenExamples.add(group.id); return [{ id: group.id, title: group.title }];
   }).slice(0, 2);
-  const groups = aggregateCreativeGroups(data, { kind, market, from: addDays(today, 1 - windowDays), to: today }, index);
+  const groups = summarizeCreativeGroups(data, { kind, market, from: addDays(today, 1 - windowDays), to: today }, index);
   const spend = groups.reduce((sum, group) => sum + group.totals.spend, 0);
   const thin = top && (top.metrics.with.groupCount < 5 || top.metrics.without.groupCount < 5);
   const footer = `${formatNumber(groups.length)} ${kind === 'video' ? 'videos' : 'images'}, ${pounds(spend)} spend. Patterns, not proof.${thin ? ' Thin evidence, read loosely.' : ''}`;

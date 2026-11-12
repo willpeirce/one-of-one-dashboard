@@ -34,7 +34,7 @@ export async function checkGoogleWidgets(context: BrowserContext): Promise<void>
       const onlyNetwork = googlePresentationFacts(); onlyNetwork.jobs = onlyNetwork.jobs.filter(job => job.kind !== 'conversions');
       applyGoogleDashboard(fixture,onlyNetwork,{mode:'sample',orders:[],ready:false,from:'2026-10-26'},defaultSettings(),undefined,now);
       await publish();
-      assert.deepEqual((await page.locator('#p-ads [data-primary-dials] > [data-model-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-model-id')))).slice(0,5),['w001','w002','w019','w017','w024']);
+      assert.deepEqual((await page.locator('#p-ads [data-primary-dials] > [data-model-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-model-id')))).slice(0,4),['w001','w002','w019','w024']);
       assert.equal(await page.locator('#p-ads [data-sample-dials] [data-model-id="w025"]').count(),1);
       assert.equal(await page.locator('[data-model-id="w024"] .sample-label').count(),0);
       applyGoogleDashboard(fixture,googlePresentationFacts(),{mode:'sample',orders:[],ready:false,from:'2026-10-26'},defaultSettings(),{

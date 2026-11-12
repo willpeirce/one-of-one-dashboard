@@ -107,13 +107,16 @@ ${tickerHtml()}
   </aside>
 </section>
 
-<section class="chapter tbl" id="table" aria-labelledby="table-title">
-  <header class="chapter-heading"><span class="chapter-number" aria-hidden="true">1</span><div class="chapter-copy"><p class="chapter-eyebrow">Decisions</p><h2 class="chapter-title" id="table-title"><span data-sample-text="t0123">{{sample:t0123}}</span></h2></div><a class="btn morning-link" href="/morning">Morning ›</a><span class="shm" id="deckcount"><span data-sample-text="t0124">{{sample:t0124}}</span></span></header>
-  <div class="deck" id="deck"></div>
-  <div id="creative-feedback" role="status" aria-live="polite"></div>
+<section class="chapter stock-chapter" id="stock-chapter" aria-labelledby="stock-chapter-title">
+  <header class="chapter-heading"><span class="chapter-number" aria-hidden="true">1</span><div class="chapter-copy"><p class="chapter-eyebrow">Stock</p><h2 class="chapter-title" id="stock-chapter-title">Series 1 sell-out</h2></div><button class="btn tab stock-dials-link" type="button" data-tab="stock">Stock dials</button></header>
+  <div class="stock-card glass">
+    <article class="tile series-pace" data-source="shopify" data-mode="sample" data-model-id="w017" aria-label="Series 1 sell-out pace"></article>
+    <div class="stock-packs" id="stock-packs"></div>
+  </div>
 </section>
 
 <section class="chapter revs" id="reviews" aria-labelledby="reviews-title"></section>
+<div class="rv-toast" id="review-toast" role="status" aria-live="polite" hidden><span id="review-toast-text"></span><button class="btn" type="button" id="review-undo">Undo</button></div>
 
 <section class="chapter tests" id="tests" aria-labelledby="tests-title">
   <header class="chapter-heading"><span class="chapter-number" aria-hidden="true">3</span><div class="chapter-copy"><p class="chapter-eyebrow">Experiments</p><h2 class="chapter-title" id="tests-title"><span data-sample-text="t0200">{{sample:t0200}}</span></h2></div><span class="shm" id="testcount"><span data-sample-text="t0201">{{sample:t0201}}</span></span></header>
@@ -150,7 +153,6 @@ ${tickerHtml()}
     <div class="grid">
       <button type="button" class="tile dial" data-k="ukcpo" data-market-only="uk" data-src="meta" data-g="meta" data-dial="{{widget:w001}}" data-source="meta shopify" data-mode="sample" data-model-id="w001"></button>
       <button type="button" class="tile dial" data-k="uscpo" data-market-only="us" data-src="meta" data-g="meta" data-dial="{{widget:w002}}" data-source="meta shopify" data-mode="sample" data-model-id="w002"></button>
-      <article class="tile series-pace" data-source="shopify" data-mode="sample" data-model-id="w017" aria-label="Series 1 sell-out pace"></article>
       <button class="tile dial" data-src="meta" data-dial="{{widget:w018}}" data-source="meta" data-mode="sample" data-model-id="w018"></button>
       <button class="tile dial" data-src="meta" data-dial="{{widget:w019}}" data-source="meta shopify" data-mode="sample" data-model-id="w019"></button>
       <button class="tile dial" data-src="meta" data-dial="{{widget:w020}}" data-source="meta" data-mode="sample" data-model-id="w020"></button>

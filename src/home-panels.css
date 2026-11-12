@@ -9,6 +9,12 @@
 #reviews .age{white-space:nowrap;color:var(--muted);font-size:11px}
 #reviews .review-more>summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--muted)}
 #reviews .rvhead>.act{min-height:44px}
+#reviews .rv-item{display:grid;grid-template-columns:minmax(0,1fr) 44px;gap:6px;align-items:stretch;min-width:0}
+#reviews .rv-dismiss{display:grid;place-items:center;width:44px;min-height:44px;padding:0;border:1px solid var(--line);border-radius:12px;background:transparent;color:var(--muted);font:600 15px/1 var(--disp);cursor:pointer}
+#reviews .rv-dismiss:hover,#reviews .rv-dismiss:focus-visible{color:var(--ink);background:var(--glass)}
+.rv-toast{position:fixed;left:50%;bottom:max(16px,env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:10px;max-width:calc(100% - 32px);padding:4px 4px 4px 16px;border-radius:999px;background:rgba(34,16,78,.96);border:1px solid var(--line);box-shadow:0 12px 32px rgba(10,0,40,.4);color:var(--ink);font-size:13px;white-space:nowrap}
+.rv-toast[hidden],.rv-toast [hidden]{display:none!important}
+.rv-toast .btn{min-height:44px;padding:0 16px}
 #dials .creative-home-panel{padding:12px;margin-bottom:10px}
 #dials .creative-home-panel .creative-heading{margin-bottom:6px}
 #dials .creative-home-panel .creative-heading h3{font-size:16px;margin:0}
@@ -41,4 +47,36 @@
  #dials .creative-home-panel .creative-numbers{font-size:10px;line-height:15px;white-space:normal}
  #dials .creative-home-panel .creative-roas{font-size:22px}
  #dials .creative-home-panel .creative-roas small{font-size:9px}
+}
+/* Stock: kit sell-out dials and pack bars in one card (12 Nov 2026). */
+#stock-chapter .stock-card{display:grid;gap:14px;padding:14px 16px;border-radius:var(--r2);min-width:0}
+#stock-chapter .series-pace{grid-column:auto;background:none;border:0;box-shadow:none;padding:0;border-radius:0;overflow:visible;cursor:default}
+#stock-chapter .series-pace:hover{background:none;transform:none}
+#stock-chapter .series-pace>h3,#stock-chapter .stock-packs-head h3{font:600 15px/1.3 var(--disp);margin:0}
+#stock-chapter .pace-summary{gap:3px;font-size:12px;line-height:1.45}
+#stock-chapter .pace-summary small{font-size:10.5px}
+#stock-chapter .pace-kits strong{font:600 20px/1.2 var(--disp)}
+#stock-chapter .pace-correction{color:var(--warn);font-weight:650}
+#stock-chapter .stock-dials-link{min-height:44px;font-size:12px;align-self:center}
+#stock-chapter .stock-packs:empty{display:none}
+#stock-chapter .stock-packs{border-top:1px solid var(--line);padding-top:12px;display:grid;gap:6px;min-width:0}
+#stock-chapter .stock-packs-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
+#stock-chapter .stock-packs-head p{margin:0;font-size:11px;color:var(--muted)}
+#stock-chapter .stock-grid{display:grid;min-width:0}
+#stock-chapter .stock-line{display:grid;grid-template-columns:minmax(84px,1.1fr) minmax(0,1fr) minmax(0,1fr);gap:10px;align-items:center;min-height:44px;border-bottom:1px solid color-mix(in srgb,var(--line) 60%,transparent)}
+#stock-chapter .stock-line:last-child{border-bottom:0}
+#stock-chapter .stock-columns{min-height:20px;border:0;font-size:10.5px;letter-spacing:.06em;color:var(--muted)}
+#stock-chapter .stock-product{font-size:12.5px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#stock-chapter .stock-cell{display:grid;gap:4px;min-width:0;font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+#stock-chapter .stock-cell small{color:var(--muted);font-size:11px}
+#stock-chapter .stock-glyph{color:var(--muted)}
+#stock-chapter .stock-cell[data-stock-state=good] .stock-glyph{color:var(--good)}
+#stock-chapter .stock-cell[data-stock-state=warn] .stock-glyph{color:var(--warn)}
+#stock-chapter .stock-bar{display:block;height:4px;border-radius:2px;background:rgba(255,255,255,.12);overflow:hidden}
+#stock-chapter .stock-bar i{display:block;height:100%;border-radius:inherit;background:var(--good)}
+#stock-chapter .stock-cell[data-stock-state=warn] .stock-bar i{background:var(--warn)}
+#stock-chapter .stock-fine>summary{min-height:44px;display:flex;align-items:center;font-size:12px;color:var(--muted)}
+@media(min-width:1000px){
+ #stock-chapter .stock-card{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:24px;align-items:start}
+ #stock-chapter .stock-packs{border-top:0;padding-top:0;border-left:1px solid var(--line);padding-left:24px}
 }

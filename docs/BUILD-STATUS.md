@@ -115,9 +115,22 @@ Branch **morning-card-fixes**. Three fixes from the first morning on the decisio
 
 No migration, Setting, dependency or source read. Sample mode is unchanged: its test call has a reading. Validation: typecheck, all 1,166 tests on disposable PostgreSQL, the production build, the full Chromium suite and the unchanged secret scanner pass locally. Known gap: a test left on Home has no park or hide control there; it stays counted until it is called or its register row moves to History.
 
+## Small change: Stock chapter and review Dismiss · 12 Nov
+
+Branch **home-stock-reviews**. Four of Will's asks from 12 Nov.
+
+1. **On the table is gone.** Home's chapter 1 (decision cards, Days left, To watch, Shopify checks) is removed: Morning holds the decisions, Source health the checks.
+2. **Stock is chapter 1.** One card: the Series 1 kit sell-out dials (moved from the Ads tab, with a shorter read; full facts in the sheet) and the pack bars, in stock against needed for the kits left. Starter, Ultimate and Duo Pack never show (bundles, no stock of their own).
+3. **New reviews: Dismiss, not Publish.** A ✕ on each row, Dismiss all in the heading, Dismiss in the review sheet, and an 8-second Undo. Pulse records the dismissed ids (migration 069); Judge.me is never written.
+4. **The Next pill on the Next up strip is smaller**: 28px, clear of the strip's edges, with the 44px tap area kept.
+
+Migration 069 (one new table). No new Setting, dependency or source read. Sample and live behave the same. Validation: see DECISIONS, 12 Nov.
+
 ## Next step
 
-**Morning card fixes** is built on `morning-card-fixes` for review. It adds no migration: after an approved merge the deployment maintainer merges, runs the normal migration command (nothing to apply) and republishes, then checks on a phone that a test with no reading is absent from the deck and present on Home, and that the next morning's check items show their decision line.
+**Stock chapter and review Dismiss** is built on `home-stock-reviews` for review. After an approved merge: the Shell merge, `npm run migrate` (applies 069 to the dev database; production applies it on start), Republish, then on a phone: Home opens on Stock with both dials and the pack bars; dismissing a review removes it, Undo brings it back, Dismiss all clears the list and the hero flag; the Next pill sits inside the strip.
+
+**Morning card fixes** merged on 11 Nov as [PR #49](https://github.com/willpeirce/one-of-one-dashboard/pull/49), no migration.
 
 **Morning decisions · A–F** merged on 11 Nov as [PR #48](https://github.com/willpeirce/one-of-one-dashboard/pull/48), adding migration 068. Installed-phone acceptance of the decision order and actions remains a post-deployment check, with the warm Morning first byte against the half-second target. Local typecheck, all 1,164 PostgreSQL tests, build, full browser checks and secret scanning pass; GitHub CI verifies the pushed head.
 

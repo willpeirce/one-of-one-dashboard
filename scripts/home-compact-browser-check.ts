@@ -116,11 +116,14 @@ async function visibleControls(scope: Locator): Promise<Locator[]> {
 }
 
 async function assertPrimaryLiveDials(page: Page): Promise<void> {
-  for (const id of ['w001','w002','w019','w017']) {
+  for (const id of ['w001','w002','w019']) {
     const liveTile = page.locator(`#p-ads [data-primary-dials] [data-model-id="${id}"][data-mode=live]`);
     assert.equal(await liveTile.count(),1,`${id} belongs in the primary live dial grid`);
     assert.equal(await liveTile.isVisible(),true,`${id} is visible before expanding sample dials`);
   }
+  // Series 1 pace moved from the Ads tab into the Stock chapter (12 Nov 2026).
+  assert.equal(await page.locator('#p-ads [data-model-id="w017"]').count(),0);
+  assert.equal(await page.locator('#stock-chapter [data-model-id="w017"][data-mode=live]').isVisible(),true);
 }
 
 async function budget(page: Page, width: number, waiting = true): Promise<void> {
@@ -147,9 +150,10 @@ async function budget(page: Page, width: number, waiting = true): Promise<void> 
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   if (!waiting) return;
 
-  const heights = width === 390 ? {table:1610,reviews:455,tests:680,dials:1800,foot:90} : {table:800,reviews:360,tests:380,dials:1000,foot:70};
-  const controls = {table:16,reviews:6,tests:6,dials:24,foot:3};
-  for (const id of ['table','reviews','tests','dials','foot'] as const) {
+  const heights = width === 390 ? {'stock-chapter':760,reviews:455,tests:680,dials:1800,foot:90} : {'stock-chapter':560,reviews:360,tests:380,dials:1000,foot:70};
+  // Reviews: Dismiss all replaces Publish and each shown row gains its Dismiss (Will, 12 Nov 2026).
+  const controls = {'stock-chapter':5,reviews:9,tests:6,dials:24,foot:3};
+  for (const id of ['stock-chapter','reviews','tests','dials','foot'] as const) {
     const section = page.locator(`#${id}`), box = await section.boundingBox();
     assert.ok(box && box.height <= heights[id], `${width}px #${id} height ${box?.height} exceeds ${heights[id]}`);
     const shown = await visibleControls(section);
@@ -160,45 +164,25 @@ async function budget(page: Page, width: number, waiting = true): Promise<void> 
     }
   }
   await assertPrimaryLiveDials(page);
-  const act = page.locator('#act .dcard');
-  const shown = [];
-  for (const card of await act.all()) if (await card.isVisible()) shown.push(card);
-  assert.equal(shown.length,3,'Exactly three act cards show before expansion');
-  assert.deepEqual(await Promise.all(shown.map(card=>card.getAttribute('data-rank'))),['0','1','2']);
-  assert.deepEqual(await act.evaluateAll(cards=>cards.map(card=>card.getAttribute('data-rank'))),['0','1','2','3','4']);
-  for (const card of shown) {
-    const actions = await visibleControls(card); assert.equal(actions.length,2);
-    for (const action of actions) {const box = await action.boundingBox(); assert.ok(box && box.width>=44 && box.height>=44);}
-  }
-  for (const [selector,max] of [['#act .act-title',1],['#act .act-reason',2],['#watch .watch-text',2],['#tests .test-name',2],['.creative-floor',2],['#reviews .rec',1]] as const) {
+  for (const [selector,max] of [['#tests .test-name',2],['.creative-floor',2],['#reviews .rec',1]] as const) {
     const elements = page.locator(selector); assert.ok(await elements.count(), `${selector} exists`);
     for (const element of await elements.all()) {
       if (!await element.isVisible()) continue;
       const measure = await element.evaluate(el=>({height:el.getBoundingClientRect().height,line:parseFloat(getComputedStyle(el).lineHeight),ellipsis:getComputedStyle(el).textOverflow}));
       assert.ok(Number.isFinite(measure.line) && Math.round(measure.height/measure.line)<=max,`${selector} exceeds ${max} lines: ${JSON.stringify(measure)}`);
-      if(selector==='#act .act-title'||selector==='#reviews .rec')assert.equal(measure.ellipsis,'ellipsis');
+      if(selector==='#reviews .rec')assert.equal(measure.ellipsis,'ellipsis');
     }
   }
   assert.ok(await page.locator('#tests .tcard,#tests .trow').count() >= 5);
   assert.equal(await page.locator('#tests [data-say]').innerText(), 'Invented experiment summary from the model');
   assert.equal(await page.locator('#creative-panel .creative-top .creative-picture').count(),3);
   assert.equal(await page.locator('#reviews .rt[data-review-open]').count(),6);
-  assert.equal(await page.locator('#watch .wrow').count(),10);
-  assert.equal(await page.locator('#stock [data-stock-market]').count(),8,'One cell per product and market, including fine folded products');
-  assert.deepEqual(await page.locator('#stock [data-stock-market]').evaluateAll(cells=>cells.map(cell=>`${cell.getAttribute('data-stock-product')}:${cell.getAttribute('data-stock-market')}`).sort()), Array.from({length:4},(_,i)=>['uk','us'].map(m=>`Invented product ${i}:${m}`)).flat().sort());
-  assert.equal(await page.locator('#stock [data-state=good]').count(),0,'Fine stock cells do not inflate good counts');
+  assert.equal(await page.locator('#stock-chapter [data-stock-market]').count(),8,'One cell per product and market, including fine folded products');
+  assert.deepEqual(await page.locator('#stock-chapter [data-stock-market]').evaluateAll(cells=>cells.map(cell=>`${cell.getAttribute('data-stock-product')}:${cell.getAttribute('data-stock-market')}`).sort()), Array.from({length:4},(_,i)=>['uk','us'].map(m=>`Invented product ${i}:${m}`)).flat().sort());
+  assert.equal(await page.locator('#stock-chapter .stock-cell[data-state]').count(),0,'Stock cells do not feed the source health counts');
   assert.deepEqual(await page.locator('#reviews [data-review-open]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-review-open'))),Array.from({length:6},(_,i)=>`invented-review-${i}`));
-  assert.equal(await page.locator('#checks [data-state]').count(),0);
-  assert.match(await page.locator('#checks').innerText(),/14 of 15 checks passing/);
   assert.doesNotMatch((await page.locator('#reviews .rvlist').allTextContents()).join(' '),/Market unknown|Verified buyer|Judge.me/);
-  assert.doesNotMatch((await page.locator('#deck [data-source="meta"]').allTextContents()).join(' '),/Shopify/);
-  // Worked by hand: 1 alarm need + 1 red stock cell; four Decide cards;
-  // 7 needs + Delivery + Test share + creative Watch + 3 amber stock cells + 1 live amber dial.
-  assert.equal(await page.locator('#deck [data-state="alarm"]').count(),2);
-  assert.equal(await page.locator('#deck [data-state="decide"]').count(),4);
-  assert.equal(await page.locator('#deck [data-state="warn"]').count(),13);
-  assert.equal(await page.locator('#watch .amber-dials').innerText(),'1 dial in amber');
-  assert.match(await page.locator('#deckcount').innerText(),/2 alarms · 4 decisions/);
+  assert.equal(await page.locator('#table,#deck,#act,#watch,#checks').count(),0,'On the table left Home; Morning holds its decisions');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,`${width}px has no horizontal overflow`);
 }
 
@@ -208,6 +192,7 @@ export async function checkHomeCompact(context: BrowserContext): Promise<void> {
   const base = await response.json() as DashboardSnapshot;
   const page = await context.newPage();
   let fixture = compactHomeFixture(base), actions: {cardId:string;action:string}[] = [];
+  const dismissals: {ids:string[];action:string}[] = [];
   try {
     await page.route('**/api/dashboard',route=>route.fulfill({json:fixture}));
     await page.route('**/api/events',route=>route.fulfill({contentType:'text/event-stream',body:`retry: 60000\nevent: dashboard\ndata: ${JSON.stringify(fixture)}\n\n`}));
@@ -218,6 +203,7 @@ export async function checkHomeCompact(context: BrowserContext): Promise<void> {
       fixture.creatives!.cards=fixture.creatives!.cards.filter(card=>card.id!==body.cardId);
       await route.fulfill({json:{ok:true}});
     });
+    await page.route('**/api/reviews/dismiss',async route=>{ dismissals.push(route.request().postDataJSON()); await route.fulfill({json:{saved:true}}); });
     await page.route('**/',route=>route.fulfill({contentType:'text/html',body:dashboardPage(fixture)}));
     await page.addInitScript({content:"Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{window.__compactCopied=text;}}});"});
     for(const viewport of [{width:390,height:844},{width:1280,height:960}]) {
@@ -225,7 +211,7 @@ export async function checkHomeCompact(context: BrowserContext): Promise<void> {
       await page.setViewportSize(viewport); await page.goto('/');
       await page.locator('html[data-dashboard-ready="true"]').waitFor();
       await page.evaluate(async () => { await document.fonts.ready; });
-      console.log('COMPACT GEOMETRY', viewport.width, await page.locator('#table,#reviews,#tests,#dials,#foot').evaluateAll(rows=>rows.map(r=>({id:r.id,height:r.getBoundingClientRect().height}))));
+      console.log('COMPACT GEOMETRY', viewport.width, await page.locator('#stock-chapter,#reviews,#tests,#dials,#foot').evaluateAll(rows=>rows.map(r=>({id:r.id,height:r.getBoundingClientRect().height}))));
       await budget(page,viewport.width);
       const waitingReviews = fixture.reviews!;
       const replay = async () => {
@@ -257,20 +243,7 @@ export async function checkHomeCompact(context: BrowserContext): Promise<void> {
       await page.locator('#market [data-market="uk"]').click();
       await page.locator('#market [data-market="all"]').click();
       await assertPrimaryLiveDials(page);
-      await page.locator('#act [data-adset-open]').first().click();
-      await page.locator('#adset-sheet[open]').waitFor();
-      assert.match(await page.locator('#adset-sheet').innerText(),/Last 7 UK days/);
-      await page.locator('[data-adset-close]').click();
-      await page.locator('#act details > summary').filter({hasText:/more decisions/}).click();
-      const makeNext=page.locator('#act .dcard[data-rank="3"]');
-      await makeNext.locator('[data-creative-copy]').click();
-      assert.match(await page.locator('#creative-feedback').innerText(),/copied/i);
-      assert.equal(await page.evaluate(()=>(window as any).__compactCopied),'Invented copy brief for the compact Home regression.');
-      await makeNext.locator('summary[aria-label="More actions"]').click();
-      await makeNext.locator('[data-creative-action="done"]').click();
-      await page.waitForFunction(()=>document.querySelector('#creative-feedback')?.textContent?.includes('Done.'));
-      assert.deepEqual(actions,[{cardId:'invented-make-next',action:'done'}]);
-      await page.locator('#stock [data-tab="stock"]').click();
+      await page.locator('#stock-chapter [data-tab="stock"]').click();
       assert.equal(await page.locator('#tabs [data-tab="stock"]').getAttribute('aria-selected'),'true');
       await page.locator('#reviews .rt[data-review-open]').first().click();
       await page.locator('#sheet[open]').waitFor();
@@ -278,6 +251,25 @@ export async function checkHomeCompact(context: BrowserContext): Promise<void> {
       assert.match(await page.locator('#sh-title').innerText(), /Shop review/);
       assert.equal(await page.locator('#sh-extra dt:text-is("Product") + dd').innerText(), 'Shop review');
       await page.locator('#sh-x').click();
+      // Dismiss one, Undo it, then Dismiss all. Pulse only records the ids; Judge.me is never called.
+      const rows = page.locator('#reviews .rt[data-review-open]'), toast = page.locator('#review-toast');
+      const first = await rows.first().getAttribute('data-review-open');
+      await page.locator(`#reviews [data-review-dismiss="${first}"]`).click();
+      await page.waitForFunction(() => !document.querySelector('#review-toast')?.hasAttribute('hidden'));
+      assert.equal(await rows.count(), 5);
+      assert.match(await toast.innerText(), /Review dismissed/);
+      assert.deepEqual(dismissals.at(-1), {ids:[first], action:'dismiss'});
+      await page.locator('#review-undo').click();
+      await page.waitForFunction(() => document.querySelectorAll('#reviews .rt[data-review-open]').length === 6);
+      assert.deepEqual(dismissals.at(-1), {ids:[first], action:'undo'});
+      await page.locator('#review-dismiss-all').click();
+      await page.waitForFunction(() => document.querySelectorAll('#reviews .rt[data-review-open]').length === 0);
+      assert.equal(dismissals.at(-1)!.ids.length, 6);
+      // The fixture also holds six reviews Judge.me could not read; Dismiss cannot clear that source notice.
+      assert.equal(await page.locator('#hero .review-flag').innerText(), 'Some reviews could not be read', 'Only the unreadable notice is left once every review is dismissed');
+      assert.equal(await page.locator('#review-dismiss-all').count(), 0);
+      assert.equal(await page.locator('#review-publish').count(), 0, 'Publish is gone from Pulse');
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     }
   } finally {await page.close();}
 }

@@ -10,7 +10,7 @@ export function footerChipHtml(sources?: readonly SourceHealth[]): string {
       : '<span class="chip good">✓ All connected</span>';
 }
 
-const priority = ['w001', 'w002', 'w019', 'w017'];
+const priority = ['w001', 'w002', 'w019'];
 export const homeDialOrder = (id: string): number => priority.includes(id) ? priority.indexOf(id) : priority.length;
 
 /** Preserve the existing tiles and their sheet bindings; only group by measured/sample provenance. */

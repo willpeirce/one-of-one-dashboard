@@ -4,7 +4,7 @@ import { dashboardPage } from '../src/dashboard-view.js';
 import { dashboardTemplate } from '../src/dashboard-template.js';
 import { defaultSettings } from '../src/settings.js';
 import { getSampleDashboard } from '../src/sample-dashboard.js';
-import { sampleSeriesPaceCard, seriesPaceDial, seriesPaceFacts, seriesPaceSheetHtml } from '../src/series-pace/presentation.js';
+import { sampleSeriesPaceCard, seriesPaceDial, seriesPaceFacts, seriesPaceSheetHtml, seriesPaceSummary } from '../src/series-pace/presentation.js';
 import { calculateSeriesPace } from '../src/series-pace/model.js';
 
 test('Series 1 replaces only the Meta spend dial and keeps both markets and Google spend', () => {
@@ -12,7 +12,10 @@ test('Series 1 replaces only the Meta spend dial and keeps both markets and Goog
   assert.equal(snapshot.widgets.w017?.kind, 'series-pace');
   const html = dashboardPage(snapshot);
   assert.match(html, /<article class="tile series-pace"[^>]*data-model-id="w017"/);
-  assert.match(html, /<h3>Series 1 sell-out pace<\/h3>/);
+  assert.match(html, /<h3>Kits · sell-out pace<\/h3>/);
+  // 12 Nov 2026: the pace card sits in Home's Stock chapter, not the Ads tab.
+  assert.match(html, /<section class="chapter stock-chapter" id="stock-chapter"[\s\S]*?data-model-id="w017"[\s\S]*?<\/section>/);
+  assert.doesNotMatch(html.slice(html.indexOf('id="p-ads"'), html.indexOf('id="p-store"')), /data-model-id="w017"/);
   assert.match(html, /data-series-market="UK"/);
   assert.match(html, /data-series-market="US"/);
   for (let index = 18; index <= 24; index += 1) assert.ok(html.includes(`data-model-id="w0${index}"`));
@@ -72,4 +75,17 @@ test('a missing pace hides the pointer and gives a neutral reason; a non-positiv
   assert.equal(dial.v, -90);
   assert.equal(dial.cap, 'warn');
   assert.equal(dial.hidePointer, false);
+});
+
+test('the Home card gives the short read and the sheet keeps every fact', () => {
+  const card = sampleSeriesPaceCard('2026-09-30T06:41:00Z'), uk = card.markets.UK;
+  const short = seriesPaceSummary(uk);
+  assert.match(short, /<strong>1,850<\/strong> kits left/);
+  assert.match(short, /Sells out <strong>[^<]+<\/strong> · target /);
+  assert.match(short, /15\.0 a day · 15\.4 needed/);
+  if (uk.correction) assert.ok(short.includes(uk.correction));
+  assert.doesNotMatch(short, /last 3 days|complete days to|kits left on the target date/, 'Trend, outcome and data notes stay in the sheet');
+  const sheet = seriesPaceSheetHtml('UK', uk, 'sample');
+  assert.ok(sheet.includes(seriesPaceFacts(uk)), 'The sheet carries the full facts');
+  assert.match(seriesPaceSummary({ ...uk, status: 'sold_out', projectedDate: null, projectedDays: null }), /Sold out/);
 });

@@ -1,5 +1,5 @@
 import { tickerHead } from './ticker/view.js';
-import { decisionsHtml } from './decisions/view.js';
+import { stockPacksHtml } from './stock/view.js';
 import { footerChipHtml, homeDialsHtml } from './home-layout.js';
 import {adSetSummary,adSetsDialog} from './meta-adsets/view.js';
 import { metricSign } from './metric-sign.js';
@@ -33,7 +33,7 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
   content = homeDialsHtml(content, snapshot.widgets);
   if (snapshot.tests) content = content.replace(/(<section class="chapter tests" id="tests"[^>]*>)[\s\S]*?<\/section>/,
     (_section, tag: string) => `${tag.replace('>', ' data-hq-tests="live">')}${homeTestsHtml(snapshot.tests!)}</section>`);
-  content = content.replace('<div class="deck" id="deck"></div>', `<div class="deck" id="deck">${decisionsHtml({shopify: snapshot.shopify, adSets: snapshot.adSets, creatives: snapshot.creatives?.cards, market: 'all', morningOmissions: snapshot.morningOmissions})}</div>`);
+  if (snapshot.shopify) content = content.replace('<div class="stock-packs" id="stock-packs"></div>', `<div class="stock-packs" id="stock-packs">${stockPacksHtml(snapshot.shopify)}</div>`);
   if(snapshot.adSets){
     content=content.replace('<div id="adset-summary"></div>', `<div id="adset-summary">${adSetSummary(snapshot.adSets,'all',true)}</div>`);
     content+=adSetsDialog();
@@ -111,7 +111,7 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
   <link rel="stylesheet" href="/assets/dashboard.css">
   <link rel="stylesheet" href="/assets/fulfilment.css">
   <link rel="stylesheet" href="/assets/creatives.css"><link rel="stylesheet" href="/assets/adsets.css">
-  <link rel="stylesheet" href="/assets/home-compact.css"><link rel="stylesheet" href="/assets/home-panels.css"><link rel="stylesheet" href="/assets/decisions.css">
+  <link rel="stylesheet" href="/assets/home-compact.css"><link rel="stylesheet" href="/assets/home-panels.css">
   <script type="module" src="/assets/browser.js"></script>
   <script type="module" src="/assets/dashboard.js"></script>
 ${tickerHead()}</head>

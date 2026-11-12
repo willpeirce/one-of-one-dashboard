@@ -248,12 +248,12 @@ test('every Open and Read action uses the final Judge.me reviews dashboard URL',
   }
 });
 
-test('reviews share sample/live rendering, safely escape full text, disable Publish and supply greeting/empty state', () => {
+test('reviews share sample/live rendering, safely escape full text, offer Dismiss instead of Publish and supply greeting/empty state', () => {
   const panel = sampleReviews(), row = panel.rows[0]!;
   assert.equal(panel.publishEnabled, false); assert.equal(appConfig.judgeme.publishEnabled, false);
   assert.equal(reviewsGreeting(panel), '3 sample reviews, 1 needs reading first');
   const html = reviewsPanelHtml(panel), sheet = reviewSheetHtml(row, panel);
-  assert.match(html, /id="review-publish"[^>]*disabled/); assert.doesNotMatch(html, /Verified buyer|1 photo/); assert.match(sheet, /Verified buyer/); assert.match(sheet, /1 photo/);
+  assert.doesNotMatch(html, /review-publish/); assert.match(html, /id="review-dismiss-all"/); assert.doesNotMatch(html, /Verified buyer|1 photo/); assert.match(sheet, /Verified buyer/); assert.match(sheet, /1 photo/);
   assert.ok(sheet.indexOf('Read in Judge.me') < sheet.indexOf('Open in Judge.me'));
   assert.equal((sheet.match(/data-review-link/g) ?? []).length, 2); assert.ok(sheet.includes(reviewLink()));
   assert.match(sheet, /Sample data/); assert.match(sheet, new RegExp(row.body.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));

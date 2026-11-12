@@ -1,3 +1,4 @@
+import { afterTaxMetric } from '../after-tax.js';
 import { formatUkTime } from '../uk-time.js';
 import { applySpend, placedSpendRows, usableSpendSources, type AdHeroInputs } from '../ad-spend/metrics.js';
 import { sampleSpend } from '../ad-spend/store.js';
@@ -102,7 +103,7 @@ function marketHero(facts: Facts, today: string, from: string, to: string, setti
     return { ...row, spendKnown: inputs.spend.mode === 'sample' || usable.length > 0 && usable.every(source => covered.get(source.source)?.has(row.date)), adSpend: sum(), ukM: sum(r => r.source === 'meta' && r.market === 'uk'), usM: sum(r => r.source === 'meta' && r.market === 'us'), g: sum(r => r.source !== 'meta'), ours: sum(r => r.source === 'meta' && r.owner === 'ours') };
   });
   const resolvedName = name ?? (from === today && to === today ? 'today so far' : from === addDays(today,-1) && to === from ? 'yesterday' : to === addDays(today,-1) && from === addDays(today,-7) ? 'last 7 days' : to === addDays(today,-1) && from === addDays(today,-30) ? 'last 30 days' : undefined);
-  const hero = buildHeroRange(rows, from, to, { today, name: resolvedName, market, blendedMetaTripwireGbp: settings.blendedMetaTripwireGbp, freelancerLabel: settings.freelancerLabel });
+  const hero = buildHeroRange(rows, from, to, { today, name: resolvedName, market, blendedMetaTripwireGbp: settings.blendedMetaTripwireGbp, corporationTaxPercent: settings.corporationTaxPercent, freelancerLabel: settings.freelancerLabel });
   hero.net.n = Math.round(rows.filter(r => r.date >= from && r.date <= to).reduce((n, r) => n + r.net, 0) * 100) / 100;
   hero.net.dp = 2;
   hero.gross = Math.round(hero.gross * 100) / 100;
@@ -188,6 +189,8 @@ function marketHero(facts: Facts, today: string, from: string, to: string, setti
       extra: [['D30 email', formatNumber(refill.filter(o => emailFlow(o)?.startsWith('D30 refill')).length)], ['Site / other', formatNumber(refill.filter(o => !emailFlow(o)?.startsWith('D30 refill')).length)], ['Since launch', `${formatNumber(data.orders.filter(o => o.day >= '2026-09-11' && isRefill(o)).length)}${data.from > '2026-09-11' ? ' (partial history)' : ''}`], ['Stock', 'Open Stock and cover for configured warehouse stock.']] } },
     orderDays: rows.filter(r => r.date >= from && r.date <= to).map(r => { const dayOrders = ordersByDay.get(r.date) ?? []; return { day: r.date, UK: dayOrders.filter(o => o.market === 'UK' && !isTikTok(o)).length, US: dayOrders.filter(o => o.market === 'US' && !isTikTok(o)).length, EU: dayOrders.filter(o => o.market === 'EU' && !isTikTok(o)).length, TikTok: dayOrders.filter(isTikTok).length, unknown: dayOrders.filter(o => o.market === 'unknown' && !isTikTok(o)).length, total: r.date >= data.from ? r.o : 0, detailAvailable: r.date >= data.from }; }),
   };
+  // After Net profit is final (spend, overheads, empty and older-market rules), so After tax carries the same state.
+  hero.afterTax = afterTaxMetric(hero.profit, settings.corporationTaxPercent);
   return hero;
 }
 /** Period and market are independent; a tap selects a view already carried by the snapshot. */

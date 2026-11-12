@@ -1,3 +1,4 @@
+import { defaultCorporationTaxPercent } from './after-tax.js';
 import { adRulesDefaults, type AdRules } from './meta-adsets/settings.js';
 import { appConfig } from './config.js';
 import { invalidateMetaCampaigns } from './ad-spend/campaign-cache.js';
@@ -21,6 +22,7 @@ export interface Settings {
   cppUsBreakEvenGbp: number;
   cppUsTargetGbp: number;
   paymentFeePercent: number | null;
+  corporationTaxPercent: number;
   startingCogs: { sku: string; unitCostGbp: number | null }[];
   jjGbpPerUsd: number;
   flatFulfilmentUkGbp: number | null;
@@ -141,6 +143,7 @@ export function defaultSettings(): Settings {
     cppUsBreakEvenGbp: 25,
     cppUsTargetGbp: 19.30,
     paymentFeePercent: null,
+    corporationTaxPercent: defaultCorporationTaxPercent,
     startingCogs: appConfig.shopify.stockProducts.flatMap((product) => 'sku' in product ? [{ sku: product.sku, unitCostGbp: null }] : []),
     jjGbpPerUsd: 0.754,
     flatFulfilmentUkGbp: null,
@@ -316,6 +319,7 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
     cppUsBreakEvenGbp: requiredNumber(value.cppUsBreakEvenGbp, 'cppUsBreakEvenGbp', 100_000),
     cppUsTargetGbp: requiredNumber(value.cppUsTargetGbp, 'cppUsTargetGbp', 100_000),
     paymentFeePercent: number(value.paymentFeePercent, 'paymentFeePercent', 100, true),
+    corporationTaxPercent: requiredNumber(value.corporationTaxPercent, 'corporationTaxPercent', 100),
     startingCogs: list(value.startingCogs, 'startingCogs', (row, path) => {
       const parsed = object(row, ['sku', 'unitCostGbp'], path);
       return { sku: text(parsed.sku, `${path}.sku`, 64), unitCostGbp: number(parsed.unitCostGbp, `${path}.unitCostGbp`, 100_000, true) };
@@ -489,6 +493,7 @@ function storedSettings(input: unknown): Settings {
     inboundStock: defaults.inboundStock,
     keyDates: defaults.keyDates,
     morningOpensFirst: defaults.morningOpensFirst,
+    corporationTaxPercent: defaults.corporationTaxPercent,
     googleNetworkSpendFloorGbp: defaults.googleNetworkSpendFloorGbp,
     googleNetworkRoasFloor: defaults.googleNetworkRoasFloor,
     googleContentShareMaxPct: defaults.googleContentShareMaxPct,

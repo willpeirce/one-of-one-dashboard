@@ -2,6 +2,7 @@ import type { Detail, HeroMetric, HeroPeriod, State, Zone } from './dashboard-ty
 import type { SourceId } from './sources.js';
 import { profitAndMargin } from './profit.js';
 import { contributionMetric } from './contribution.js';
+import { afterTaxMetric, defaultCorporationTaxPercent } from './after-tax.js';
 import { formatNumber, formatPounds } from './money.js';
 import { firstOrderCoverage, firstOrderCoverageRule } from './shopify/first-order-coverage.js';
 
@@ -123,6 +124,7 @@ export interface HeroRangeOptions {
   name?: string;
   market?: import('./dashboard-types.js').HeroMarket;
   blendedMetaTripwireGbp?: number;
+  corporationTaxPercent?: number;
   freelancerLabel?: string;
 }
 
@@ -243,7 +245,7 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
       ...provenance(['shopify', 'meta']),
     };
   };
-  return {
+  const period: Omit<HeroPeriod, 'afterTax'> = {
     market: options.market ?? 'all', from, to, short: label, gross: selected.reduce((sum, row) => sum + (row.gross ?? row.net), 0), grossUnavailable: selected.some(row => row.grossKnown === false), spark: history('net'),
     eyebrow: one ? `${weekday} · ${partial ? 'today so far' : 'one day'}` : `${label} · ${options.name ?? `${n} days`}${partial ? ', today so far' : ''}`,
     per: options.name ?? (one ? weekday : label),
@@ -308,6 +310,7 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
     }, ['shopify', 'meta', 'google-ads', 'github-hq']),
     ukcpo: cpoDial('ukcpo', 'UK'), uscpo: cpoDial('uscpo', 'US'),
   };
+  return { ...period, afterTax: afterTaxMetric(period.profit, options.corporationTaxPercent ?? defaultCorporationTaxPercent) };
 }
 
 /** Shared unrounded blend and daily threshold count used by hero dials and risk rules. */

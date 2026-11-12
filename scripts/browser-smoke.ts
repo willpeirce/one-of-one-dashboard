@@ -10,6 +10,7 @@ import { addDays, rangeLabel } from '../src/hero-range.js';
 import type { Detail, DashboardSnapshot as FullDashboardSnapshot } from '../src/dashboard-types.js';
 import { formatMetricNumber, formatPounds } from '../src/money.js';
 import { applySpend } from '../src/ad-spend/metrics.js';
+import { afterTaxMetric } from '../src/after-tax.js';
 import type { SpendFacts } from '../src/ad-spend/store.js';
 import { defaultSettings, type SettingsSnapshot } from '../src/settings.js';
 import { calculateSeriesPace, paceDate, paceNumber } from '../src/series-pace/model.js';
@@ -100,7 +101,7 @@ function withAllMarketFixture<T>(fixture: T): T {
 
 async function assertHeroModel(page: Page, metrics: HeroPeriod): Promise<void> {
   const expected: Record<string, string> = {};
-  for (const key of ['net', 'orders', 'aov', 'cac', 'cr', 'spend', 'roas', 'margin', 'contribution', 'profit', 'ukcpo', 'uscpo']) {
+  for (const key of ['net', 'orders', 'aov', 'cac', 'cr', 'spend', 'roas', 'margin', 'contribution', 'profit', 'afterTax', 'ukcpo', 'uscpo']) {
     const metric = metrics[key];
     assert.ok(metric && typeof metric !== 'string' && !Array.isArray(metric));
     if (typeof metric.n === 'number') {
@@ -141,13 +142,18 @@ async function assertHeroLayout(page: Page): Promise<void> {
     const box = element.getBoundingClientRect();
     return { key: element.getAttribute('data-k'), x: box.left, y: box.top, right: box.right, bottom: box.bottom };
   }));
-  assert.equal(tiles.length, 10, 'Eight hero cards and the Contribution/Net profit pair');
+  assert.equal(tiles.length, 11, 'Eight hero cards, the Contribution/Net profit pair and After tax');
   assert.equal(tiles[8]!.key, 'contribution');
   assert.equal(tiles[9]!.key, 'profit');
+  // After tax is the bottom line: a full-width row under the pair, never a lone half-width card.
+  const [contribution, profit, afterTax] = tiles.slice(8);
+  assert.equal(afterTax!.key, 'afterTax');
+  assert.ok(afterTax!.y >= Math.max(contribution!.bottom, profit!.bottom), 'After tax sits below Contribution and Net profit');
+  assert.ok(Math.abs(afterTax!.x - contribution!.x) <= 1 && Math.abs(afterTax!.right - profit!.right) <= 1, 'After tax spans the pair');
   const columns = await page.locator('#hero .hero-grid').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length);
   assert.equal(columns, page.viewportSize()!.width <= 760 ? 2 : 4);
   assert.equal(await page.locator('#hero [data-k="profit"]').isVisible(), true, 'Net profit remains visible with its own sheet');
-  for (const tile of tiles) {
+  for (const tile of tiles.filter(tile => tile.key !== 'afterTax')) {
     const row = tiles.filter(other => other.y <= tile.y + 1 && other.bottom > tile.y + 1);
     assert.ok(row.length >= 2, `Hero ${tile.key} must not sit alone on a row`);
   }
@@ -231,6 +237,7 @@ async function checkNegativeProfit(context: BrowserContext): Promise<void> {
       profit.pre = '£';
       profit.dp = 2;
       profit.d = { ...profit.d!, extra: [...(profit.d?.extra?.filter(([label]) => label !== 'Net profit') ?? []), ['Net profit', formatPounds(-10)]] };
+      (fixture.hero[period] as Record<string, unknown>).afterTax = afterTaxMetric(profit as never, 25);
       const contribution = fixture.hero[period].contribution as HeroMetric;
       contribution.n = -5;
       contribution.unavailable = false;
@@ -262,6 +269,16 @@ async function checkNegativeProfit(context: BrowserContext): Promise<void> {
       assert.equal(await page.locator('#sh-title').innerText(), 'Contribution');
       assert.equal(await page.locator('#sh-extra dt:text-is("Contribution") + dd').innerText(), '-£5.00');
       assert.equal(await page.locator('#sh-extra dd').last().innerText(), 'Unknown');
+      await page.locator('#sh-x').click();
+      // A loss pays no corporation tax: After tax shows the same loss, with its own sheet.
+      const afterTax = page.locator('#hero [data-k="afterTax"]');
+      assert.equal(await afterTax.locator('.sv').innerText(), '-£10.00');
+      assert.equal(await afterTax.getAttribute('data-sign'), 'negative');
+      assert.match(await afterTax.locator('.ss').innerText(), /^No tax on a loss/);
+      await afterTax.click();
+      assert.equal(await page.locator('#sh-title').innerText(), 'After tax');
+      assert.equal(await page.locator('#sh-extra dt:text-is("Corporation tax at 25%") + dd').innerText(), 'None on a loss');
+      assert.equal(await page.locator('#sh-extra dd').last().innerText(), '-£10.00');
       await page.locator('#sh-x').click();
     }
   } finally { await page.close(); }
@@ -903,7 +920,7 @@ async function assertHero(page: Page, snapshot: DashboardSnapshot, period: Perio
   await assertHeroModel(page, snapshot.hero[period]);
   assert.equal(await page.locator(`#period [data-period="${period}"]`).getAttribute('aria-selected'), 'true');
   assert.equal(await page.locator('#picklbl').textContent(), 'Dates');
-  for (const key of ['margin', 'contribution', 'profit'] as const) {
+  for (const key of ['margin', 'contribution', 'profit', 'afterTax'] as const) {
     const metric = snapshot.hero[period][key] as HeroMetric;
     assert.equal(await page.locator(`#hero [data-k="${key}"]`).getAttribute('data-sign'), metricSign({ n: metric.n ?? NaN, unavailable: metric.unavailable }));
   }

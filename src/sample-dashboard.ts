@@ -3434,6 +3434,7 @@ export function getSampleHero(from: string, to: string, settings?: Settings, mar
     today: SAMPLE_TODAY, market,
     name: names.find((range) => range.from === from && range.to === to)?.name,
     blendedMetaTripwireGbp: settings?.blendedMetaTripwireGbp,
+    corporationTaxPercent: settings?.corporationTaxPercent,
   });
   if (from === SAMPLE_TODAY && to === SAMPLE_TODAY) {
     const buckets = (count: number, last: number): number[] => {

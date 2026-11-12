@@ -130,6 +130,17 @@ Migration 069 (one new table). No new Setting, dependency or source read. Sample
 
 Branch **after-tax**, stacked on **home-stock-reviews** (PR #50). A full-width "After tax" line under Contribution and Net profit: Net profit less corporation tax at a Settings rate (25% by default). UK VAT is already out of Net profit. A loss pays no tax. Migration 070 (Settings audit allowlist). Validation: see DECISIONS, 12 Nov.
 
+## Small change: Home tidy · 12 Nov
+
+Branch **home-tidy**. Will's fixes after #50 and #51 went live.
+
+1. **Pace dial end label**: "-90d", not "-+90d".
+2. **Live / Wins / Coming up panel removed.** The hero takes the full width; all dates open from the Next up band.
+3. **Stock heading**: "Series 1" over "Stock", no button, a 12px gap above the card.
+4. **Nav pill**: "On the table" became "Stock" and scrolls to the Stock chapter.
+
+No migration, Setting, dependency or source read. Sample and live behave the same. Validation: see DECISIONS, 12 Nov (Home tidy).
+
 ## Next step
 
 **After tax** is built on `after-tax`, stacked on PR #50; merge PR #50 first, then this one (its base moves to main). After an approved merge: the Shell merge, `npm run migrate` (applies 070), Republish, then the hero shows After tax under Net profit and Settings shows Corporation tax rate (%).

@@ -152,7 +152,7 @@ async function budget(page: Page, width: number, waiting = true): Promise<void> 
 
   const heights = width === 390 ? {'stock-chapter':760,reviews:455,tests:680,dials:1800,foot:90} : {'stock-chapter':560,reviews:360,tests:380,dials:1000,foot:70};
   // Reviews: Dismiss all replaces Publish and each shown row gains its Dismiss (Will, 12 Nov 2026).
-  const controls = {'stock-chapter':5,reviews:9,tests:6,dials:24,foot:3};
+  const controls = {'stock-chapter':4,reviews:9,tests:6,dials:24,foot:3};
   for (const id of ['stock-chapter','reviews','tests','dials','foot'] as const) {
     const section = page.locator(`#${id}`), box = await section.boundingBox();
     assert.ok(box && box.height <= heights[id], `${width}px #${id} height ${box?.height} exceeds ${heights[id]}`);
@@ -243,8 +243,7 @@ export async function checkHomeCompact(context: BrowserContext): Promise<void> {
       await page.locator('#market [data-market="uk"]').click();
       await page.locator('#market [data-market="all"]').click();
       await assertPrimaryLiveDials(page);
-      await page.locator('#stock-chapter [data-tab="stock"]').click();
-      assert.equal(await page.locator('#tabs [data-tab="stock"]').getAttribute('aria-selected'),'true');
+      assert.equal(await page.locator('#stock-chapter .chapter-heading button').count(),0,'The Stock heading carries no button (12 Nov 2026)');
       await page.locator('#reviews .rt[data-review-open]').first().click();
       await page.locator('#sheet[open]').waitFor();
       assert.match(await page.locator('#sh-extra').innerText(),/Verified buyer/i);

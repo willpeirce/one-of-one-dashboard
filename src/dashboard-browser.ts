@@ -8,7 +8,7 @@ import { metricSign } from './metric-sign.js';
 import { dropsHtml, radarMeasure, weakestRadarGauge, type DropArea } from './radar.js';
 import { glance } from './fulfilment/view.js';
 import { updateCreativeSnapshot } from './creatives/browser.js';
-import { liveHtml, storePanelsHtml } from './shopify/presentation.js';
+import { storePanelsHtml } from './shopify/presentation.js';
 import type { DashboardSnapshot, Detail, DialModel, HeroMarket, HeroMetric, HeroPeriod, Period, RingModel, SheetModel, State, TestModel, Zone } from './dashboard-types.js';
 import { createDatePicker } from './dashboard-dates.js';
 import { rangeLabel } from './hero-range.js';
@@ -626,7 +626,6 @@ function updateSnapshot(next: DashboardSnapshot, initial = false): void {
   });
   if (snapshot.shopify) {
     if (snapshot.fulfilment) { get('#fulfilment-glance').innerHTML = glance(snapshot.fulfilment); }
-    get('[data-sp="live"]').innerHTML = liveHtml(snapshot.shopify);
     get('#shopify-panels').innerHTML = storePanelsHtml(snapshot.shopify);
     all('[data-custom-detail]').forEach(element => details.set(element, { state: 'info', title: element.querySelector('.sl')?.textContent ?? '', detail: JSON.parse(element.dataset.customDetail!) as Detail, mode: snapshot.shopify!.mode }));
     all('.tile[data-mode="sample"]').filter(e => !e.closest('#hero')).forEach(element => { if (!element.querySelector('.sample-label')) element.insertAdjacentHTML('beforeend', '<small class="sample-label">Sample data</small>'); });
@@ -770,12 +769,6 @@ function boot(): void {
     if (period === 'today' || period === 'yday' || period === '7d' || period === '30d') { setPeriod(period); return; }
     const deck = target.closest<HTMLElement>('.tab[data-tab]')?.dataset.tab;
     if (deck) { get<HTMLInputElement>('#q').value = ''; selectDeck(deck); filterDials(); if(target.closest('#deck'))scrollTo(get('#dials')); return; }
-    const scoreTab = target.closest<HTMLElement>('[data-st]')?.dataset.st;
-    if (scoreTab) {
-      all('[data-st]').forEach((tab) => tab.setAttribute('aria-selected', String(tab.dataset.st === scoreTab)));
-      all('[data-sp]').forEach((panel) => { panel.hidden = panel.dataset.sp !== scoreTab; });
-      return;
-    }
     const nav = target.closest<HTMLElement>('[data-go]');
     if (nav) {
       const destination = document.getElementById(nav.dataset.go ?? '');

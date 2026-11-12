@@ -49,6 +49,7 @@
  #dials .creative-home-panel .creative-roas small{font-size:9px}
 }
 /* Stock: kit sell-out dials and pack bars in one card (12 Nov 2026). */
+#stock-chapter{display:grid;gap:12px}
 #stock-chapter .stock-card{display:grid;gap:14px;padding:14px 16px;border-radius:var(--r2);min-width:0}
 #stock-chapter .series-pace{grid-column:auto;background:none;border:0;box-shadow:none;padding:0;border-radius:0;overflow:visible;cursor:default}
 #stock-chapter .series-pace:hover{background:none;transform:none}
@@ -57,7 +58,6 @@
 #stock-chapter .pace-summary small{font-size:10.5px}
 #stock-chapter .pace-kits strong{font:600 20px/1.2 var(--disp)}
 #stock-chapter .pace-correction{color:var(--warn);font-weight:650}
-#stock-chapter .stock-dials-link{min-height:44px;font-size:12px;align-self:center}
 #stock-chapter .stock-packs:empty{display:none}
 #stock-chapter .stock-packs{border-top:1px solid var(--line);padding-top:12px;display:grid;gap:6px;min-width:0}
 #stock-chapter .stock-packs-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}

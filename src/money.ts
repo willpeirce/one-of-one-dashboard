@@ -34,7 +34,8 @@ export function formatMetricNumber(value: number, format: { pre?: string; dp?: n
 
 /** Preserve the existing compact precision used for dial limits and history labels. */
 export function formatLike(text: string): (value: number) => string {
-  const unsigned = text.replace(/^-/, '');
+  // A leading sign belongs to the value, not the unit: "+32.5d" formats -90 as "-90d", never "-+90d".
+  const unsigned = text.replace(/^[-+\u2212]/, '');
   const prefix = unsigned.match(/^[^\d-]+/)?.[0] ?? '', suffix = unsigned.match(/[^\d.,]+$/)?.[0] ?? '';
   return (value) => prefixedNumber(formatNumber(Math.abs(value) >= 1000 ? Math.round(value * 1000) / 1000 : Math.round(value * 100) / 100), prefix, suffix);
 }

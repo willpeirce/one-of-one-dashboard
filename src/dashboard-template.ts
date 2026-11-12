@@ -32,7 +32,7 @@ export const dashboardTemplate = `
     <a class="logo" href="#hero" aria-label="One of One, control centre"><img src="/assets/logo.png" alt="One of One" width="500" height="312" decoding="async"></a>
     <nav class="pills" aria-label="Sections"><a class="pill pill-morning" href="/morning" aria-label="Morning" title="Morning"><svg class="ic" aria-hidden="true"><use href="#i-sun"></use></svg><span class="t">Morning</span></a>
       <button class="pill" type="button" aria-current="true" data-go="hero"><svg class="ic" aria-hidden="true"><use href="#i-home"></use></svg><span class="t"><span data-sample-text="t0021">{{sample:t0021}}</span></span></button>
-      <button class="pill" type="button" data-go="table"><svg class="ic" aria-hidden="true"><use href="#i-list"></use></svg><span class="t"><span data-sample-text="t0022">{{sample:t0022}}</span></span></button>
+      <button class="pill" type="button" data-go="stock-chapter"><svg class="ic" aria-hidden="true"><use href="#i-box"></use></svg><span class="t"><span data-sample-text="t0022">{{sample:t0022}}</span></span></button>
       <button class="pill" type="button" data-go="tests"><svg class="ic" aria-hidden="true"><use href="#i-flask"></use></svg><span class="t"><span data-sample-text="t0023">{{sample:t0023}}</span></span></button>
       <button class="pill" type="button" data-go="dials"><svg class="ic" aria-hidden="true"><use href="#i-dial"></use></svg><span class="t"><span data-sample-text="t0024">{{sample:t0024}}</span></span></button>
       <a class="pill" href="/audit" aria-label="Audit log"><svg class="ic" aria-hidden="true"><use href="#i-cal"></use></svg><span class="t"><span data-sample-text="t0025">{{sample:t0025}}</span></span></a>
@@ -81,35 +81,10 @@ ${tickerHtml()}
     </div>
   </div>
 
-  <aside class="glass score" id="score" aria-label="Live, wins and coming up">
-    <div class="stabs" role="tablist">
-      <button role="tab" type="button" aria-selected="true" data-st="live"><span class="livedot" aria-hidden="true"></span><span data-sample-text="t0060">{{sample:t0060}}</span></button>
-      <button role="tab" type="button" aria-selected="false" data-st="wins"><span data-sample-text="t0061">{{sample:t0061}}</span></button>
-      <button role="tab" type="button" aria-selected="false" data-st="soon"><span data-sample-text="t0062">{{sample:t0062}}</span></button>
-    </div>
-    <div class="srows" data-sp="live">
-      <div class="srow" data-source="github-hq" data-mode="sample"><span class="v"><span data-sample-text="t0063">{{sample:t0063}}</span></span><span class="l"><span data-sample-text="t0064">{{sample:t0064}}</span><small><span data-sample-text="t0065">{{sample:t0065}}</span></small></span><span class="d up"><span data-sample-text="t0066">{{sample:t0066}}</span></span></div>
-      <div class="srow" data-source="github-hq" data-mode="sample"><span class="v"><span data-sample-text="t0067">{{sample:t0067}}</span></span><span class="l"><span data-sample-text="t0068">{{sample:t0068}}</span><small><span data-sample-text="t0069">{{sample:t0069}}</span></small></span><span class="d"><span data-sample-text="t0070">{{sample:t0070}}</span></span></div>
-      <div class="srow" data-source="github-hq" data-mode="sample"><span class="v"><span data-sample-text="t0071">{{sample:t0071}}</span></span><span class="l"><span data-sample-text="t0072">{{sample:t0072}}</span><small><span data-sample-text="t0073">{{sample:t0073}}</span></small></span><span class="d"><span data-sample-text="t0074">{{sample:t0074}}</span></span></div>
-      <div class="srow" data-source="github-hq" data-mode="sample"><span class="v"><span data-sample-text="t0075">{{sample:t0075}}</span></span><span class="l"><span data-sample-text="t0076">{{sample:t0076}}</span><small><span data-sample-text="t0077">{{sample:t0077}}</span></small></span><span class="d up"><span data-sample-text="t0078">{{sample:t0078}}</span></span></div>
-      <div class="srow" data-source="github-hq" data-mode="sample"><span class="v"><span data-sample-text="t0079">{{sample:t0079}}</span></span><span class="l"><span data-sample-text="t0080">{{sample:t0080}}</span><small><span data-sample-text="t0081">{{sample:t0081}}</span></small></span><span class="d"><span data-sample-text="t0082">{{sample:t0082}}</span></span></div>
-    </div>
-    <div class="srows" data-sp="wins" hidden>
-      <div class="srow win" data-source="github-hq" data-mode="sample"><span class="v"><span data-sample-text="t0083">{{sample:t0083}}</span></span><span class="l"><span data-sample-text="t0084">{{sample:t0084}}</span><small><span data-sample-text="t0085">{{sample:t0085}}</span></small></span><svg class="star" aria-hidden="true"><use href="#i-star"></use></svg></div>
-      <div class="srow win" data-source="github-hq" data-mode="sample"><span class="v"><span data-sample-text="t0086">{{sample:t0086}}</span></span><span class="l"><span data-sample-text="t0087">{{sample:t0087}}</span><small><span data-sample-text="t0088">{{sample:t0088}}</span></small></span><svg class="star" aria-hidden="true"><use href="#i-star"></use></svg></div>
-      <div class="srow win" data-source="github-hq" data-mode="sample"><span class="v"><span data-sample-text="t0089">{{sample:t0089}}</span></span><span class="l"><span data-sample-text="t0090">{{sample:t0090}}</span><small><span data-sample-text="t0091">{{sample:t0091}}</span></small></span><svg class="star" aria-hidden="true"><use href="#i-star"></use></svg></div>
-      <div class="srow win" data-source="github-hq" data-mode="sample"><span class="v"><span data-sample-text="t0092">{{sample:t0092}}</span></span><span class="l"><span data-sample-text="t0093">{{sample:t0093}}</span><small><span data-sample-text="t0094">{{sample:t0094}}</span></small></span><svg class="star" aria-hidden="true"><use href="#i-star"></use></svg></div>
-      <div class="srow win" data-source="github-hq" data-mode="sample"><span class="v"><span data-sample-text="t0095">{{sample:t0095}}</span></span><span class="l"><span data-sample-text="t0096">{{sample:t0096}}</span><small><span data-sample-text="t0097">{{sample:t0097}}</span></small></span><svg class="star" aria-hidden="true"><use href="#i-star"></use></svg></div>
-    </div>
-    <div class="srows" data-sp="soon" hidden>
-      <div class="tk-home-dates" data-tk-home-dates><p class="tk-home-empty">ⓘ Loading dates</p></div>
-      <div class="sfoot"><button class="btn" type="button" id="alldates">All dates</button></div>
-    </div>
-  </aside>
 </section>
 
 <section class="chapter stock-chapter" id="stock-chapter" aria-labelledby="stock-chapter-title">
-  <header class="chapter-heading"><span class="chapter-number" aria-hidden="true">1</span><div class="chapter-copy"><p class="chapter-eyebrow">Stock</p><h2 class="chapter-title" id="stock-chapter-title">Series 1 sell-out</h2></div><button class="btn tab stock-dials-link" type="button" data-tab="stock">Stock dials</button></header>
+  <header class="chapter-heading"><span class="chapter-number" aria-hidden="true">1</span><div class="chapter-copy"><p class="chapter-eyebrow">Series 1</p><h2 class="chapter-title" id="stock-chapter-title">Stock</h2></div></header>
   <div class="stock-card glass">
     <article class="tile series-pace" data-source="shopify" data-mode="sample" data-model-id="w017" aria-label="Series 1 sell-out pace"></article>
     <div class="stock-packs" id="stock-packs"></div>

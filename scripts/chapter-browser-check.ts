@@ -44,7 +44,7 @@ export async function checkHomeChapters(page: Page): Promise<void> {
     });
   }));
   assert.equal(sourceRowsFit, true, 'Source labels, icons and test-row content fit inside the chapter cards');
-  for (const [id, number, category, title] of [['stock-chapter', '1', 'Stock', 'Series 1 sell-out'],
+  for (const [id, number, category, title] of [['stock-chapter', '1', 'Series 1', 'Stock'],
     ['reviews', '2', 'Customers', 'New reviews'], ['tests', '3', 'Experiments', 'Tests'], ['dials', '4', 'By source', 'Dials']]) {
     await checkChapter(page, id!, number!, category!, title!);
   }

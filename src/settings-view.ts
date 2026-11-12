@@ -115,12 +115,13 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     number('goalOrdersPerDay', 'Order goal per day', { integer: true, min: 1 }),
     number('goalNetMarginPercent', 'Net margin goal (%)', { max: 100 }),
     number('paymentFeePercent', 'Payment fee rate (%)', { nullable: true, max: 100 }),
+    number('corporationTaxPercent', 'Corporation tax rate (%)', { max: 100 }),
   ], values)}</div>${collection('overheads', 'Overhead', [
     { key: 'name', label: 'Name', maxlength: 60 },
     number('monthlyGbp', 'Monthly amount (£)', { max: 1_000_000 }),
     { key: 'startMonth', label: 'Start month (optional)', type: 'month', optional: true },
     { key: 'endMonth', label: 'End month (optional)', type: 'month', optional: true },
-  ], values.overheads, 'Add each fixed monthly cost as its own item. Blank months apply to all months.', undefined, {
+  ], values.overheads, 'Add each fixed monthly cost as its own item, without VAT. Blank months apply to all months.', undefined, {
     heading: 'Overheads', maxRows: 50,
     footer: `<p class="setting-overheads-total" data-overheads-total>Total this month: ${formatPounds(monthlyOverheadTotal(values.overheads, ukToday(now).slice(0, 7)))}</p><p class="setting-help">Each item is spread evenly over the days of its month.</p>`,
   })}`, true);

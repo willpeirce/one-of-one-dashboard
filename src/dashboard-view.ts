@@ -51,13 +51,13 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
   }
   if (pace?.kind === 'series-pace') content = content.replace(/<article\b[^>]*data-model-id="w017"[^>]*><\/article>/,
     `<article class="tile series-pace" data-source="shopify" data-mode="${pace.mode}" data-model-id="w017" aria-label="Series 1 sell-out pace">${seriesPaceCardHtml(pace.value, pace.mode)}</article>`);
-  const heroKeys = ['net', 'orders', 'aov', 'cac', 'cr', 'spend', 'roas', 'margin', 'contribution', 'profit'] as const;
-  const heroLabels = { net: 'Net sales', orders: 'Orders', aov: 'AOV', cac: 'CAC', cr: 'Conversion rate', spend: 'Ad spend', roas: 'Overall ROAS', margin: 'Net margin', contribution: 'Contribution', profit: 'Net profit' };
-  content = content.replace(/(<button\b[^>]*data-k="(net|orders|aov|cac|cr|spend|roas|margin|contribution|profit)"[^>]*>)[\s\S]*?<\/button>/g,
+  const heroKeys = ['net', 'orders', 'aov', 'cac', 'cr', 'spend', 'roas', 'margin', 'contribution', 'profit', 'afterTax'] as const;
+  const heroLabels = { net: 'Net sales', orders: 'Orders', aov: 'AOV', cac: 'CAC', cr: 'Conversion rate', spend: 'Ad spend', roas: 'Overall ROAS', margin: 'Net margin', contribution: 'Contribution', profit: 'Net profit', afterTax: 'After tax' };
+  content = content.replace(/(<button\b[^>]*data-k="(net|orders|aov|cac|cr|spend|roas|margin|contribution|profit|afterTax)"[^>]*>)[\s\S]*?<\/button>/g,
     (_button, tag: string, key: typeof heroKeys[number]) => {
       const metric = snapshot.hero.today[key], display = metric.unavailable ? metric.unavailableLabel ?? 'No data' : formatMetricNumber(metric.n, metric);
       const status = metric.statusLabel ?? ({ good: 'Good', warn: 'Watch', decide: 'Decide', alarm: 'Alarm', info: 'Info', sofar: 'So far', est: 'Estimate' }[metric.state]);
-      const signedTag = ['margin', 'contribution', 'profit'].includes(key) ? tag.replace(/>$/, ` data-sign="${metricSign(metric)}">`) : tag;
+      const signedTag = ['margin', 'contribution', 'profit', 'afterTax'].includes(key) ? tag.replace(/>$/, ` data-sign="${metricSign(metric)}">`) : tag;
       const opening = signedTag.replace(/data-mode="[^"]+"/, `data-mode="${metric.mode}"`).replace(/data-source="[^"]+"/, `data-source="${metric.source.join(' ')}"`).replace(/data-state="[^"]+"/, `data-state="${metric.state}"`);
       return `${opening}<span class="sl">${heroLabels[key]}</span><span class="sv${key === 'net' ? ' big' : ''}" style="--number-chars:${display.length}">${escapeHtml(display)}</span>${key === 'net' ? `<span class="gross">${snapshot.hero.today.grossUnavailable ? 'Total unavailable' : `Total ${escapeHtml(formatPounds(snapshot.hero.today.gross))}`}</span><span class="spark" data-spark="${snapshot.hero.today.spark.join(',')}" aria-hidden="true"></span>` : ''}<span class="ss">${escapeHtml(metric.ss)}</span><span class="chip ${metric.state}">${({ good: '✓', warn: '△', decide: '◆', alarm: '✕', info: 'i', sofar: '·', est: '≈' }[metric.state])} ${escapeHtml(status)}</span></button>`;
     });
@@ -69,7 +69,7 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
       const widget = snapshot.widgets[key];
       return widget ? tag.replace(/data-mode="[^"]+"/, `data-mode="${widget.mode}"`).replace(/data-source="[^"]+"/, `data-source="${widget.source.join(' ')}"`).replace(/data-state="[^"]+"/, `data-state="${widget.kind === 'detail' && widget.state ? widget.state : /data-state="([^"]+)"/.exec(tag)?.[1] ?? 'info'}"`) : tag;
     });
-    content = content.replace(/<button\b[^>]*data-k="(net|orders|aov|cac|cr|spend|roas|margin|contribution|profit)"[^>]*>/g, (tag, key: 'net'|'orders'|'aov'|'cac'|'cr'|'spend'|'roas'|'margin'|'contribution'|'profit') => tag.replace(/data-mode="[^"]+"/, `data-mode="${snapshot.hero.today[key].mode}"`).replace(/data-source="[^"]+"/, `data-source="${snapshot.hero.today[key].source.join(' ')}"`).replace(/data-state="[^"]+"/, `data-state="${snapshot.hero.today[key].state}"`));
+    content = content.replace(/<button\b[^>]*data-k="(net|orders|aov|cac|cr|spend|roas|margin|contribution|profit|afterTax)"[^>]*>/g, (tag, key: 'net'|'orders'|'aov'|'cac'|'cr'|'spend'|'roas'|'margin'|'contribution'|'profit'|'afterTax') => tag.replace(/data-mode="[^"]+"/, `data-mode="${snapshot.hero.today[key].mode}"`).replace(/data-source="[^"]+"/, `data-source="${snapshot.hero.today[key].source.join(' ')}"`).replace(/data-state="[^"]+"/, `data-state="${snapshot.hero.today[key].state}"`));
     // Label surviving mockup examples individually when a live source sits beside them.
     content = content.replace(/(<(?:article|button|div)\b[^>]*data-mode="sample"[^>]*>)/g, '$1<span class="sample-label">Sample data</span>');
     content = content.replace(/(<div class="trow[^"]*"[^>]*>)<span class="sample-label">Sample data<\/span>/g, '$1');

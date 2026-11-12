@@ -126,7 +126,13 @@ Branch **home-stock-reviews**. Four of Will's asks from 12 Nov.
 
 Migration 069 (one new table). No new Setting, dependency or source read. Sample and live behave the same. Validation: see DECISIONS, 12 Nov.
 
+## Small change: After tax · 12 Nov
+
+Branch **after-tax**, stacked on **home-stock-reviews** (PR #50). A full-width "After tax" line under Contribution and Net profit: Net profit less corporation tax at a Settings rate (25% by default). UK VAT is already out of Net profit. A loss pays no tax. Migration 070 (Settings audit allowlist). Validation: see DECISIONS, 12 Nov.
+
 ## Next step
+
+**After tax** is built on `after-tax`, stacked on PR #50; merge PR #50 first, then this one (its base moves to main). After an approved merge: the Shell merge, `npm run migrate` (applies 070), Republish, then the hero shows After tax under Net profit and Settings shows Corporation tax rate (%).
 
 **Stock chapter and review Dismiss** is built on `home-stock-reviews` for review. After an approved merge: the Shell merge, `npm run migrate` (applies 069 to the dev database; production applies it on start), Republish, then on a phone: Home opens on Stock with both dials and the pack bars; dismissing a review removes it, Undo brings it back, Dismiss all clears the list and the hero flag; the Next pill sits inside the strip.
 

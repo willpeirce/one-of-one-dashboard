@@ -125,6 +125,8 @@ export interface HeroPeriod {
   margin: HeroMetric;
   contribution: HeroMetric;
   profit: HeroMetric;
+  /** Net profit less estimated UK corporation tax at the Settings rate. */
+  afterTax: HeroMetric;
   ukcpo: DialModel & SampleProvenance;
   uscpo: DialModel & SampleProvenance;
   business?: {

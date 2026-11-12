@@ -293,7 +293,7 @@ function renderHero(hero: HeroPeriod, animate = false): void {
   get('#pickbtn').setAttribute('aria-label', period === 'pick' ? `Dates, showing ${hero.short}` : 'Pick a day or dates');
   get('#hero').dataset.from = hero.from; get('#hero').dataset.to = hero.to;
   get('#eyebrow').textContent = hero.eyebrow;
-  for (const key of ['net', 'orders', 'aov', 'cac', 'cr', 'spend', 'roas', 'margin', 'contribution', 'profit'] as const) {
+  for (const key of ['net', 'orders', 'aov', 'cac', 'cr', 'spend', 'roas', 'margin', 'contribution', 'profit', 'afterTax'] as const) {
     const element = get(`#hero [data-k="${key}"]`), metric = hero[key];
     element.dataset.mode = metric.mode;
     element.dataset.source = metric.source.join(' ');
@@ -306,10 +306,10 @@ function renderHero(hero: HeroPeriod, animate = false): void {
     }
     get('.ss', element).textContent = metric.ss;
     element.dataset.state = metric.state;
-    if (['margin', 'contribution', 'profit'].includes(key)) element.dataset.sign = metricSign(metric);
+    if (['margin', 'contribution', 'profit', 'afterTax'].includes(key)) element.dataset.sign = metricSign(metric);
     element.dataset.detail = JSON.stringify(metric.d);
     statChip(element, metric.state, metric.statusLabel);
-    details.set(element, { state: metric.state, title: key === 'profit' ? 'Net profit' : key === 'contribution' ? 'Contribution' : key === 'margin' ? 'Net margin' : get('.sl', element).textContent ?? '', detail: metric.d, mode: metric.mode });
+    details.set(element, { state: metric.state, title: key === 'profit' ? 'Net profit' : key === 'afterTax' ? 'After tax' : key === 'contribution' ? 'Contribution' : key === 'margin' ? 'Net margin' : get('.sl', element).textContent ?? '', detail: metric.d, mode: metric.mode });
     const spark = element.querySelector<HTMLElement>('.spark');
     if (spark) renderSpark(spark, hero.spark, metric.d);
   }

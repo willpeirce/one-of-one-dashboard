@@ -22,11 +22,11 @@ export async function installMarketUpdateHook(context: BrowserContext): Promise<
 export async function checkMarketHero(page: Page, snapshot: DashboardSnapshot, width: number): Promise<void> {
   const checkView = async (period: HeroPeriod, market: HeroMarket) => {
     const model = market === 'all' ? period : period.markets![market];
-    const expected = Object.fromEntries((['net', 'orders', 'aov', 'cac', 'cr', 'spend', 'roas', 'margin', 'contribution', 'profit'] as const)
+    const expected = Object.fromEntries((['net', 'orders', 'aov', 'cac', 'cr', 'spend', 'roas', 'margin', 'contribution', 'profit', 'afterTax'] as const)
       .map(key => [key, model[key].unavailable ? model[key].unavailableLabel ?? 'No data' : formatMetricNumber(model[key].n, model[key])]));
     await page.waitForFunction(values => Object.entries(values).every(([key, value]) => document.querySelector(`#hero [data-k="${key}"] .sv`)?.textContent === value), expected);
     assert.equal(await page.locator('#eyebrow').textContent(), model.eyebrow);
-    for (const key of ['margin', 'contribution', 'profit'] as const) assert.equal(await page.locator(`#hero [data-k="${key}"]`).getAttribute('data-sign'), metricSign(model[key]));
+    for (const key of ['margin', 'contribution', 'profit', 'afterTax'] as const) assert.equal(await page.locator(`#hero [data-k="${key}"]`).getAttribute('data-sign'), metricSign(model[key]));
     assert.equal(await page.locator('#hero [data-k="net"] .gross').innerText(), model.grossUnavailable ? 'Total unavailable' : `Total ${formatPounds(model.gross)}`);
     assert.equal(await page.locator('#hero .gross').count(), 1);
     await page.locator('#hero [data-k="net"]').click();

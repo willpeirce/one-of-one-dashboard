@@ -77,6 +77,7 @@ ${tickerHtml()}
     <div class="profit-pair">
       <button type="button" class="profit-line" data-k="contribution" data-g="hero" data-state="est" data-source="shopify" data-mode="sample"><span class="sl">Contribution</span><span class="sv"></span><span class="ss"></span></button>
       <button type="button" class="profit-line" data-k="profit" data-g="hero" data-state="est" data-source="shopify meta google-ads tiktok" data-mode="sample"><span class="sl">Net profit</span><span class="sv"></span><span class="ss"></span></button>
+      <button type="button" class="profit-line after-tax" data-k="afterTax" data-g="hero" data-state="est" data-source="shopify meta google-ads tiktok" data-mode="sample"><span class="sl">After tax</span><span class="sv"></span><span class="ss"></span></button>
     </div>
   </div>
 

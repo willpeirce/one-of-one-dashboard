@@ -6,7 +6,7 @@ import { metricSign } from './metric-sign.js';
 import { glance } from './fulfilment/view.js';
 import { creativePanelHtml, creativeDialogHtml } from './creatives/view.js';
 import type { DashboardSnapshot } from './dashboard-types.js';
-import { liveHtml, storePanelsHtml } from './shopify/presentation.js';
+import { storePanelsHtml } from './shopify/presentation.js';
 import { dashboardTemplate } from './dashboard-template.js';
 import { formatNumber, formatMetricNumber, formatPounds } from './money.js';
 import { seriesPaceCardHtml } from './series-pace/presentation.js';
@@ -62,7 +62,6 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
       return `${opening}<span class="sl">${heroLabels[key]}</span><span class="sv${key === 'net' ? ' big' : ''}" style="--number-chars:${display.length}">${escapeHtml(display)}</span>${key === 'net' ? `<span class="gross">${snapshot.hero.today.grossUnavailable ? 'Total unavailable' : `Total ${escapeHtml(formatPounds(snapshot.hero.today.gross))}`}</span><span class="spark" data-spark="${snapshot.hero.today.spark.join(',')}" aria-hidden="true"></span>` : ''}<span class="ss">${escapeHtml(metric.ss)}</span><span class="chip ${metric.state}">${({ good: '✓', warn: '△', decide: '◆', alarm: '✕', info: 'i', sofar: '·', est: '≈' }[metric.state])} ${escapeHtml(status)}</span></button>`;
     });
   if (snapshot.shopify) {
-    content = content.replace(/(<div class="srows" data-sp="live">)[\s\S]*?(?=<div class="srows" data-sp="wins")/, `$1${liveHtml(snapshot.shopify)}</div>\n`);
     content = content.replace('<div class="panel" id="p-store" data-panel="store" hidden>', `<div class="panel" id="p-store" data-panel="store" hidden><div id="shopify-panels">${storePanelsHtml(snapshot.shopify)}</div>`);
     content = content.replace(/data-model-id="(w029|w030|w031|w032|w033|w034|w035|w036|w037|w039|w046|w047|w048)"/g, `$& data-ingested-shopify`);
     content = content.replace(/<button\b[^>]*data-model-id="([^"]+)"[^>]*>/g, (tag, key: string) => {

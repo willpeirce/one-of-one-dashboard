@@ -7,7 +7,7 @@ import { emptyModel } from '../src/fulfilment/model.js';
 
 test('Home has four neutral chapter headings while the hero stays without a chapter', () => {
   const html = dashboardPage(getSampleDashboard()).split('<div id="dashboard-state"')[0]!;
-  const chapters = [['stock-chapter', '1', 'Stock', 'Series 1 sell-out'], ['reviews', '2', 'Customers', 'New reviews'],
+  const chapters = [['stock-chapter', '1', 'Series 1', 'Stock'], ['reviews', '2', 'Customers', 'New reviews'],
     ['tests', '3', 'Experiments', 'Tests'], ['dials', '4', 'By source', 'Dials']];
   for (const [id, number, category, title] of chapters) {
     const section = html.match(new RegExp(`<section class="([^"]*)" id="${id}"[^>]*>([\\s\\S]*?)<\\/section>`));

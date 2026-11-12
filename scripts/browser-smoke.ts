@@ -1741,14 +1741,10 @@ async function run(): Promise<void> {
     await page.locator('html[data-dashboard-ready="true"]').waitFor();
     assert.equal(await assertDarkAppearance(page, true), dashboardAppearance);
 
-    step = 'check navigation, score tabs, dial decks, search and detail sheets';
+    step = 'check navigation, dial decks, search and detail sheets';
     await page.locator('[data-go="tests"]').click();
     assert.equal(await page.locator('[data-go="tests"]').getAttribute('aria-current'), 'true');
-    for (const tab of ['live', 'wins', 'soon']) {
-      await page.locator(`[data-st="${tab}"]`).click();
-      assert.equal(await page.locator(`[data-st="${tab}"]`).getAttribute('aria-selected'), 'true');
-      assert.equal(await page.locator(`[data-sp="${tab}"]`).isVisible(), true);
-    }
+    assert.equal(await page.locator('#score,[data-st]').count(), 0, 'the Live / Wins / Coming up panel left Home on 12 Nov 2026');
     for (const deck of ['ads', 'store', 'growth', 'stock']) {
       await page.locator(`#tabs [data-tab="${deck}"]`).click();
       assert.equal(await page.locator(`#tabs [data-tab="${deck}"]`).getAttribute('aria-selected'), 'true');

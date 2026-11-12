@@ -1034,3 +1034,14 @@ Will (12 Nov) asked for what the business keeps from its sales after corporation
 - **Layout.** After tax is a full-width row under the Contribution/Net profit pair, the bottom line. The hero layout check keeps "no card alone on a row" for every other card and asserts After tax spans the pair below it.
 - **Pins re-taken, not loosened:** the Home markup hash, after a line-by-line diff against home-stock-reviews 4d787b2 showed only the After tax line and 16 `afterTax` snapshot entries (four periods, three market views each plus the period) had been added; the hero card count, 10 to 11.
 - **Validation:** typecheck, all 1,178 tests, the production build, the full Chromium suite (including a loss check of the After tax line and sheet at each viewport) and the secret scan pass locally. CI verifies the pushed head.
+
+## 12 Nov · Small change: Home tidy
+
+Will (12 Nov, after #50 and #51 went live) asked for three fixes.
+
+- **The pace dial no longer reads "-+90d".** `formatLike` copied the centre value's prefix, and for "+32.5d" the prefix was the "+" sign, so the negative end label became "-+90d". A leading sign is now treated as part of the value, not the unit: the ends read "-90d" and "90d". The same formatter serves the dial ends and the sheet scale; a unit test covers "+", "-" and "−" examples.
+- **The Live / Wins / Coming up panel is gone.** Will gets no value from it today and expects a different version once he uses the full dashboard more. The hero takes the full width. Its 38 sample texts, the live-rows renderer (`liveHtml`), the score tabs and the ticker's Home dates list and "All dates" button went with it. The Next up band is now the only way into all dates; the ticker check opens the sheet from the band.
+- **The Stock heading reads "Series 1 / Stock".** The eyebrow is "Series 1" and the title "Stock", so the title no longer wraps under the eyebrow. The "Stock dials" button in the heading is removed (the Stock deck is still in the dials section), and the chapter now has a 12px gap between heading and card, so the title no longer touches the card border. The compact check asserts the heading carries no button and lowers the Stock chapter's control budget from 5 to 4.
+- **The "On the table" nav pill now reads "Stock"** and scrolls to the Stock chapter; it still pointed at the section removed in #50.
+- **Pin re-taken, not loosened:** the Home markup hash, after a line-by-line diff against main a463cc2 showed only the removed aside and its 38 sample texts, the new heading text, the removed button and the pill's target, icon and label.
+- **Validation:** see BUILD-STATUS, 12 Nov (Home tidy).

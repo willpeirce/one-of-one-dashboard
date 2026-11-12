@@ -159,7 +159,7 @@ export async function checkMorning(signedIn: BrowserContext): Promise<void> {
       for (const width of [375, 402, 430, 480, 1024, 1180, 1181]) {
         await bar.setViewportSize({width, height: 844});
         await bar.goto('/'); await bar.locator('html[data-dashboard-ready="true"]').waitFor();
-        for (const go of ['hero', 'table', 'tests', 'dials']) {
+        for (const go of ['hero', 'stock-chapter', 'tests', 'dials']) {
           const sideways = await bar.evaluate(current => {
             document.querySelectorAll<HTMLElement>('[data-go]').forEach(item => item.setAttribute('aria-current', String(item.dataset.go === current)));
             return document.documentElement.scrollWidth - innerWidth;

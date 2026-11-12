@@ -87,14 +87,6 @@ function setupTicker(root: HTMLElement): void {
       return `<article class="tk-passed-row" data-tk-passed-row="${e(item.key)}"><div class="tk-row-copy"><strong>${tickerIcon(item.kind)}${e(item.name)}</strong><p>${e(item.dateLabel)}</p><small>Passed ${e(passedDay.format(at))}, ${e(passedTime.format(at))} UK</small></div><button class="tk-put-back" type="button" data-tk-put-back="${e(item.key)}" aria-label="Put back ${e(item.name)}">Put back</button></article>`;
     }).join('') || '<p class="tk-passed-empty">No dates passed yet.</p>';
   }
-  function renderHome(): void {
-    const home = document.querySelector<HTMLElement>('[data-tk-home-dates]');
-    if (!home) return;
-    if (readFailed) { home.innerHTML = '<p class="tk-home-empty">ⓘ Dates unavailable</p>'; return; }
-    if (!snapshot) return;
-    home.innerHTML = `${snapshot.mode === 'sample' ? '<p class="tk-home-sample">Sample dates</p>' : ''}${snapshot.ahead.slice(0, 3).map(item =>
-      `<div class="tk-home-row" data-tk-home-row="${e(item.key)}"><span class="tk-home-date">${e(item.dateLabel)}</span><div><strong>${e(item.name)}</strong><small>${item.days < 0 ? '△ ' : '› '}${e(item.chip)}${item.note ? ` · ${e(item.note)}` : ''}</small></div></div>`).join('') || '<p class="tk-home-empty">✓ Nothing ahead</p>'}`;
-  }
   async function display(data: TickerSnapshot, changed = false, glint = false): Promise<void> {
     if (changed && !reduced.matches) {
       animation = animation ? 0 : 1;
@@ -111,7 +103,7 @@ function setupTicker(root: HTMLElement): void {
       band.classList.remove('tk-glint-0', 'tk-glint-1'); band.classList.add(`tk-glint-${glintAnimation}`);
     }
     root.dataset.tkReady = 'true'; root.dataset.tkMode = data.mode;
-    renderSheet(); renderHome(); renderActions(); measure(); positionDialog();
+    renderSheet(); renderActions(); measure(); positionDialog();
     if (changed) {
       const announcement = data.current ? `Next up: ${data.current.name}, ${data.current.dateLabel}, ${data.current.chip}.` : 'Nothing ahead.';
       status.textContent = dialog.open ? '' : announcement;
@@ -133,7 +125,7 @@ function setupTicker(root: HTMLElement): void {
       content.className = 'tk-content';
       content.innerHTML = `<span class="tk-quiet">${tickerIcon('info')} Dates unavailable</span>`;
       band.setAttribute('aria-label', 'Next up: dates unavailable.'); band.setAttribute('aria-disabled', 'true');
-      root.dataset.tkReady = 'error'; renderHome(); renderActions();
+      root.dataset.tkReady = 'error'; renderActions();
     }
   }
   async function press(command: Press): Promise<void> {
@@ -177,7 +169,6 @@ function setupTicker(root: HTMLElement): void {
     dialog.showModal(); root.classList.add('tk-open'); band.setAttribute('aria-expanded', 'true'); positionDialog(); close.focus();
   }
   band.addEventListener('click', () => openDialog(band));
-  document.querySelector<HTMLElement>('#alldates')?.addEventListener('click', event => { event.preventDefault(); openDialog(event.currentTarget as HTMLElement); });
   next.addEventListener('click', () => { if (snapshot?.current && !readFailed && !failedPress) void press({ action: 'next', key: snapshot.current.key, name: snapshot.current.name, source: 'next' }); });
   undo.addEventListener('click', () => { const last = undoStack.at(-1); if (last) void press({ action: 'restore', ...last, source: 'undo' }); });
   retry.addEventListener('click', () => { if (failedPress) void press(failedPress); });

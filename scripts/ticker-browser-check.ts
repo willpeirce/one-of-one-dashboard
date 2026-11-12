@@ -123,19 +123,18 @@ export async function checkTicker(signedIn: BrowserContext): Promise<void> {
         await page.locator('#tk-band').focus();
         assert.equal(await track.evaluate(element => getComputedStyle(element).animationPlayState), 'paused');
 
-        await page.locator('[data-st="soon"]').click();
-        await page.locator('[data-tk-home-row]').first().waitFor();
-        assert.equal(await page.locator('[data-tk-home-row]').count(), 3);
-        const homeNames = await page.locator('[data-tk-home-row]').allTextContents();
-        before.ahead.slice(0, 3).forEach((row, index) => assert.ok(homeNames[index]!.includes(row.name)));
-        await sheet(page, '#alldates');
+        // 12 Nov 2026: the Live / Wins / Coming up panel left Home; the band is the only way into all dates.
+        assert.equal(await page.locator('#score,[data-tk-home-dates],#alldates').count(), 0);
+        await sheet(page);
+        const sheetNames = await page.locator('[data-tk-ahead-row]').allTextContents();
+        before.ahead.slice(0, 3).forEach((row, index) => assert.ok(sheetNames[index]!.includes(row.name)));
         assert.equal(await page.locator('[data-tk-ahead-row]').count(), 3);
         await page.locator('#tk-more').click();
         assert.equal(await page.locator('[data-tk-ahead-row]').count(), before.ahead.length);
         assert.match(await page.locator('#tk-more').innerText(), /Show fewer/);
         await page.locator('#tk-more').click();
         assert.equal(await page.locator('[data-tk-ahead-row]').count(), 3);
-        await closeSheet(page, 'alldates');
+        await closeSheet(page);
         await page.evaluate(() => window.scrollTo(0, 0));
 
         const press = async (button: '#tk-next' | '#tk-undo' | '#tk-retry', endpoint: 'next' | 'restore'): Promise<TickerSnapshot> => {
@@ -274,8 +273,9 @@ export async function checkTicker(signedIn: BrowserContext): Promise<void> {
         const live = {...await read(), mode: 'live' as const};
         await page.route('**/api/ticker', route => route.fulfill({json: live}));
         await page.reload(); await currentShown(page, live);
-        await page.locator('[data-st="soon"]').click();
-        assert.equal(await page.locator('[data-tk-home-dates] [data-mode="sample"]').count(), 0, 'live dates never carry a sample marker');
+        await sheet(page);
+        assert.equal(await page.locator('#tk-dialog [data-mode="sample"]').count(), 0, 'live dates never carry a sample marker');
+        await closeSheet(page);
         await page.unroute('**/api/ticker');
         await page.route('**/api/ticker', route => route.fulfill({status: 503, json: {error: 'Invented read failure'}}));
         await page.reload();

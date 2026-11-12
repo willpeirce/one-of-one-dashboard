@@ -30,6 +30,11 @@ test('dial and history labels use the same sign rule, including a negative curre
     assert.equal(format(-10.129), '-£10.13');
   }
   assert.equal(formatLike('0%')(-10), '-10%');
+  // The pace dial centre reads "+32.5d": its end labels must read "-90d" and "90d", never "-+90d".
+  for (const example of ['+32.5d', '-32.5d', '\u221232.5d']) {
+    assert.equal(formatLike(example)(-90), '-90d');
+    assert.equal(formatLike(example)(90), '90d');
+  }
 });
 
 test('server-rendered net sales and profit use the same formatter as browser metric updates', () => {

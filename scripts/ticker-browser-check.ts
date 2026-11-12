@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict';
 import type { BrowserContext, Locator, Page } from 'playwright';
 import type { TickerSnapshot } from '../src/ticker/model.js';
+import { tapArea } from './tap-area.js';
 
 const shells = ['/', '/settings', '/sources', '/ads', '/fulfilment', '/creatives', '/scorecard', '/audit', '/morning'];
 
 async function tapSizes(scope: Locator, label: string): Promise<void> {
   for (const control of await scope.locator('button,a').all()) {
     if (!await control.isVisible()) continue;
-    const box = await control.boundingBox();
-    assert.ok(box && box.width >= 44 && box.height >= 44,
+    const tap = await tapArea(control);
+    assert.ok(tap.width >= 44 && tap.height >= 44 && tap.edges,
       `${label}: ${await control.getAttribute('id') ?? await control.textContent()} needs a 44px tap`);
   }
 }

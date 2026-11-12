@@ -1,4 +1,4 @@
-import {setDecisions} from './decisions/browser.js';
+import { stockPacksHtml } from './stock/view.js';
 import { updateHomeTests } from './github-hq/browser.js';
 import {footerChipHtml} from './home-layout.js';
 import {arrangeHomeDials} from './home-layout-browser.js';
@@ -15,7 +15,7 @@ import { rangeLabel } from './hero-range.js';
 import { installPullToRefresh } from './pull-refresh.js';
 import { greetingAt } from './greeting.js';
 import { formatLike, formatMetricNumber, formatNumber, formatPounds } from './money.js';
-import { paceState, seriesPaceCardHtml, seriesPaceDial, seriesPaceFacts, seriesPaceSheetHtml, type SeriesPaceCard } from './series-pace/presentation.js';
+import { paceState, seriesPaceCardHtml, seriesPaceDial, seriesPaceSummary, seriesPaceSheetHtml, type SeriesPaceCard } from './series-pace/presentation.js';
 import type { SeriesPaceMarket } from './series-pace/model.js';
 import { reviewProductTitle, reviewsFlagLabel, reviewsGreeting, reviewsPanelHtml, reviewSheetHtml } from './judgeme/presentation.js';
 
@@ -103,7 +103,7 @@ function renderSeriesPace(element: HTMLElement, card: SeriesPaceCard, mode: 'sam
   for (const market of ['UK', 'US'] as const) {
     const button = get(`[data-series-market="${market}"]`, element), model = card.markets[market];
     renderDial(button, seriesPaceDial(market, model), mode);
-    button.insertAdjacentHTML('beforeend', seriesPaceFacts(model));
+    button.insertAdjacentHTML('beforeend', seriesPaceSummary(model));
     button.setAttribute('aria-label', `Series 1 sell-out pace · ${market}: ${model.verdict}`);
     button.querySelector('.well')?.insertAdjacentHTML('afterend', '<span class="pace-scale" aria-hidden="true"><span>Too slow</span><span>On pace</span><span>Too fast</span></span>');
   }
@@ -327,7 +327,7 @@ function renderHero(hero: HeroPeriod, animate = false): void {
     all(`[data-sample-text="${subKey}"]`).forEach(e => { e.textContent = `${rangeLabel(hero.from, hero.to)} · Shopify ${hero.net.mode}${kind === 'email' ? ` · GBP${hero.business!.email.partial ? ' · partial' : ''}` : ''}`; });
     if (element) details.set(element, { state: 'info', title: kind === 'email' ? 'Email · Shopify' : 'Refill Pack', detail: model.detail, mode: hero.net.mode });
   }
-  setDecisions({amberDials:all('#dials .tile[data-state=warn][data-mode=live]').length});
+  renderHealth();
   renderHourlyOrders();
 }
 
@@ -382,12 +382,13 @@ function radarGroup(element: HTMLElement): string | undefined {
   const icon = element.querySelector('.src use')?.getAttribute('href')?.slice(1) ?? '';
   return element.dataset.g || sourceGroups[element.dataset.src ?? ''] || iconGroups[icon] || panelGroups[panel];
 }
-document.addEventListener('pulse:decisions-rendered',()=>renderHealth());
+// Home panels that re-render on their own (creatives, ad sets) ask for a fresh health strip.
+document.addEventListener('pulse:home-rendered', () => renderHealth());
 function renderHealth(): void {
   const byGroup: Record<string, Tally> = {};
   const gauges: Record<string, HTMLElement[]> = {};
   radarTargets.clear();
-  all('.tile[data-state],.dcard[data-state],.tcard[data-state],#deck [data-state]').forEach((element) => {
+  all('.tile[data-state],.dcard[data-state],.tcard[data-state]').forEach((element) => {
     const state = element.dataset.state ?? '';
     if (!(state in emptyTally())) return;
     const group = radarGroup(element);
@@ -411,12 +412,7 @@ function renderHealth(): void {
     }
     return { key, name, measure, alarms: byGroup[key]?.alarm ?? 0, title: weakest ? details.get(weakest)?.title ?? measure.label : measure.label, ...(weakest ? { target: weakest.id } : {}) };
   });
-  const rows = all('#deck [data-state]'), alarmCount = rows.filter((row) => row.dataset.state === 'alarm').length, decisions = rows.filter((row) => row.dataset.state === 'decide').length;
-  const flag = get('#hero [data-rv]'), label = snapshot.reviews ? reviewsFlagLabel(snapshot.reviews) : null;
-  flag.hidden = label === null;
-  flag.textContent = label ?? '';
-  flag.setAttribute('aria-label', snapshot.reviews ? reviewsGreeting(snapshot.reviews) : '');
-  get('#deckcount').textContent = `${formatNumber(alarmCount)} ${alarmCount === 1 ? 'alarm' : 'alarms'} · ${formatNumber(decisions)} ${decisions === 1 ? 'decision' : 'decisions'}`;
+  renderReviewFlag();
   const html = dropsHtml(areas), drops = get('#drops');
   if (drops.dataset.content !== html) { drops.innerHTML = html; drops.dataset.content = html; }
 }
@@ -440,6 +436,70 @@ function miniChart(detail: Detail, dial?: SheetDetail['dial']): string {
   const labels = detail.hl ?? ['Earlier', 'Latest sample'];
   svg += `<text x="${rounded(narrow ? 0 : width / 2)}" y="${rounded(y(values[0]!) - 4)}" text-anchor="${narrow ? 'start' : 'middle'}" font-size="10" fill="var(--ink-2)">${esc(format(values[0]!))}</text><text x="${rounded(narrow ? 320 : 320 - width / 2)}" y="${rounded(y(values.at(-1)!) - 4)}" text-anchor="${narrow ? 'end' : 'middle'}" font-size="10" font-weight="700" fill="var(--ink)">${esc(format(values.at(-1)!))}</text><text x="0" y="96" font-size="9.5" fill="var(--muted)">${esc(labels[0])}</text><text x="320" y="96" text-anchor="end" font-size="9.5" fill="var(--muted)">${esc(labels[1])}</text></svg>`;
   return svg;
+}
+
+// Dismissed reviews stay off this page even if an older snapshot arrives after the save.
+const hiddenReviews = new Set<string>();
+let reviewToastTimer: number | undefined;
+let lastDismissed: string[] = [];
+function renderReviewFlag(): void {
+  const flag = get('#hero [data-rv]'), label = snapshot.reviews ? reviewsFlagLabel(snapshot.reviews) : null;
+  flag.hidden = label === null;
+  flag.textContent = label ?? '';
+  flag.setAttribute('aria-label', snapshot.reviews ? reviewsGreeting(snapshot.reviews) : '');
+}
+function visibleReviews(next: DashboardSnapshot): void {
+  if (next.reviews && hiddenReviews.size) next.reviews = { ...next.reviews, rows: next.reviews.rows.filter(row => !hiddenReviews.has(row.id)) };
+}
+function renderReviews(): void {
+  if (!snapshot.reviews) return;
+  get('#reviews').innerHTML = reviewsPanelHtml(snapshot.reviews);
+  renderReviewFlag();
+}
+function reviewToast(text: string, undo: boolean): void {
+  const toast = get('#review-toast');
+  get('#review-toast-text').textContent = text;
+  get('#review-undo').hidden = !undo;
+  toast.hidden = false;
+  window.clearTimeout(reviewToastTimer);
+  reviewToastTimer = window.setTimeout(() => { toast.hidden = true; }, 8000);
+}
+async function sendDismiss(ids: string[], action: 'dismiss' | 'undo'): Promise<boolean> {
+  try {
+    const response = await fetch('/api/reviews/dismiss', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, action }) });
+    return response.ok;
+  } catch { return false; }
+}
+/** Dismiss takes reviews off Home at once; Judge.me itself is never changed. */
+async function dismissReviewsNow(ids: string[]): Promise<void> {
+  const panel = snapshot.reviews;
+  if (!panel || !ids.length) return;
+  const removed = panel.rows.filter(row => ids.includes(row.id));
+  ids.forEach(id => hiddenReviews.add(id));
+  snapshot.reviews = { ...panel, rows: panel.rows.filter(row => !ids.includes(row.id)) };
+  renderReviews();
+  const sheet = get<HTMLDialogElement>('#sheet');
+  if (sheet.open && openDetail?.dataset.reviewOpen && ids.includes(openDetail.dataset.reviewOpen)) sheet.close();
+  if (await sendDismiss(ids, 'dismiss')) {
+    lastDismissed = ids;
+    reviewToast(ids.length === 1 ? 'Review dismissed' : `${formatNumber(ids.length)} reviews dismissed`, true);
+    return;
+  }
+  ids.forEach(id => hiddenReviews.delete(id));
+  const current = snapshot.reviews;
+  if (current) snapshot.reviews = { ...current, rows: [...current.rows, ...removed.filter(row => !current.rows.some(other => other.id === row.id))] };
+  renderReviews();
+  reviewToast('Not dismissed. Try again.', false);
+}
+async function undoDismiss(): Promise<void> {
+  const ids = lastDismissed;
+  if (!ids.length) return;
+  get('#review-toast').hidden = true;
+  if (!await sendDismiss(ids, 'undo')) { reviewToast('Undo not saved. Try again.', true); return; }
+  lastDismissed = [];
+  ids.forEach(id => hiddenReviews.delete(id));
+  reviewToast(ids.length === 1 ? 'Review back on the list' : 'Reviews back on the list', false);
+  void refreshDashboard(new AbortController().signal);
 }
 
 function showDetail(element: HTMLElement, reopen = true): void {
@@ -519,9 +579,9 @@ function filterDials(): void {
 }
 
 function updateSnapshot(next: DashboardSnapshot, initial = false): void {
+  visibleReviews(next);
   snapshot = next;
   updateHomeTests(snapshot.tests, () => refreshDashboard(new AbortController().signal));
-  setDecisions({morningOmissions:snapshot.morningOmissions});
   if(snapshot.adSets)updateAdSets(snapshot.adSets,selectedMarket);
   if (snapshot.creatives) updateCreativeSnapshot(snapshot.creatives);
   if (snapshot.reviews) get('#reviews').innerHTML = reviewsPanelHtml(snapshot.reviews);
@@ -598,7 +658,8 @@ function updateSnapshot(next: DashboardSnapshot, initial = false): void {
   const connectionStatus=document.querySelector<HTMLElement>('#connection-status');
   if(connectionStatus)connectionStatus.innerHTML=footerChipHtml(snapshot.sourceHealth);
   arrangeHomeDials(document);
-  setDecisions({shopify:snapshot.shopify,amberDials:all('#dials .tile[data-state=warn][data-mode=live]').length});
+  if (snapshot.shopify) get('#stock-packs').innerHTML = stockPacksHtml(snapshot.shopify);
+  renderHealth();
   document.documentElement.dataset.updatedAt = snapshot.generatedAt;
   get('#update-status').textContent = `Updated ${new Date(snapshot.generatedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Europe/London' })}`;
   if (get<HTMLDialogElement>('#sheet').open) {
@@ -691,6 +752,10 @@ function boot(): void {
       } else location.href = '/sources';
       return;
     }
+    const dismiss = target.closest<HTMLElement>('[data-review-dismiss]');
+    if (dismiss) { void dismissReviewsNow([dismiss.dataset.reviewDismiss ?? '']); return; }
+    if (target.closest('#review-dismiss-all')) { void dismissReviewsNow(snapshot.reviews?.rows.map(row => row.id) ?? []); return; }
+    if (target.closest('#review-undo')) { void undoDismiss(); return; }
     const review = target.closest<HTMLElement>('[data-review-open]');
     if (review) { showDetail(review); return; }
     if (target.closest('[data-series-use-landing]')) { void saveSeriesTarget(''); return; }

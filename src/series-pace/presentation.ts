@@ -44,9 +44,21 @@ export function seriesPaceFacts(model: SeriesPaceMarketView): string {
     <small>${esc(model.averageLabel)}, complete days to ${esc(paceDate(model.completeThrough))}</small></span>`;
 }
 
+/** The card's short read; the full facts sit in the sheet. */
+export function seriesPaceSummary(model: SeriesPaceMarketView): string {
+  const sellOut = model.status === 'sold_out' ? 'Sold out'
+    : model.projectedDate ? `Sells out <strong>${esc(paceDate(model.projectedDate))}</strong>`
+    : model.average !== null && model.average <= 0 ? 'No sell-out at this pace' : 'Sell-out not yet known';
+  const cover = model.projectedDays === null ? '' : ` · ${esc(whole(Math.max(0, Math.floor(model.projectedDays))))} days of stock`;
+  return `<span class="pace-facts pace-summary"><span class="pace-kits"><strong>${model.stock === null ? 'Unknown' : esc(whole(model.stock))}</strong> kits left${cover}</span>
+    <span>${sellOut} · target ${esc(paceDate(model.targetDate))}<small> (${model.targetOverride ? 'your date' : 'landing date'})</small></span>
+    <span>${model.average === null ? 'Average not yet known' : `${esc(paceNumber(model.average))} a day`}${model.needed === null ? '' : ` · ${esc(paceNumber(model.needed))} needed`}</span>
+    ${model.correction ? `<strong class="pace-correction">${esc(model.correction)}</strong>` : ''}</span>`;
+}
+
 /** The same card shell is used by server rendering and each live update. */
 export function seriesPaceCardHtml(card: SeriesPaceCard, mode: 'sample' | 'live'): string {
-  return `<h3>Series 1 sell-out pace</h3>${mode === 'sample' ? '<small class="sample-label">Sample data</small>' : ''}<div class="series-pace-markets">${(['UK', 'US'] as const).map(market => `<button type="button" class="series-pace-market dial" data-series-market="${market}" data-src="shopify" data-state="${paceState(card.markets[market])}" aria-label="Series 1 sell-out pace · ${market}"><span class="dl">${market}</span><span class="ds">${esc(card.markets[market].verdict)}</span>${seriesPaceFacts(card.markets[market])}</button>`).join('')}</div>`;
+  return `<h3>Kits · sell-out pace</h3>${mode === 'sample' ? '<small class="sample-label">Sample data</small>' : ''}<div class="series-pace-markets">${(['UK', 'US'] as const).map(market => `<button type="button" class="series-pace-market dial" data-series-market="${market}" data-src="shopify" data-state="${paceState(card.markets[market])}" aria-label="Series 1 sell-out pace · ${market}"><span class="dl">${market}</span><span class="ds">${esc(card.markets[market].verdict)}</span>${seriesPaceSummary(card.markets[market])}</button>`).join('')}</div>`;
 }
 
 export function seriesPaceSheetHtml(market: SeriesPaceMarket, model: SeriesPaceMarketView, mode: 'sample' | 'live'): string {
@@ -55,7 +67,7 @@ export function seriesPaceSheetHtml(market: SeriesPaceMarket, model: SeriesPaceM
     return `<tr><th scope="row">${esc(paceDate(day))}</th><td>${row ? esc(whole(row.sold)) : 'Unknown'}</td><td>${row ? row.source === 'snapshot' ? 'Snapshot' : 'ShopifyQL' : 'Not available'}</td></tr>`;
   }).join('');
   const snapshots = model.snapshots.map(row => `<li>${esc(paceDate(row.day))}: ${esc(new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/London' }).format(new Date(row.takenAt)))} UK · ${row.late ? 'late' : 'on time'}</li>`).join('');
-  return `<div class="series-pace-sheet"><h4>Last 7 complete days · kit units</h4><table class="pace-days"><thead><tr><th>UK day</th><th>Sold</th><th>Source</th></tr></thead><tbody>${rows}</tbody></table>
+  return `<div class="series-pace-sheet"><div class="pace-sheet-facts">${seriesPaceFacts(model)}</div><h4>Last 7 complete days · kit units</h4><table class="pace-days"><thead><tr><th>UK day</th><th>Sold</th><th>Source</th></tr></thead><tbody>${rows}</tbody></table>
     <h4>Snapshots</h4>${snapshots ? `<ul class="pace-snapshots">${snapshots}</ul>` : '<p>No stock snapshots yet. Available daily sales use ShopifyQL.</p>'}
     <p>Landing date: <strong>${esc(paceDate(model.landingDate))}</strong> (${esc(paceDate(model.orderDate))} + ${model.landingOffsetDays} days).</p>
     <p data-series-date-in-force>Target in force: <strong>${esc(paceDate(model.targetDate))}</strong> · ${model.targetOverride ? 'your date' : 'landing date'}.</p>

@@ -146,12 +146,15 @@ test('unbuilt source actions stay disabled while read-only review links and acco
 
 test('legacy Meta pause placeholders are absent and Act is the sole flag-gated set action',async()=>{
  const {sampleAdSetsView}=await import('../src/meta-adsets/presentation.js');
+ const {adsPage}=await import('../src/meta-adsets/view.js');
  const {defaultSettings}=await import('../src/settings.js');
  const snapshot=getSampleDashboard();snapshot.adSets=sampleAdSetsView(defaultSettings());
  for(const enabled of [false,true]){
   snapshot.adSets.actionsEnabled=enabled;
   const page=dashboardPage(snapshot);
   assert.doesNotMatch(page,/<button[^>]*(?:Pause ad set|Pause · Not built yet|Step \+25% on)/);
-  assert.equal(page.includes('data-adset-act='),enabled);
+  // 12 Nov 2026: Home's decision cards left with chapter 1; Act stays on /ads (and Morning) behind the same flag.
+  assert.equal(page.includes('data-adset-act='),false);
+  assert.equal(adsPage(snapshot.adSets).includes('data-adset-act='),enabled);
  }
 });

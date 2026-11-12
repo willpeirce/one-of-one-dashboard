@@ -9,12 +9,13 @@ import { checkMorningCheckItems } from './morning-check-items-browser-check.js';
 import type { MorningButton, MorningCard, MorningFigure, MorningSnapshot, MorningState } from '../src/morning/model-types.js';
 import type { SettingsSnapshot } from '../src/settings.js';
 import type { TickerSnapshot } from '../src/ticker/model.js';
+import { tapArea } from './tap-area.js';
 
 async function tapSizes(scope: Locator, label: string): Promise<void> {
   for (const control of await scope.locator('button,a,input,select,textarea').all()) {
     if (!await control.isVisible()) continue;
-    const box = await control.boundingBox();
-    assert.ok(box && box.width >= 44 && box.height >= 44,
+    const tap = await tapArea(control);
+    assert.ok(tap.width >= 44 && tap.height >= 44 && tap.edges,
       `${label}: ${await control.getAttribute('id') ?? await control.textContent()} needs a 44px tap`);
   }
 }
@@ -179,8 +180,8 @@ export async function checkMorning(signedIn: BrowserContext): Promise<void> {
         await page.goto('/'); await page.locator('html[data-dashboard-ready="true"]').waitFor();
         const top = await page.locator('.hero-grid').evaluate(element => element.getBoundingClientRect().top + scrollY);
         assert.equal(top, width === 390 ? 499.0625 : 405.625, 'The new Morning way in leaves Home’s fold unchanged to the pixel');
-        assert.equal(await page.locator('a[href="/morning"]').count(), 3, 'Home links to Morning three times and no more');
-        for (const way of ['#table a.morning-link', 'header.top .pills a.pill-morning', 'header.top .account-links a'])
+        assert.equal(await page.locator('a[href="/morning"]').count(), 2, 'Home links to Morning from the top bar and the account menu');
+        for (const way of ['header.top .pills a.pill-morning', 'header.top .account-links a'])
           assert.equal(await page.locator(`${way}[href="/morning"]`).count(), 1, `Home has one Morning link at ${way}`);
         const tap = await page.locator('header.top a.pill-morning').evaluate(pill => {
           const box = pill.getBoundingClientRect(), area = getComputedStyle(pill, '::after');

@@ -1,11 +1,10 @@
 /* Home's compact chapter layout. Sheets and source pages retain their own styles. */
-#table,#reviews,#tests,#dials{min-width:0}
-#table>.chapter-heading>.chapter-copy{min-width:150px}
-#table .morning-link{display:inline-flex;align-items:center;justify-content:center;align-self:center;text-decoration:none;padding:6px 12px}
-#table :is(button,a,summary),#reviews :is(button,a,summary),#tests :is(button,a,summary),#dials :is(button,a,summary),#foot :is(button,a,summary){min-height:44px}
-#table summary,#reviews summary,#tests summary,#dials summary{cursor:pointer}
-#table [hidden],#reviews [hidden],#tests [hidden],#dials [hidden]{display:none!important}
-#creative-feedback:empty,#auth-message:empty{display:none}
+#stock-chapter,#reviews,#tests,#dials{min-width:0}
+#stock-chapter>.chapter-heading>.chapter-copy{min-width:150px}
+#stock-chapter :is(button,a,summary),#reviews :is(button,a,summary),#tests :is(button,a,summary),#dials :is(button,a,summary),#foot :is(button,a,summary){min-height:44px}
+#stock-chapter summary,#reviews summary,#tests summary,#dials summary{cursor:pointer}
+#stock-chapter [hidden],#reviews [hidden],#tests [hidden],#dials [hidden]{display:none!important}
+#auth-message:empty{display:none}
 #tests{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:14px 18px}
 #tests>.chapter-heading{grid-column:1/-1}
 #tests .tcard{padding:12px;gap:8px;align-content:start}

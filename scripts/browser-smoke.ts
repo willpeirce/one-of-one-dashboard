@@ -31,7 +31,6 @@ import { checkMorning } from './morning-browser-check.js';
 import { checkGoogleJunk } from './browser-google-junk.js';
 import { checkHQ } from './browser-hq.js';
 import { checkPush } from './browser-push.js';
-import { checkMorningHome } from './morning-home-browser-check.js';
 
 let step = 'read test configuration';
 
@@ -390,7 +389,8 @@ async function checkReviews(context: BrowserContext): Promise<void> {
           assert.match(await link.getAttribute('rel') ?? '', /noopener/);
           assert.match(await link.getAttribute('rel') ?? '', /noreferrer/);
         }
-        assert.equal(await page.locator('#review-publish').isDisabled(), true);
+        assert.equal(await page.locator('#review-publish').count(), 0);
+        assert.equal(await page.locator('#sh-extra [data-review-dismiss]').count(), 1, 'The review sheet offers Dismiss');
         assert.doesNotMatch(await page.locator('#sheet').innerHTML(), /Invented browser private reviewer|invented-browser-private@example\.invalid/);
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
         assert.equal(await page.locator('#sheet').evaluate(element => element.scrollWidth <= element.clientWidth), true);
@@ -444,24 +444,17 @@ async function checkSeriesPace(context: BrowserContext): Promise<void> {
       step = `${scope}: sample card and market sheets at ${viewport.width}px`;
       await page.setViewportSize(viewport);
       const card = page.locator('[data-model-id="w017"]');
-      assert.equal(await card.locator('h3').innerText(), 'Series 1 sell-out pace');
+      assert.equal(await card.locator('h3').innerText(), 'Kits · sell-out pace');
+      assert.equal(await card.evaluate(element => element.closest('#stock-chapter') !== null), true, 'The pace card sits in the Stock chapter');
       assert.match(await card.innerText(), /sample data/i);
       assert.equal(await card.locator(':scope > .sample-label').count(), 1);
       assert.equal(await card.locator('[data-series-market] .well svg').count(), 2);
       assert.doesNotMatch(await card.innerText(), /Our spend vs plan/);
       const layout = await card.evaluate(element => {
-        const grid = element.parentElement!;
-        const neighbor = grid.querySelector('[data-model-id="w018"]')!;
-        const box = element.getBoundingClientRect(), next = neighbor.getBoundingClientRect();
-        const style = getComputedStyle(grid), own = getComputedStyle(element);
-        return { span: own.gridColumn, width: box.width, gridWidth: grid.clientWidth,
-          neighborWidth: next.width, gap: parseFloat(style.columnGap),
-          sideways: document.documentElement.scrollWidth > innerWidth };
+        const box = element.getBoundingClientRect(), outer = element.closest('.stock-card')!.getBoundingClientRect();
+        return { width: box.width, outer: outer.width, sideways: document.documentElement.scrollWidth > innerWidth };
       });
-      assert.match(layout.span, /span 2/);
-      assert.ok(Math.abs(layout.width - (2 * layout.neighborWidth + layout.gap)) <= 2,
-        'The pace card must occupy two ordinary tile widths');
-      if (viewport.width === 390) assert.ok(Math.abs(layout.width - layout.gridWidth) <= 2, 'The pace card fills one phone row');
+      if (viewport.width === 390) assert.ok(layout.outer - layout.width <= 40, 'The pace card fills the Stock card on a phone');
       assert.equal(layout.sideways, false);
       for (let index = 18; index <= 24; index += 1) assert.equal(await page.locator(`#p-ads [data-model-id="w0${index}"]`).count(), 1);
       assert.ok(await page.locator('#p-ads').getByText('Google spend vs plan', { exact: true }).count() > 0);
@@ -471,8 +464,8 @@ async function checkSeriesPace(context: BrowserContext): Promise<void> {
         assert.equal(await dial.getAttribute('data-state'), market === 'UK' ? 'good' : 'warn');
         assert.match(await dial.innerText(), market === 'UK' ? /1,850 kits left/ : /2,400 kits left/);
         assert.ok((await dial.innerText()).includes(model.correction));
-        assert.match(await dial.innerText(), market === 'UK' ? /last 3 days: 15\.3 a day.*↑/ : /last 3 days: 15\.0 a day.*↓/);
         await dial.click();
+        assert.match(await page.locator('#sh-extra').innerText(), market === 'UK' ? /last 3 days: 15\.3 a day.*↑/ : /last 3 days: 15\.0 a day.*↓/);
         assert.equal(await page.locator('#sh-title').innerText(), `Series 1 sell-out pace · ${market}`);
         assert.match(await page.locator('#sh-src').innerText(), /sample data/i);
         assert.deepEqual(await page.locator('.pace-days tbody tr td:first-of-type').allTextContents(), model.days.map(day => String(day.sold)));
@@ -697,7 +690,7 @@ async function checkSeriesPaceWaiting(context: BrowserContext): Promise<void> {
         assert.equal(await dial.locator('.well circle').count(), sample.pointer ? 1 : 0);
         if (sample.pointer) {
           assert.equal(widget.value.markets.UK.needle, -90);
-          assert.match(await dial.innerText(), /no sell-out at this pace/);
+          assert.match(await dial.innerText(), /no sell-out at this pace/i);
         } else {
           assert.equal(widget.value.markets.UK.needle, null);
           assert.equal(await dial.locator('.well svg text').first().textContent(), '—');
@@ -1086,15 +1079,15 @@ async function assertSampleTextStyles(page: Page): Promise<void> {
       ? [] : [`${wrapper.getAttribute('data-sample-text')}: ${actual.fontSize}/${actual.color} instead of ${expected.fontSize}/${expected.color}`];
   }));
   assert.deepEqual(mismatches, [], 'Sample-text wrappers must inherit their parent typography');
-  const values = await page.locator('#table .nums b > [data-sample-text]').evaluateAll((wrappers) => wrappers.map((wrapper) => getComputedStyle(wrapper).fontSize));
+  const values = await page.locator('#stock-chapter .nums b > [data-sample-text]').evaluateAll((wrappers) => wrappers.map((wrapper) => getComputedStyle(wrapper).fontSize));
   assert.deepEqual(values, [], 'The six static sample decision cards and their figures are removed');
 }
 
 async function assertUnbuiltActions(page: Page): Promise<void> {
   const buttons = page.locator('button[data-unbuilt]');
-  assert.equal(await page.locator('#table button[data-unbuilt]').count(), 0);
+  assert.equal(await page.locator('#stock-chapter button[data-unbuilt]').count(), 0);
   assert.equal(await page.locator('#tests button[data-unbuilt]').count(), 1);
-  assert.equal(await page.locator('#review-publish').isDisabled(), true);
+  assert.equal(await page.locator('#review-publish').count(), 0);
   for (const button of await buttons.all()) {
     const label = await button.getAttribute('aria-label');
     assert.ok(label);
@@ -1582,7 +1575,7 @@ async function run(): Promise<void> {
     const currentUkHour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: 'numeric', hourCycle: 'h23' }).format(new Date()));
     const greeting = currentUkHour >= 5 && currentUkHour < 12 ? 'Morning' : currentUkHour >= 12 && currentUkHour < 18 ? 'Afternoon' : 'Evening';
     assert.equal(await page.locator('#greeting').innerText(), `${greeting}, Will.`);
-    assert.doesNotMatch(await page.locator('#deck').innerText(), /Meta campaign not assigned/i);
+    assert.doesNotMatch(await page.locator('main').innerText(), /Meta campaign not assigned/i);
     await showAccountMenu(page);
     assert.equal(await page.locator('#settings-count').innerText(), '1');
     await hideAccountMenu(page);
@@ -1792,8 +1785,6 @@ async function run(): Promise<void> {
 
     step = 'check compact Home budgets and re-rendered actions on the dense fixture';
     await checkHomeCompact(context);
-    step = 'check Morning omissions affect only Home Decisions and clear on full snapshot refresh';
-    await checkMorningHome(context);
     step = 'check Google tiles, independent live promotion and market choices';
     await checkGoogleWidgets(context);
     step = 'check separate Shopify and Mailchimp views, sample flow labels and audience promotion';

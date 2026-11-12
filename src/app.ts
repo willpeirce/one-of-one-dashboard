@@ -43,7 +43,8 @@ import { registerDashboardEvents } from './events.js';
 import { readSettings, saveSettings, SettingsValidationError, SettingsConflictError } from './settings.js';
 import { settingsPage } from './settings-view.js';
 import { ReviewsWorker, type ReviewsWorkerOptions } from './judgeme/worker.js';
-import { readReviews, readReviewHealth } from './judgeme/store.js';
+import { readReviews, readReviewHealth, dismissedReviewIds, withoutDismissed } from './judgeme/store.js';
+import { registerReviewRoutes } from './judgeme/routes.js';
 import { sampleReviews } from './judgeme/sample.js';
 import { readCreativeOverview, registerCreatives } from './creatives/routes.js';
 import { creativeHealth } from './creatives/store.js';
@@ -231,7 +232,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     const [hqFacts,sourceHealth,facts,mailchimpFacts,adSources,reviewRows,adSets,creatives,fulfilment,coverage,morningCreatives] = await Promise.all([
       readHQFacts(db,hqNow,hq.mode),creativeSourceHealth(settings.values),shopify.store.facts(sourceNow()),
       readMailchimpFacts(db,mailchimp.mode,mailchimpAt),spendHealth(db,sourceEnv,settings.values,adOptions.clock?.() ?? new Date()),
-      reviews.mode === 'sample' ? sampleReviews() : readReviews(db,reviewOptions.clock?.() ?? new Date()),
+      reviews.mode === 'sample' ? dismissedReviewIds(db).then(ids => withoutDismissed(sampleReviews(),ids)) : readReviews(db,reviewOptions.clock?.() ?? new Date()),
       readAdSetsView(db,settings.values,sourceEnv,creativeAt),
       readCreativeOverview(db,settings.values,sourceEnv,creativeAt,{}, {seedSample: false,briefWindows: true}),
       fulfilmentOverview(db,shopify.mode,sourceNow()),
@@ -321,6 +322,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     transport: localOptions.pushTransport});
   registerPush(app, db, auth, {clock: pushNow, sendTest: credentialId => push.sendTest(credentialId)});
   registerAdSets(app, db, auth, sourceEnv, creativeNow, adOptions, async () => publishObservations());
+  registerReviewRoutes(app, db, auth, publishObservations);
   registerScorecard(app, db, auth, shopify.store, sourceEnv, () => shopifyOptions.clock?.() ?? new Date());
   registerFulfilment(app, db, auth, shopify.mode, sourceNow, () => events.publish());
   registerCreatives(app, db, auth, sourceEnv, creativeNow, async (from, to) => {

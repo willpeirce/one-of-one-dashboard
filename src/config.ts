@@ -33,9 +33,9 @@ export const appConfig = {
     // Only these products supply stock; TikTok duplicates supply orders only.
     stockProducts: [
       { name: 'ONE OF ONE', id: '10476514214222', sku: 'oneofone1' },
-      { name: 'STARTER', id: '10896499933518' },
-      { name: 'ULTIMATE', id: '10896502063438' },
-      { name: 'DUO PACK', id: '10476910543182' },
+      { name: 'STARTER', id: '10896499933518', bundle: true },
+      { name: 'ULTIMATE', id: '10896502063438', bundle: true },
+      { name: 'DUO PACK', id: '10476910543182', bundle: true },
       { name: 'SLABS & LABEL PACK', id: '10892913574222', sku: 'oneofone-slabs' },
       { name: 'CERTIFIED SLAB PACK', id: '15948268306766', sku: 'oneofone-slab' },
       { name: 'COLOUR EXPANSION PACK', id: '10892898992462', sku: 'extracolours' },

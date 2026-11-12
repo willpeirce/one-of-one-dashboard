@@ -102,7 +102,7 @@ test('Home without Morning state performs one read, adds no property and retains
     assert.equal(result, undefined); assert.equal(calls.length, 1);
     assert.equal(Object.hasOwn(dashboard, 'morningOmissions'), false);
     assert.deepEqual(dashboard, original);
-    // Main 3d43b39, 2032-04-07 08:00 UTC (09:00 UK): timestamp and greeting fixed.
+    // Re-taken 12 Nov 2026 (Stock chapter, review Dismiss) after a line-by-line diff against main a0264d8; 2032-04-07 08:00 UTC (09:00 UK).
     // Only C's approved link and the Morning navigation entry (its icon, its pill and its menu link) are removed.
     const markup = dashboardPage({...dashboard, morningOmissions: result});
     const morningLink = '<a class="btn morning-link" href="/morning">Morning ›</a>';
@@ -111,15 +111,17 @@ test('Home without Morning state performs one read, adds no property and retains
       '<a class="pill pill-morning" href="/morning" aria-label="Morning" title="Morning"><svg class="ic" aria-hidden="true"><use href="#i-sun"></use></svg><span class="t">Morning</span></a>',
       '<a href="/morning">Morning</a>',
     ];
+    // 12 Nov 2026: chapter 1 (On the table, and its Morning link) left Home for the Stock chapter, so the pin was re-taken.
+    assert.equal(markup.includes(morningLink), false);
     let pinned = markup;
-    for (const part of [morningLink, ...morningNavigation]) {
+    for (const part of morningNavigation) {
       assert.equal(markup.split(part).length, 2);
       pinned = pinned.replace(part, '');
     }
     assert.match(markup, /<nav class="pills" aria-label="Sections"><a class="pill pill-morning" href="\/morning"/, 'Morning leads the top bar');
     assert.match(markup, /<nav class="account-links" aria-label="Account">\s*<a href="\/morning">Morning<\/a>/, 'Morning leads the account menu');
     assert.equal(createHash('sha256').update(pinned).digest('hex'),
-      'c9442a57f6b24ab50d180539383d313a9648d18bd78df45468245a051d751e7e');
+      '04aa66ff08441e44fd52823ba012c9449362a63e6cf85a6ef2161e5ad463737f');
   });
 });
 

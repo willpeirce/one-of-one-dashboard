@@ -1,4 +1,3 @@
-import {setDecisions} from '../decisions/browser.js';
 import { fullEvidenceHtml } from './lift-view.js';
 import type { LiftWindowDays } from './lifts.js';
 import type { CreativeView, CreativeOverview, CreativeSheet, CreativeSelection } from './presentation-types.js';
@@ -39,10 +38,10 @@ function render(next: CreativeOverview): void {
   for (const row of next.merged) knownGroups.add(row.id);
   view = next;
   element('#creative-panel')?.replaceChildren();
-  const panel = element('#creative-panel'); if (panel) panel.innerHTML = creativePanelHtml(next, Boolean(document.querySelector('#table')));
+  const panel = element('#creative-panel'); if (panel) panel.innerHTML = creativePanelHtml(next, Boolean(document.querySelector('#dials')));
   const gallery = element('#creative-gallery'); if (gallery) gallery.innerHTML = creativeGalleryHtml(next);
   const cards = element('#creative-cards'); if (cards) cards.innerHTML = creativeCardsHtml(next.cards);
-  setDecisions({creatives:next.cards});
+  document.dispatchEvent(new Event('pulse:home-rendered'));
   const attributes = element('#creative-attribute-filters'); if (attributes) attributes.innerHTML = creativeAttributeFiltersHtml(next);
   const undo = element<HTMLButtonElement>('#creative-merge-undo'); if (undo) undo.hidden = !lastMerge;
   const form = element<HTMLFormElement>('#creative-filters');

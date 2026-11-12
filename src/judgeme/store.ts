@@ -35,7 +35,8 @@ export async function readReviews(db: Database, now: Date): Promise<ReviewsPanel
   )).rows[0];
   const rows = await db.query<{ review_id: string; rating: number; product_title: string; product_handle: string; market: string | null;
     verified_buyer: boolean; photo_count: number; body: string; created_at: Date; curated: Review['curated']; published: boolean; hidden: boolean; flagged: boolean | null; review_source: string | null }>(
-    'SELECT * FROM pulse.judgeme_reviews WHERE NOT published AND NOT hidden',
+    `SELECT * FROM pulse.judgeme_reviews r WHERE NOT published AND NOT hidden
+      AND NOT EXISTS (SELECT 1 FROM pulse.review_dismissals d WHERE d.review_id = r.review_id)`,
   );
   // Ages display whole minutes; do not make unchanged SSE snapshots differ every millisecond.
   return { mode: 'live', asOf: new Date(Math.floor(now.getTime() / 60_000) * 60_000).toISOString(), publishEnabled: appConfig.judgeme.publishEnabled,
@@ -55,4 +56,17 @@ export async function readReviewHealth(db:Database):Promise<ReviewHealth>{
     count(*) FILTER(WHERE NOT published AND NOT hidden AND flagged) AS flagged FROM pulse.judgeme_reviews`)).rows[0]!;
   const last=(await db.query<{last_success_at:Date|null}>("SELECT last_success_at FROM pulse.source_health WHERE source='judgeme'")).rows[0]?.last_success_at;
   return {read:Number(row.read),waiting:Number(row.waiting),flagged:Number(row.flagged),last:last?.toISOString()??null,mode:'live'};
+}
+
+/** Dismissing only hides a review on Home. Judge.me is never written to. */
+export async function dismissReviews(db: Database, ids: readonly string[], undo = false): Promise<void> {
+  if (undo) await db.query('DELETE FROM pulse.review_dismissals WHERE review_id = ANY($1::text[])', [ids]);
+  else await db.query(`INSERT INTO pulse.review_dismissals (review_id) SELECT unnest($1::text[]) ON CONFLICT (review_id) DO NOTHING`, [ids]);
+}
+export async function dismissedReviewIds(db: Database): Promise<Set<string>> {
+  return new Set((await db.query<{ review_id: string }>('SELECT review_id FROM pulse.review_dismissals')).rows.map(row => row.review_id));
+}
+/** Sample reviews are invented, but Dismiss still works on them so the screen can be tried before keys. */
+export function withoutDismissed(panel: ReviewsPanel, dismissed: ReadonlySet<string>): ReviewsPanel {
+  return dismissed.size ? { ...panel, rows: panel.rows.filter(row => !dismissed.has(row.id)) } : panel;
 }

@@ -495,7 +495,8 @@ test('totals reconcile owners, partial sources label honestly, foreign and unkno
   assert.equal(splits, h.spend.n);
   assert.equal(h.roas.n, 100 / 550.2);
   assert.match(h.margin.ss, /left out: payment fees/);
-  assert.doesNotMatch(h.margin.ss, /Estimate|Meta only/);
+  assert.doesNotMatch(h.margin.ss, /Estimate|Meta only|keys needed/);
+  assert.doesNotMatch(h.roas.ss, /keys needed/);
   assert.equal(
     spendNeeds(spend, s, '2026-10-09').filter((n) => n.id.startsWith('ad-owner')).length,
     0,

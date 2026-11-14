@@ -139,6 +139,12 @@ export function applySpend(
     ...(partial ? ['incomplete range coverage'] : []),
     ...issues,
   ].join('; ');
+  // Missing keys show on the Ad spend tile only (Will, 14 Nov); tiles built on spend keep real problems.
+  const dependentLabel = spend.mode === 'sample' ? 'Sample ad spend' : [
+    ...(!live.length && !waiting.length ? [base] : []),
+    ...(partial ? ['incomplete range coverage'] : []),
+    ...issues,
+  ].join('; ');
   const hourly = spend.metaHourly;
   const pollHour = hourly ? Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', hourCycle: 'h23' }).format(new Date(hourly.polledAt))) : -1;
   const pollMinute = hourly ? new Date(hourly.polledAt).getUTCMinutes() : 0;
@@ -150,7 +156,7 @@ export function applySpend(
   const comparison = byYesterday === null ? '' : `Meta ${formatPounds(byYesterday)} by this time yesterday`;
   // "so far" is kept only beside a gap warning; otherwise the So far chip already says it.
   const soFar = to === today ? ' · so far' : '',
-    dependentSubtitle = gaps.length ? gapLines(gaps, 'dependent') + soFar : tileLabel,
+    dependentSubtitle = gaps.length ? gapLines(gaps, 'dependent') + soFar : dependentLabel,
     spendSubtitle = [gaps.length ? gapLines(gaps, 'spend') + soFar : tileLabel, comparison].filter(Boolean).join('\n');
   const sum = (filter: (r: (typeof rows)[number]) => boolean = () => true) =>
     rows.filter(filter).reduce((s, r) => s + decimalMicros(r.amount), 0n);
@@ -319,7 +325,7 @@ export function applySpend(
     state: gaps.length ? 'warn' : 'est',
     ...(marketView ? { statusLabel: 'store-wide' } : {}),
     // The chip already says Estimate or store-wide; per-order gaps are listed in the sheet.
-    ss: [gaps.length ? gapLines(gaps, 'dependent') : '', tileOmissions(omitted).length ? `left out: ${tileOmissions(omitted).join(', ')}` : '', gaps.length ? '' : tileLabel]
+    ss: [gaps.length ? gapLines(gaps, 'dependent') : '', tileOmissions(omitted).length ? `left out: ${tileOmissions(omitted).join(', ')}` : '', gaps.length ? '' : dependentLabel]
       .filter(Boolean).join(gaps.length ? '\n' : ' · '),
     d: {
       why: `Net sales plus shipping income net of tax, less shipping refunds, less available landed costs, fulfilment, payment fees and all counted ad spend${marketView ? '' : ' and overheads'}, divided by net sales. ${marketView ? 'Store-wide: overheads are not split by market until the costs sheet is.' : 'Margin is after overheads.'} Shipping income is added because fulfilment includes postage.`,

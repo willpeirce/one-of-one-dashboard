@@ -145,7 +145,7 @@ No migration, Setting, dependency or source read. Sample and live behave the sam
 
 Branch **tile-wording**. Will asked for less text in the hero stat boxes: the tile line names only what needs action; the sheet keeps the detail.
 
-1. **Ad source line**: "Meta + Google only; TikTok waiting for keys" becomes "TikTok keys needed" on Ad spend, ROAS, Net margin and Net profit; nothing when every source is live. Gaps, stale and failed sources still show.
+1. **Ad source line**: "Meta + Google only; TikTok waiting for keys" becomes "TikTok keys needed", on the Ad spend tile only (Will's pick); ROAS, Net margin and Net profit no longer carry it. Nothing when every source is live. Gaps, stale and failed sources still show on every tile they affect.
 2. **Net margin, Net profit, Contribution**: no "Estimate" or "store-wide" (the chip says it) and no per-order gaps (unknown landed or fulfilment cost, older shipping refund detail). A cost type missing outright (payment fees, overheads, older order cost detail) still shows as "left out".
 3. **"so far"** only beside a gap warning; otherwise the So far chip says it.
 4. **CAC**: no "first orders · N unflagged, excluded"; "all orders" shows only when CAC is not on first orders.

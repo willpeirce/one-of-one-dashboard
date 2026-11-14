@@ -91,8 +91,8 @@ test('per-market calculations use the same excluded source and warning', () => {
 test('healthy sources keep the existing totals, subtitles, states and provenance', () => {
   const hero = calculate(facts()), label = 'Meta + Google only; TikTok waiting for keys', tile = 'TikTok keys needed';
   for (const [key, n, state, ss] of [
-    ['spend', 30, 'info', tile], ['roas', 100 / 30, 'info', tile],
-    ['margin', 70, 'est', tile], ['profit', 70, 'est', tile],
+    ['spend', 30, 'info', tile], ['roas', 100 / 30, 'info', ''],
+    ['margin', 70, 'est', ''], ['profit', 70, 'est', ''],
   ] as const) {
     const metric = hero[key];
     assert.equal(metric.n, n);
@@ -107,10 +107,9 @@ test('healthy sources keep the existing totals, subtitles, states and provenance
   assert.equal(hero.ukcpo.cap, 'info');
   assert.equal(hero.uscpo.cap, 'info');
   const soFar = calculate(facts(), {}, day, day, day);
-  for (const metric of [soFar.spend, soFar.roas]) {
-    assert.equal(metric.state, 'sofar');
-    assert.equal(metric.ss, 'TikTok keys needed');
-  }
+  for (const metric of [soFar.spend, soFar.roas]) assert.equal(metric.state, 'sofar');
+  assert.equal(soFar.spend.ss, 'TikTok keys needed');
+  assert.equal(soFar.roas.ss, '');
   for (const metric of [soFar.margin, soFar.profit]) { assert.equal(metric.state, 'est'); assert.doesNotMatch(metric.ss, /so far/); }
 });
 

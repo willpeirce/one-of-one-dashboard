@@ -34,7 +34,8 @@ test('CAC waits for recent unknown flags, then uses first orders and keeps marke
   const hero=buildHeroRange([{date:day,net:100,o:count,uk:market==='us'?0:2,us:market==='uk'?0:1,sess:3,ukS:2,ukM:0,usM:0,g:0,ours:0}],day,day,{today:'2026-10-26',market});
   applySpend(hero,selected,defaultSettings(),'2026-10-26',{spend,costs:[],estimates:[],market,now});
   assert.equal(hero.cac.n,market==='uk'?80:40);
-  assert.match(hero.cac.ss,market==='uk'?/^first orders ·/:/all orders · 1 waiting/);
+  if(market==='uk')assert.doesNotMatch(hero.cac.ss,/orders/);else assert.match(hero.cac.ss,/^all orders · /);
+  assert.match(hero.cac.d.why,market==='uk'?/first orders/:/all orders · 1 waiting/);
  }
 });
 test('flag backfill commits a cursor, yields to the poll and resumes without re-saving an order',async t=>{
@@ -82,7 +83,8 @@ test('an aged unknown within tolerance is excluded from first-order CAC; recent 
   const spend:SpendFacts={mode:'live',rows:[{source:'meta',accountId:'invented-coverage-account',campaignId:'invented-coverage-campaign',campaignName:'Invented UK coverage',adSetId:'invented-coverage-set',adSetName:'Invented UK coverage set',owner:'ours',market:'uk',day:orderDay,amount:'120',currency:'GBP'}],days:[{source:'meta',day:orderDay}],sources:[{source:'meta',live:true,ready:true,status:'live',fetchedAt:now.toISOString()}]};
   applySpend(hero,orders,defaultSettings(),'2026-10-26',{spend,costs:[],estimates:[],now});
   assert.equal(hero.cac.n,firstCac?30:12);
-  assert.match(hero.cac.ss,firstCac?/^first orders · 1 unflagged, excluded/:new RegExp(`all orders · ${unknownCount} waiting`));
+  if(firstCac)assert.doesNotMatch(hero.cac.ss,/orders|unflagged/);else assert.match(hero.cac.ss,/^all orders · /);
+  assert.match(hero.cac.d.why,firstCac?/first orders · 1 unflagged, excluded/:new RegExp(`all orders · ${unknownCount} waiting`));
   assert.match(hero.cac.d.rule,/Unknown orders wait 7 UK calendar days/);
  }
  assert.equal(firstOrderCoverage([{date:olderDay,o:10,firstOrders:0,flaggedOrders:9}],'2026-10-26').firstOrders,0);

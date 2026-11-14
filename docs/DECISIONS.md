@@ -1045,3 +1045,15 @@ Will (12 Nov, after #50 and #51 went live) asked for three fixes.
 - **The "On the table" nav pill now reads "Stock"** and scrolls to the Stock chapter; it still pointed at the section removed in #50.
 - **Pin re-taken, not loosened:** the Home markup hash, after a line-by-line diff against main a463cc2 showed only the removed aside and its 38 sample texts, the new heading text, the removed button and the pill's target, icon and label.
 - **Validation:** see BUILD-STATUS, 12 Nov (Home tidy).
+
+## 14 Nov · Small change: Tile wording
+
+Will (14 Nov): "remove a lot of the wording that isn't needed within the stat boxes". His example: Net margin read "Estimate; left out: unknown fulfilment costs · Meta + Google only; TikTok waiting for keys"; it should just say "TikTok keys needed".
+
+- **Tiles name only what needs action.** A new `tileLabel` drops the "Meta + Google only" base and turns "TikTok waiting for keys" into "TikTok keys needed". The full source label stays in each sheet's source line (`d.src`), unchanged.
+- **Per-order cost gaps leave the tile.** Fulfilment is estimated for almost every order; "unknown fulfilment costs" fires when any order in the period has no estimate (unknown warehouse, or a mix or region the model cannot price). Those, unknown landed costs and older shipping refund detail stay in the sheet's "Left out" row and its Landed cost and Fulfilment rows with counts. A cost type missing outright (payment fees not set, no overheads, a range older than order detail) still shows on the tile, because the figure would be badly wrong without it.
+- **No repeat of the chip.** "Estimate", "store-wide" and "so far" are dropped where the chip already says them; "so far" stays beside a gap warning, whose chip says Watch.
+- **CAC, Orders, Meta cost per order**: basis counts, zero market counts, "(included)" and the "Meta" prefix move to the sheet only.
+- **Pin re-taken, not loosened:** the Home markup hash, after a line-by-line diff of the rendered sample Home against main f09d280: only the 16 Contribution subtitles lost "Estimate" / "Estimate · so far" (sample margin and profit come from the range builder and are unchanged).
+- **Validation:** typecheck clean. Full suite 1,178 tests: 1,172 passed; the 6 failures were the Home pin above (4 host hours and its parent) and a shipping-refund test that read the gap from the tile; it now reads the sheet's Left out row and checks the tile no longer names it. Both files then pass (18 tests).
+

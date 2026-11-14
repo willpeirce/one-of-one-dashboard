@@ -82,16 +82,17 @@ test('per-market calculations use the same excluded source and warning', () => {
     spend.rows = spend.rows.filter((row) => row.market === market);
     const hero = calculate(spend, { market });
     for (const metric of [hero.spend, hero.margin, hero.profit, hero.roas]) assert.equal(metric.state, 'warn');
-    assert.match(hero.margin.ss, /^Excludes Meta spend\nstore-wide/);
+    assert.match(hero.margin.ss, /^Excludes Meta spend/);
+    assert.doesNotMatch(hero.margin.ss, /store-wide|Estimate/);
     assert.equal(hero.spend.n, market === 'uk' ? 0 : 10);
   }
 });
 
 test('healthy sources keep the existing totals, subtitles, states and provenance', () => {
-  const hero = calculate(facts()), label = 'Meta + Google only; TikTok waiting for keys';
+  const hero = calculate(facts()), label = 'Meta + Google only; TikTok waiting for keys', tile = 'TikTok keys needed';
   for (const [key, n, state, ss] of [
-    ['spend', 30, 'info', label], ['roas', 100 / 30, 'info', label],
-    ['margin', 70, 'est', `Estimate · ${label}`], ['profit', 70, 'est', `Estimate · ${label}`],
+    ['spend', 30, 'info', tile], ['roas', 100 / 30, 'info', tile],
+    ['margin', 70, 'est', tile], ['profit', 70, 'est', tile],
   ] as const) {
     const metric = hero[key];
     assert.equal(metric.n, n);
@@ -108,7 +109,7 @@ test('healthy sources keep the existing totals, subtitles, states and provenance
   const soFar = calculate(facts(), {}, day, day, day);
   for (const metric of [soFar.spend, soFar.roas]) {
     assert.equal(metric.state, 'sofar');
-    assert.match(metric.ss, / · so far$/);
+    assert.equal(metric.ss, 'TikTok keys needed');
   }
   for (const metric of [soFar.margin, soFar.profit]) { assert.equal(metric.state, 'est'); assert.doesNotMatch(metric.ss, /so far/); }
 });

@@ -298,7 +298,7 @@ export function buildHeroRange(rows: readonly DailyMetrics[], from: string, to: 
       orders: selected.some(row => row.countsKnown === false) ? null : t.o,
       components: [['Net sales', formatPounds(t.net)], ['Shipping income net of tax', '£0.00'], ['Shipping refunds', '£0.00'],
         ['Landed cost', `${formatPounds(t.net * 0.25)} · sample assumption`], ['Fulfilment', '£0.00'], ['Payment fees', '£0.00']],
-      afterAds: formatPounds(result.contribution - t.spend), omitted: [], soFar: partial,
+      afterAds: formatPounds(result.contribution - t.spend), omitted: [],
       rule: 'Sample only. Invented non-ad costs are 25% of net sales until known costs replace this preview.',
     }),
     profit: metric({ n: profit, state: 'est', pre: '£', dp: 2, ss: 'sample estimate · costs model not built',

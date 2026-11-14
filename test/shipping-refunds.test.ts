@@ -145,7 +145,9 @@ test('denied historical refund reads keep unknowns and back off without changing
   assert.deepEqual(job.state.skippedOrderIds, [legacy.id]);
   const stored = (await db.query<{ data: Order }>("SELECT data FROM pulse.shopify_records WHERE source_id=$1", [legacy.id])).rows[0]!.data;
   assert.equal(stored.refunds[0]!.shippingNetPence, undefined);
-  assert.match(margin([stored]).margin.ss, /older shipping refund detail/);
+  const stale = margin([stored]).margin;
+  assert.match(stale.d.extra!.find(([name]) => name === 'Left out')![1], /older shipping refund detail/);
+  assert.doesNotMatch(stale.ss, /shipping refund/);
 });
 
 test('unreadable old-order counts survive idle and restart, deduplicate retries, and clear after recovery', async t => {

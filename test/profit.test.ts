@@ -77,13 +77,13 @@ test('profit equals the margin numerator for every period and All, UK and US', a
     const contribution = (perDayNet + perDayShipping - perDayLanded - perDayFulfilment - perDayNet * 0.02) * dates.length;
     assert.ok(Math.abs(hero.contribution.n - contribution) < 1e-10);
     assert.ok(Math.abs(hero.profit.n - (hero.contribution.n - hero.spend.n - overhead)) < 1e-10);
-    assert.equal(hero.contribution.ss.split('\n')[0], `${formatNumber(100 * contribution / hero.net.n, 0)}% of net sales · ${formatPounds(contribution / hero.orders.n)} an order`);
+    assert.equal(hero.contribution.ss, `${formatNumber(100 * contribution / hero.net.n, 0)}% of net sales · ${formatPounds(contribution / hero.orders.n)} an order`);
     assert.equal(hero.contribution.state, 'est');
     assert.equal(hero.contribution.unavailable, false);
     assert.equal(hero.contribution.mode, 'live');
     assert.deepEqual(hero.contribution.source, ['shopify']);
     assert.doesNotMatch(hero.contribution.ss, /overheads|store-wide|ad spend/i);
-    assert.equal(hero.contribution.ss.includes('so far'), period.to === '2026-10-09');
+    assert.doesNotMatch(hero.contribution.ss, /so far|Estimate/);
     assert.deepEqual(hero.contribution.d.extra!.map(([label]) => label), ['Net sales', 'Shipping income net of tax', 'Shipping refunds', 'Landed cost', 'Fulfilment', 'Payment fees', 'Contribution', 'After ad spend', 'Contribution an order']);
     assert.deepEqual(hero.contribution.d.extra!.slice(-3), [['Contribution', formatPounds(contribution)], ['After ad spend', formatPounds(contribution - hero.spend.n)], ['Contribution an order', formatPounds(contribution / hero.orders.n)]]);
     const waterfall = hero.margin.d.extra!;
@@ -109,7 +109,7 @@ test('profit equals the margin numerator for every period and All, UK and US', a
     assert.deepEqual(hero.profit.d.extra!.at(-1), ['Net profit', `£${expected.toFixed(2)}`]);
     assert.equal(hero.profit.d.hist, undefined);
     assert.match(hero.profit.d.why, /same pound total used to calculate net margin/);
-    if (market !== 'all') assert.match(hero.profit.ss, /store-wide/);
+    if (market !== 'all') { assert.doesNotMatch(hero.profit.ss, /store-wide/); assert.equal(hero.profit.statusLabel, 'store-wide'); }
     if (period.to === '2026-10-09') assert.doesNotMatch(hero.profit.ss, /so far/);
   });
 });

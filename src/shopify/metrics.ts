@@ -125,7 +125,12 @@ function marketHero(facts: Facts, today: string, from: string, to: string, setti
   }
   const count = (market: string) => orders.filter(o => o.market === market && !isTikTok(o)).length;
   const breakdown = `UK ${formatNumber(count('UK'))} · US ${formatNumber(count('US'))} · EU ${formatNumber(count('EU'))} · unknown ${formatNumber(count('unknown'))} · TikTok ${formatNumber(orders.filter(isTikTok).length)} (included)`;
-  hero.orders.ss = `${breakdown} · ${formatNumber(Math.round(hero.orders.n / days * 10) / 10)}/day`;
+  // The tile drops zero EU, unknown and TikTok counts; the sheet keeps the full breakdown.
+  const tikTokCount = orders.filter(isTikTok).length;
+  const tileBreakdown = [`UK ${formatNumber(count('UK'))}`, `US ${formatNumber(count('US'))}`,
+    ...(count('EU') ? [`EU ${formatNumber(count('EU'))}`] : []), ...(count('unknown') ? [`unknown ${formatNumber(count('unknown'))}`] : []),
+    ...(tikTokCount ? [`TikTok ${formatNumber(tikTokCount)}`] : [])].join(' · ');
+  hero.orders.ss = `${tileBreakdown} · ${formatNumber(Math.round(hero.orders.n / days * 10) / 10)}/day`;
   const lastWorked = facts.jobs.find(j => j.name === 'poll')?.last_success_at;
   const lastLabel = lastWorked ? `Last order poll ${formatUkTime(lastWorked)}` : 'First sync pending';
   for (const metric of [hero.net, hero.orders, hero.cr]) metric.d.src += ` · ${lastLabel}`;
@@ -161,7 +166,7 @@ function marketHero(facts: Facts, today: string, from: string, to: string, setti
   if (empty) {
     const message = `No ${market.toUpperCase()} orders in this period`;
     for (const key of ['net', 'orders', 'aov', 'contribution', ...(!hero.spend.unavailable ? ['cac', 'roas', 'margin', 'profit'] as const : [])] as const) {
-      hero[key].ss = `${key === 'margin' || key === 'profit' ? 'store-wide · ' : ''}${message}`;
+      hero[key].ss = message;
       hero[key].unavailable = false;
     }
     if (!hero.cr.unavailable) hero.cr.ss = message;

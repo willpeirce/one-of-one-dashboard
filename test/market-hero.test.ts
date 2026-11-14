@@ -42,9 +42,10 @@ test('all three views carry distinct order/session, spend, ratio and margin fact
   assert.equal(all.cac.n, 9.75); assert.equal(uk.cac.n, 10); assert.equal(us.cac.n, 16);
   assert.equal(uk.roas.n, 1); assert.equal(us.roas.n, 1.25); assert.equal(uk.ukcpo.v, 3); assert.equal(us.uscpo.v, 5);
   assert.match(uk.eyebrow, /^UK ·/); assert.match(us.eyebrow, /^US ·/); assert.doesNotMatch(all.eyebrow, /^All/);
-  assert.match(uk.margin.ss, /store-wide/); assert.equal(uk.margin.statusLabel, 'store-wide');
+  assert.doesNotMatch(uk.margin.ss, /store-wide/); assert.equal(uk.margin.statusLabel, 'store-wide');
   assert.match(uk.margin.d.why, /Store-wide: overheads are not split by market until the costs sheet is\./);
-  assert.equal(uk.profit.n, -3); assert.equal(us.profit.n, 1); assert.match(uk.spend.ss, /store-wide/);
+  assert.equal(uk.profit.n, -3); assert.equal(us.profit.n, 1); assert.doesNotMatch(uk.spend.ss, /store-wide/);
+  assert.ok(uk.spend.d.extra!.some(([label]) => label === 'Unknown market'));
   assert.equal(all.contribution.n, 88); assert.equal(uk.contribution.n, 7); assert.equal(us.contribution.n, 17);
   for (const view of [all, uk, us]) {
     assert.equal(view.contribution.statusLabel, undefined);
@@ -101,7 +102,7 @@ test('guarded comparison/chart days never supply market conversion and aggregate
   assert.match(older.margin.ss, /older order cost detail/); assert.match(older.profit.ss, /older order cost detail/);
   assert.equal(older.aov.unavailableLabel, 'Unknown');
   assert.equal(older.contribution.unavailable, false);
-  assert.match(older.contribution.ss, /^100% of net sales\nEstimate; left out: older order cost detail$/);
+  assert.equal(older.contribution.ss, '100% of net sales · left out: older order cost detail');
   assert.deepEqual(older.contribution.d.extra!.at(-1), ['Contribution an order', 'Unknown']);
   for (const market of ['uk', 'us'] as const) {
     assert.equal(older.markets![market].contribution.unavailable, true);

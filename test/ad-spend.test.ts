@@ -485,7 +485,8 @@ test('totals reconcile owners, partial sources label honestly, foreign and unkno
   h.orders.n = 1;
   applySpend(h, [o], s, '2026-10-09', { spend, costs: [], estimates: [] });
   assert.equal(h.spend.n, 550.2);
-  assert.match(h.spend.ss, /Meta only; Google and TikTok waiting for keys/);
+  assert.equal(h.spend.ss, 'Google and TikTok keys needed');
+  assert.match(h.spend.d.src, /Meta only; Google and TikTok waiting for keys/);
   assert.equal(h.ukcpo.t, '£300.20');
   assert.match(h.ukcpo.d.why, /10.00.*not split/);
   const splits = h.spend.d
@@ -493,7 +494,8 @@ test('totals reconcile owners, partial sources label honestly, foreign and unkno
     .reduce((total, [, value]) => total + Number(value.slice(1)), 0);
   assert.equal(splits, h.spend.n);
   assert.equal(h.roas.n, 100 / 550.2);
-  assert.match(h.margin.ss, /left out/);
+  assert.match(h.margin.ss, /left out: payment fees/);
+  assert.doesNotMatch(h.margin.ss, /Estimate|Meta only/);
   assert.equal(
     spendNeeds(spend, s, '2026-10-09').filter((n) => n.id.startsWith('ad-owner')).length,
     0,

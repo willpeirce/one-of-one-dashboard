@@ -141,6 +141,19 @@ Branch **home-tidy**. Will's fixes after #50 and #51 went live.
 
 No migration, Setting, dependency or source read. Sample and live behave the same. Validation: see DECISIONS, 12 Nov (Home tidy).
 
+## Small change: Tile wording · 14 Nov
+
+Branch **tile-wording**. Will asked for less text in the hero stat boxes: the tile line names only what needs action; the sheet keeps the detail.
+
+1. **Ad source line**: "Meta + Google only; TikTok waiting for keys" becomes "TikTok keys needed" on Ad spend, ROAS, Net margin and Net profit; nothing when every source is live. Gaps, stale and failed sources still show.
+2. **Net margin, Net profit, Contribution**: no "Estimate" or "store-wide" (the chip says it) and no per-order gaps (unknown landed or fulfilment cost, older shipping refund detail). A cost type missing outright (payment fees, overheads, older order cost detail) still shows as "left out".
+3. **"so far"** only beside a gap warning; otherwise the So far chip says it.
+4. **CAC**: no "first orders · N unflagged, excluded"; "all orders" shows only when CAC is not on first orders.
+5. **Orders (past days)**: zero EU, unknown and TikTok counts and "(included)" are dropped.
+6. **UK and US Meta cost per order**: no "Meta" or "so far".
+
+No migration, Setting, dependency or source read. Sample and live behave the same. Validation: see DECISIONS, 14 Nov (Tile wording).
+
 ## Next step
 
 **After tax** is built on `after-tax`, stacked on PR #50; merge PR #50 first, then this one (its base moves to main). After an approved merge: the Shell merge, `npm run migrate` (applies 070), Republish, then the hero shows After tax under Net profit and Settings shows Corporation tax rate (%).

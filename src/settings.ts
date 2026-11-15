@@ -92,6 +92,7 @@ export interface Settings {
   deadlines: { label: string; date: string }[];
   keyExpiryDates: { keyName: KeyName; expiresOn: string }[];
   morningSummaryEnabled: boolean;
+  alertQuietHours: { start: string; end: string };
   morningOpensFirst: boolean;
   brand: 'one-of-one';
 }
@@ -181,7 +182,7 @@ export function defaultSettings(): Settings {
       offerCreatorLink: true, useAffiliateWording: false,
     },
     waitingContacts: [], deadlines: [], keyExpiryDates: [],
-    morningSummaryEnabled: false, morningOpensFirst: false, brand: appConfig.brand,
+    morningSummaryEnabled: false, alertQuietHours: {start: '22:00', end: '07:00'}, morningOpensFirst: false, brand: appConfig.brand,
   };
 }
 
@@ -282,6 +283,7 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
   const value = object(input, Object.keys(defaults), '');
   const rules = object(value.creatorRules, Object.keys(defaults.creatorRules), 'creatorRules');
   const ad = object(value.adRules, Object.keys(adRulesDefaults()), 'adRules');
+  const quiet = object(value.alertQuietHours, ['start', 'end'], 'alertQuietHours');
   const parseMarket = (market: 'uk' | 'us') => {
     const p = `adRules.${market}`, r = object(ad[market], Object.keys(adRulesDefaults()[market]), p);
     const overrideGbp = number(r.overrideGbp, `${p}.overrideGbp`, 100_000, true, false, 0.01);
@@ -445,6 +447,7 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
       return { keyName: choice(parsed.keyName, `${path}.keyName`, SETTINGS_KEY_NAMES), expiresOn: date(parsed.expiresOn, `${path}.expiresOn`) };
     }, (row) => row.keyName),
     morningSummaryEnabled: bool(value.morningSummaryEnabled, 'morningSummaryEnabled'),
+    alertQuietHours: {start: cutoff(quiet.start, 'alertQuietHours.start'), end: cutoff(quiet.end, 'alertQuietHours.end')},
     morningOpensFirst: bool(value.morningOpensFirst, 'morningOpensFirst'),
     brand: choice(value.brand, 'brand', ['one-of-one'] as const),
   };
@@ -493,6 +496,7 @@ function storedSettings(input: unknown): Settings {
     inboundStock: defaults.inboundStock,
     keyDates: defaults.keyDates,
     morningOpensFirst: defaults.morningOpensFirst,
+    alertQuietHours: defaults.alertQuietHours,
     corporationTaxPercent: defaults.corporationTaxPercent,
     googleNetworkSpendFloorGbp: defaults.googleNetworkSpendFloorGbp,
     googleNetworkRoasFloor: defaults.googleNetworkRoasFloor,

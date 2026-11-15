@@ -72,9 +72,12 @@ import type { PushTransport } from './push/sender.js';
 import {SnapshotCache} from './snapshot-cache.js';
 import {changedSourceScopes,fenceDashboardScopes,overlayAdSetControls} from './morning/control-overlay.js';
 import {timed,type MorningTiming} from './morning/timing.js';
-
 import {HandoverSections} from './handover/sections.js';
 import {registerHandover} from './handover/routes.js';
+import {GorgiasWorker} from './gorgias/worker.js';
+import {readGorgiasFacts} from './gorgias/store.js';
+import {gorgiasNeeds} from './gorgias/needs.js';
+import {gorgiasSectionHtml} from './handover/gorgias-view.js';
 
 declare module 'fastify' {
   interface FastifyInstance { startBackgroundWork(): Promise<void> }
@@ -89,6 +92,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   await auth.cleanup();
   await syncSourceHealth(db, sourceEnv);
   const hq = new HQWorker(db, sourceEnv, { clock: localNow });
+  const gorgias = new GorgiasWorker(db, sourceEnv, {clock: localNow, onWrite: () => publishObservations()});
   const shopify = new ShopifyWorker(db, sourceEnv, config.origin, shopifyOptions);
   await shopify.initialize();
   if (shopify.mode === 'sample') await shopify.tick();
@@ -138,6 +142,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     google.start();
     mailchimp.start();
     hq.start();
+    gorgias.start();
     snapshotCache.start();
     push.start();
     reviews.start();
@@ -164,6 +169,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     await google.stop();
     await mailchimp.stop();
     await hq.stop();
+    await gorgias.stop();
     await push.stop();
     await ads.stop();
     await reviews.stop();
@@ -236,7 +242,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   async function buildObservations() {
     const settings = await readSettings(db,{seed: false});
     const hqNow = localNow(), mailchimpAt = mailchimpNow(), creativeAt = creativeNow();
-    const [hqFacts,sourceHealth,facts,mailchimpFacts,adSources,reviewRows,adSets,creatives,fulfilment,coverage,morningCreatives] = await Promise.all([
+    const [hqFacts,sourceHealth,facts,mailchimpFacts,adSources,reviewRows,adSets,creatives,fulfilment,coverage,morningCreatives,gorgiasFacts] = await Promise.all([
       readHQFacts(db,hqNow,hq.mode),creativeSourceHealth(settings.values),shopify.store.facts(sourceNow()),
       readMailchimpFacts(db,mailchimp.mode,mailchimpAt),spendHealth(db,sourceEnv,settings.values,adOptions.clock?.() ?? new Date()),
       reviews.mode === 'sample' ? dismissedReviewIds(db).then(ids => withoutDismissed(sampleReviews(),ids)) : readReviews(db,reviewOptions.clock?.() ?? new Date()),
@@ -247,12 +253,14 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
         {googleAccount: settings.values.googleCustomerId,googleNow: googleNow()}) : undefined,
       shopify.mode === 'sample' && sourceEnv.META_ACCESS_TOKEN && settings.values.metaAdAccountId
         ? readCreativeOverview(db,settings.values,{},creativeAt,{}, {seedSample: false,briefWindows: true}) : undefined,
+      readGorgiasFacts(db,sourceEnv,settings.values,hqNow),
     ]);
     const adInputs=await heroInputs(facts,settings.values);
     const result = await applyShopifyDashboard({ ...getSampleDashboard(settings.values), generatedAt: new Date().toISOString(), sourceHealth }, db, facts, settings.values, sourceHealth, sourceNow(), adInputs, shopifyOptions.clock?.() ?? new Date(), { entry: hqFacts.report, now: hqNow });
     applyGoogleDashboard(result, adInputs.google, googleShopifyContext(facts,adInputs.now), settings.values, adInputs.metaActivity, adInputs.googleNow, adInputs.spend);
     applyMailchimpDashboard(result,mailchimpFacts,settings.values,mailchimpAt);
     result.shopify?.needs.push(...mailchimpBillingNeeds(mailchimpFacts,settings.values,mailchimpAt));
+    result.shopify?.needs.push(...gorgiasNeeds(gorgiasFacts,settings.values));
     // Radar describes actual ad connections even when Shopify numbers use sample data.
     result.adSources = adSources; result.reviews = reviewRows; result.adSets = adSets; result.creatives = creatives;
     result.banner = result.banner?.replace('reviews and other stages: sample data', `reviews: ${reviews.mode === 'sample' ? 'sample data' : 'live Judge.me'}; Google: ${adInputs.google.mode === 'sample' ? 'sample data' : 'supported tiles use live reads, remaining examples stay labelled sample'}; Mailchimp: ${mailchimp.mode === 'sample' ? 'sample data' : result.widgets.w038?.mode === 'live' ? 'audience uses its own live read; per-flow examples remain labelled sample' : 'audience total pending or unavailable; examples remain labelled sample'}; other stages: sample data`);
@@ -335,6 +343,10 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   registerScorecard(app, db, auth, shopify.store, sourceEnv, () => shopifyOptions.clock?.() ?? new Date());
   const handover = new HandoverSections();
   registerHandover(app,auth,handover);
+  handover.register({id: 'customer-service', title: 'Customer service', load: async () => {
+    const settings = await readSettings(db,{seed: false});
+    return gorgiasSectionHtml(await readGorgiasFacts(db,sourceEnv,settings.values,localNow()),settings.values.gorgiasHandoverWaitHours);
+  }});
   registerFulfilment(app, db, auth, shopify.mode, sourceNow, () => events.publish());
   registerCreatives(app, db, auth, sourceEnv, creativeNow, async (from, to) => {
     const facts = await shopify.store.facts(sourceNow());

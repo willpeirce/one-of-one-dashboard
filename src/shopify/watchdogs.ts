@@ -128,7 +128,9 @@ export function evaluateWatchdogs(facts: Facts, now: Date, settings: Settings, o
   const intervals: Record<string, number> = { poll: 300_000, inventory: 300_000, sessions: 300_000, reconcile: 86_400_000, subscriptions: 3_600_000 };
   const failed = facts.jobs.filter(j => !['shipping_refunds','stock_daily'].includes(j.name) && (j.failures >= 2 || j.name in intervals && j.last_success_at && now.getTime() - new Date(j.last_success_at).getTime() > 3 * (j.name === 'sessions' && j.state.cadence === 'daily' ? 86_400_000 : intervals[j.name]!)));
   // Reviews remain a reading decision; their connection status never changes business health.
-  const otherFailures = health.filter(h => h.source !== 'judgeme' && (h.source !== 'anthropic' || h.scanWaiting !== 0) && h.mode === 'live' && h.status === 'error' && h.consecutiveFailures >= 2);
+  const otherFailures = health.filter(h => h.source !== 'judgeme' && (h.source !== 'anthropic' || h.scanWaiting !== 0) && h.mode === 'live'
+    && (h.status === 'error' && h.consecutiveFailures >= 2
+      || h.source === 'gorgias' && h.lastSuccessAt && checkNow.getTime() - new Date(h.lastSuccessAt).getTime() > 6 * 60_000));
   const expiry = settings.keyExpiryDates.filter(k => k.expiresOn <= addDays(day, 14));
   add('self', 'Self-check', failed.length || otherFailures.length || expiry.length ? 'tripped' : facts.jobs.some(j => j.name in intervals && !j.last_success_at && !(facts.mode === 'sample' && j.name === 'subscriptions')) ? 'unknown' : 'pass',
     [...failed.map(j => `${j.name}: failed ${formatNumber(j.failures)} times; last worked at ${j.last_success_at ? formatUkTime(j.last_success_at) : 'never'}`), ...otherFailures.map(h => `${h.name}: last worked at ${h.lastSuccessAt ? formatUkTime(h.lastSuccessAt) : 'never'}`), ...expiry.map(k => `${k.keyName}: expires ${k.expiresOn}`)].join(' · ') || 'No repeated failures, stale feeds or keys within 14 days of expiry.', '');

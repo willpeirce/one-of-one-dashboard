@@ -6,6 +6,7 @@ import { GoogleWorker } from '../src/google-ads/worker.js';
 import { MailchimpWorker } from '../src/mailchimp/worker.js';
 import { HQWorker } from '../src/github-hq/worker.js';
 import { PushService } from '../src/push/service.js';
+import { GorgiasWorker } from '../src/gorgias/worker.js';
 import { createApp } from '../src/app.js';
 import { readRuntime } from '../src/runtime.js';
 import { createTestDatabase } from './helpers/database.js';
@@ -45,6 +46,8 @@ test('createApp and listen finish while the single background rebuild is blocked
   t.mock.method(HQWorker.prototype,'start',()=>{hqStarts++;});
   let pushStarts = 0;
   t.mock.method(PushService.prototype,'start',()=>{pushStarts++;});
+  let gorgiasStarts = 0;
+  t.mock.method(GorgiasWorker.prototype,'start',()=>{gorgiasStarts++;});
   let cleanupCalls = 0;
   t.mock.method(ShopifyWorker.prototype,'startOrderCleanup',async()=>{cleanupCalls++;});
   const app=await createApp(wrapped,config,env);
@@ -56,6 +59,7 @@ test('createApp and listen finish while the single background rebuild is blocked
   assert.equal(mailchimpStarts, 0, 'Mailchimp reads must not start in createApp');
   assert.equal(hqStarts, 0, 'HQ reads must not start in createApp');
   assert.equal(pushStarts, 0, 'Push delivery must not start in createApp');
+  assert.equal(gorgiasStarts, 0, 'Gorgias reads must not start in createApp');
   await app.listen({host:'127.0.0.1',port:0});
   assert.equal(cleanupCalls, 0, 'Order cleanup must wait for the post-listen hook');
   assert.equal(workerStarts, 0, 'Shopify source work must wait for the post-listen hook');
@@ -63,6 +67,7 @@ test('createApp and listen finish while the single background rebuild is blocked
   assert.equal(mailchimpStarts, 0, 'Mailchimp reads must wait for the post-listen hook');
   assert.equal(hqStarts, 0, 'HQ reads must wait for the post-listen hook');
   assert.equal(pushStarts, 0, 'Push delivery must wait for the post-listen hook');
+  assert.equal(gorgiasStarts, 0, 'Gorgias reads must wait for the post-listen hook');
   const logs:string[]=[];
   t.mock.method(console,'error',(message:string)=>logs.push(message));
   const run=app.startBackgroundWork();
@@ -73,6 +78,7 @@ test('createApp and listen finish while the single background rebuild is blocked
   assert.equal(mailchimpStarts, 1, 'The post-listen hook starts Mailchimp once');
   assert.equal(hqStarts, 1, 'The post-listen hook starts HQ once');
   assert.equal(pushStarts, 1, 'The post-listen hook starts push once');
+  assert.equal(gorgiasStarts, 1, 'The post-listen hook starts Gorgias once');
   await entered;
   assert.equal((await app.inject('/health')).statusCode,200);
   release();await run;

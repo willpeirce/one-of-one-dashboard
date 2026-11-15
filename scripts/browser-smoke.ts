@@ -3,6 +3,7 @@ import { checkHourly } from './browser-hourly.js';
 import {checkAdSets} from './browser-adsets.js';
 import { checkScorecard } from './browser-scorecard.js';
 import { checkHandoverBase } from './browser-handover-base.js';
+import { checkHandoverGorgias } from './browser-handover-gorgias.js';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import type { AuthenticationResponseJSON } from '@simplewebauthn/server';
@@ -1815,6 +1816,8 @@ async function run(): Promise<void> {
     await checkScorecard(context);
     step = 'check the signed-in Handover shell at phone and desktop widths';
     await checkHandoverBase(context);
+    step = 'check stored Customer service tickets, private fields and safe links on Handover';
+    await checkHandoverGorgias(context);
     step = 'check shared Next up strip, local persistence and accessible modal at phone and desktop widths';
     await checkTicker(context);
 

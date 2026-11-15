@@ -39,6 +39,8 @@ export function changedSourceScopes(cached: Settings,current: Settings): Set<str
   if (cached.metaAdAccountId !== current.metaAdAccountId) changed.add('meta');
   if (cached.googleCustomerId !== current.googleCustomerId || cached.googleLoginCustomerId !== current.googleLoginCustomerId) changed.add('google-ads');
   if (cached.tiktokAdvertiserId !== current.tiktokAdvertiserId) changed.add('tiktok');
+  if (cached.gorgiasHandoverViewId !== current.gorgiasHandoverViewId || cached.gorgiasHandoverTag !== current.gorgiasHandoverTag
+    || cached.gorgiasHandoverWaitHours !== current.gorgiasHandoverWaitHours) changed.add('gorgias');
   return changed;
 }
 

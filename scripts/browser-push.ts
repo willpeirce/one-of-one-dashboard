@@ -101,7 +101,7 @@ export async function checkPush(signedIn: BrowserContext): Promise<void> {
     await context.route('**/*', async route => {
       const request = route.request(), url = new URL(request.url());
       if (['http:', 'https:'].includes(url.protocol) && url.origin !== origin) { external++; await route.abort('blockedbyclient'); }
-      else if (!['GET', 'HEAD'].includes(request.method()) && !['/api/push/subscribe', '/api/push/unsubscribe', '/api/push/test'].includes(url.pathname)) {
+      else if (!['GET', 'HEAD'].includes(request.method()) && !['/api/push/subscribe', '/api/push/unsubscribe', '/api/push/preferences', '/api/push/test'].includes(url.pathname)) {
         unexpectedWrites.push(`${request.method()} ${url.pathname}`); await route.abort('blockedbyclient');
       } else await route.continue();
     });
@@ -128,6 +128,8 @@ export async function checkPush(signedIn: BrowserContext): Promise<void> {
         if (width === 390) { await nudgeFit(page, 375, 667); await nudgeFit(page, 390, 844); }
         await page.locator('#mn-push-nudge').click(); await page.waitForURL('**/settings#notifications');
         await page.locator('#push-turn-on').waitFor({state: 'visible'}); await controls(page);
+        assert.equal(await page.locator('#push-alerts').getAttribute('aria-checked'), 'false');
+        assert.equal(await page.locator('#push-alerts').isDisabled(), true, 'Turn notifications on before choosing device alerts');
         assert.equal(await page.evaluate(() => (window as unknown as {__pulsePushTest: {permissionCalls: number}}).__pulsePushTest.permissionCalls), 0,
           'Neither Morning nor Settings asks for permission on load');
         if (width === 390) {
@@ -143,6 +145,8 @@ export async function checkPush(signedIn: BrowserContext): Promise<void> {
         await page.locator('#push-turn-on').click(); const subscribed = await subscribe; assert.equal(subscribed.status(), 200);
         assert.deepEqual(subscribed.request().postDataJSON(), {endpoint: browserPushEndpoint, keys});
         await page.waitForFunction(() => document.querySelector('#push-device-status')?.textContent === 'Notifications are on.');
+        assert.equal(await page.locator('#push-alerts').getAttribute('aria-checked'), 'false', 'New devices start with Alerts off');
+        assert.equal(await page.locator('#push-alerts').isEnabled(), true);
         const stats = await page.evaluate(() => (window as unknown as {__pulsePushTest: {permissionCalls: number; permissionInTap: boolean; options: object}}).__pulsePushTest);
         assert.equal(stats.permissionCalls, 1); assert.equal(stats.permissionInTap, true);
         assert.deepEqual(stats.options, {userVisibleOnly: true, applicationServerKey: publicBytes});
@@ -152,7 +156,33 @@ export async function checkPush(signedIn: BrowserContext): Promise<void> {
         });
         assert.deepEqual(registration, {scope: `${origin}/`, script: `${origin}/sw.js`, state: 'activated'});
         await page.waitForFunction(() => navigator.serviceWorker.controller?.scriptURL === `${location.origin}/sw.js`);
+        if (width === 390) {
+          await page.evaluate(() => navigator.serviceWorker.register('/sw.js?invented-update=1', {scope: '/'}));
+          await page.waitForFunction(() => navigator.serviceWorker.controller?.scriptURL === `${location.origin}/sw.js?invented-update=1`);
+          await page.evaluate(() => navigator.serviceWorker.register('/sw.js', {scope: '/'}));
+          await page.waitForFunction(() => navigator.serviceWorker.controller?.scriptURL === `${location.origin}/sw.js`);
+        }
         await controls(page);
+        if (width === 390) {
+          const enabled = page.waitForResponse(reply => new URL(reply.url()).pathname === '/api/push/preferences');
+          await page.locator('#push-alerts').click(); const saved = await enabled;
+          assert.equal(saved.status(), 200);
+          assert.deepEqual(saved.request().postDataJSON(), {endpoint: browserPushEndpoint, alertsEnabled: true});
+          await page.waitForFunction(() => document.querySelector('#push-alerts')?.getAttribute('aria-checked') === 'true');
+          assert.equal(await page.evaluate(() => window.dispatchEvent(new Event('beforeunload', {cancelable: true}))), true,
+            'An immediately-saved device choice does not mark global Settings dirty');
+          await page.reload();
+          await page.waitForFunction(() => document.querySelector('#push-device-status')?.textContent === 'Notifications are on.');
+          assert.equal(await page.locator('#push-alerts').getAttribute('aria-checked'), 'true', 'A saved preference survives reload and subscription repair');
+          await page.route('**/api/push/preferences', route => route.fulfill({status: 503, json: {error: 'Invented preference save failure.'}}), {times: 1});
+          await page.locator('#push-alerts').click();
+          await page.waitForFunction(() => document.querySelector('#push-device-message')?.textContent === 'Could not save alerts. Try again.');
+          assert.equal(await page.locator('#push-alerts').getAttribute('aria-checked'), 'true', 'A failed save retains the prior visible choice');
+          assert.equal(await page.locator('#push-alerts').isEnabled(), true);
+          await page.locator('#push-alerts').click();
+          await page.waitForFunction(() => document.querySelector('#push-alerts')?.getAttribute('aria-checked') === 'false');
+          assert.equal(await page.locator('#setting-morningSummaryEnabled').isChecked(), true, 'Device Alerts never changes the daily summary switch');
+        }
         if (width === 390) {
           const sent = page.waitForResponse(reply => new URL(reply.url()).pathname === '/api/push/test');
           await page.locator('#push-send-test').click(); const result = await sent;
@@ -213,6 +243,8 @@ export async function checkPush(signedIn: BrowserContext): Promise<void> {
         await page.locator('#push-turn-off').click(); const off = await unsubscribe; assert.equal(off.status(), 200);
         assert.deepEqual(off.request().postDataJSON(), {endpoint: browserPushEndpoint});
         await page.waitForFunction(() => document.querySelector('#push-device-status')?.textContent === 'Notifications are off.');
+        assert.equal(await page.locator('#push-alerts').getAttribute('aria-checked'), 'false');
+        assert.equal(await page.locator('#push-alerts').isDisabled(), true);
         assert.equal(await page.evaluate(() => (window as unknown as {__pulsePushTest: {unsubscribes: number}}).__pulsePushTest.unsubscribes), 1);
         await controls(page);
         await page.goto('/morning'); await page.locator('#mn-push-nudge').waitFor({state: 'visible'});

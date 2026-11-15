@@ -247,11 +247,16 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     { key: 'keyName', label: 'Key name', options: SETTINGS_KEY_NAMES.map((key) => ({ value: key, label: key })) },
     { key: 'expiresOn', label: 'Expiry date', type: 'date' },
   ], values.keyExpiryDates, 'Dates only. Key values stay in hosting Secrets.')}`);
-  const preferences = section('Summary & brand', 'The morning summary starts switched off.', `<div class="settings-grid">${fields([
+  const summaryControl = fields([
+    { ...checkbox('morningSummaryEnabled', 'Enable the 08:00 UK summary'), hint: 'One morning summary for all devices with notifications enabled. Alerts below are saved for this device only.' },
+  ], values);
+  const preferences = section('Summary & brand', 'Summary and device alerts start switched off.', `<div class="settings-grid">${fields([
     { key: 'brand', label: 'Brand', options: [{ value: 'one-of-one', label: 'One of One' }], hint: 'Kinda Rare comes in a later stage.' },
-    { ...checkbox('morningSummaryEnabled', 'Enable the 08:00 UK summary'), hint: 'One push at 08:00 UK with what needs you.' },
     { ...checkbox('morningOpensFirst', 'Open Morning first each day'), hint: 'Your first Home visit each UK day opens Morning on this device.' },
-  ], values)}</div>${pushDeviceHtml()}`);
+  ], values)}</div>${pushDeviceHtml(summaryControl)}<div class="settings-grid">${fields([
+    {key: 'start', label: 'Alert quiet hours start (UK)', type: 'time'},
+    {key: 'end', label: 'Alert quiet hours end (UK)', type: 'time'},
+  ], values.alertQuietHours, 'alertQuietHours')}</div><p class="setting-help">Trips wait until quiet hours end if the check is still tripped. Recoveries during quiet hours are dropped. Matching start and end times turn quiet hours off. The daily summary and manual test keep their own timing.</p>`);
   return `<!doctype html>
 <html lang="en" data-theme="dark">
 <head>

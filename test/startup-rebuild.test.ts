@@ -26,8 +26,12 @@ test('createApp and listen finish while the single background rebuild is blocked
     }
     return db.query<Row>(text,values);
   },transaction:async <T>(fn:(tx:typeof db)=>Promise<T>):Promise<T>=>{
-    if (failRebuild) throw Object.assign(new Error('invented-private-error'),{code:'XX000'});
-    return db.transaction(fn);
+    return db.transaction(tx => fn({...tx,query:async <Row extends Record<string,unknown>>(text:string,values?:unknown[])=>{
+      if (failRebuild && text.startsWith('INSERT INTO pulse.fulfilment_models')) {
+        throw Object.assign(new Error('invented-private-error'),{code:'XX000'});
+      }
+      return tx.query<Row>(text,values);
+    }}));
   }};
   // Live mode avoids sample seeding and any real source calls (worker stays stopped).
   const env={SHOPIFY_CLIENT_ID:randomBytes(16).toString('hex'),SHOPIFY_CLIENT_SECRET:randomBytes(32).toString('hex')};
@@ -74,5 +78,7 @@ test('createApp and listen finish while the single background rebuild is blocked
   release();await run;
   assert.equal(reads,1);
   assert.deepEqual(logs,['Startup fulfilment rebuild failed (code: XX000).']);
+  const observation=await db.query<{data:{checks?:unknown[]}}>("SELECT data FROM pulse.shopify_watchdog_state WHERE mode='live'");
+  assert.ok(observation.rows[0]?.data.checks?.length,'Watchdogs still commit after the independent fulfilment rebuild fails');
   assert.deepEqual((await app.inject('/health')).json(),{status:'ok'});
 });

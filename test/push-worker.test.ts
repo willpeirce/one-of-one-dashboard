@@ -13,21 +13,23 @@ test('notification paths stay inside this app after URL normalization, including
   assert.equal(notificationMessage({ title: 'All clear this morning', body: '', path: '/morning' }, origin).body, '');
 });
 
-test('the worker claims open windows on activation and always shows exactly one tagged notification per push', async () => {
+test('worker updates activate immediately, claim open windows and show exactly one tagged notification per push', async () => {
   const handlers = new Map<string, (event: unknown) => void>(), notices: { title: string; options: unknown }[] = [];
-  let claims = 0;
+  let claims = 0, installs = 0;
   const scope = { location: { origin }, addEventListener: (type: string, listener: (event: unknown) => void) => handlers.set(type, listener),
+    skipWaiting: async () => {installs++;},
     registration: { showNotification: async (title: string, options: unknown) => { notices.push({ title, options }); } },
     clients: { claim: async () => { claims++; }, matchAll: async () => [], openWindow: async () => {} } } as unknown as PushWorkerScope;
   installPushWorker(scope);
-  assert.deepEqual([...handlers.keys()], ['activate', 'push', 'notificationclick']);
+  assert.deepEqual([...handlers.keys()], ['install', 'activate', 'push', 'notificationclick']);
   const jobs: Promise<unknown>[] = [];
-  assert.equal(claims, 0);
+  assert.equal(claims, 0); assert.equal(installs, 0);
+  handlers.get('install')!({waitUntil: (job: Promise<unknown>) => jobs.push(job)});
   handlers.get('activate')!({waitUntil: (job: Promise<unknown>) => jobs.push(job)});
   for (const data of [{ json: () => ({ title: 'Needs you: 1 item', body: '1. Invented check', path: '/morning' }) }, null,
     { json() { throw new Error('Invented malformed JSON'); } }]) handlers.get('push')!({ data, waitUntil: (job: Promise<unknown>) => jobs.push(job) });
   await Promise.all(jobs);
-  assert.equal(claims, 1);
+  assert.equal(claims, 1); assert.equal(installs, 1);
   assert.equal(notices.length, 3);
   assert.equal(notices[0]!.title, 'Needs you: 1 item'); assert.equal(notices[1]!.title, 'Morning · Pulse');
   for (const notice of notices) assert.deepEqual((notice.options as { tag: string; data: object }).tag, 'pulse-morning');
@@ -84,4 +86,28 @@ test('untagged manual tests keep both themselves and the daily summary in the tr
   await push('summary', 'Invented replacement'); assert.equal(tray.length, 3);
   await push('unknown', 'Invented fallback'); assert.equal(tray.length, 3);
   assert.equal(tray.filter(row => row.tag === 'pulse-morning-2032-04-07').length, 1);
+});
+
+test('each watchdog and monthly alert has its own tag, keeping the daily summary and manual tests unchanged', async () => {
+  const tray: {title: string; tag?: string; data: {path: string}}[] = [];
+  const handlers = new Map<string, (event: unknown) => void>();
+  const scope = {location: {origin}, addEventListener: (type: string, listener: (event: unknown) => void) => handlers.set(type, listener),
+    registration: {showNotification: async (title: string, options: {tag?: string; data: {path: string}}) => {
+      if (options.tag) {const previous = tray.findIndex(row => row.tag === options.tag); if (previous >= 0) tray.splice(previous, 1);}
+      tray.push({title, ...options});
+    }}, clients: {claim: async () => {}, matchAll: async () => [], openWindow: async () => {}}} as unknown as PushWorkerScope;
+  installPushWorker(scope);
+  const receive = async (kind: string, title: string, alertKey?: string) => {
+    let work: Promise<unknown> | undefined;
+    handlers.get('push')!({data: {json: () => ({kind, title, alertKey, day: '2032-04-07', path: '/api/push/open/checkout'})},
+      waitUntil: (job: Promise<unknown>) => {work = job;}}); await work;
+  };
+  await receive('summary', 'Invented summary'); await receive('test', 'Invented manual test');
+  await receive('alert', 'Checkout · Needs attention', 'checkout'); await receive('alert', 'Dispatch · Needs attention', 'dispatch');
+  await receive('alert', 'Monthly upload', 'jj-monthly'); await receive('alert', 'Checkout · Recovered', 'checkout');
+  assert.equal(tray.length, 5);
+  assert.deepEqual(tray.map(row => row.tag).sort(), [undefined, 'pulse-morning-2032-04-07', 'pulse-alert-checkout', 'pulse-alert-dispatch', 'pulse-alert-jj-monthly'].sort());
+  assert.equal(tray.find(row => row.tag === 'pulse-alert-checkout')!.title, 'Checkout · Recovered');
+  assert.equal(tray.find(row => row.tag === 'pulse-alert-checkout')!.data.path, '/api/push/open/checkout');
+  assert.equal(notificationMessage({kind: 'alert', alertKey: '../invented'}, origin).kind, 'summary');
 });

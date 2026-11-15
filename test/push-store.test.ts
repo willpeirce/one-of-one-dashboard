@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { createECDH, randomBytes } from 'node:crypto';
+import { readFile, readdir } from 'node:fs/promises';
 import test, { type TestContext } from 'node:test';
 import { Auth } from '../src/auth.js';
 import { readRuntime } from '../src/runtime.js';
 import { readPushKeyPair } from '../src/push/keys.js';
-import { claimPushDay, readPushSubscriptions, recordPushResult, removePushSubscription, savePushSubscription } from '../src/push/store.js';
+import { claimPushDay, readPushSubscriptions, recordPushResult, removePushSubscription, savePushSubscription, setPushAlerts } from '../src/push/store.js';
 import type { PushSendResult } from '../src/push/sender.js';
 import type { PushSubscription } from '../src/push/validation.js';
 import { createTestDatabase } from './helpers/database.js';
@@ -50,6 +51,59 @@ test('push refresh is idempotent; changed keys reset delivery history and transf
   await savePushSubscription(db, 'invented-second', changed, new Date(+now + 3000));
   assert.equal((await readPushSubscriptions(db, 'invented-first')).length, 0);
   assert.equal((await readPushSubscriptions(db, 'invented-second'))[0]!.createdAt, new Date(+now + 3000).toISOString());
+});
+
+test('alerts are off by default, survive same-device repairs and key rotation, and reset on transfer or recreation', async t => {
+  const db = await database(t), item = subscription();
+  assert.deepEqual(await savePushSubscription(db, 'invented-first', item, now), {alertsEnabled: false});
+  assert.equal((await readPushSubscriptions(db))[0]!.alertsEnabled, false);
+  assert.deepEqual(await setPushAlerts(db, 'invented-first', item.endpoint, true, now), {alertsEnabled: true});
+  const before = await readPushSubscriptions(db);
+  assert.deepEqual(await savePushSubscription(db, 'invented-first', item, new Date(+now + 1000)), {alertsEnabled: true});
+  assert.deepEqual(await readPushSubscriptions(db), before);
+  const rotated = subscription();
+  assert.deepEqual(await savePushSubscription(db, 'invented-first', rotated, new Date(+now + 2000)), {alertsEnabled: true});
+  assert.equal((await readPushSubscriptions(db))[0]!.alertsEnabled, true);
+  assert.deepEqual(await savePushSubscription(db, 'invented-second', rotated, new Date(+now + 3000)), {alertsEnabled: false});
+  assert.equal((await readPushSubscriptions(db))[0]!.alertsEnabled, false);
+  await setPushAlerts(db, 'invented-second', item.endpoint, true, now);
+  await removePushSubscription(db, item.endpoint, 'invented-second');
+  assert.deepEqual(await savePushSubscription(db, 'invented-second', rotated, new Date(+now + 4000)), {alertsEnabled: false});
+});
+
+test('device preferences never alter another credential and audit only actual changes without subscription details', async t => {
+  const db = await database(t), item = subscription();
+  assert.equal(await setPushAlerts(db, 'invented-first', item.endpoint, true, now), null);
+  await savePushSubscription(db, 'invented-first', item, now);
+  assert.equal(await setPushAlerts(db, 'invented-other', item.endpoint, true, now), null);
+  await setPushAlerts(db, 'invented-first', item.endpoint, false, now);
+  await setPushAlerts(db, 'invented-first', item.endpoint, true, now);
+  await setPushAlerts(db, 'invented-first', item.endpoint, true, now);
+  await setPushAlerts(db, 'invented-first', item.endpoint, false, now);
+  assert.deepEqual((await db.query<{event: string}>("SELECT event FROM pulse.audit_log WHERE event LIKE 'Push alerts%' ORDER BY id")).rows,
+    [{event: 'Push alerts enabled'}, {event: 'Push alerts disabled'}]);
+  const audit = JSON.stringify((await db.query('SELECT event FROM pulse.audit_log')).rows);
+  for (const value of [item.endpoint, item.keys.auth, item.keys.p256dh]) assert.ok(!audit.includes(value));
+  assert.equal((await readPushSubscriptions(db))[0]!.alertsEnabled, false);
+});
+
+test('migration opts existing subscriptions out, replays safely and preserves a later explicit opt-in', async t => {
+  const db = await createTestDatabase({migrate: false}); t.after(() => db.close());
+  await db.query('CREATE SCHEMA pulse_private; REVOKE ALL ON SCHEMA pulse_private FROM PUBLIC;');
+  const directory = new URL('../migrations/', import.meta.url);
+  for (const name of (await readdir(directory)).filter(name => /^\d+_[a-z0-9_]+\.sql$/.test(name) && Number(name.split('_')[0]) < 71).sort())
+    await db.query(await readFile(new URL(name, directory), 'utf8'));
+  const item = subscription();
+  await db.query('INSERT INTO pulse.push_subscriptions(endpoint,p256dh,auth,credential_id,created_at) VALUES($1,$2,$3,$4,$5)',
+    [item.endpoint, item.keys.p256dh, item.keys.auth, 'invented-existing', now]);
+  const filename = (await readdir(directory)).find(name => /^071_/.test(name))!;
+  const migration = await readFile(new URL(filename, directory), 'utf8');
+  const started = performance.now(); await db.query(migration);
+  t.diagnostic(`Alert migration: ${Math.round(performance.now() - started)} ms`);
+  assert.equal((await readPushSubscriptions(db))[0]!.alertsEnabled, false);
+  await setPushAlerts(db, 'invented-existing', item.endpoint, true, now);
+  await db.query(migration);
+  assert.equal((await readPushSubscriptions(db))[0]!.alertsEnabled, true);
 });
 
 test('push delivery records one final failure, resets after success, and deletes both expired statuses', async t => {

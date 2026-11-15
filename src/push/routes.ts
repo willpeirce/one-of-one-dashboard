@@ -3,7 +3,7 @@ import type { Auth } from '../auth.js';
 import type { Database } from '../db.js';
 import { readPushKeyPair } from './keys.js';
 import type { PushTestResult } from './service.js';
-import { removePushSubscription, savePushSubscription } from './store.js';
+import { removePushSubscription, savePushSubscription, setPushAlerts } from './store.js';
 import { validatePushEndpoint, validatePushKeys } from './validation.js';
 
 function exactObject(value: unknown, keys: string[]): value is Record<string, unknown> {
@@ -35,8 +35,22 @@ export function registerPush(app: FastifyInstance, db: Database, auth: Auth, opt
     let subscription;
     try { subscription = {endpoint: validatePushEndpoint(body.endpoint).href, keys: validatePushKeys(body.keys)}; }
     catch { return reply.code(400).send({error: 'Use a valid notification subscription.'}); }
-    try { await savePushSubscription(db, who, subscription, options.clock()); return {ok: true}; }
+    try { return {ok: true, ...await savePushSubscription(db, who, subscription, options.clock())}; }
     catch { return reply.code(503).send({error: 'Notifications could not be enabled. Try again later.'}); }
+  });
+  app.post('/api/push/preferences', {bodyLimit: 4096, onRequest: localWrite}, async (request, reply) => {
+    const who = await auth.session(request);
+    if (!who) return reply.code(401).send({error: 'Sign in to continue.'});
+    const body = request.body;
+    if (!exactObject(body, ['endpoint','alertsEnabled']) || typeof body.alertsEnabled !== 'boolean')
+      return reply.code(400).send({error: 'Use a valid notification preference.'});
+    let endpoint: string;
+    try { endpoint = validatePushEndpoint(body.endpoint).href; }
+    catch { return reply.code(400).send({error: 'Use a valid notification preference.'}); }
+    try {
+      const preferences = await setPushAlerts(db, who, endpoint, body.alertsEnabled, options.clock());
+      return preferences ? {ok: true, ...preferences} : reply.code(404).send({error: 'Turn notifications on for this device first.'});
+    } catch { return reply.code(503).send({error: 'Alerts could not be saved. Try again later.'}); }
   });
   app.post('/api/push/unsubscribe', {bodyLimit: 4096, onRequest: localWrite}, async (request, reply) => {
     const who = await auth.session(request);

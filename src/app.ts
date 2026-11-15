@@ -65,6 +65,8 @@ import { HQWorker } from './github-hq/worker.js';
 import { readHQFacts } from './github-hq/store.js';
 import { addMorningHq, homeTestsFromHq } from './github-hq/presentation.js';
 import { PushService } from './push/service.js';
+import {readAlertEvaluation} from './push/alert-inputs.js';
+import {registerAlertLinks} from './push/alert-links.js';
 import { registerPush } from './push/routes.js';
 import type { PushTransport } from './push/sender.js';
 import {SnapshotCache} from './snapshot-cache.js';
@@ -94,9 +96,11 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     const [settings, context, hqFacts] = await Promise.all([readSettings(db), readWatchdogContext(db, facts), readHQFacts(db, hqNow, hq.mode)]);
     const health = await creativeSourceHealth(settings.values);
     const now = sourceNow();
-    const observation = await updateObservation(db, shopify.mode, facts, now);
-    const checks = evaluateWatchdogs(facts, now, settings.values, observation, context.holidays, health, { entry: hqFacts.report, now: hqNow });
-    await db.query('UPDATE pulse.shopify_watchdog_state SET data = data || $2::jsonb WHERE mode = $1', [shopify.mode, JSON.stringify({ checks, evaluatedAt: now.toISOString() })]);
+    await db.transaction(async tx => {
+      const observation = await updateObservation(tx, shopify.mode, facts, now);
+      const checks = evaluateWatchdogs(facts, now, settings.values, observation, context.holidays, health, { entry: hqFacts.report, now: hqNow });
+      await tx.query('UPDATE pulse.shopify_watchdog_state SET data = data || $2::jsonb WHERE mode = $1', [shopify.mode, JSON.stringify({ checks, evaluatedAt: now.toISOString(), alertEvaluatedAt: hqNow.toISOString() })]);
+    });
   }
   await seedFulfilment(db, shopify.mode, sourceNow());
   const ads=new SpendWorker(db,sourceEnv,adOptions);
@@ -319,8 +323,10 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   const morning = registerMorning(app, db, auth, morningInputs, localNow,{onWrite: publishObservations});
   const pushNow = localOptions.pushClock ?? localNow;
   const push = new PushService(db, {origin: config.origin, clock: pushNow, loadMorning: now => morning.summary(now),
+    loadAlerts: now => readAlertEvaluation(db,{shopify:shopify.mode,hq:hq.mode,anyLive:getSourceStates(sourceEnv).some(source=>source.mode==='live')},now),
     transport: localOptions.pushTransport});
   registerPush(app, db, auth, {clock: pushNow, sendTest: credentialId => push.sendTest(credentialId)});
+  registerAlertLinks(app,db,auth,shopify.mode);
   registerAdSets(app, db, auth, sourceEnv, creativeNow, adOptions, async () => publishObservations());
   registerReviewRoutes(app, db, auth, publishObservations);
   registerScorecard(app, db, auth, shopify.store, sourceEnv, () => shopifyOptions.clock?.() ?? new Date());

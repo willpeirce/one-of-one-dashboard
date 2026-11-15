@@ -5,6 +5,8 @@ import { readSettings } from '../settings.js';
 import { readPushKeyPair } from './keys.js';
 import { sendPush, type PushPayload, type PushSendOptions } from './sender.js';
 import { claimPushDay, readPushSubscriptions, recordPushResult } from './store.js';
+import { alertDeviceCurrent, deliverAlerts } from './alert-store.js';
+import type { AlertEvaluation } from './alert-types.js';
 
 export const PUSH_SUMMARY_KIND = 'morning-summary';
 export const PUSH_TICK_MS = 60_000;
@@ -13,6 +15,7 @@ export type PushTestResult = {status: 'sent'; sent: number; failed: number; gone
   | {status: 'rate-limited'; retryAfterSeconds: number} | {status: 'unavailable'};
 export interface PushServiceOptions extends Omit<PushSendOptions, 'getKeys'> {
   loadMorning: (now: Date) => Promise<MorningResult>;
+  loadAlerts?: (now: Date) => Promise<AlertEvaluation>;
 }
 const ukClock = new Intl.DateTimeFormat('en-GB', {timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'});
 export function summaryWindow(now: Date): boolean {
@@ -53,6 +56,17 @@ export class PushService {
   tick(): Promise<void> {
     if (this.closing) return Promise.resolve();
     if (!this.summaryRunning) this.summaryRunning = this.serial(async () => {
+      if (this.options.loadAlerts && !this.closing) try {
+        const now = this.now();
+        const [input, settings] = await Promise.all([this.options.loadAlerts(now), readSettings(this.db, {seed: false})]);
+        let keys: ReturnType<typeof readPushKeyPair> | undefined;
+        await deliverAlerts(this.db, input, settings.values.alertQuietHours, now, async (subscription, payload) => {
+          if (this.closing || !await alertDeviceCurrent(this.db, subscription)) return;
+          const result = await sendPush(subscription, payload, {...this.options, getKeys: () => keys ??= readPushKeyPair(this.db)});
+          try { await recordPushResult(this.db, subscription, result, this.now()); }
+          catch { this.log('Push delivery result could not be saved.'); }
+        }, () => this.now());
+      } catch { this.log('Watchdog push alerts failed; claimed deliveries remain taken.'); }
       try {
         if (this.closing) return;
         const now = this.now();

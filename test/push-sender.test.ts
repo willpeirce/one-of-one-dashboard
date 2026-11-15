@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createECDH, randomBytes } from 'node:crypto';
-import { PUSH_TEST_TTL_SECONDS, sendPush, type PushPayload, type PushTransportRequest } from '../src/push/sender.js';
+import { createDecipheriv, createECDH, hkdfSync, randomBytes } from 'node:crypto';
+import { PUSH_ALERT_TTL_SECONDS, PUSH_TEST_TTL_SECONDS, sendPush, type PushPayload, type PushTransportRequest } from '../src/push/sender.js';
 import type { RawPushKeyPair } from '../src/push/crypto.js';
 
 function example() {
   const receiver = createECDH('prime256v1'); receiver.generateKeys();
   const signer = createECDH('prime256v1'); signer.generateKeys();
   return {
+    receiver,
     subscription: { endpoint: 'https://fcm.googleapis.com/invented-private-endpoint', keys: {
       p256dh: receiver.getPublicKey().toString('base64url'), auth: randomBytes(16).toString('base64url'),
     } },
@@ -151,4 +152,32 @@ test('manual tests keep one-hour TTL in the UK afternoon while summaries expire 
       transport: async request => {assert.equal(request.headers.TTL, String(ttl)); return {status: 201};}});
     assert.equal(result.outcome, 'sent');
   }
+});
+
+test('alerts carry their validated check identity encrypted and retain six-hour TTL at every UK hour', async () => {
+  const {receiver, subscription, pair} = example(); let attempts = 0;
+  const payload: PushPayload = {kind: 'alert', alertKey: 'checkout', title: 'Checkout · Needs attention',
+    body: 'No completion for 90 minutes.', path: '/api/push/open/checkout', day: '2032-07-07'};
+  for (const at of ['2032-07-07T05:59:00Z', '2032-07-07T22:10:00Z', '2032-12-07T15:00:00Z']) {
+    const result = await sendPush(subscription, payload, {origin: 'https://pulse.example.test', clock: () => new Date(at), getKeys: async () => pair,
+      transport: async request => {
+        attempts++; assert.equal(request.headers.TTL, String(PUSH_ALERT_TTL_SECONDS)); assert.equal(request.headers.TTL, '21600');
+        const encrypted = Buffer.from(request.body), salt = encrypted.subarray(0, 16), sender = encrypted.subarray(21, 86);
+        const ikm = Buffer.from(hkdfSync('sha256', receiver.computeSecret(sender), Buffer.from(subscription.keys.auth, 'base64url'),
+          Buffer.concat([Buffer.from('WebPush: info\0'), receiver.getPublicKey(), sender]), 32));
+        const cek = Buffer.from(hkdfSync('sha256', ikm, salt, Buffer.from('Content-Encoding: aes128gcm\0'), 16));
+        const nonce = Buffer.from(hkdfSync('sha256', ikm, salt, Buffer.from('Content-Encoding: nonce\0'), 12));
+        const decipher = createDecipheriv('aes-128-gcm', cek, nonce); decipher.setAuthTag(encrypted.subarray(-16));
+        const decrypted = Buffer.concat([decipher.update(encrypted.subarray(86, -16)), decipher.final()]);
+        assert.equal(decrypted.at(-1), 2); assert.deepEqual(JSON.parse(decrypted.subarray(0, -1).toString()), payload);
+        return {status: 201};
+      }});
+    assert.equal(result.outcome, 'sent');
+  }
+  for (const alertKey of [undefined, '../invented', 'us_cart']) {
+    const result = await sendPush(subscription, {...payload, alertKey} as PushPayload, {origin: 'https://pulse.example.test', getKeys: async () => pair,
+      log: () => {}, transport: async () => {attempts++; return {status: 201};}});
+    assert.equal(result.code, 'invalid_payload');
+  }
+  assert.equal(attempts, 3);
 });

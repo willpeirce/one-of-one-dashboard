@@ -248,3 +248,19 @@ test('One by one is a local audited press, keeps current guards, survives reload
   assert.equal(tomorrow.cards[0]!.kind, 'pause-all'); assert.equal(tomorrow.pauseAll?.deferred, false);
   assert.equal((await readMorningStates(db, 'live')).length, 0);
 });
+
+test('an expired pause offers its own action with an unconfirmed flag but never joins Pause all', () => {
+  const data = input(3), row = data.adSets!.rows[0]!;
+  data.metaActions = [{id: 'invented-expired-pause', adSetId: row.set.id, action: 'pause', result: 'failed',
+    time: '2032-04-07T07:00:00.000Z', oldValue: 'ACTIVE', newValue: 'PAUSED',
+    errorCode: pauseUncertaintyCode('expired', new Date('2032-04-07T07:15:00.000Z'), 'pending expired'), undoneAt: null, undoOf: null}];
+  const result = morningDeck(data, [], now), card = result.snapshot.cards.find(card => card.subjectId === row.set.id)!;
+  assert.equal(card.primary.kind, 'live');
+  if (card.primary.kind === 'live') assert.equal(card.primary.action, 'pause');
+  assert.equal(card.flag, 'ⓘ Last action unconfirmed: check the set in Ads Manager');
+  assert.match(card.why, /Last action unconfirmed: check the set in Ads Manager/);
+  assert.equal(result.snapshot.pauseAll?.members.length, 2);
+  assert.equal(result.snapshot.pauseAll?.members.some(member => member.adSetId === row.set.id), false);
+  assert.equal(result.snapshot.cards.some(card => card.kind === 'pause-all'), false);
+  assert.equal(result.snapshot.completed, 0);
+});

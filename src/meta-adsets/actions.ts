@@ -20,7 +20,8 @@ export async function readMetaActions(db:Database,account?:string,now?:Date):Pro
    SELECT * FROM pulse.meta_actions ${account?'WHERE account_id=$1':''} ORDER BY time DESC,id DESC LIMIT 50
  ) SELECT * FROM recent UNION SELECT a.* FROM pulse.meta_actions a
  WHERE ${account?'a.account_id=$1 AND ':''}(a.result='pending' OR (
-   a.action='pause' AND a.result='failed' AND a.error_code LIKE '${PAUSE_UNCERTAINTY_PREFIX}active|%'
+   a.action='pause' AND a.result='failed' AND (a.error_code LIKE '${PAUSE_UNCERTAINTY_PREFIX}active|%'
+     OR a.error_code LIKE '${PAUSE_UNCERTAINTY_PREFIX}expired|%')
    AND NOT EXISTS (SELECT 1 FROM pulse.meta_actions later WHERE later.account_id=a.account_id AND later.ad_set_id=a.ad_set_id
      AND later.result='success' AND later.time>=a.time AND later.id<>a.id))${today}) ORDER BY time DESC,id DESC`,values);
  return rows.rows.map(r=>({id:r.id,time:new Date(r.time).toISOString(),adSetId:r.ad_set_id,action:r.action,oldValue:r.old_value,newValue:r.new_value,result:r.result,undoneAt:r.undone_at?new Date(r.undone_at).toISOString():null,undoOf:r.undo_of,errorCode:r.error_code}));

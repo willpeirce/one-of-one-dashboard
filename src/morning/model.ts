@@ -7,7 +7,7 @@ import { decisionRows } from '../meta-adsets/decision-rows.js';
 import { activityObjectType } from '../meta-adsets/activity.js';
 import { morningPauseAll } from './pause-all.js';
 import { morningCheckItems } from './check-items.js';
-import {parsePauseUncertainty,pauseUncertaintyNote} from '../meta-adsets/pause-uncertainty.js';
+import {parsePauseUncertainty,pauseNeedsReview,pauseUncertaintyNote} from '../meta-adsets/pause-uncertainty.js';
 import type { AdSetRow } from '../meta-adsets/presentation.js';
 import type { DashboardNeed } from '../shopify/dashboard.js';
 import type { MorningAction, MorningAway, MorningButton, MorningCard, MorningFigure, MorningInput,
@@ -84,7 +84,7 @@ function adCard(row: AdSetRow, input: MorningInput, order: number, today: string
   const ruleId = verdict.reasons.find(reason => reason.verdict === word)?.rule ?? word;
   const uncertain = input.metaActions.find(action => action.adSetId === row.set.id
     && (action.result === 'pending' && parsePauseUncertainty(action.errorCode)?.phase === 'waiting'
-      || action.result === 'failed' && parsePauseUncertainty(action.errorCode)?.phase === 'active')
+      || action.result === 'failed' && pauseNeedsReview(action.errorCode))
     && !input.metaActions.some(later => later.adSetId === action.adSetId && later.result === 'success' && later.time >= action.time));
   const waiting = uncertain?.result === 'pending';
   const view = input.adSets!, actions = view.mode === 'live' && view.actionsEnabled && row.set.owner === 'ours' && !waiting;

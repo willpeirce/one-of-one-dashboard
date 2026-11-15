@@ -43,6 +43,7 @@ const assets = [
   ['src/meta-adsets/style.css', 'adsets.css'],
   ['src/scorecard/style.css', 'scorecard.css'],
   ['src/handover/style.css', 'handover.css'],
+  ['src/waiting-on/style.css', 'waiting-on.css'],
   ['docs/spec/logo.png', 'logo.png'],
   ['public/fonts.css', 'fonts.css'],
   ['public/manifest.webmanifest', 'manifest.webmanifest'],

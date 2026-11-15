@@ -92,6 +92,7 @@ export interface Settings {
     useAffiliateWording: boolean;
   };
   waitingContacts: { business: string; role: string }[];
+  waitingOnDays: number;
   deadlines: { label: string; date: string }[];
   keyExpiryDates: { keyName: KeyName; expiresOn: string }[];
   morningSummaryEnabled: boolean;
@@ -185,7 +186,7 @@ export function defaultSettings(): Settings {
       acceptOpeningOffer: false, briefPaymentPercent: 50, deliveryPaymentPercent: 50,
       offerCreatorLink: true, useAffiliateWording: false,
     },
-    waitingContacts: [], deadlines: [], keyExpiryDates: [],
+    waitingContacts: [], waitingOnDays: 7, deadlines: [], keyExpiryDates: [],
     morningSummaryEnabled: false, alertQuietHours: {start: '22:00', end: '07:00'}, morningOpensFirst: false, brand: appConfig.brand,
   };
 }
@@ -457,6 +458,7 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
       const parsed = object(row, ['business', 'role'], path);
       return { business: businessText(parsed.business, `${path}.business`), role: businessText(parsed.role, `${path}.role`) };
     }, (row) => `${row.business}/${row.role}`),
+    waitingOnDays: requiredNumber(value.waitingOnDays, 'waitingOnDays', 365, true, 1),
     deadlines: list(value.deadlines, 'deadlines', (row, path) => {
       const parsed = object(row, ['label', 'date'], path);
       return { label: text(parsed.label, `${path}.label`), date: date(parsed.date, `${path}.date`) };
@@ -530,6 +532,7 @@ function storedSettings(input: unknown): Settings {
     gorgiasHandoverViewId: defaults.gorgiasHandoverViewId,
     gorgiasHandoverTag: defaults.gorgiasHandoverTag,
     gorgiasHandoverWaitHours: defaults.gorgiasHandoverWaitHours,
+    waitingOnDays: defaults.waitingOnDays,
     ...input as Record<string, unknown>,
   };
   if (stored.adRules && typeof stored.adRules === 'object' && !Array.isArray(stored.adRules)

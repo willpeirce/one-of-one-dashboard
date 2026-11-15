@@ -224,6 +224,9 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     {key: 'gorgiasHandoverTag', label: 'Handover tag', maxlength: 80, hint: 'Used only when no view ID is set.'},
     number('gorgiasHandoverWaitHours', 'Reply decision after (hours)', {min: 1, max: 720, step: 'any'}),
   ], values)}</div>`);
+  const waiting = section('Waiting on others', 'Follow-ups from HQ and rows you add on Handover.', `<div class="settings-grid">${fields([
+    number('waitingOnDays', 'Waiting warning after (UK days)', {min: 1, max: 365, integer: true}),
+  ], values)}</div>`);
   const creators = section('Creator negotiation', 'Your rules for agreeing an asset and its usage.', `<div class="settings-grid">${fields([
     number('assetCapGbp', 'Maximum fee per asset (£)'),
     number('minimumUsageMonths', 'Minimum usage (months)', { integer: true }),
@@ -289,7 +292,7 @@ ${tickerHead()}</head>
     <div class="settings-intro"><p class="eyebrow">Your business, your rules</p><h1>Settings</h1><p>Real business settings, saved in Pulse. Dashboard figures remain labelled sample data while source feeds are being built.</p></div>
     <form id="settings-form" data-version="${snapshot.version}" method="post" action="/api/settings">
       <input type="hidden" id="saved-meta-owner-rules" value="${escapeHtml(JSON.stringify(values.metaOwners))}">
-      <fieldset id="settings-fields"><legend class="settings-sr-only">Business settings</legend>${goals}${advertising}${costs}${stock}${pace}${campaigns}${email}${handover}${creators}${keyDates}${dates}${preferences}</fieldset>
+      <fieldset id="settings-fields"><legend class="settings-sr-only">Business settings</legend>${goals}${advertising}${costs}${stock}${pace}${campaigns}${email}${handover}${waiting}${creators}${keyDates}${dates}${preferences}</fieldset>
       <div class="settings-savebar glass"><div><p id="settings-message" role="status" aria-live="polite">Choose Save settings for these fields, or Save beside a campaign owner.</p><p class="setting-help">Unknown costs can stay blank. Saving adds an audit entry.</p></div><button class="btn settings-save" id="settings-save" type="submit" disabled>Save settings</button></div>
     </form>
     <p id="auth-message" role="status" aria-live="polite"></p>

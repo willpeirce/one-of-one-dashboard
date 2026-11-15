@@ -1,8 +1,12 @@
 import { appConfig } from '../config.js';
+import { HQ_MONTH_PARSER_VERSION, HQ_REGISTER_PARSER_VERSION } from './model.js';
 
 export const HQ_BODY_LIMIT = 4 * 1024 * 1024;
 export const HQ_TIMEOUT_MS = 10_000;
-export type HQTarget = {kind: 'month'; month: string; ref: 'main' | 'claude/ads-daily'} | {kind: 'register'};
+export type HQTarget = {kind: 'month'; month: string; ref: 'main' | 'claude/ads-daily'} | {kind: 'register'} | {kind: 'waiting'};
+export const HQ_WAITING_PARSER_VERSION = 1;
+export const hqParserVersion = (target: HQTarget): number => target.kind === 'month' ? HQ_MONTH_PARSER_VERSION
+  : target.kind === 'register' ? HQ_REGISTER_PARSER_VERSION : HQ_WAITING_PARSER_VERSION;
 export type HQReadResult = {status: 'modified'; text: string; etag: string | null}
   | {status: 'not-modified'; etag: string | null};
 export type HQErrorCode = 'target' | 'timeout' | 'network' | 'http' | 'denied' | 'not_found' | 'redirect'
@@ -23,6 +27,7 @@ export function hqTargetInfo(target: HQTarget): {key: string; path: string; ref:
   if (!target || typeof target !== 'object' || Array.isArray(target)) throw new HQReadError('target');
   const keys = Object.keys(target).sort().join(',');
   if (target.kind === 'register' && keys === 'kind') return {key: 'register', path: 'ops/tests/register.md', ref: 'main'};
+  if (target.kind === 'waiting' && keys === 'kind') return {key: 'waiting-on', path: 'ops/waiting-on/latest.md', ref: 'main'};
   if (target.kind === 'month' && keys === 'kind,month,ref' && typeof target.month === 'string'
     && /^(?!0000)\d{4}-(?:0[1-9]|1[0-2])$/.test(target.month) && ['main', 'claude/ads-daily'].includes(target.ref)) {
     return {key: `month:${target.month}:${target.ref}`, path: `ops/ads-daily/${target.month}.md`, ref: target.ref};

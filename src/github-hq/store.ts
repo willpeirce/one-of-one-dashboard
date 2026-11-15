@@ -1,9 +1,11 @@
 import type { Database } from '../db.js';
 import { addDays, ukToday } from '../hero-range.js';
 import type { SourceMode } from '../sources.js';
-import { hqTargetInfo, HQReadError, type HQErrorCode, type HQTarget } from './client.js';
-import { HQ_REGISTER_PARSER_VERSION, HQ_MONTH_PARSER_VERSION, hqCut, hqDate, HQ_CELL_LIMIT, HQ_ITEM_LIMIT, HQ_ITEM_LINES_LIMIT, HQ_ITEM_TEXT_LIMIT, HQ_SECTION_ROW_LIMIT, HQ_MALFORMED_ID_LIMIT,
+import { hqParserVersion, hqTargetInfo, HQReadError, HQ_WAITING_PARSER_VERSION, type HQErrorCode, type HQTarget } from './client.js';
+import { HQ_REGISTER_PARSER_VERSION, hqCut, hqDate, HQ_CELL_LIMIT, HQ_ITEM_LIMIT, HQ_ITEM_LINES_LIMIT, HQ_ITEM_TEXT_LIMIT, HQ_SECTION_ROW_LIMIT, HQ_MALFORMED_ID_LIMIT,
   type HQBriefEntry, type HQBriefItem, type HQBriefTag, type HQFacts, type HQRegisterResult, type HQStoredBriefEntry, type HQStoredTestRow } from './model.js';
+import type { HQWaitingResult } from './parse-waiting.js';
+import { replaceWaitingFile } from '../waiting-on/store.js';
 
 export interface HQSync {
   key: string; etag: string | null; lastAttemptAt: string | null; lastSuccessAt: string | null;
@@ -40,7 +42,7 @@ async function success(db: Database, target: HQTarget, etag: string | null, now:
     ON CONFLICT(target_key) DO UPDATE SET etag=EXCLUDED.etag,last_attempt_at=EXCLUDED.last_attempt_at,
       last_success_at=EXCLUDED.last_success_at,error_code=NULL,retry_after_at=NULL,parsed_available=true,
       readable=true,initialized=EXCLUDED.initialized,skipped_rows=EXCLUDED.skipped_rows,parser_version=EXCLUDED.parser_version`,
-    [key, path, ref, etag, now, skippedRows, initialized, target.kind === 'month' ? HQ_MONTH_PARSER_VERSION : HQ_REGISTER_PARSER_VERSION]);
+    [key, path, ref, etag, now, skippedRows, initialized, hqParserVersion(target)]);
 }
 export async function failHQRead(db: Database, target: HQTarget, error: HQReadError, now: Date): Promise<void> {
   const {key} = hqTargetInfo(target);
@@ -128,15 +130,46 @@ export async function saveHQRegister(db: Database, result: HQRegisterResult, eta
       [HQ_REGISTER_PARSER_VERSION, result.cappedRows ?? 0, complete]);
   });
 }
+export async function saveHQWaiting(db: Database, result: HQWaitingResult, etag: string | null, now: Date): Promise<void> {
+  if (!result.readable) {
+    // Keep the last good rows and file metadata; this failed body must not certify removal.
+    await db.query(`INSERT INTO pulse.github_hq_reads(target_key,path,ref,etag,last_attempt_at,error_code,
+        parsed_available,readable,parser_version,headings_complete)
+      VALUES('waiting-on','ops/waiting-on/latest.md','main',$1,$2,'unreadable',true,false,$3,false)
+      ON CONFLICT(target_key) DO UPDATE SET etag=EXCLUDED.etag,last_attempt_at=EXCLUDED.last_attempt_at,
+        error_code='unreadable',parsed_available=true,readable=false,parser_version=$3,
+        headings_complete=false,skipped_rows=0,capped_rows=0`, [etag, now, HQ_WAITING_PARSER_VERSION]);
+    return;
+  }
+  await db.transaction(async tx => {
+    await replaceWaitingFile(tx, result, now);
+    await success(tx, {kind: 'waiting'}, etag, now, result.skippedRows);
+    await tx.query(`UPDATE pulse.github_hq_reads SET capped_rows=$1,headings_complete=true WHERE target_key='waiting-on'`, [result.cappedRows]);
+  });
+}
+export async function saveHQWaitingMissing(db: Database, now: Date): Promise<void> {
+  await db.transaction(async tx => {
+    await replaceWaitingFile(tx, null, now);
+    await tx.query(`INSERT INTO pulse.github_hq_reads(target_key,path,ref,last_attempt_at,error_code,
+        parsed_available,readable,initialized,parser_version,headings_complete)
+      VALUES('waiting-on','ops/waiting-on/latest.md','main',$1,'not_found',true,true,true,$2,true)
+      ON CONFLICT(target_key) DO UPDATE SET etag=NULL,last_attempt_at=EXCLUDED.last_attempt_at,
+        error_code='not_found',retry_after_at=NULL,parsed_available=true,readable=true,initialized=true,
+        parser_version=$2,headings_complete=true,skipped_rows=0,capped_rows=0`, [now, HQ_WAITING_PARSER_VERSION]);
+  });
+}
 export async function touchHQRead(db: Database, target: HQTarget, etag: string | null, now: Date): Promise<void> {
   const {key, path, ref} = hqTargetInfo(target);
   await db.transaction(async tx => {
     const previous = (await readHQSync(tx, [target])).get(key);
-    if (previous?.parserVersion !== (target.kind === 'month' ? HQ_MONTH_PARSER_VERSION : HQ_REGISTER_PARSER_VERSION)) throw new HQReadError('invalid', 304);
+    if (previous?.parserVersion !== hqParserVersion(target)) throw new HQReadError('invalid', 304);
     if (!previous?.parsedAvailable) throw new HQReadError('invalid', 304);
     if (!previous.readable) throw new HQReadError('unreadable', 304);
+    if (target.kind === 'waiting' && !(await tx.query("SELECT 1 FROM pulse.waiting_on_file WHERE singleton AND status='ready'")).rowCount)
+      throw new HQReadError('invalid', 304);
     await success(tx, target, etag ?? previous.etag, now, previous.skippedRows, previous.initialized);
     if (target.kind === 'month') await tx.query('UPDATE pulse.github_hq_reports SET read_at=$3 WHERE path=$1 AND ref=$2', [path, ref, now]);
+    if (target.kind === 'waiting') await tx.query('UPDATE pulse.waiting_on_file SET read_at=$1 WHERE singleton', [now]);
   });
 }
 interface ReportRow extends Record<string, unknown> {

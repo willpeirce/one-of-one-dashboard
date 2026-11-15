@@ -78,6 +78,10 @@ import {GorgiasWorker} from './gorgias/worker.js';
 import {readGorgiasFacts} from './gorgias/store.js';
 import {gorgiasNeeds} from './gorgias/needs.js';
 import {gorgiasSectionHtml} from './handover/gorgias-view.js';
+import {readWaitingView} from './waiting-on/store.js';
+import {waitingNeeds} from './waiting-on/needs.js';
+import {registerWaitingOn} from './waiting-on/routes.js';
+import {waitingSectionHtml} from './waiting-on/view.js';
 
 declare module 'fastify' {
   interface FastifyInstance { startBackgroundWork(): Promise<void> }
@@ -91,7 +95,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   const localNow = localOptions.clock ?? (() => new Date());
   await auth.cleanup();
   await syncSourceHealth(db, sourceEnv);
-  const hq = new HQWorker(db, sourceEnv, { clock: localNow });
+  const hq = new HQWorker(db, sourceEnv, {clock: localNow, onWrite: () => publishObservations()});
   const gorgias = new GorgiasWorker(db, sourceEnv, {clock: localNow, onWrite: () => publishObservations()});
   const shopify = new ShopifyWorker(db, sourceEnv, config.origin, shopifyOptions);
   await shopify.initialize();
@@ -242,7 +246,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   async function buildObservations() {
     const settings = await readSettings(db,{seed: false});
     const hqNow = localNow(), mailchimpAt = mailchimpNow(), creativeAt = creativeNow();
-    const [hqFacts,sourceHealth,facts,mailchimpFacts,adSources,reviewRows,adSets,creatives,fulfilment,coverage,morningCreatives,gorgiasFacts] = await Promise.all([
+    const [hqFacts,sourceHealth,facts,mailchimpFacts,adSources,reviewRows,adSets,creatives,fulfilment,coverage,morningCreatives,gorgiasFacts,waitingView] = await Promise.all([
       readHQFacts(db,hqNow,hq.mode),creativeSourceHealth(settings.values),shopify.store.facts(sourceNow()),
       readMailchimpFacts(db,mailchimp.mode,mailchimpAt),spendHealth(db,sourceEnv,settings.values,adOptions.clock?.() ?? new Date()),
       reviews.mode === 'sample' ? dismissedReviewIds(db).then(ids => withoutDismissed(sampleReviews(),ids)) : readReviews(db,reviewOptions.clock?.() ?? new Date()),
@@ -254,6 +258,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
       shopify.mode === 'sample' && sourceEnv.META_ACCESS_TOKEN && settings.values.metaAdAccountId
         ? readCreativeOverview(db,settings.values,{},creativeAt,{}, {seedSample: false,briefWindows: true}) : undefined,
       readGorgiasFacts(db,sourceEnv,settings.values,hqNow),
+      readWaitingView(db,hq.mode,hqNow,settings.values.waitingOnDays),
     ]);
     const adInputs=await heroInputs(facts,settings.values);
     const result = await applyShopifyDashboard({ ...getSampleDashboard(settings.values), generatedAt: new Date().toISOString(), sourceHealth }, db, facts, settings.values, sourceHealth, sourceNow(), adInputs, shopifyOptions.clock?.() ?? new Date(), { entry: hqFacts.report, now: hqNow });
@@ -261,6 +266,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     applyMailchimpDashboard(result,mailchimpFacts,settings.values,mailchimpAt);
     result.shopify?.needs.push(...mailchimpBillingNeeds(mailchimpFacts,settings.values,mailchimpAt));
     result.shopify?.needs.push(...gorgiasNeeds(gorgiasFacts,settings.values));
+    result.shopify?.needs.push(...waitingNeeds(waitingView));
     // Radar describes actual ad connections even when Shopify numbers use sample data.
     result.adSources = adSources; result.reviews = reviewRows; result.adSets = adSets; result.creatives = creatives;
     result.banner = result.banner?.replace('reviews and other stages: sample data', `reviews: ${reviews.mode === 'sample' ? 'sample data' : 'live Judge.me'}; Google: ${adInputs.google.mode === 'sample' ? 'sample data' : 'supported tiles use live reads, remaining examples stay labelled sample'}; Mailchimp: ${mailchimp.mode === 'sample' ? 'sample data' : result.widgets.w038?.mode === 'live' ? 'audience uses its own live read; per-flow examples remain labelled sample' : 'audience total pending or unavailable; examples remain labelled sample'}; other stages: sample data`);
@@ -321,7 +327,9 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     return result;
   }
   const events = registerDashboardEvents(app,auth,snapshot,{onPublish: () => {void snapshotCache.invalidate();}});
-  const publishObservations = () => { void events.publish().catch(() => console.warn('Dashboard notification failed.')); };
+  const publishObservations = () => { void events.publish().catch(() => {
+    try { console.warn('Dashboard notification failed.'); } catch { /* Diagnostics cannot reject a background notification. */ }
+  }); };
   async function morningInputs(now: Date,timing?: MorningTiming) {
     const {built,dashboard,settings,hqFacts,ticker,coverage} = await loadObservations(now,timing);
     return timed(timing,'project',async () => {
@@ -347,6 +355,12 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     const settings = await readSettings(db,{seed: false});
     return gorgiasSectionHtml(await readGorgiasFacts(db,sourceEnv,settings.values,localNow()),settings.values.gorgiasHandoverWaitHours);
   }});
+  async function waitingView(now: Date) {
+    const settings = await readSettings(db,{seed: false});
+    return readWaitingView(db,hq.mode,now,settings.values.waitingOnDays);
+  }
+  handover.register({id: 'waiting-on', title: 'Waiting on others', load: async () => waitingSectionHtml(await waitingView(localNow()))});
+  registerWaitingOn(app,db,auth,{mode: hq.mode,clock: localNow,loadView: waitingView,publish: () => events.publish()});
   registerFulfilment(app, db, auth, shopify.mode, sourceNow, () => events.publish());
   registerCreatives(app, db, auth, sourceEnv, creativeNow, async (from, to) => {
     const facts = await shopify.store.facts(sourceNow());
@@ -393,6 +407,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
       channelExclusions: await shopify.store.channelExclusions(),
       google: googleHealth(await readGoogleFacts(db,settings.values,sourceEnv,googleAt),googleAt),
       mailchimp: await readMailchimpFacts(db,mailchimp.mode,mailchimpAt),
+      waiting: await readWaitingView(db,hq.mode,localNow(),settings.values.waitingOnDays),
       reviewHealth: reviews.mode === 'live' ? await readReviewHealth(db) : {read:dashboard.reviews!.rows.length,waiting:dashboard.reviews!.rows.length,flagged:dashboard.reviews!.rows.filter(r=>r.flagged).length,last:null,mode:'sample'},
       summary: dashboard.banner ?? '', shopify: dashboard.shopify!, checkedAt: sourceNow().toISOString(), adSets: dashboard.adSets, campaigns: await readCampaignSync(db, settings.values, sourceEnv), creatives: await creativeHealth(db, settings.values, sourceEnv, creativeNow()),
     }));
@@ -436,7 +451,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   // Fixed paths only; the server never exposes repository or environment files.
   const assets = [
     ...['browser.js', 'dashboard.js', 'settings.js', 'fulfilment.js', 'creatives.js', 'adsets.js', 'ticker.js', 'morning.js', 'handover.js'].map(name => [name, 'text/javascript; charset=utf-8'] as const),
-    ...['styles.css', 'dashboard.css', 'settings.css', 'fulfilment.css', 'creatives.css', 'fonts.css', 'pull-refresh.css', 'adsets.css', 'scorecard.css', 'home-compact.css', 'home-panels.css', 'decisions.css', 'ticker.css', 'morning.css', 'handover.css'].map(name => [name, 'text/css; charset=utf-8'] as const),
+    ...['styles.css', 'dashboard.css', 'settings.css', 'fulfilment.css', 'creatives.css', 'fonts.css', 'pull-refresh.css', 'adsets.css', 'scorecard.css', 'home-compact.css', 'home-panels.css', 'decisions.css', 'ticker.css', 'morning.css', 'handover.css', 'waiting-on.css'].map(name => [name, 'text/css; charset=utf-8'] as const),
     ...['logo.png', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'].map(name => [name, 'image/png'] as const),
     ...['outfit', 'plus-jakarta-sans'].flatMap(name => [
       [`fonts/${name}-latin-wght-normal.woff2`, 'font/woff2'] as const,

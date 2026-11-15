@@ -24,7 +24,7 @@ export const morningFacts = (kind: MorningKind, subjectId: string, state: Mornin
   digest([kind, subjectId, state, typeof rules === 'string' ? rules : [...rules].sort()]);
 
 const sourceNames: Record<string, string> = { shopify: 'Shopify', 'j-and-j': 'J&J', meta: 'Meta',
-  'google-ads': 'Google', mailchimp: 'Mailchimp', tiktok: 'TikTok', pulse: 'Pulse', gorgias: 'Gorgias' };
+  'google-ads': 'Google', mailchimp: 'Mailchimp', tiktok: 'TikTok', pulse: 'Pulse', gorgias: 'Gorgias', 'github-hq': 'GitHub HQ' };
 const sourceName = (source: string): string => sourceNames[source] ?? source;
 const readTime = (input: MorningInput, scope: string): string => input.sourceReadAt?.[scope]
   ? `last read ${input.sourceReadAt[scope]}` : 'waiting for a successful read';
@@ -310,7 +310,10 @@ export function morningDeck(input: MorningInput, rows: readonly MorningState[], 
   const cards = offered.filter(card => !omitted.has(card.key));
   const brief = input.brief && check.eligible ? { ...input.brief, moreHere: omitted.size,
     allInDeck: check.totalItemCount > 0 && check.representedItemCount - omitted.size === check.totalItemCount } : input.brief ?? null;
-  const watchOnHome = openCards.filter(card => !morningDeckMember(card) && card.state === 'warn').length;
+  const watches = openCards.filter(card => !morningDeckMember(card) && card.state === 'warn');
+  const watchOnHandover = watches.filter(card => card.kind === 'need' && card.sourceHref === '/handover')
+    .map(card => ({key: card.key, title: card.title, why: card.why, sourceHref: '/handover' as const}));
+  const watchOnHome = watches.length - watchOnHandover.length;
   const fine = input.checks.filter(check => check.status === 'pass').map(check => ({ id: check.id, label: check.name }));
   const clearSets = input.adSets?.rows.filter(row => row.set.owner === 'ours' && row.verdict?.verdict === 'Clear').length ?? 0;
   if (clearSets) fine.push({ id: 'meta-clear', label: `${clearSets} of our ad ${clearSets === 1 ? 'sets is' : 'sets are'} clear` });
@@ -322,6 +325,7 @@ export function morningDeck(input: MorningInput, rows: readonly MorningState[], 
     ...(input.settings.morningSummaryEnabled ? { summaryEnabled: true } : {}),
     ...(group.coverage ? {pauseAll: group.coverage} : {}),
     more: omitted.size, watchOnHome, fine,
+    ...(watchOnHandover.length ? {watchOnHandover} : {}),
     ...(check.datedFromCheck.length ? {datedFromCheck: check.datedFromCheck} : {}),
     parked: active.filter(row => row.state === 'parked' || row.state === 'answered' && row.answer === 'hold').map(away),
     hidden: active.filter(row => row.state === 'hidden').map(away), presses, metaActions, passedDates,

@@ -82,3 +82,5 @@ code { font-size: 0.85rem; }
 .utility-page .skip-link { z-index: 20; }
 .utility-page{background:transparent}
 .utility-page .sample-banner strong{color:var(--ink)}
+
+[data-waiting-read-health] > summary { box-sizing: border-box; min-height: 44px; min-width: 44px; padding-block: 12px; cursor: pointer; }

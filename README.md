@@ -48,6 +48,30 @@ Gorgias stays in sample mode until all three existing keys are present: `GORGIAS
 
 After adding those keys, run `npm run probe:gorgias` once. It makes one tickets-page GET and one views-page GET, printing counts, field names, view IDs/names and pagination shapes, never ticket values. Set `gorgiasHandoverViewId` to the handover view ID it reports; until then the reader filters for `gorgiasHandoverTag` (default `ai_handover`). `gorgiasHandoverWaitHours` defaults to 12. Confirm the ticket link shape in the live account and record the probe result in DECISIONS. Reads have a one-minute budget; a large account may need a configured view to fit. The closed-this-week figure is a labelled observed minimum, because closure history beyond the permitted ticket fields is not retained.
 
+## Waiting on others
+
+Signed-in **Handover → Waiting on others** reads `ops/waiting-on/latest.md` from the configured HQ repository's `main` branch using the existing optional `GITHUB_HQ_TOKEN`. After migration **073**, the existing background worker checks it hourly and reuses ETags. A missing file says **Not set up yet** and does not fail source health. Failed reads retain the last good rows with a source warning. This app does not create or edit the routine or the file.
+
+The file has one heading, one exact UK update label and one table. This example is entirely invented:
+
+```markdown
+# Waiting on others
+Updated: 2037-10-26 09:15 UK
+
+| Contact | Subject | Since |
+| --- | --- | --- |
+| A supplier | Invented proof approval | 2037-10-18 |
+| The freelancer | Invented weekly report | 2037-10-20 |
+```
+
+Contact is at most eighty Unicode characters, subject at most 240, and Since is a real `YYYY-MM-DD` date. The first sixty valid unique rows are retained; malformed, duplicate and capped rows are counted on Handover and Sources without exposing their values. Use `\|` for a literal pipe outside a code span. Inside matching backticks, pipes and their backslashes remain literal. Keep the file to this single declared table; an empty table is valid. The Updated value is a UK wall-clock label, including during the repeated autumn hour.
+
+You can also add a contact or business role, subject and Since directly on Handover, including before HQ is configured. Enter business summaries only: no customer names, email addresses, phone numbers, postal addresses or correspondence text. Obvious personal contact patterns are rejected on both import and manual entry. Manual rows are real local data shared across signed-in devices and remain when the HQ key changes; they are not sample rows. Back up the database to retain them.
+
+**Done** and **Put back** change only Pulse and record a generic audit event. Done lasts thirty UK calendar days. A clean file removing an imported row also clears its Done answer; malformed/capped reads preserve uncertain answers until removal is confirmed or the answer expires. Hand-added rows remain stored and return after the same thirty-day period. Identical repeated additions are idempotent. The form keeps unfinished edits during row updates and blocks pull refresh while a draft is unsaved.
+
+**Settings → Waiting on others → Waiting warning after (UK days)** defaults to seven; a row at or above the threshold contributes to one Watch need linking to Handover. Morning's existing Watch control exposes that need in its sheet. Home reaches Handover through the existing account-menu entry; it gains no new section or top-bar pill.
+
 ## Install and run locally
 
 Prerequisites: Node 24 (`.nvmrc`), npm and PostgreSQL 17. Install the pinned dependencies from the repository root:

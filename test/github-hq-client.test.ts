@@ -8,13 +8,13 @@ const register: HQTarget = {kind: 'register'};
 const token = () => randomBytes(24).toString('hex');
 const quiet = {log: () => {}};
 
-test('HQ client builds only its typed month/register paths and sends raw GET headers with stored ETag', async () => {
+test('HQ client builds only its typed month/register/waiting paths and sends raw GET headers with stored ETag', async () => {
   const secret = token(), calls: {url: URL; init: RequestInit}[] = [];
   const client = new HQClient(` \n${secret}\r\n\t`, {...quiet, fetch: async (input, init) => {
     calls.push({url: new URL(String(input)), init: init!});
     return new Response('invented markdown', {headers: {etag: '"invented-next"'}});
   }});
-  const targets: HQTarget[] = [register, {kind: 'month', month: '2032-04', ref: 'main'}, {kind: 'month', month: '2032-03', ref: 'claude/ads-daily'}];
+  const targets: HQTarget[] = [register, {kind: 'month', month: '2032-04', ref: 'main'}, {kind: 'month', month: '2032-03', ref: 'claude/ads-daily'}, {kind: 'waiting'}];
   for (const target of targets) assert.deepEqual(await client.read(target, {etag: '"invented-previous"'}),
     {status: 'modified', text: 'invented markdown', etag: '"invented-next"'});
   for (const [index, call] of calls.entries()) {
@@ -31,9 +31,11 @@ test('HQ client builds only its typed month/register paths and sends raw GET hea
   const invalid: unknown[] = ['ops/tests/register.md', null, {kind: 'other'}, {kind: 'register', path: '../private'},
     {kind: 'month', month: '../private', ref: 'main'}, {kind: 'month', month: '2032-13', ref: 'main'},
     {kind: 'month', month: '0000-01', ref: 'main'}, {kind: 'month', month: '2032-04', ref: 'other'},
-    {kind: 'month', month: '2032-04', ref: 'main', path: 'other'}];
+    {kind: 'month', month: '2032-04', ref: 'main', path: 'other'}, {kind: 'waiting', ref: 'claude/ads-daily'},
+    {kind: 'waiting', path: 'ops/waiting-on/other.md'}];
   for (const target of invalid) await assert.rejects(client.read(target as HQTarget), (error: unknown) => error instanceof HQReadError && error.code === 'target');
-  assert.equal(calls.length, 3, 'Rejected targets never reach a transport');
+  assert.equal(calls.length, 4, 'Rejected targets never reach a transport');
+  assert.deepEqual(hqTargetInfo({kind: 'waiting'}), {key: 'waiting-on', path: 'ops/waiting-on/latest.md', ref: 'main'});
 });
 
 test('HQ 304 is a success and does not read or parse a body', async () => {

@@ -77,6 +77,9 @@ export interface Settings {
   googleContactName: string;
   mailchimpPlanLimit: number | null;
   mailchimpBillingDay: number | null;
+  gorgiasHandoverViewId: string;
+  gorgiasHandoverTag: string;
+  gorgiasHandoverWaitHours: number;
   blendedMetaTripwireGbp: number;
   creatorRules: {
     assetCapGbp: number;
@@ -175,6 +178,7 @@ export function defaultSettings(): Settings {
     googleContentShareMaxPct: 2, googleContentSpendFloorGbp: 5, googleNoSaleSpendFloorGbp: 25,
     googleBreakEvenReturnUk: 0, googleBreakEvenReturnUs: 0, googleContactName: '',
     mailchimpPlanLimit: null, mailchimpBillingDay: null,
+    gorgiasHandoverViewId: '', gorgiasHandoverTag: 'ai_handover', gorgiasHandoverWaitHours: 12,
     blendedMetaTripwireGbp: 28,
     creatorRules: {
       assetCapGbp: 200, minimumUsageMonths: 3, pushPriceBeforeExtendingUsage: true,
@@ -423,6 +427,21 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
     }, (row) => row.campaignId),
     mailchimpPlanLimit: number(value.mailchimpPlanLimit, 'mailchimpPlanLimit', Number.MAX_SAFE_INTEGER, true, true, 1),
     mailchimpBillingDay: number(value.mailchimpBillingDay, 'mailchimpBillingDay', 31, true, true, 1),
+    gorgiasHandoverViewId: (() => {
+      if (typeof value.gorgiasHandoverViewId !== 'string') return invalid('gorgiasHandoverViewId');
+      const id = value.gorgiasHandoverViewId.trim();
+      return id === '' || /^[1-9]\d{0,24}$/.test(id) ? id : invalid('gorgiasHandoverViewId');
+    })(),
+    gorgiasHandoverTag: (() => {
+      if (typeof value.gorgiasHandoverTag !== 'string') return invalid('gorgiasHandoverTag');
+      const tag = value.gorgiasHandoverTag.trim();
+      return tag.length > 0 && tag.length <= 80 && !/[\u0000-\u001f\u007f]/u.test(tag) ? tag : invalid('gorgiasHandoverTag');
+    })(),
+    gorgiasHandoverWaitHours: (() => {
+      const hours = value.gorgiasHandoverWaitHours;
+      return typeof hours === 'number' && Number.isFinite(hours) && hours >= 1 && hours <= 720
+        ? hours : invalid('gorgiasHandoverWaitHours');
+    })(),
     blendedMetaTripwireGbp: requiredNumber(value.blendedMetaTripwireGbp, 'blendedMetaTripwireGbp', 100_000, false, 0.01),
     creatorRules: {
       assetCapGbp: requiredNumber(rules.assetCapGbp, 'creatorRules.assetCapGbp', 100_000),
@@ -508,6 +527,9 @@ function storedSettings(input: unknown): Settings {
     googleContactName: defaults.googleContactName,
     mailchimpPlanLimit: defaults.mailchimpPlanLimit,
     mailchimpBillingDay: defaults.mailchimpBillingDay,
+    gorgiasHandoverViewId: defaults.gorgiasHandoverViewId,
+    gorgiasHandoverTag: defaults.gorgiasHandoverTag,
+    gorgiasHandoverWaitHours: defaults.gorgiasHandoverWaitHours,
     ...input as Record<string, unknown>,
   };
   if (stored.adRules && typeof stored.adRules === 'object' && !Array.isArray(stored.adRules)

@@ -73,6 +73,9 @@ import {SnapshotCache} from './snapshot-cache.js';
 import {changedSourceScopes,fenceDashboardScopes,overlayAdSetControls} from './morning/control-overlay.js';
 import {timed,type MorningTiming} from './morning/timing.js';
 
+import {HandoverSections} from './handover/sections.js';
+import {registerHandover} from './handover/routes.js';
+
 declare module 'fastify' {
   interface FastifyInstance { startBackgroundWork(): Promise<void> }
 }
@@ -330,6 +333,8 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   registerAdSets(app, db, auth, sourceEnv, creativeNow, adOptions, async () => publishObservations());
   registerReviewRoutes(app, db, auth, publishObservations);
   registerScorecard(app, db, auth, shopify.store, sourceEnv, () => shopifyOptions.clock?.() ?? new Date());
+  const handover = new HandoverSections();
+  registerHandover(app,auth,handover);
   registerFulfilment(app, db, auth, shopify.mode, sourceNow, () => events.publish());
   registerCreatives(app, db, auth, sourceEnv, creativeNow, async (from, to) => {
     const facts = await shopify.store.facts(sourceNow());
@@ -418,8 +423,8 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   });
   // Fixed paths only; the server never exposes repository or environment files.
   const assets = [
-    ...['browser.js', 'dashboard.js', 'settings.js', 'fulfilment.js', 'creatives.js', 'adsets.js', 'ticker.js', 'morning.js'].map(name => [name, 'text/javascript; charset=utf-8'] as const),
-    ...['styles.css', 'dashboard.css', 'settings.css', 'fulfilment.css', 'creatives.css', 'fonts.css', 'pull-refresh.css', 'adsets.css', 'scorecard.css', 'home-compact.css', 'home-panels.css', 'decisions.css', 'ticker.css', 'morning.css'].map(name => [name, 'text/css; charset=utf-8'] as const),
+    ...['browser.js', 'dashboard.js', 'settings.js', 'fulfilment.js', 'creatives.js', 'adsets.js', 'ticker.js', 'morning.js', 'handover.js'].map(name => [name, 'text/javascript; charset=utf-8'] as const),
+    ...['styles.css', 'dashboard.css', 'settings.css', 'fulfilment.css', 'creatives.css', 'fonts.css', 'pull-refresh.css', 'adsets.css', 'scorecard.css', 'home-compact.css', 'home-panels.css', 'decisions.css', 'ticker.css', 'morning.css', 'handover.css'].map(name => [name, 'text/css; charset=utf-8'] as const),
     ...['logo.png', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'].map(name => [name, 'image/png'] as const),
     ...['outfit', 'plus-jakarta-sans'].flatMap(name => [
       [`fonts/${name}-latin-wght-normal.woff2`, 'font/woff2'] as const,

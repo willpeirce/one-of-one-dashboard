@@ -1,0 +1,24 @@
+{
+  "data": [
+    {
+      "id": 85001,
+      "name": "Invented handover",
+      "type": "ticket-list",
+      "category": "user",
+      "created_datetime": "2032-04-01T09:00:00.000000"
+    },
+    {
+      "id": 85002,
+      "name": "Invented follow-ups",
+      "type": "ticket-list",
+      "category": "user",
+      "created_datetime": "2032-04-01T10:00:00.000000"
+    }
+  ],
+  "object": "list",
+  "uri": "/api/views",
+  "meta": {
+    "prev_cursor": null,
+    "next_cursor": null
+  }
+}

@@ -54,7 +54,7 @@ export function curateMorningSample(input: MorningInput, now: Date): MorningInpu
     .filter((card): card is NonNullable<typeof card> => !!card);
   const kinds = new Set(input.extensions?.map(card => card.kind) ?? []);
   const extras = sampleExtras(now).filter(card => !kinds.has(card.kind));
-  return addMorningGoogle({ ...input, needs: [sampleGoogle], checks: input.checks.filter(check => check.status === 'pass'),
+  return addMorningGoogle({ ...input, needs: [sampleGoogle, ...input.needs.filter(need => need.sourceMode !== undefined)], checks: input.checks.filter(check => check.status === 'pass'),
     adSets: input.adSets ? { ...input.adSets, mode: 'sample', actionsEnabled: false,
       rows: input.adSets.rows.filter(row => row.verdict?.verdict === 'Kill').slice(0, 1) } : undefined,
     creativeCards, activity: [],

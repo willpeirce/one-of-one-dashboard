@@ -1,0 +1,142 @@
+{
+  "data": [
+    {
+      "id": 81001,
+      "status": "open",
+      "channel": "email",
+      "via": "email",
+      "subject": "A slab arrived scratched",
+      "customer": {
+        "id": 82001,
+        "firstname": "Edda",
+        "lastname": "Mallow",
+        "name": "Edda Mallow",
+        "email": "edda@invented.example",
+        "integrations": {}
+      },
+      "tags": [
+        {
+          "id": 83001,
+          "name": "ai_handover"
+        }
+      ],
+      "messages": [
+        {
+          "id": 84001,
+          "body_text": "Invented private body; never stored or displayed.",
+          "body_html": "<p>Invented private body.</p>",
+          "from_agent": false
+        }
+      ],
+      "created_datetime": "2032-04-05T09:00:00.000000",
+      "updated_datetime": "2032-04-05T10:00:00.000000",
+      "last_received_message_datetime": "2032-04-05T10:00:00.000000",
+      "closed_datetime": null
+    },
+    {
+      "id": 81002,
+      "status": "open",
+      "channel": "chat",
+      "via": "chat",
+      "subject": "A marker has dried out",
+      "customer": {
+        "id": 82002,
+        "firstname": "Nilo",
+        "lastname": "Rusk",
+        "name": "Nilo Rusk",
+        "email": "nilo@invented.example",
+        "integrations": {}
+      },
+      "tags": [
+        {
+          "id": 83001,
+          "name": "ai_handover"
+        }
+      ],
+      "messages": [
+        {
+          "id": 84002,
+          "body_text": "Invented private body; never stored or displayed.",
+          "body_html": "<p>Invented private body.</p>",
+          "from_agent": false
+        }
+      ],
+      "created_datetime": "2032-04-06T08:00:00.000000",
+      "updated_datetime": "2032-04-06T11:00:00.000000",
+      "last_received_message_datetime": "2032-04-06T11:00:00.000000",
+      "closed_datetime": null
+    },
+    {
+      "id": 81003,
+      "status": "open",
+      "channel": "email",
+      "via": "email",
+      "subject": "A parcel has not arrived",
+      "customer": {
+        "id": 82003,
+        "firstname": "Tavi",
+        "lastname": "Sorrel",
+        "name": "Tavi Sorrel",
+        "email": "tavi@invented.example",
+        "integrations": {}
+      },
+      "tags": [
+        {
+          "id": 83001,
+          "name": "ai_handover"
+        }
+      ],
+      "messages": [
+        {
+          "id": 84003,
+          "body_text": "Invented private body; never stored or displayed.",
+          "body_html": "<p>Invented private body.</p>",
+          "from_agent": false
+        }
+      ],
+      "created_datetime": "2032-04-06T12:00:00.000000",
+      "updated_datetime": "2032-04-07T04:00:00.000000",
+      "last_received_message_datetime": "2032-04-07T04:00:00.000000",
+      "closed_datetime": null
+    },
+    {
+      "id": 81004,
+      "status": "open",
+      "channel": "instagram-direct-message",
+      "via": "instagram-direct-message",
+      "subject": "The QR code will not register",
+      "customer": {
+        "id": 82004,
+        "firstname": "Oren",
+        "lastname": "Dapple",
+        "name": "Oren Dapple",
+        "email": "oren@invented.example",
+        "integrations": {}
+      },
+      "tags": [
+        {
+          "id": 83001,
+          "name": "ai_handover"
+        }
+      ],
+      "messages": [
+        {
+          "id": 84004,
+          "body_text": "Invented private body; never stored or displayed.",
+          "body_html": "<p>Invented private body.</p>",
+          "from_agent": false
+        }
+      ],
+      "created_datetime": "2032-04-07T08:00:00.000000",
+      "updated_datetime": "2032-04-07T10:00:00.000000",
+      "last_received_message_datetime": "2032-04-07T10:00:00.000000",
+      "closed_datetime": null
+    }
+  ],
+  "object": "list",
+  "uri": "/api/tickets",
+  "meta": {
+    "prev_cursor": null,
+    "next_cursor": null
+  }
+}

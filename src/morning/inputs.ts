@@ -32,7 +32,7 @@ export function morningInputFromDashboard(dashboard: DashboardSnapshot, settings
     'needs:j-and-j': true,
     'needs:pulse': [...health.values()].filter(row => row.mode === 'live').every(row => row.status === 'healthy'),
   };
-  for (const source of ['shopify', 'meta', 'google-ads', 'mailchimp', 'tiktok']) sourceReadOk[`needs:${source}`] = healthy(source);
+  for (const source of ['shopify', 'meta', 'google-ads', 'mailchimp', 'tiktok', 'gorgias']) sourceReadOk[`needs:${source}`] = healthy(source);
   sourceReadOk['needs:meta'] = healthy('meta') && healthy('shopify') && !!sourceReadOk.adsets && !!sourceReadOk.activity;
   sourceReadOk['needs:google-ads'] = sourceReadOk.google!;
   const sourceReadAt: Record<string, string | null> = Object.fromEntries([...health.values()].map(row =>

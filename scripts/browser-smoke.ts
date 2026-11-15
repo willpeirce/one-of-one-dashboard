@@ -2,6 +2,7 @@ import { checkMetaAttribution } from './browser-meta-attribution.js';
 import { checkHourly } from './browser-hourly.js';
 import {checkAdSets} from './browser-adsets.js';
 import { checkScorecard } from './browser-scorecard.js';
+import { checkHandoverBase } from './browser-handover-base.js';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import type { AuthenticationResponseJSON } from '@simplewebauthn/server';
@@ -1812,6 +1813,8 @@ async function run(): Promise<void> {
     }
     step = 'check monthly scorecard, source labels and market controls at phone and desktop widths';
     await checkScorecard(context);
+    step = 'check the signed-in Handover shell at phone and desktop widths';
+    await checkHandoverBase(context);
     step = 'check shared Next up strip, local persistence and accessible modal at phone and desktop widths';
     await checkTicker(context);
 

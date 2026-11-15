@@ -4,6 +4,7 @@ Updated in every pull request.
 
 | Stage | What | Code | Keys in Replit | Live check ("Done when") |
 |---|---|---|---|---|
+| Large build 3 · A | Header and narrow-screen carry fixes, incomplete-life fallback, pending-pause expiry, reversible unmeasured-test hiding, register retention and push cleanup | built on `large-build-3`; parser version 4; no migration or Settings change | none | Check installed-phone layout and deliberate retry after an unconfirmed action; no automatic retry is added |
 | Morning decisions · A | Decisions-first deck, uncapped progress, compact Good/Watch controls and matching push summary | built on `morning-decisions`; no migration or Settings change | none | phone layout and live ordering after deployment |
 | Morning decisions · B | One more day, three/seven-day holds and lifetime flat-budget cost judgement | built on `morning-decisions`; nested `adRules.flatJudgeGbp` default; no migration | none | flat test thresholds and hold controls after deployment |
 | Morning decisions · C | One confirmed sequence for failing owned ad sets, individual audit/Undo and fresh eligibility checks | built on `morning-decisions`; no migration or Settings change | none | confirm live guards and last-active market flag after deployment |

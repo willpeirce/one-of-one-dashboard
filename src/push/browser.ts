@@ -58,7 +58,7 @@ function removalOwed(): boolean {
 function markRemoval(owed: boolean): void {
   // One boolean only: never persist an endpoint, keys or credential in browser storage.
   try { if (owed) localStorage.setItem(REMOVAL_OWED, '1'); else localStorage.removeItem(REMOVAL_OWED); } catch { /* Fall back to the same boolean cookie. */ }
-  try { document.cookie = `${REMOVAL_OWED}=${owed ? '1' : ''}; Path=/; SameSite=Strict; Max-Age=${owed ? 34_560_000 : 0}`; } catch { /* Storage availability cannot block sign-out. */ }
+  try { document.cookie = `${REMOVAL_OWED}=${owed ? '1' : ''}; Path=/; SameSite=Strict; Secure; Max-Age=${owed ? 34_560_000 : 0}`; } catch { /* Storage availability cannot block sign-out. */ }
 }
 async function bounded<T>(work: () => Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -101,10 +101,10 @@ export function initializePushDevice(): void {
   const element = <T extends HTMLElement = HTMLElement>(id: string): T => root.querySelector(`#${id}`) as T;
   const on = element<HTMLButtonElement>('push-turn-on'), off = element<HTMLButtonElement>('push-turn-off'), test = element<HTMLButtonElement>('push-send-test');
   const status = element('push-device-status'), help = element('push-device-help'), message = element('push-device-message');
-  let subscription: PushSubscription | null = null, busy = false, retrySetup = false;
+  let subscription: PushSubscription | null = null, busy = false, retrySetup = false, turnOffFailed = false;
   function render(): void {
     const available = supported(), denied = available && Notification.permission === 'denied';
-    status.textContent = !available ? 'Notifications are unavailable here.' : denied ? 'Notifications are blocked.' : subscription ? retrySetup ? 'Notifications need setup.' : 'Notifications are on.' : 'Notifications are off.';
+    status.textContent = !available ? 'Notifications are unavailable here.' : denied ? 'Notifications are blocked.' : turnOffFailed ? 'Notifications may still be on.' : subscription ? retrySetup ? 'Notifications need setup.' : 'Notifications are on.' : 'Notifications are off.';
     help.textContent = !available ? 'Add Pulse to the home screen and open it from there to use notifications.'
       : denied ? 'Allow notifications for Pulse in your device or browser settings, then return here.' : '';
     on.hidden = !available || denied || !!subscription && !retrySetup;
@@ -118,7 +118,7 @@ export function initializePushDevice(): void {
     try { await finishPendingPushRemoval();
       subscription = await (await worker()).pushManager.getSubscription();
       await repairOnce(subscription);
-      retrySetup = false; render(); }
+      retrySetup = false; turnOffFailed = false; render(); }
     catch { retrySetup = true; render(); announce('Could not check this device. Try turning notifications on again.'); }
   }
   on.addEventListener('click', () => {
@@ -127,7 +127,7 @@ export function initializePushDevice(): void {
     let permission: Promise<NotificationPermission>;
     try { permission = Notification.permission === 'granted' ? Promise.resolve('granted') : Notification.requestPermission(); }
     catch { announce('Could not ask for notification permission. Try again.'); return; }
-    busy = true; announce(''); render();
+    busy = true; turnOffFailed = false; announce(''); render();
     void (async () => {
       let created: PushSubscription | null = null;
       try {
@@ -158,8 +158,8 @@ export function initializePushDevice(): void {
         await request('/api/push/unsubscribe', { endpoint: subscription!.endpoint });
         await subscription!.unsubscribe(); subscription = await (await worker()).pushManager.getSubscription();
         if (subscription) throw new Error('The browser kept the subscription');
-        retrySetup = false; announce('Notifications are off.');
-      } catch { retrySetup = true; announce('Could not finish turning notifications off. Try again.'); }
+        retrySetup = false; turnOffFailed = false; announce('Notifications are off.');
+      } catch { retrySetup = true; turnOffFailed = true; announce('Could not finish turning notifications off. Try again.'); }
       finally { busy = false; render(); (subscription ? off : on).focus(); }
     })();
   });

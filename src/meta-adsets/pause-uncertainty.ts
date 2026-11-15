@@ -3,8 +3,9 @@ import { AdError } from '../ad-spend/model.js';
 export type PauseUncertaintyPhase = 'waiting' | 'active' | 'paused' | 'expired';
 export interface PauseUncertainty { phase: PauseUncertaintyPhase; finishedAt: string; code: string }
 export const PAUSE_UNCERTAINTY_PREFIX = 'pause-uncertain-v1|';
-export const PAUSE_UNCONFIRMED_MESSAGE = 'Last action unconfirmed: check the set in Ads Manager';
 export const PAUSE_WAITING_MESSAGE = 'Pause result is uncertain. Waiting for the next Meta read; no retry was sent.';
+export const PAUSE_UNCONFIRMED_MESSAGE = 'Last action unconfirmed: check the set in Ads Manager';
+export const PAUSE_PENDING_MS = 15 * 60_000;
 
 /** A missing acknowledgement is not evidence that Meta rejected the write. */
 export function pauseMayHaveApplied(error: unknown): boolean {

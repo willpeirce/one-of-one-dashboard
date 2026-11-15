@@ -7,10 +7,19 @@ import {MetaSpend} from '../ad-spend/clients.js';
 import {adErrorCode} from '../ad-spend/model.js';
 import {MetaActionsClient} from './actions-client.js';
 import {AD_SET_FIELDS,adSetOwner,parseAdSet,saveAdSets} from './catalogue.js';
-import {PAUSE_UNCERTAINTY_PREFIX,PAUSE_WAITING_MESSAGE,parsePauseUncertainty,pauseMayHaveApplied,pauseUncertaintyCode} from './pause-uncertainty.js';
+import {PAUSE_UNCERTAINTY_PREFIX,PAUSE_WAITING_MESSAGE,PAUSE_PENDING_MS,parsePauseUncertainty,pauseMayHaveApplied,pauseUncertaintyCode} from './pause-uncertainty.js';
 export class AdActionError extends Error {constructor(readonly statusCode:number,readonly publicMessage?:string){super('Ad-set action refused.');}}
 export interface MetaAction {id:string;time:string;adSetId:string;action:'pause'|'resume'|'budget';oldValue:string;newValue:string;result:string;undoneAt:string|null;undoOf:string|null;errorCode:string|null}
+/** Release only old pause reservations; this never changes the last observed set or sends a source call. */
+async function expirePendingPauses(db:Database,now:Date,account?:string,adSetId?:string):Promise<void> {
+ const values:unknown[]=[new Date(now.getTime()-PAUSE_PENDING_MS),pauseUncertaintyCode('expired',now,'pending expired')];
+ const filters=["action='pause'","result='pending'",'time<=$1'];
+ if(account){values.push(account);filters.push(`account_id=$${values.length}`);}
+ if(adSetId){values.push(adSetId);filters.push(`ad_set_id=$${values.length}`);}
+ await db.query(`UPDATE pulse.meta_actions SET result='failed',error_code=$2 WHERE ${filters.join(' AND ')}`,values);
+}
 export async function readMetaActions(db:Database,account?:string,now?:Date):Promise<MetaAction[]> {
+ if(now)await expirePendingPauses(db,now,account);
  const values:unknown[]=account?[account]:[];
  if(now)values.push(ukToday(now));
  // Morning needs every answer today; Audit keeps its existing recent history window.
@@ -38,6 +47,7 @@ export async function actOnAdSet(db:Database,id:string,input:unknown,who:string,
   const set=(await tx.query<any>('SELECT * FROM pulse.meta_ad_sets WHERE account_id=$1 AND ad_set_id=$2 FOR UPDATE',[account,id])).rows[0];
   if(!set||adSetOwner(set.campaign_id,settings)!=='ours')throw new AdActionError(403);
   if(set.currency!=='GBP')throw new AdActionError(400);
+  await expirePendingPauses(tx,now,account,id);
   const pending=(await tx.query<{error_code:string|null}>("SELECT error_code FROM pulse.meta_actions WHERE account_id=$1 AND ad_set_id=$2 AND result='pending'",[account,id])).rows[0];
   if(pending)throw new AdActionError(409,parsePauseUncertainty(pending.error_code)?.phase==='waiting'?PAUSE_WAITING_MESSAGE:undefined);
   let action=body.action as 'pause'|'resume'|'budget',undo:any=null;

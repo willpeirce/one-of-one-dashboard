@@ -7,7 +7,7 @@ import { decisionRows } from '../meta-adsets/decision-rows.js';
 import { activityObjectType } from '../meta-adsets/activity.js';
 import { morningPauseAll } from './pause-all.js';
 import { morningCheckItems } from './check-items.js';
-import {parsePauseUncertainty,pauseNeedsReview,pauseUncertaintyNote} from '../meta-adsets/pause-uncertainty.js';
+import {pauseNeedsReview,pauseUncertaintyNote} from '../meta-adsets/pause-uncertainty.js';
 import type { AdSetRow } from '../meta-adsets/presentation.js';
 import type { DashboardNeed } from '../shopify/dashboard.js';
 import type { MorningAction, MorningAway, MorningButton, MorningCard, MorningFigure, MorningInput,
@@ -83,8 +83,7 @@ function adCard(row: AdSetRow, input: MorningInput, order: number, today: string
   const state = kind === 'meta-watch' ? 'warn' : 'decide';
   const ruleId = verdict.reasons.find(reason => reason.verdict === word)?.rule ?? word;
   const uncertain = input.metaActions.find(action => action.adSetId === row.set.id
-    && (action.result === 'pending' && parsePauseUncertainty(action.errorCode)?.phase === 'waiting'
-      || action.result === 'failed' && pauseNeedsReview(action.errorCode))
+    && (action.result === 'pending' || action.result === 'failed' && pauseNeedsReview(action.errorCode))
     && !input.metaActions.some(later => later.adSetId === action.adSetId && later.result === 'success' && later.time >= action.time));
   const waiting = uncertain?.result === 'pending';
   const view = input.adSets!, actions = view.mode === 'live' && view.actionsEnabled && row.set.owner === 'ours' && !waiting;
@@ -212,6 +211,8 @@ function stateApplies(row: MorningState, card: MorningCard | undefined, input: M
   if (row.state === 'answered') return !input.sourceReadOk[row.sourceScope] || !!input.liveTestIds?.includes(row.subjectId);
   if (row.state === 'seen') return true;
   if (card) return row.factsHash === card.factsHash;
+  // A removed date must also remove its old reminder, once the ticker read is trusted.
+  if (row.kind === 'date' && input.sourceReadOk[row.sourceScope]) return false;
   if (row.state === 'parked') return true;
   if (row.kind === 'need' && input.checks.some(check => check.id === row.subjectId && check.status === 'unknown')) return true;
   return !input.sourceReadOk[row.sourceScope];

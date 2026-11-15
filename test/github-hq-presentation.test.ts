@@ -163,7 +163,7 @@ test('an unmeasured draw is a worded Watch left on Home; measured draw offers re
   assert.deepEqual(unmeasured.snapshot.cards, [], 'A test with no stored reading is not a deck decision');
   assert.equal(unmeasured.snapshot.total, 0); assert.equal(unmeasured.snapshot.watchOnHome, 1, 'Morning points to it as a Watch on Home');
   assert.ok(unmeasured.openCards.some(item => item.key === card.key), 'The candidate stays open so Home can still offer the call');
-  assert.ok(card.allowedPresses.includes('hide')); assert.equal(card.menu[0]!.label, 'Stop showing this');
+  assert.ok(card.allowedPresses.includes('hide')); assert.equal(card.menu[0]!.label, 'Hide until it has a reading');
   const home = homeTestsFromHq(source, [], now).rows[0]!;
   assert.equal(home.call?.label, 'Call a draw'); assert.equal(home.model!.presentation!.state, 'warn'); assert.equal(home.model!.presentation!.chipText, '△ Watch');
   row.cells[2] = '';
@@ -179,6 +179,30 @@ test('an unmeasured draw is a worded Watch left on Home; measured draw offers re
   assert.equal(homeTestsFromHq(source, [], now).rows[0]!.model!.presentation!.state, 'decide');
   const brief = addMorningHq(input(), {...source, registerSkippedRows: 2, registerCappedRows: 3}, now).brief!;
   assert.match(morningBriefHtml(brief), /2 malformed rows skipped · 3 rows beyond the section cap/);
+});
+
+test('an unmeasured draw can hide on Home with Put back and returns on its first stored reading', () => {
+  const source = facts(), row = live(); row.cells[5] = '2032-03-23'; row.cells[8] = 'No reading yet'; source.tests = [row];
+  const data = addMorningHq(input(), source, now), hidden = state(data, {state: 'hidden', answer: null});
+  const before = homeTestsFromHq(source, [], now), beforeRow = before.rows[0]!;
+  assert.deepEqual(beforeRow.hideUntilReading, {cardKey: hidden.cardKey, hidden: false});
+  assert.match(homeTestSheetHtml(beforeRow, before.href), /Hide until it has a reading/);
+  assert.doesNotMatch(homeTestsHtml(before), /data-hq-test-hide/, 'The extra action stays in the sheet, within Home control budgets');
+  const away = homeTestsFromHq(source, [hidden], now), html = homeTestsHtml(away);
+  assert.equal(away.rows[0]!.hideUntilReading?.hidden, true);
+  assert.doesNotMatch(html, /class="tcard"/); assert.match(html, /data-hq-hidden-tests/);
+  assert.match(html, /data-hq-test-put-back="T1"/); assert.match(html, /i Hidden until a reading · 1/);
+  assert.equal(morningDeck(data, [hidden], now).snapshot.watchOnHome, 0);
+  assert.equal(homeTestsFromHq(source, [], now).rows[0]!.hideUntilReading?.hidden, false, 'Removing the saved answer puts it back');
+  row.cells[8] = 'Still no stored reading';
+  assert.equal(homeTestsFromHq(source, [hidden], now).rows[0]!.hideUntilReading?.hidden, true, 'Changing ordinary status text does not clear the hide');
+  row.cells[8] = 'Reading 2032-04-20: A 12% n=4; B 17% n=3; ahead none; sure 60%; mornings 1';
+  const measured = homeTestsFromHq(source, [hidden], now);
+  assert.equal(measured.rows[0]!.hideUntilReading, undefined); assert.ok(measured.rows[0]!.call);
+  assert.match(homeTestsHtml(measured), /class="tcard"/);
+  const result = morningDeck(addMorningHq(input(), source, now), [hidden], now);
+  assert.ok(result.clearKeys.includes(hidden.cardKey)); assert.equal(result.snapshot.cards[0]!.state, 'decide');
+  assert.doesNotMatch(homeTestSheetHtml(measured.rows[0]!, measured.href), /Hide until it has a reading/);
 });
 
 

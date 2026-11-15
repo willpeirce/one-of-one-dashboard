@@ -8,11 +8,11 @@ import {MetaActionsClient} from '../src/meta-adsets/actions-client.js';
 import {readMetaActions} from '../src/meta-adsets/actions.js';
 import {parseAdSet,readAdSets,saveAdSets} from '../src/meta-adsets/catalogue.js';
 import {readSettings,saveSettings} from '../src/settings.js';
-import {adSetCards,adSetTable} from '../src/meta-adsets/view.js';
+import {adSetCards,adSetTable,adSetSheet,actionForm} from '../src/meta-adsets/view.js';
 import {sampleAdSetsView} from '../src/meta-adsets/presentation.js';
 import {createTestDatabase} from './helpers/database.js';
 import {AdError} from '../src/ad-spend/model.js';
-import {parsePauseUncertainty,pauseMayHaveApplied,pauseUncertaintyCode} from '../src/meta-adsets/pause-uncertainty.js';
+import {parsePauseUncertainty,pauseMayHaveApplied,pauseUncertaintyCode,PAUSE_UNCONFIRMED_MESSAGE} from '../src/meta-adsets/pause-uncertainty.js';
 import {auditPage} from '../src/views.js';
 test('Act endpoint enforces flag, ownership, cap, audit and 24-hour undo; token stays out of every log and response',async t=>{
  const db=await createTestDatabase();t.after(()=>db.close());
@@ -224,6 +224,10 @@ test('unresolved pauses stay visible beyond the recent fifty actions and do not 
  assert.ok(actions.some(action=>action.id==='invented-observed-active'));
  assert.equal(actions.some(action=>action.id==='invented-other-account'),false);
  const html=auditPage([],actions);assert.match(html,/Waiting for the next Meta read; the pause result is uncertain/);assert.doesNotMatch(html,/pause-uncertain-v1/);
+ const expired=await readMetaActions(h.db,h.settings.metaAdAccountId,new Date('2032-04-08T08:00:00Z'));
+ assert.equal(expired.length,52,'Expired unconfirmed pauses remain visible beyond the recent fifty rows');
+ assert.equal(parsePauseUncertainty(expired.find(action=>action.id==='invented-waiting')!.errorCode)?.phase,'expired');
+ assert.equal((await h.db.query<{result:string}>("SELECT result FROM pulse.meta_actions WHERE id='invented-other-account'")).rows[0]!.result,'pending');
 });
 
 test('a delayed action refresh preserves a later action on the other mutable field',async t=>{
@@ -259,4 +263,57 @@ test('a delayed action refresh preserves a later action on the other mutable fie
   assert.equal(writes,2);assert.equal(reads,2,'Each existing action keeps only its usual optional read');
   assert.equal((await h.db.query('SELECT * FROM pulse.meta_ad_set_changes')).rowCount,0,'Stale refreshes do not invent an external change');
  });
+});
+
+test('a lost pause expires at fifteen minutes, retains last observed state and offers a deliberate action without retrying',async t=>{
+ let writes=0,reads=0;
+ const h=await concurrentActions(t,async(init,raw)=>{
+  if(init?.method==='POST'){
+   writes++;if(writes===1)throw new Error('Invented lost acknowledgement');
+   raw.status=raw.effective_status=new URLSearchParams(String(init.body)).get('status')!;
+   return Response.json({success:true});
+  }
+  reads++;return Response.json(raw);
+ });
+ assert.equal((await h.post({action:'pause'})).statusCode,502);
+ const before=(await readMetaActions(h.db,h.settings.metaAdAccountId,new Date('2032-04-07T08:14:59.999Z')))[0]!;
+ assert.equal(before.result,'pending');
+ h.setNow('2032-04-07T08:14:59.999Z');
+ assert.equal((await h.post({action:'pause'})).statusCode,409);
+ const expired=(await readMetaActions(h.db,h.settings.metaAdAccountId,new Date('2032-04-07T08:15:00Z')))[0]!;
+ assert.equal(expired.id,before.id);assert.equal(expired.result,'failed');
+ assert.equal(parsePauseUncertainty(expired.errorCode)?.phase,'expired');
+ assert.equal((await h.stored()).status,'ACTIVE');
+ assert.equal(writes,1);assert.equal(reads,0,'Expiry sends no retry or additional read');
+ const view=sampleAdSetsView(h.settings),row=view.rows[0]!;
+ view.actions=[{...expired,adSetId:row.set.id}];view.mode='live';view.actionsEnabled=true;
+ for(const html of [auditPage([], [expired]),adSetTable(view),adSetSheet(row,view),actionForm(row,view)])
+  assert.ok(html.includes(PAUSE_UNCONFIRMED_MESSAGE));
+ assert.match(adSetSheet(row,view),/data-adset-act/);
+ assert.equal((await readMetaActions(h.db,h.settings.metaAdAccountId,new Date('2032-04-07T08:20:00Z')))[0]!.errorCode,expired.errorCode,
+  'Re-reading does not refresh or replace the expiry receipt');
+ h.setNow('2032-04-07T08:20:00Z');
+ assert.equal((await h.post({action:'pause'})).statusCode,200);
+ assert.equal(writes,2,'Only a fresh confirmed user request sends another pause');
+});
+
+test('expiry is account-scoped, releases a crashed pause before the next action and leaves other pending action kinds guarded',async t=>{
+ let writes=0;
+ const h=await concurrentActions(t,async(init,raw)=>{
+  if(init?.method==='POST'){writes++;raw.status=raw.effective_status=new URLSearchParams(String(init.body)).get('status')!;return Response.json({success:true});}
+  return Response.json(raw);
+ });
+ for(const [id,account,action,setId] of [
+  ['invented-crashed-pause',h.settings.metaAdAccountId,'pause',h.raw.id],
+  ['invented-other-account','120000000000029001','pause',h.raw.id],
+  ['invented-pending-budget',h.settings.metaAdAccountId,'budget','120000000000029002'],
+ ] as const)await h.db.query(`INSERT INTO pulse.meta_actions(id,time,account_id,ad_set_id,action,old_value,new_value,who,result)
+  VALUES($1,'2032-04-07T08:00:00Z',$2,$3,$4,'ACTIVE','PAUSED','invented-device','pending')`,[id,account,setId,action]);
+ h.setNow('2032-04-07T08:15:00Z');
+ assert.equal((await h.post({action:'pause'})).statusCode,200);
+ const rows=(await h.db.query<{id:string;result:string}>('SELECT id,result FROM pulse.meta_actions')).rows;
+ assert.equal(rows.find(row=>row.id==='invented-crashed-pause')!.result,'failed');
+ assert.equal(rows.find(row=>row.id==='invented-other-account')!.result,'pending');
+ assert.equal(rows.find(row=>row.id==='invented-pending-budget')!.result,'pending');
+ assert.equal(writes,1);
 });

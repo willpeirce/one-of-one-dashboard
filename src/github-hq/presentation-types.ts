@@ -6,6 +6,7 @@ export interface HomeTestRow {
   id: string; section: HQTestSection; title: string; lane: string; cells: string[]; status: string;
   model: TestModel | null; reading: HQReading | null; call: HomeTestCall | null;
   called: { cardKey: string; answer: 'a' | 'b' | 'draw' } | null; parkedUntil: string | null;
+  hideUntilReading?: { cardKey: string; hidden: boolean };
 }
 export interface HomeTests {
   mode: 'live'; readAt: string | null; readOk: boolean; rows: HomeTestRow[]; href: string;

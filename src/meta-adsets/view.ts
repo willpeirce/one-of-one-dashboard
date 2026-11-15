@@ -4,7 +4,7 @@ import {formatNumber,formatPounds} from '../money.js';
 import type {AdSetsView,AdSetRow} from './presentation.js';
 import {decisionRows} from './decision-rows.js';
 import {addDays} from '../hero-range.js';
-import {parsePauseUncertainty,pauseUncertaintyNote} from './pause-uncertainty.js';
+import {pauseNeedsReview,pauseUncertaintyNote} from './pause-uncertainty.js';
 const money=(n:number|null)=>n===null?'Unknown':formatPounds(n);
 const count=(n:number|null)=>n===null?'Unknown':formatNumber(n);
 export const actButton=(row:AdSetRow,view:AdSetsView)=>view.actionsEnabled&&row.set.owner==='ours'?`<button class="btn" data-adset-act="${e(row.set.id)}">Act</button>`:'';
@@ -55,7 +55,7 @@ export function undoButtons(row:AdSetRow,view:AdSetsView):string {
 }
 function uncertaintyHtml(row:AdSetRow,view?:AdSetsView):string {
  const actions=view?.actions??[];
- const unresolved=actions.find(action=>action.adSetId===row.set.id && action.result==='failed' && parsePauseUncertainty(action.errorCode)?.phase==='expired'
+ const unresolved=actions.find(action=>action.adSetId===row.set.id && action.result==='failed' && pauseNeedsReview(action.errorCode)
    && !actions.some(later=>later.adSetId===row.set.id && later.result==='success' && later.time>=action.time));
  const note=unresolved?pauseUncertaintyNote(unresolved.errorCode):null;
  return note?`<p class="note" data-adset-unconfirmed>${e(note)}</p>`:'';

@@ -26,6 +26,7 @@ function setup(root: HTMLElement): void {
   let confirmation: Command | null = null, sheet: SheetKind | null = null, sheetCard: MorningCard | null = null;
   let opener: HTMLElement | null = null, expanded = false;
   const windows = new Map<string, MorningWindow>();
+  const cardErrors = new Map<string, string>();
   const initial = get<HTMLTemplateElement>('#mn-initial');
   try { snapshot = JSON.parse(initial.content.textContent ?? '') as MorningSnapshot; initial.remove(); root.dataset.mnReady = 'true'; }
   catch { get<HTMLElement>('#mn-read-status').textContent = 'ⓘ Could not read Morning. Refresh to try again.'; return; }
@@ -38,6 +39,8 @@ function setup(root: HTMLElement): void {
     stage.setAttribute('aria-busy', String(value));
   }
   function render(error?: string): void {
+    if (error && current()) cardErrors.set(current()!.key, error);
+    error = current() ? cardErrors.get(current()!.key) : error;
     stage.innerHTML = morningDeckHtml(snapshot, {window: selectedWindow(), ...(confirmation ? {confirm: 'confirm' in confirmation.button ? confirmation.button.confirm : undefined} : {}), error});
     get<HTMLElement>('#mn-progress').innerHTML = morningProgressHtml(snapshot);
     get<HTMLElement>('#mn-day').textContent = `${morningDay(snapshot.day)}${snapshot.mode === 'sample' ? ' · Sample data' : ''}`;
@@ -110,6 +113,8 @@ function setup(root: HTMLElement): void {
     if (dialog.open && sheet === 'confirm') dialog.close();
     ++revision; setBusy(true);
     const button = command.button;
+    const pressedTitle = snapshot.cards.find(card => card.key === command.cardKey)?.title ?? 'Saved action';
+    cardErrors.delete(command.cardKey);
     if (button.kind === 'undo-pauses' || button.kind === 'live' && button.action === 'undo') hideToast();
     try {
       let next: MorningSnapshot | null = null, reverse: Undo | null = null, message = 'Saved', stamp = 'Saved', failed = false;
@@ -161,8 +166,10 @@ function setup(root: HTMLElement): void {
         catch { get<HTMLElement>('#mn-read-status').textContent = 'ⓘ Could not refresh Morning. Check the saved actions before trying again.'; }
       }
       const message = error instanceof Error ? error.message : 'Could not save. Try again.';
-      confirmation = null; render(message);
-      if (!current()) get<HTMLElement>('#mn-read-status').textContent = `✕ ${message}`;
+      confirmation = null;
+      cardErrors.set(command.cardKey, message);
+      render();
+      if (current()?.key !== command.cardKey) get<HTMLElement>('#mn-read-status').textContent = `✕ ${pressedTitle}: ${message}`;
       if (dialog.open) sheetStatus.textContent = message;
     } finally { setBusy(false); if (dialog.open) close.focus({preventScroll: true}); else focusCard(); }
   }

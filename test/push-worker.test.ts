@@ -13,17 +13,21 @@ test('notification paths stay inside this app after URL normalization, including
   assert.equal(notificationMessage({ title: 'All clear this morning', body: '', path: '/morning' }, origin).body, '');
 });
 
-test('the worker only handles push and clicks and always shows exactly one tagged notification per push', async () => {
+test('the worker claims open windows on activation and always shows exactly one tagged notification per push', async () => {
   const handlers = new Map<string, (event: unknown) => void>(), notices: { title: string; options: unknown }[] = [];
+  let claims = 0;
   const scope = { location: { origin }, addEventListener: (type: string, listener: (event: unknown) => void) => handlers.set(type, listener),
     registration: { showNotification: async (title: string, options: unknown) => { notices.push({ title, options }); } },
-    clients: { matchAll: async () => [], openWindow: async () => {} } } as unknown as PushWorkerScope;
+    clients: { claim: async () => { claims++; }, matchAll: async () => [], openWindow: async () => {} } } as unknown as PushWorkerScope;
   installPushWorker(scope);
-  assert.deepEqual([...handlers.keys()], ['push', 'notificationclick']);
+  assert.deepEqual([...handlers.keys()], ['activate', 'push', 'notificationclick']);
   const jobs: Promise<unknown>[] = [];
+  assert.equal(claims, 0);
+  handlers.get('activate')!({waitUntil: (job: Promise<unknown>) => jobs.push(job)});
   for (const data of [{ json: () => ({ title: 'Needs you: 1 item', body: '1. Invented check', path: '/morning' }) }, null,
     { json() { throw new Error('Invented malformed JSON'); } }]) handlers.get('push')!({ data, waitUntil: (job: Promise<unknown>) => jobs.push(job) });
   await Promise.all(jobs);
+  assert.equal(claims, 1);
   assert.equal(notices.length, 3);
   assert.equal(notices[0]!.title, 'Needs you: 1 item'); assert.equal(notices[1]!.title, 'Morning · Pulse');
   for (const notice of notices) assert.deepEqual((notice.options as { tag: string; data: object }).tag, 'pulse-morning');

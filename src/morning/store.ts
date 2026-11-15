@@ -93,8 +93,10 @@ export async function pressMorning(db: Database, loadInputs: MorningInputLoader,
     } else {
       const card = result.candidates.find(row => row.key === press.cardKey);
       if (!card) throw new MorningPressError(404, 'This card is no longer listed.');
-      // Home offers eligible test calls through the same current candidate guard.
-      const offered = card.kind === 'test-call' && press.action === 'call' ? result.openCards : result.snapshot.cards;
+      // Home also offers hiding an unmeasured test until its first reading changes the candidate.
+      const homeTestPress = card.kind === 'test-call' && (press.action === 'call'
+        || press.action === 'hide' && card.state === 'warn' && card.callAnswer === 'draw' && card.figure.kind === 'plain');
+      const offered = homeTestPress ? result.openCards : result.snapshot.cards;
       if (!card.allowedPresses.includes(press.action) || !offered.some(row => row.key === card.key))
         throw new MorningPressError(409, 'This card does not offer that press.');
       const row = answerState(card, press, credentialId, input.mode, now);

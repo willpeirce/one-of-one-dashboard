@@ -4,10 +4,12 @@ interface WindowClient {
 }
 interface PushEvent { data?: { json(): unknown } | null; waitUntil(work: Promise<unknown>): void }
 interface ClickEvent { notification: { data: unknown; close(): void }; waitUntil(work: Promise<unknown>): void }
+interface ActivateEvent { waitUntil(work: Promise<unknown>): void }
 export interface PushWorkerScope {
   location: { origin: string };
   registration: { showNotification(title: string, options: { body: string; tag?: string; icon: string; data: { path: string } }): Promise<unknown> };
-  clients: { matchAll(options: { type: 'window'; includeUncontrolled: boolean }): Promise<WindowClient[]>; openWindow(url: string): Promise<unknown> };
+  clients: { claim(): Promise<void>; matchAll(options: { type: 'window'; includeUncontrolled: boolean }): Promise<WindowClient[]>; openWindow(url: string): Promise<unknown> };
+  addEventListener(type: 'activate', listener: (event: ActivateEvent) => void): void;
   addEventListener(type: 'push', listener: (event: PushEvent) => void): void;
   addEventListener(type: 'notificationclick', listener: (event: ClickEvent) => void): void;
 }
@@ -32,6 +34,7 @@ export function notificationMessage(value: unknown, origin: string): Notice {
 
 /** No fetch handler, cache, install hook or private data persistence. */
 export function installPushWorker(scope: PushWorkerScope): void {
+  scope.addEventListener('activate', event => { event.waitUntil(scope.clients.claim()); });
   scope.addEventListener('push', event => {
     let data: unknown = null;
     try { data = event.data?.json(); } catch { /* An unreadable push still shows one visible notification. */ }

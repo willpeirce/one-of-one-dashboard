@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createECDH, randomBytes } from 'node:crypto';
+import { createDecipheriv, createECDH, hkdfSync, randomBytes } from 'node:crypto';
 import test from 'node:test';
 import type { Database } from '../src/db.js';
 import { ukToday } from '../src/hero-range.js';
@@ -201,6 +201,31 @@ test('test sends only target that credential and atomically enforce one attempt 
   assert.deepEqual(await service.sendTest('invented-empty'), {status: 'unavailable'});
   for (const secret of [a.endpoint, a.keys.auth, a.keys.p256dh, raw.privateKey, raw.publicKey])
     assert.ok(!JSON.stringify({results, logs}).includes(secret));
+  await service.stop();
+});
+
+test('manual test delivery encrypts kind test and keeps its one-hour TTL in the afternoon', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close()); await prepare(db, false);
+  const receiver = createECDH('prime256v1'); receiver.generateKeys();
+  const keys = {p256dh: receiver.getPublicKey().toString('base64url'), auth: randomBytes(16).toString('base64url')};
+  await db.query('INSERT INTO pulse_private.credentials(id,public_key) VALUES($1,$2)', ['invented-manual', randomBytes(32)]);
+  await savePushSubscription(db, 'invented-manual', {endpoint: 'https://fcm.googleapis.com/invented-manual-test', keys}, now);
+  let payload: unknown;
+  const service = new PushService(db, {origin, clock: () => new Date('2032-04-20T14:00:00Z'), ...quiet,
+    loadMorning: async () => { throw new Error('Manual tests do not read Morning'); }, transport: async request => {
+      assert.equal(request.headers.TTL, '3600');
+      const encrypted = Buffer.from(request.body), salt = encrypted.subarray(0, 16), sender = encrypted.subarray(21, 86);
+      const ikm = Buffer.from(hkdfSync('sha256', receiver.computeSecret(sender), Buffer.from(keys.auth, 'base64url'),
+        Buffer.concat([Buffer.from('WebPush: info\0'), receiver.getPublicKey(), sender]), 32));
+      const cek = Buffer.from(hkdfSync('sha256', ikm, salt, Buffer.from('Content-Encoding: aes128gcm\0'), 16));
+      const nonce = Buffer.from(hkdfSync('sha256', ikm, salt, Buffer.from('Content-Encoding: nonce\0'), 12));
+      const decipher = createDecipheriv('aes-128-gcm', cek, nonce); decipher.setAuthTag(encrypted.subarray(-16));
+      const decrypted = Buffer.concat([decipher.update(encrypted.subarray(86, -16)), decipher.final()]);
+      assert.equal(decrypted.at(-1), 2); payload = JSON.parse(decrypted.subarray(0, -1).toString());
+      return {status: 201};
+    }});
+  assert.equal((await service.sendTest('invented-manual')).status, 'sent');
+  assert.deepEqual(payload, {kind: 'test', title: 'Pulse test notification', body: 'Notifications are ready on this device.', path: '/morning', day: '2032-04-20'});
   await service.stop();
 });
 

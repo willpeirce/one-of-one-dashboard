@@ -151,6 +151,7 @@ export async function checkPush(signedIn: BrowserContext): Promise<void> {
           return {scope: registration?.scope, script: registration?.active?.scriptURL, state: registration?.active?.state};
         });
         assert.deepEqual(registration, {scope: `${origin}/`, script: `${origin}/sw.js`, state: 'activated'});
+        await page.waitForFunction(() => navigator.serviceWorker.controller?.scriptURL === `${location.origin}/sw.js`);
         await controls(page);
         if (width === 390) {
           const sent = page.waitForResponse(reply => new URL(reply.url()).pathname === '/api/push/test');
@@ -198,7 +199,7 @@ export async function checkPush(signedIn: BrowserContext): Promise<void> {
           await page.route('**/api/push/unsubscribe', route => route.fulfill({status: 503, json: {error: 'Invented unsubscribe save failure.'}}), {times: 1});
           await page.locator('#push-turn-off').click();
           await page.waitForFunction(() => document.querySelector('#push-device-message')?.textContent?.includes('Could not finish turning notifications off'));
-          assert.equal(await page.locator('#push-device-status').innerText(), 'Notifications need setup.');
+          assert.equal(await page.locator('#push-device-status').innerText(), 'Notifications may still be on.');
           assert.equal(await page.locator('#push-turn-off').isVisible(), true);
           assert.equal(await page.evaluate(() => (window as unknown as {__pulsePushTest: {unsubscribes: number}}).__pulsePushTest.unsubscribes), 0);
           await page.route('**/api/push/subscribe', route => route.fulfill({status: 503, json: {error: 'Invented subscription resave failure.'}}), {times: 1});
@@ -225,8 +226,9 @@ export async function checkPush(signedIn: BrowserContext): Promise<void> {
       let logoutCalls = 0;
       // Keep the suite's shared passkey session. Route tests exercise the real atomic logout.
       await page.route('**/auth/logout', async route => {
-        logoutCalls++; assert.deepEqual(route.request().postDataJSON(), {pushEndpoint: browserPushEndpoint});
-        if (logoutCalls === 2) await signOutContext.clearCookies({name: 'pulse_session'});
+        logoutCalls++; assert.deepEqual(route.request().postDataJSON(), logoutCalls === 3 ? {} : {pushEndpoint: browserPushEndpoint});
+        if (logoutCalls === 2) return; // A server that never answers must leave a retryable button.
+        if (logoutCalls === 3) await signOutContext.clearCookies({name: 'pulse_session'});
         await route.fulfill({status: logoutCalls === 1 ? 503 : 200, json: logoutCalls === 1 ? {error: 'Invented sign-out failure'} : {ok: true}});
       });
       const removed = page.waitForResponse(reply => new URL(reply.url()).pathname === '/api/push/unsubscribe');
@@ -236,8 +238,12 @@ export async function checkPush(signedIn: BrowserContext): Promise<void> {
       const enabledAgain = page.waitForResponse(reply => new URL(reply.url()).pathname === '/api/push/subscribe');
       await page.locator('#push-turn-on').click(); assert.equal((await enabledAgain).status(), 200);
       await page.waitForFunction(() => document.querySelector('#push-device-status')?.textContent === 'Notifications are on.');
+      const started = Date.now(); await page.locator('#sign-out').click();
+      await page.waitForFunction(() => document.querySelector('#auth-message')?.textContent?.includes('Could not sign out'));
+      assert.ok(Date.now() - started < 8_000, 'A hanging logout request times out');
+      assert.equal(await page.locator('#sign-out').isEnabled(), true);
       await page.locator('#sign-out').click(); await page.waitForURL('**/login');
-      assert.equal(logoutCalls, 2, 'Sign-out remains retryable after revoking the device');
+      assert.equal(logoutCalls, 3, 'Sign-out remains retryable after a rejected and then hanging request');
     } finally { await signOutContext.close(); }
     for (const failure of ['lookup-reject', 'lookup-hangs', 'unsubscribe-request', 'unsubscribe-reject', 'unsubscribe-survives', 'unsubscribe-hangs'] as const) {
       const context = await makeContext();
@@ -255,6 +261,10 @@ export async function checkPush(signedIn: BrowserContext): Promise<void> {
           logoutCalls++;
           assert.deepEqual(route.request().postDataJSON(), failure.startsWith('lookup') ? {} : {pushEndpoint: browserPushEndpoint});
           if (failure !== 'unsubscribe-request') assert.equal(await page.evaluate(() => localStorage.getItem('pulse-push-removal-owed')), '1');
+          if (failure !== 'unsubscribe-request') {
+            const marker = (await context.cookies()).find(cookie => cookie.name === 'pulse-push-removal-owed');
+            assert.equal(marker?.value, '1'); assert.equal(marker.secure, true); assert.equal(marker.sameSite, 'Strict');
+          }
           await context.clearCookies({name: 'pulse_session'});
           await route.fulfill({json: {ok: true}});
         });

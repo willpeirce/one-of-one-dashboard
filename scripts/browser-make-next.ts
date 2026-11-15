@@ -27,7 +27,7 @@ export async function checkMakeNext(page: Page, width: number): Promise<void> {
     const video = page.locator('[data-make-next="video"]'), image = page.locator('[data-make-next="image"]');
     const boxes = [await video.boundingBox(), await image.boundingBox()];
     assert.ok(boxes[0] && boxes[1]);
-    if (width === 390) assert.ok(boxes[1]!.y >= boxes[0]!.y + boxes[0]!.height);
+    if (width <= 700) assert.ok(boxes[1]!.y >= boxes[0]!.y + boxes[0]!.height);
     else assert.equal(boxes[1]!.y, boxes[0]!.y);
     for (const tile of [video, image]) {
       assert.ok(await tile.locator('li').count() <= 3);

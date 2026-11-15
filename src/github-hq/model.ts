@@ -1,10 +1,11 @@
-export const HQ_REGISTER_PARSER_VERSION = 3;
+export const HQ_REGISTER_PARSER_VERSION = 4;
 export const HQ_MONTH_PARSER_VERSION = 1;
 export const HQ_ITEM_LIMIT = 12;
 export const HQ_ITEM_LINES_LIMIT = 8;
 export const HQ_ITEM_TEXT_LIMIT = 300;
 export const HQ_CELL_LIMIT = 600;
 export const HQ_SECTION_ROW_LIMIT = 40;
+export const HQ_MALFORMED_ID_LIMIT = HQ_SECTION_ROW_LIMIT * 3;
 export const HQ_TRUNCATED_STATUS_MARKER = ' [Status truncated]';
 
 export type HQBriefTag = { type: 'pause' | 'hold'; adSetId: string }

@@ -408,7 +408,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
       FROM pulse.audit_log audit LEFT JOIN pulse.settings_changes changes ON changes.audit_id = audit.id
       LEFT JOIN pulse.meta_ad_set_changes ad ON ad.audit_id=audit.id
       ORDER BY audit.occurred_at DESC, audit.id DESC LIMIT 100`);
-    return reply.type('text/html; charset=utf-8').send(auditPage(result.rows,await readMetaActions(db)));
+    return reply.type('text/html; charset=utf-8').send(auditPage(result.rows,await readMetaActions(db,undefined,localNow())));
   });
   // Fixed paths only; the server never exposes repository or environment files.
   const assets = [

@@ -125,16 +125,43 @@ test('register parser keeps section order and raw trimmed cells, ignores Watches
   assert.deepEqual(parseRegister('## Watches (kill rules, not tests)\n| malformed |'),{readable:true,rows:[],skippedRows:0,cappedRows:0,complete:false,skippedCells:[]});
 });
 
-test('register caps each section, deduplicates IDs with Live priority and removes unsupported NUL before JSONB',()=>{
+test('register caps each section, keeps the first well-formed duplicate in file order and removes unsupported NUL before JSONB',()=>{
   const rows=Array.from({length:HQ_SECTION_ROW_LIMIT+2},(_,i)=>liveRow(`T${i}`));
   const result=parseRegister(register('Live',rows));
   assert.equal(result.rows.length,HQ_SECTION_ROW_LIMIT);assert.equal(result.skippedRows,0);assert.equal(result.cappedRows,2);
   const duplicate=parseRegister(`## History\n| T1 Earlier copy | Invented question | Draw | Invented rule | Invented evidence |\n## Queue\n| T1 Queued copy | Site | Q | Arms | Bar | Plan | Need |\n${register('Live',[liveRow('T1'),liveRow('T1')])}`);
-  assert.equal(duplicate.rows.length,1);assert.equal(duplicate.rows[0]!.section,'live');assert.equal(duplicate.skippedRows,3);
+  assert.equal(duplicate.rows.length,1);assert.equal(duplicate.rows[0]!.section,'history');assert.equal(duplicate.skippedRows,3);
+  assert.deepEqual(duplicate.skippedCells,[], 'Duplicate valid rows cannot protect an older stored version over the first row');
   const nul=parseRegister(register('Live',[liveRow('T8','Invented\0status')]));
   assert.equal(nul.rows[0]!.cells[8],'Invented\uFFFDstatus');
   const unicode=parseRegister(register('History',[`| H1 Sample | ${'𐐀'.repeat(700)} | Draw | Rule | Evidence |`]));
   assert.equal(Array.from(unicode.rows[0]!.cells[1]!).length,HQ_CELL_LIMIT);
+});
+
+test('duplicate and malformed rows do not consume places before the first forty well-formed unique rows',()=>{
+  const valid=Array.from({length:HQ_SECTION_ROW_LIMIT+1},(_,i)=>liveRow(`T${i}`));
+  const result=parseRegister(register('Live',[valid[0]!,valid[0]!, '| broken | too few |', ...valid.slice(1)]));
+  assert.deepEqual(result.rows.map(row=>row.id),Array.from({length:40},(_,i)=>`T${i}`));
+  assert.equal(result.skippedRows,2);assert.equal(result.cappedRows,1);
+  assert.deepEqual(result.skippedCells,['broken']);
+  const cappedDuplicate=parseRegister(`${register('Live',valid)}\n## History\n| T40 | Question | Draw | Rule | Source |`);
+  assert.equal(cappedDuplicate.skippedRows,1);assert.equal(cappedDuplicate.cappedRows,1);
+  assert.deepEqual(cappedDuplicate.skippedCells,[]);
+  assert.ok(!cappedDuplicate.rows.some(row=>row.id==='T40'),'An overflow row cannot re-enter through a later duplicate');
+});
+
+test('a well-formed row overrides its malformed duplicate, wherever the malformed row appeared',()=>{
+  for(const lines of [[`| T1 broken | too few |`,liveRow('T1')],[liveRow('T1'),`| T1 broken | too few |`]]){
+    const result=parseRegister(register('Live',lines));
+    assert.equal(result.rows.length,1);assert.equal(result.skippedRows,1);assert.deepEqual(result.skippedCells,[]);
+  }
+});
+
+test('register preserves a literal backslash before a pipe inside code spans while decoding a Markdown escaped separator',()=>{
+  const question='Invented \\| choice with `a\\|b` and ``c\\|d``';
+  const result=parseRegister(register('Live',[liveRow('T1').replace('Invented question',question)]));
+  assert.equal(result.skippedRows,0);
+  assert.equal(result.rows[0]!.cells[2],'Invented | choice with `a\\|b` and ``c\\|d``');
 });
 
 test('truncating Status preserves an explicit marker and cannot lose a late Leaning cap to enable an A/B call',()=>{

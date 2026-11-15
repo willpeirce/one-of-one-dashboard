@@ -65,7 +65,7 @@ function hqCards(facts: HQFacts, now: Date): MorningCard[] {
           : 'A stored reading from today or yesterday, at least 95% sure on two mornings, 30 events per arm and 7 full UK days; no spike day or Leaning cap. The app does not measure this test.',
         sourceLine, sourceHref: href,
         primary: { kind: 'save', target: 'morning', label: callLabel(answer), action: 'call', answer, confirm: `${callLabel(answer)} for ${title}? The register still needs a write-up.` },
-        secondary: { kind: 'save', target: 'morning', label: 'Not today', action: 'park' }, menu: unmeasured ? [{ kind: 'save', target: 'morning', label: 'Stop showing this', action: 'hide' }] : [],
+        secondary: { kind: 'save', target: 'morning', label: 'Not today', action: 'park' }, menu: unmeasured ? [{ kind: 'save', target: 'morning', label: 'Hide until it has a reading', action: 'hide' }] : [],
         allowedPresses: unmeasured ? ['call', 'park', 'hide'] : ['call', 'park'], callAnswer: answer,
       } satisfies MorningCard];
     }
@@ -101,6 +101,7 @@ export function homeTestsFromHq(facts: HQFacts, states: readonly MorningState[],
     const decide = !!assessment.answer && !(assessment.answer === 'draw' && !reading);
     const called = result.snapshot.answers.find(answer => answer.cardKey === key && answer.answer !== 'hold');
     const parked = result.snapshot.parked.find(answer => answer.stateRow.cardKey === key);
+    const hidden = result.snapshot.hidden.some(answer => answer.stateRow.cardKey === key);
     const status = called ? `Called ${called.answer!.toUpperCase()} · waiting for the write-up` : parked
       ? `Parked until ${parked.untilDay}` : row.section === 'history' ? row.cells[2] || 'Recorded' : row.section === 'queue' ? 'Next' : row.cells[8] || 'No reading';
     const model: TestModel | null = row.section !== 'live' ? null : {
@@ -114,7 +115,9 @@ export function homeTestsFromHq(facts: HQFacts, states: readonly MorningState[],
     return { id: row.id, section: row.section, title: testTitle(row), lane: row.section === 'history' ? 'Tests' : row.cells[1] || 'Tests', cells: row.cells,
       status, model, reading, call: assessment.answer && open.has(key) ? { cardKey: key, answer: assessment.answer, label: callLabel(assessment.answer),
         confirm: `${callLabel(assessment.answer)} for ${testTitle(row)}? The register still needs a write-up.` } : null,
-      called: called ? { cardKey: key, answer: called.answer as 'a' | 'b' | 'draw' } : null, parkedUntil: parked?.untilDay ?? null };
+      called: called ? { cardKey: key, answer: called.answer as 'a' | 'b' | 'draw' } : null, parkedUntil: parked?.untilDay ?? null,
+      ...(row.section === 'live' && !reading && assessment.answer === 'draw' && !called && (open.has(key) || hidden)
+        ? {hideUntilReading: {cardKey: key, hidden}} : {}) };
   });
   return { mode: 'live', readAt: facts.registerReadAt, readOk: facts.registerReadOk, rows, href: registerLink() };
 }

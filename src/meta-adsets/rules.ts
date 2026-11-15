@@ -37,12 +37,14 @@ export function judgeAdSet(set: StoredAdSet, days: SetDay[], settings: Settings,
   const lifeDates=dates(born,yesterday),life=days.filter(d=>d.day>=born&&d.day<=yesterday),lifeTotal=totalDays(life);
   const lifeComplete=lifeDates.length>0&&lifeDates.every(d=>life.some(r=>r.day===d));
   // Flat tests reach their cost judgement by spend, even in their first completed day.
-  // A partial lifetime cannot stand in for the whole life; each unknown metric stays null.
-  const flat=set.flatBudget===true,costTotals=flat?lifeTotal:totals,costReady=flat?lifeComplete:enough;
-  const costFloor=flat?settings.adRules.flatJudgeGbp:settings.adRules.killFloorGbp;
+  // Incomplete life falls back to the established window rules, never a partial life or guessed zero.
+  const flat=set.flatBudget===true,wholeLife=flat&&lifeComplete&&lifeTotal.purchases!==null&&lifeTotal.addsToCart!==null;
+  const costTotals=wholeLife?lifeTotal:totals,costReady=wholeLife?true:enough;
+  const costFloor=wholeLife?settings.adRules.flatJudgeGbp:settings.adRules.killFloorGbp;
+  const fallback=flat&&!wholeLife?'Lifetime action data is incomplete; using the last seven days for cost judgement':'';
   const costCpp=ratio(costTotals.spend,costTotals.purchases),costCpatc=ratio(costTotals.spend,costTotals.addsToCart);
-  const costPrefix=flat?`Reached its judgement spend of ${formatPounds(costFloor)} · Life: `:'';
-  const costSpend=`${formatPounds(costTotals.spend)} ${flat?'life ':''}spend`;
+  const costPrefix=wholeLife?`Reached its judgement spend of ${formatPounds(costFloor)} · Life: `:'';
+  const costSpend=`${formatPounds(costTotals.spend)} ${wholeLife?'life ':''}spend`;
   const market=set.market==='unknown'?null:set.market,be=market?breakEven(settings,market,today):null;
   const reasons:RuleReason[]=[];
   const add=(rule:string,verdict:VerdictWord,text:string,a:string,b:string)=>reasons.push({rule,verdict,text,figures:[a,b]});
@@ -93,10 +95,9 @@ export function judgeAdSet(set: StoredAdSet, days: SetDay[], settings: Settings,
     add('test-share','Test share',`${formatPounds(last.spend)} is ${formatNumber(last.spend/context.ourMarketSpendYesterday*100,1)}% of our market spend, above ${settings.adRules.testShareCapPercent}%`,`${formatPounds(last.spend)} test spend`,`${settings.adRules.testShareCapPercent}% cap`);
   reasons.sort((a,b)=>verdictOrder.indexOf(a.verdict)-verdictOrder.indexOf(b.verdict));
   const first=reasons[0];
-  const lifeCost=flat&&(first?.rule==='purchase-cost'||first?.rule==='atc-cost');
-  const clearReason=!market?'Market unknown; assign a UK or US name':flat
-    ? !lifeComplete||lifeTotal.purchases===null||lifeTotal.addsToCart===null?'Waiting for complete lifetime action data before cost judgement'
-      : lifeTotal.spend<costFloor?`Below its judgement spend of ${formatPounds(costFloor)}`:'Inside its lifetime cost bars'
+  const lifeCost=wholeLife&&(first?.rule==='purchase-cost'||first?.rule==='atc-cost');
+  const clearReason=!market?'Market unknown; assign a UK or US name':wholeLife
+    ? lifeTotal.spend<costFloor?`Below its judgement spend of ${formatPounds(costFloor)}`:'Inside its lifetime cost bars'
     : enough?'Inside its rules':'Need at least 2 complete action days';
-  return {verdict:first?.verdict??'Clear',reason:[first?.text??clearReason,gap].filter(Boolean).join(' · '),reasons,figures:first?.figures??[`${formatPounds(totals.spend)} spend`,`${cost(totals.spend,totals.purchases)} per purchase`],...(lifeCost?lifeTotal:totals),cpp:lifeCost?costCpp:cpp,cpatc:lifeCost?costCpatc:cpatc,windowFrom:lifeCost?born:from,windowTo:yesterday,includesSpikeDays:!!market&&(lifeCost?lifeDates:windowDates).some(d=>isSpikeDay(market,d)),breakEven:be?.value??null,breakEvenNote:be?.note??'',proposedBase,proposedWeekday,stepPercent};
+  return {verdict:first?.verdict??'Clear',reason:[first?.text??clearReason,fallback,gap].filter(Boolean).join(' · '),reasons,figures:first?.figures??[`${formatPounds(totals.spend)} spend`,`${cost(totals.spend,totals.purchases)} per purchase`],...(lifeCost?lifeTotal:totals),cpp:lifeCost?costCpp:cpp,cpatc:lifeCost?costCpatc:cpatc,windowFrom:lifeCost?born:from,windowTo:yesterday,includesSpikeDays:!!market&&(lifeCost?lifeDates:windowDates).some(d=>isSpikeDay(market,d)),breakEven:be?.value??null,breakEvenNote:be?.note??'',proposedBase,proposedWeekday,stepPercent};
 }

@@ -265,7 +265,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     applyGoogleDashboard(result, adInputs.google, googleShopifyContext(facts,adInputs.now), settings.values, adInputs.metaActivity, adInputs.googleNow, adInputs.spend);
     applyMailchimpDashboard(result,mailchimpFacts,settings.values,mailchimpAt);
     result.shopify?.needs.push(...mailchimpBillingNeeds(mailchimpFacts,settings.values,mailchimpAt));
-    result.shopify?.needs.push(...gorgiasNeeds(gorgiasFacts,settings.values));
+    result.shopify?.needs.push(...gorgiasNeeds(gorgiasFacts,settings.values,shopify.mode));
     result.shopify?.needs.push(...waitingNeeds(waitingView));
     // Radar describes actual ad connections even when Shopify numbers use sample data.
     result.adSources = adSources; result.reviews = reviewRows; result.adSets = adSets; result.creatives = creatives;

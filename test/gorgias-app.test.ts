@@ -35,3 +35,26 @@ test('Handover authenticates before loading tickets; its labelled sample decisio
   if (need.primary.kind === 'link') assert.equal(need.primary.href, '/handover');
   assert.equal((await db.query('SELECT 1 FROM pulse.gorgias_tickets')).rowCount, 0, 'Sample fixtures never seed live tickets');
 });
+
+test('live Shopify excludes keyless Gorgias from dashboard and Morning while Handover retains its sample tickets', async t => {
+  const db = await createTestDatabase(), now = new Date('2032-04-07T12:00:00Z');
+  const config = readRuntime({DATABASE_URL: 'postgresql://localhost/invented_handover', APP_ORIGIN: 'https://pulse.example.test'});
+  const env = {SHOPIFY_CLIENT_ID: randomBytes(16).toString('hex'), SHOPIFY_CLIENT_SECRET: randomBytes(32).toString('hex')};
+  const app = await createApp(db, config, env, {clock: () => now}, {}, {}, {}, {clock: () => now});
+  t.after(async () => {await app.close(); await db.close();});
+  const key = (await db.query<{value: Uint8Array}>("SELECT value FROM pulse_private.app_secrets WHERE name='session_hmac'")).rows[0]!;
+  const token = randomBytes(32).toString('base64url'), credential = randomBytes(32).toString('base64url');
+  await db.query('INSERT INTO pulse_private.credentials(id,public_key) VALUES($1,$2)', [credential, randomBytes(32)]);
+  await db.query("INSERT INTO pulse_private.sessions(token_hash,credential_id,expires_at) VALUES($1,$2,now()+interval '30 days')",
+    [createHmac('sha256', Buffer.from(key.value)).update(token).digest('hex'), credential]);
+  const headers = {cookie: `__Host-pulse_session=${token}`};
+  const dashboard = (await app.inject({url: '/api/dashboard', headers})).json();
+  assert.equal(dashboard.shopify.mode, 'live');
+  assert.equal(dashboard.shopify.needs.some((need: {source: string}) => need.source === 'gorgias'), false);
+  const deck = (await app.inject({url: '/api/morning', headers})).json<MorningSnapshot>();
+  assert.equal(deck.mode, 'live');
+  assert.equal(deck.cards.some(card => card.subjectId === 'gorgias-handover'), false);
+  const handover = await app.inject({url: '/handover', headers});
+  assert.equal(handover.statusCode, 200); assert.match(handover.body, /Sample data · four invented tickets/);
+  assert.equal((handover.body.match(/data-gorgias-ticket=/g) ?? []).length, 4);
+});

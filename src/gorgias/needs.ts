@@ -11,7 +11,7 @@ export function gorgiasNeeds(facts: GorgiasFacts, settings: Settings, dashboardM
   if (!open.length || oldest <= settings.gorgiasHandoverWaitHours) return [];
   const wait = gorgiasWaitLabel(oldest);
   return [{id: 'gorgias-handover', state: 'decide', source: 'gorgias', sourceMode: facts.mode,
-    title: `${facts.mode === 'sample' ? 'Sample · ' : ''}Reply to ${open.length} customers · oldest ${wait}`,
+    title: `${facts.mode === 'sample' ? 'Sample · ' : ''}Reply to ${open.length} ${open.length === 1 ? 'customer' : 'customers'} · oldest ${wait}`,
     why: `${facts.mode === 'sample' ? 'Sample data · ' : ''}${open.length} open handover ${open.length === 1 ? 'ticket' : 'tickets'}. The oldest customer message has waited ${wait}, over the ${settings.gorgiasHandoverWaitHours}-hour bar.${facts.status === 'unavailable' ? ' The last successful read is shown; check Source health.' : ''}`,
     link: '/handover', figure: {value: wait, label: 'Oldest handover wait'}}];
 }

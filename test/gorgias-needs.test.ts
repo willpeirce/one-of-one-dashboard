@@ -105,3 +105,14 @@ test('Morning and its summary include customer service only for live Gorgias or 
     }
   }
 });
+
+test('customer-service titles use customer for one open ticket and customers for two', () => {
+  for (const count of [1, 2]) for (const mode of ['sample', 'live'] as const) {
+    const source = {...facts(Array.from({length: count}, (_, index) => ({...ticket(String(81001 + index)),
+      lastCustomerMessageAt: '2032-04-06T23:00:00Z'}))), mode, status: mode};
+    const needs = gorgiasNeeds(source, defaultSettings(), 'sample');
+    assert.equal(needs.length, 1);
+    assert.equal(needs[0]!.title,
+      `${mode === 'sample' ? 'Sample · ' : ''}Reply to ${count} ${count === 1 ? 'customer' : 'customers'} · oldest 13h`);
+  }
+});

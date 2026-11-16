@@ -64,10 +64,27 @@ test('Mailchimp health labels samples, missing contact totals and unknown flow c
 test('the shared head and page wrappers reserve the safe area on sign-in, Source health and Audit', () => {
   for (const html of [loginPage(false), sourceHealthPage([source()]), auditPage([])]) {
     assert.match(html, /<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">/);
-    assert.match(html, /<header class="top"><div class="hin">/);
+    assert.match(html, /<header class="top"><div class="hin(?: settings-header)?">/);
     assert.match(html, /<main class="wrap" id="main">/);
     assert.ok(html.indexOf('</div></header>') < html.indexOf('<main class="wrap"'));
   }
+});
+
+test('Source health and Audit use the button header and retain account links without changing sign-in', () => {
+  for (const html of [sourceHealthPage([source()]), auditPage([])]) {
+    assert.match(html, /<div class="hin settings-header">/);
+    assert.match(html, /<link rel="stylesheet" href="\/assets\/dashboard.css">/);
+    assert.match(html, /<link rel="stylesheet" href="\/assets\/settings.css">/);
+    assert.match(html, /<nav class="settings-nav" aria-label="Main">/);
+    for (const [href, label] of [['/morning', 'Morning'], ['/', 'Home'], ['/settings', 'Settings']])
+      assert.ok(html.includes(`<a class="btn" href="${href}">${label}</a>`));
+    assert.match(html, /<summary class="btn" aria-label="More pages">More<\/summary>/);
+    assert.match(html, /<a href="\/scorecard">Scorecard<\/a><a href="\/sources">Source health<\/a><a href="\/audit">Audit log<\/a>/);
+    assert.match(html, /<button id="sign-out" type="button" disabled>Sign out<\/button>/);
+  }
+  const login = loginPage(false);
+  assert.match(login, /<header class="top"><div class="hin">/);
+  assert.doesNotMatch(login, /settings-header|account-menu|\/assets\/dashboard.css|\/assets\/settings.css/);
 });
 
 test('source and audit values cannot inject markup or execute a script', () => {

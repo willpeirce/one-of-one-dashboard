@@ -115,6 +115,7 @@ test('Home without Morning state performs one read, adds no property and retains
     // 12 Nov 2026: re-taken for After tax after a line-by-line diff against home-stock-reviews 4d787b2: only the After tax line and 16 afterTax snapshot entries were added.
     // 12 Nov 2026: re-taken after a line-by-line diff against main a463cc2: the Live / Wins / Coming up aside and its 38 sample texts left, the Stock heading reads Series 1 / Stock without its button, and the On the table pill became Stock.
     // 14 Nov 2026: re-taken for Tile wording after a line-by-line diff against main f09d280: only the 16 Contribution subtitles lost "Estimate" / "Estimate · so far".
+    // Part C: exact rendered diff against main f0c0714 adds only Handover in the account menu; see DECISIONS.
     assert.equal(markup.includes(morningLink), false);
     let pinned = markup;
     for (const part of morningNavigation) {
@@ -124,7 +125,7 @@ test('Home without Morning state performs one read, adds no property and retains
     assert.match(markup, /<nav class="pills" aria-label="Sections"><a class="pill pill-morning" href="\/morning"/, 'Morning leads the top bar');
     assert.match(markup, /<nav class="account-links" aria-label="Account">\s*<a href="\/morning">Morning<\/a>/, 'Morning leads the account menu');
     assert.equal(createHash('sha256').update(pinned).digest('hex'),
-      '71f6273c8532bf5292345f38c4c5b094591971eefe9d38a08e7866cee211e84b');
+      'a6918cc4866cd1675c5c5eaf4df569762d2816db5a137c6358662efd30764a64');
   });
 });
 

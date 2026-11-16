@@ -150,10 +150,11 @@ export async function checkCreatives(context: BrowserContext): Promise<void> {
       }
     }
     await page.unroute(apiPattern);
-    for (const width of [390, 1280]) {
+    for (const width of [360, 390, 1280]) {
       await page.setViewportSize({ width, height: 960 });
       await page.goto('/creatives');
       await page.locator('#creative-filters').waitFor();
+      await noOverflow(page);
       assert.ok(await page.locator('#creative-gallery .creative-picture').count() >= 6);
       assert.equal(await page.locator('#creative-sheet[open]').count(), 0, 'No-hash navigation leaves the creative sheet closed');
       await page.goto('/creatives#sample-video-%33');

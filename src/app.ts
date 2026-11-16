@@ -65,11 +65,23 @@ import { HQWorker } from './github-hq/worker.js';
 import { readHQFacts } from './github-hq/store.js';
 import { addMorningHq, homeTestsFromHq } from './github-hq/presentation.js';
 import { PushService } from './push/service.js';
+import {readAlertEvaluation} from './push/alert-inputs.js';
+import {registerAlertLinks} from './push/alert-links.js';
 import { registerPush } from './push/routes.js';
 import type { PushTransport } from './push/sender.js';
 import {SnapshotCache} from './snapshot-cache.js';
 import {changedSourceScopes,fenceDashboardScopes,overlayAdSetControls} from './morning/control-overlay.js';
 import {timed,type MorningTiming} from './morning/timing.js';
+import {HandoverSections} from './handover/sections.js';
+import {registerHandover} from './handover/routes.js';
+import {GorgiasWorker} from './gorgias/worker.js';
+import {readGorgiasFacts} from './gorgias/store.js';
+import {gorgiasNeeds} from './gorgias/needs.js';
+import {gorgiasSectionHtml} from './handover/gorgias-view.js';
+import {readWaitingView} from './waiting-on/store.js';
+import {waitingNeeds} from './waiting-on/needs.js';
+import {registerWaitingOn} from './waiting-on/routes.js';
+import {waitingSectionHtml} from './waiting-on/view.js';
 
 declare module 'fastify' {
   interface FastifyInstance { startBackgroundWork(): Promise<void> }
@@ -83,7 +95,8 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   const localNow = localOptions.clock ?? (() => new Date());
   await auth.cleanup();
   await syncSourceHealth(db, sourceEnv);
-  const hq = new HQWorker(db, sourceEnv, { clock: localNow });
+  const hq = new HQWorker(db, sourceEnv, {clock: localNow, onWrite: () => publishObservations()});
+  const gorgias = new GorgiasWorker(db, sourceEnv, {clock: localNow, onWrite: () => publishObservations()});
   const shopify = new ShopifyWorker(db, sourceEnv, config.origin, shopifyOptions);
   await shopify.initialize();
   if (shopify.mode === 'sample') await shopify.tick();
@@ -94,9 +107,11 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     const [settings, context, hqFacts] = await Promise.all([readSettings(db), readWatchdogContext(db, facts), readHQFacts(db, hqNow, hq.mode)]);
     const health = await creativeSourceHealth(settings.values);
     const now = sourceNow();
-    const observation = await updateObservation(db, shopify.mode, facts, now);
-    const checks = evaluateWatchdogs(facts, now, settings.values, observation, context.holidays, health, { entry: hqFacts.report, now: hqNow });
-    await db.query('UPDATE pulse.shopify_watchdog_state SET data = data || $2::jsonb WHERE mode = $1', [shopify.mode, JSON.stringify({ checks, evaluatedAt: now.toISOString() })]);
+    await db.transaction(async tx => {
+      const observation = await updateObservation(tx, shopify.mode, facts, now);
+      const checks = evaluateWatchdogs(facts, now, settings.values, observation, context.holidays, health, { entry: hqFacts.report, now: hqNow });
+      await tx.query('UPDATE pulse.shopify_watchdog_state SET data = data || $2::jsonb WHERE mode = $1', [shopify.mode, JSON.stringify({ checks, evaluatedAt: now.toISOString(), alertEvaluatedAt: hqNow.toISOString() })]);
+    });
   }
   await seedFulfilment(db, shopify.mode, sourceNow());
   const ads=new SpendWorker(db,sourceEnv,adOptions);
@@ -131,6 +146,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     google.start();
     mailchimp.start();
     hq.start();
+    gorgias.start();
     snapshotCache.start();
     push.start();
     reviews.start();
@@ -157,6 +173,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     await google.stop();
     await mailchimp.stop();
     await hq.stop();
+    await gorgias.stop();
     await push.stop();
     await ads.stop();
     await reviews.stop();
@@ -229,7 +246,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   async function buildObservations() {
     const settings = await readSettings(db,{seed: false});
     const hqNow = localNow(), mailchimpAt = mailchimpNow(), creativeAt = creativeNow();
-    const [hqFacts,sourceHealth,facts,mailchimpFacts,adSources,reviewRows,adSets,creatives,fulfilment,coverage,morningCreatives] = await Promise.all([
+    const [hqFacts,sourceHealth,facts,mailchimpFacts,adSources,reviewRows,adSets,creatives,fulfilment,coverage,morningCreatives,gorgiasFacts,waitingView] = await Promise.all([
       readHQFacts(db,hqNow,hq.mode),creativeSourceHealth(settings.values),shopify.store.facts(sourceNow()),
       readMailchimpFacts(db,mailchimp.mode,mailchimpAt),spendHealth(db,sourceEnv,settings.values,adOptions.clock?.() ?? new Date()),
       reviews.mode === 'sample' ? dismissedReviewIds(db).then(ids => withoutDismissed(sampleReviews(),ids)) : readReviews(db,reviewOptions.clock?.() ?? new Date()),
@@ -240,12 +257,16 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
         {googleAccount: settings.values.googleCustomerId,googleNow: googleNow()}) : undefined,
       shopify.mode === 'sample' && sourceEnv.META_ACCESS_TOKEN && settings.values.metaAdAccountId
         ? readCreativeOverview(db,settings.values,{},creativeAt,{}, {seedSample: false,briefWindows: true}) : undefined,
+      readGorgiasFacts(db,sourceEnv,settings.values,hqNow),
+      readWaitingView(db,hq.mode,hqNow,settings.values.waitingOnDays),
     ]);
     const adInputs=await heroInputs(facts,settings.values);
     const result = await applyShopifyDashboard({ ...getSampleDashboard(settings.values), generatedAt: new Date().toISOString(), sourceHealth }, db, facts, settings.values, sourceHealth, sourceNow(), adInputs, shopifyOptions.clock?.() ?? new Date(), { entry: hqFacts.report, now: hqNow });
     applyGoogleDashboard(result, adInputs.google, googleShopifyContext(facts,adInputs.now), settings.values, adInputs.metaActivity, adInputs.googleNow, adInputs.spend);
     applyMailchimpDashboard(result,mailchimpFacts,settings.values,mailchimpAt);
     result.shopify?.needs.push(...mailchimpBillingNeeds(mailchimpFacts,settings.values,mailchimpAt));
+    result.shopify?.needs.push(...gorgiasNeeds(gorgiasFacts,settings.values,shopify.mode));
+    result.shopify?.needs.push(...waitingNeeds(waitingView));
     // Radar describes actual ad connections even when Shopify numbers use sample data.
     result.adSources = adSources; result.reviews = reviewRows; result.adSets = adSets; result.creatives = creatives;
     result.banner = result.banner?.replace('reviews and other stages: sample data', `reviews: ${reviews.mode === 'sample' ? 'sample data' : 'live Judge.me'}; Google: ${adInputs.google.mode === 'sample' ? 'sample data' : 'supported tiles use live reads, remaining examples stay labelled sample'}; Mailchimp: ${mailchimp.mode === 'sample' ? 'sample data' : result.widgets.w038?.mode === 'live' ? 'audience uses its own live read; per-flow examples remain labelled sample' : 'audience total pending or unavailable; examples remain labelled sample'}; other stages: sample data`);
@@ -306,7 +327,9 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     return result;
   }
   const events = registerDashboardEvents(app,auth,snapshot,{onPublish: () => {void snapshotCache.invalidate();}});
-  const publishObservations = () => { void events.publish().catch(() => console.warn('Dashboard notification failed.')); };
+  const publishObservations = () => { void events.publish().catch(() => {
+    try { console.warn('Dashboard notification failed.'); } catch { /* Diagnostics cannot reject a background notification. */ }
+  }); };
   async function morningInputs(now: Date,timing?: MorningTiming) {
     const {built,dashboard,settings,hqFacts,ticker,coverage} = await loadObservations(now,timing);
     return timed(timing,'project',async () => {
@@ -319,11 +342,25 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   const morning = registerMorning(app, db, auth, morningInputs, localNow,{onWrite: publishObservations});
   const pushNow = localOptions.pushClock ?? localNow;
   const push = new PushService(db, {origin: config.origin, clock: pushNow, loadMorning: now => morning.summary(now),
+    loadAlerts: now => readAlertEvaluation(db,{shopify:shopify.mode,hq:hq.mode,anyLive:getSourceStates(sourceEnv).some(source=>source.mode==='live')},now),
     transport: localOptions.pushTransport});
   registerPush(app, db, auth, {clock: pushNow, sendTest: credentialId => push.sendTest(credentialId)});
+  registerAlertLinks(app,db,auth,shopify.mode);
   registerAdSets(app, db, auth, sourceEnv, creativeNow, adOptions, async () => publishObservations());
   registerReviewRoutes(app, db, auth, publishObservations);
   registerScorecard(app, db, auth, shopify.store, sourceEnv, () => shopifyOptions.clock?.() ?? new Date());
+  const handover = new HandoverSections();
+  registerHandover(app,auth,handover);
+  handover.register({id: 'customer-service', title: 'Customer service', load: async () => {
+    const settings = await readSettings(db,{seed: false});
+    return gorgiasSectionHtml(await readGorgiasFacts(db,sourceEnv,settings.values,localNow()),settings.values.gorgiasHandoverWaitHours);
+  }});
+  async function waitingView(now: Date) {
+    const settings = await readSettings(db,{seed: false});
+    return readWaitingView(db,hq.mode,now,settings.values.waitingOnDays);
+  }
+  handover.register({id: 'waiting-on', title: 'Waiting on others', load: async () => waitingSectionHtml(await waitingView(localNow()))});
+  registerWaitingOn(app,db,auth,{mode: hq.mode,clock: localNow,loadView: waitingView,publish: () => events.publish()});
   registerFulfilment(app, db, auth, shopify.mode, sourceNow, () => events.publish());
   registerCreatives(app, db, auth, sourceEnv, creativeNow, async (from, to) => {
     const facts = await shopify.store.facts(sourceNow());
@@ -370,6 +407,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
       channelExclusions: await shopify.store.channelExclusions(),
       google: googleHealth(await readGoogleFacts(db,settings.values,sourceEnv,googleAt),googleAt),
       mailchimp: await readMailchimpFacts(db,mailchimp.mode,mailchimpAt),
+      waiting: await readWaitingView(db,hq.mode,localNow(),settings.values.waitingOnDays),
       reviewHealth: reviews.mode === 'live' ? await readReviewHealth(db) : {read:dashboard.reviews!.rows.length,waiting:dashboard.reviews!.rows.length,flagged:dashboard.reviews!.rows.filter(r=>r.flagged).length,last:null,mode:'sample'},
       summary: dashboard.banner ?? '', shopify: dashboard.shopify!, checkedAt: sourceNow().toISOString(), adSets: dashboard.adSets, campaigns: await readCampaignSync(db, settings.values, sourceEnv), creatives: await creativeHealth(db, settings.values, sourceEnv, creativeNow()),
     }));
@@ -408,12 +446,12 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
       FROM pulse.audit_log audit LEFT JOIN pulse.settings_changes changes ON changes.audit_id = audit.id
       LEFT JOIN pulse.meta_ad_set_changes ad ON ad.audit_id=audit.id
       ORDER BY audit.occurred_at DESC, audit.id DESC LIMIT 100`);
-    return reply.type('text/html; charset=utf-8').send(auditPage(result.rows,await readMetaActions(db)));
+    return reply.type('text/html; charset=utf-8').send(auditPage(result.rows,await readMetaActions(db,undefined,localNow())));
   });
   // Fixed paths only; the server never exposes repository or environment files.
   const assets = [
-    ...['browser.js', 'dashboard.js', 'settings.js', 'fulfilment.js', 'creatives.js', 'adsets.js', 'ticker.js', 'morning.js'].map(name => [name, 'text/javascript; charset=utf-8'] as const),
-    ...['styles.css', 'dashboard.css', 'settings.css', 'fulfilment.css', 'creatives.css', 'fonts.css', 'pull-refresh.css', 'adsets.css', 'scorecard.css', 'home-compact.css', 'home-panels.css', 'decisions.css', 'ticker.css', 'morning.css'].map(name => [name, 'text/css; charset=utf-8'] as const),
+    ...['browser.js', 'dashboard.js', 'settings.js', 'fulfilment.js', 'creatives.js', 'adsets.js', 'ticker.js', 'morning.js', 'handover.js'].map(name => [name, 'text/javascript; charset=utf-8'] as const),
+    ...['styles.css', 'dashboard.css', 'settings.css', 'fulfilment.css', 'creatives.css', 'fonts.css', 'pull-refresh.css', 'adsets.css', 'scorecard.css', 'home-compact.css', 'home-panels.css', 'decisions.css', 'ticker.css', 'morning.css', 'handover.css', 'waiting-on.css'].map(name => [name, 'text/css; charset=utf-8'] as const),
     ...['logo.png', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'].map(name => [name, 'image/png'] as const),
     ...['outfit', 'plus-jakarta-sans'].flatMap(name => [
       [`fonts/${name}-latin-wght-normal.woff2`, 'font/woff2'] as const,

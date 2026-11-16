@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { createHmac, randomBytes } from 'node:crypto';
 import test from 'node:test';
 import { createApp } from '../src/app.js';
+import type { Database } from '../src/db.js';
+import type { DashboardSnapshot } from '../src/dashboard-types.js';
+import { morningKey } from '../src/morning/model.js';
 import { readRuntime } from '../src/runtime.js';
 import { saveHQMonth, saveHQRegister } from '../src/github-hq/store.js';
 import type { HQTestRow } from '../src/github-hq/model.js';
@@ -74,4 +77,53 @@ test('live app without the HQ key shows a key reminder and waiting tests, with n
   assert.ok(!deck.cards.some(card => card.kind === 'test-call' || card.kind === 'new-verdict'));
   const home = await app.inject({url: '/?from=morning', headers});
   assert.equal(home.statusCode, 200); assert.match(home.body, /Tests: waiting for the register/);
+});
+
+test('Home hides an unmeasured call locally, puts it back, returns it on a reading and survives a failed Morning projection', async t => {
+  t.mock.method(globalThis, 'fetch', async () => { assert.fail('Test visibility must never call a source'); });
+  const db = await createTestDatabase(); let failStates = false;
+  const observed: Database = {...db, query(sql, values) {
+    if (failStates && /^SELECT\b/.test(sql) && sql.includes('pulse.morning_card_states')) throw new Error('Invented state read failure');
+    return db.query(sql, values);
+  }};
+  const app = await createApp(observed, config, {...liveEnv(), GITHUB_HQ_TOKEN: randomBytes(32).toString('hex')}, {}, {}, {}, {}, {clock: () => now});
+  t.after(async () => { await app.close(); await db.close(); });
+  const credential = randomBytes(32).toString('base64url'), token = randomBytes(32).toString('base64url');
+  const secret = (await db.query<{value: Uint8Array}>("SELECT value FROM pulse_private.app_secrets WHERE name='session_hmac'")).rows[0]!;
+  await db.query('INSERT INTO pulse_private.credentials(id,public_key) VALUES($1,$2)', [credential, randomBytes(32)]);
+  await db.query("INSERT INTO pulse_private.sessions(token_hash,credential_id,expires_at) VALUES($1,$2,now()+interval '30 days')",
+    [createHmac('sha256', Buffer.from(secret.value)).update(token).digest('hex'), credential]);
+  const headers = {cookie: `__Host-pulse_session=${token}`, origin: config.origin, 'content-type': 'application/json'};
+  const row: HQTestRow = {id: 'I502', section: 'live', cells: ['I502 invented missing reading', 'Site', 'Which invented title works?',
+    'A round; B square', 'Invented order rate', '2032-03-01', 'After enough mornings', 'Invented report', 'No reading yet']};
+  await saveHQRegister(db, {readable: true, rows: [row], skippedRows: 0}, '"invented-unmeasured"', now);
+  const sourceBefore = (await db.query('SELECT * FROM pulse.github_hq_tests')).rows;
+  const snapshot = async () => {
+    const response = await app.inject({url: '/api/dashboard', headers}); assert.equal(response.statusCode, 200);
+    return response.json<DashboardSnapshot>();
+  };
+  const cardKey = morningKey('test-call', row.id), press = (action: string) => app.inject({method: 'POST', url: '/api/morning/press', headers,
+    payload: {cardKey, action}});
+  assert.equal((await snapshot()).tests?.rows[0]?.hideUntilReading?.hidden, false);
+  assert.equal((await press('hide')).statusCode, 200);
+  assert.equal((await snapshot()).tests?.rows[0]?.hideUntilReading?.hidden, true);
+  assert.equal((await press('hide')).statusCode, 409, 'An already hidden row cannot be hidden again');
+  const hiddenHome = await app.inject({url: '/?from=morning', headers});
+  assert.match(hiddenHome.body, /i Hidden until a reading · 1/);
+  assert.equal((await db.query("SELECT 1 FROM pulse.audit_log WHERE event LIKE 'Morning hidden:%'")).rowCount, 1);
+  assert.deepEqual((await db.query('SELECT * FROM pulse.github_hq_tests')).rows, sourceBefore);
+  assert.equal((await press('undo')).statusCode, 200);
+  assert.equal((await snapshot()).tests?.rows[0]?.hideUntilReading?.hidden, false);
+  assert.equal((await press('hide')).statusCode, 200);
+  const logs: string[] = []; t.mock.method(console, 'warn', (line: string) => logs.push(line)); failStates = true;
+  const fallback = await snapshot(); assert.equal(fallback.tests?.rows[0]?.id, row.id);
+  assert.equal(fallback.tests?.rows[0]?.hideUntilReading?.hidden, false, 'A failed Morning projection shows the stored test safely');
+  assert.ok(fallback.tests?.rows[0]?.call); assert.equal(Object.hasOwn(fallback, 'morningOmissions'), false);
+  const fallbackHome = await app.inject({url: '/?from=morning', headers});
+  assert.equal(fallbackHome.statusCode, 200); assert.match(fallbackHome.body, /data-hq-test-call="I502"/);
+  assert.deepEqual(logs, ['Morning projection failed; Home shows all cards.']); failStates = false;
+  row.cells[8] = 'Reading 2032-04-07: A 3% n=4; B 2% n=3; ahead none; sure 60%; mornings 1';
+  await saveHQRegister(db, {readable: true, rows: [row], skippedRows: 0}, '"invented-first-reading"', now);
+  const returned = await snapshot(); assert.equal(returned.tests?.rows[0]?.hideUntilReading, undefined);
+  assert.ok(returned.tests?.rows[0]?.call); assert.equal((await press('hide')).statusCode, 409, 'A measured test cannot use the unmeasured hide');
 });

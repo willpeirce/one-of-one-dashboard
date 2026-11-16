@@ -69,22 +69,36 @@ test('flat adds-to-cart cost uses all lifetime spend and actions independently o
   assert.deepEqual(verdict.figures, ['£60.00 life spend', '£30.00 an add to cart']);
 });
 
-test('flat cost rules need complete lifetime coverage, never convert null action data into zero and ignore today', () => {
+test('incomplete flat lifetime falls back to window rules without treating any null action as zero', () => {
   const settings = defaultSettings(), rows = life({ spend: 40, purchases: 1, addsToCart: 1 });
-  for (const partial of [rows.slice(1), rows.filter(row => row.day !== '2032-04-03')])
-    assert.deepEqual(costs(judgeAdSet(set(), partial, settings, today)), [], 'Older missing days cannot be judged as a whole life');
-  const unknownPurchases = structuredClone(rows); unknownPurchases[0]!.purchases = null;
-  const purchaseUnknown = judgeAdSet(set(), unknownPurchases, settings, today)!;
-  assert.deepEqual(costs(purchaseUnknown).map(reason => reason.rule), ['atc-cost']);
-  assert.equal(purchaseUnknown.purchases, null); assert.equal(purchaseUnknown.cpp, null);
-  const unknownAtc = structuredClone(rows); unknownAtc[0]!.addsToCart = null;
-  const atcUnknown = judgeAdSet(set(), unknownAtc, settings, today)!;
-  assert.deepEqual(costs(atcUnknown).map(reason => reason.rule), ['purchase-cost']);
-  assert.equal(atcUnknown.addsToCart, null); assert.equal(atcUnknown.cpatc, null);
+  const partials = [rows.slice(1), rows.filter(row => row.day !== '2032-04-03'),
+    rows.map((row, index) => index ? row : { ...row, purchases: null }),
+    rows.map((row, index) => index ? row : { ...row, addsToCart: null }),
+    rows.map((row, index) => index === 8 ? { ...row, purchases: null } : row)];
+  for (const partial of partials) {
+    const actual = judgeAdSet(set(), partial, settings, today)!;
+    const window = judgeAdSet(set({flatBudget: false}), partial, settings, today)!;
+    assert.deepEqual(costs(actual), costs(window));
+    assert.equal(actual.cpp, window.cpp); assert.equal(actual.cpatc, window.cpatc);
+    assert.equal(actual.spend, window.spend); assert.equal(actual.windowFrom, '2032-04-04');
+    assert.match(actual.reason, /Lifetime action data is incomplete; using the last seven days for cost judgement/);
+    assert.doesNotMatch(actual.reason, /Life:|life spend/);
+  }
   const unknownBoth = rows.map(row => ({ ...row, purchases: null, addsToCart: null }));
-  assert.deepEqual(costs(judgeAdSet(set(), unknownBoth, settings, today)), []);
+  const unknown = judgeAdSet(set(), unknownBoth, settings, today)!;
+  assert.deepEqual(costs(unknown), []);
+  assert.equal(unknown.purchases, null); assert.equal(unknown.addsToCart, null);
   const future = [...rows, { day: today, spend: 999, purchases: 0, addsToCart: 0 }];
   assert.deepEqual(judgeAdSet(set(), future, settings, today), judgeAdSet(set(), rows, settings, today));
+});
+
+test('flat lifetime fallback uses the existing window floor and needs two complete action days', () => {
+  const settings = defaultSettings(); settings.adRules.killFloorGbp = 80; settings.adRules.flatJudgeGbp = 60;
+  const rows = life({spend: 10, purchases: 0, addsToCart: 1}).slice(1);
+  assert.deepEqual(costs(judgeAdSet(set(), rows, settings, today)), []);
+  rows.at(-1)!.spend = 20;
+  assert.ok(costs(judgeAdSet(set(), rows, settings, today)).some(reason => reason.rule === 'purchase-cost'));
+  assert.deepEqual(costs(judgeAdSet(set(), [{day: '2032-04-10', spend: 100, purchases: 0, addsToCart: 0}], settings, today)), []);
 });
 
 test('a flat set inside its cost bars produces no decision card', () => {
@@ -101,11 +115,11 @@ test('a flat set inside its cost bars produces no decision card', () => {
   assert.equal(firstDay.verdict, 'Clear'); assert.equal(firstDay.reason, 'Inside its lifetime cost bars');
 });
 
-test('a missing or unknown older lifetime is described as waiting, even with a clean seven-day window', () => {
+test('a missing or unknown older lifetime discloses the fallback even when its window passes', () => {
   const rows = life(), settings = defaultSettings();
   const missing = judgeAdSet(set(), rows.slice(1), settings, today)!;
   assert.equal(missing.verdict, 'Clear');
-  assert.equal(missing.reason, 'Waiting for complete lifetime action data before cost judgement');
+  assert.equal(missing.reason, 'Inside its rules · Lifetime action data is incomplete; using the last seven days for cost judgement');
   rows[0]!.purchases = null;
   assert.equal(judgeAdSet(set(), rows, settings, today)!.reason, missing.reason);
   rows[0]!.purchases = 1; rows[0]!.addsToCart = null;

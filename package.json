@@ -13,6 +13,7 @@
     "start": "node --env-file-if-exists=.env dist/server.js",
     "migrate": "node --env-file-if-exists=.env --import tsx src/migrate.ts",
     "probe:mailchimp": "node --import tsx scripts/probe-mailchimp.ts",
+    "probe:gorgias": "node --import tsx scripts/probe-gorgias.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test --test-concurrency=1 test/*.test.ts",
     "test:browser": "node --import tsx scripts/test-browser.ts",

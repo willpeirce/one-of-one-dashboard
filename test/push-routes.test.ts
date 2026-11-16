@@ -8,7 +8,7 @@ import { readRuntime } from '../src/runtime.js';
 import { readPushKeyPair } from '../src/push/keys.js';
 import { registerPush } from '../src/push/routes.js';
 import type { PushTestResult } from '../src/push/service.js';
-import { readPushSubscriptions, savePushSubscription } from '../src/push/store.js';
+import { readPushSubscriptions, savePushSubscription, setPushAlerts } from '../src/push/store.js';
 import { createTestDatabase } from './helpers/database.js';
 
 const now = new Date('2032-04-06T07:00:00Z');
@@ -38,7 +38,7 @@ async function harness(t: TestContext) {
 test('push routes require a session, same origin, JSON and the small body limits', async t => {
   const h = await harness(t), item = subscription();
   assert.equal((await h.app.inject('/api/push/key')).statusCode, 401);
-  for (const [action,payload] of [['subscribe',item],['unsubscribe',{endpoint: item.endpoint}],['test',{}]] as const) {
+  for (const [action,payload] of [['subscribe',item],['unsubscribe',{endpoint: item.endpoint}],['preferences',{endpoint: item.endpoint, alertsEnabled: true}],['test',{}]] as const) {
     const url = `/api/push/${action}`;
     assert.equal((await h.app.inject({method: 'POST',url,payload})).statusCode, 403);
     assert.equal((await h.app.inject({method: 'POST',url,headers: {...h.headers,origin: 'https://other.example.test'},payload})).statusCode, 403);
@@ -62,6 +62,10 @@ test('push routes reject extra or malformed fields, invalid endpoints and invali
     assert.equal((await h.app.inject({method: 'POST',url: '/api/push/unsubscribe',headers: h.headers,payload: body})).statusCode, 400);
   for (const body of [[],{endpoint: item.endpoint},{extra: true}])
     assert.equal((await h.app.inject({method: 'POST',url: '/api/push/test',headers: h.headers,payload: body})).statusCode, 400);
+  for (const body of [{}, [], {endpoint: item.endpoint}, {endpoint: item.endpoint, alertsEnabled: 'true'},
+    {endpoint: item.endpoint, alertsEnabled: 1}, {endpoint: item.endpoint, alertsEnabled: true, extra: false},
+    {endpoint: 'https://other.example.test/invented', alertsEnabled: true}])
+    assert.equal((await h.app.inject({method: 'POST',url: '/api/push/preferences',headers: h.headers,payload: body})).statusCode, 400);
   assert.equal(h.calls.length, 0); assert.equal((await readPushSubscriptions(h.db)).length, 0);
 });
 
@@ -81,7 +85,7 @@ test('subscribe canonicalizes endpoint identity and unsubscribe is credential sc
   const h = await harness(t), item = subscription();
   const subscribe = await h.app.inject({method: 'POST',url: '/api/push/subscribe',headers: h.headers,
     payload: {...item,endpoint: item.endpoint.replace('fcm.googleapis.com', 'FCM.GOOGLEAPIS.COM:443')}});
-  assert.equal(subscribe.statusCode, 200); assert.deepEqual(subscribe.json(), {ok: true});
+  assert.equal(subscribe.statusCode, 200); assert.deepEqual(subscribe.json(), {ok: true, alertsEnabled: false});
   assert.equal(subscribe.headers['cache-control'], 'no-store');
   const rows = await readPushSubscriptions(h.db);
   assert.equal(rows.length, 1); assert.equal(rows[0]!.endpoint, item.endpoint); assert.equal(rows[0]!.credentialId, h.credential);
@@ -91,6 +95,26 @@ test('subscribe canonicalizes endpoint identity and unsubscribe is credential sc
   await h.app.inject({method: 'POST',url: '/api/push/subscribe',headers: h.headers,payload: item});
   await h.app.inject({method: 'POST',url: '/api/push/unsubscribe',headers: h.headers,payload: {endpoint: item.endpoint}});
   assert.equal((await readPushSubscriptions(h.db)).length, 0);
+});
+
+test('device preferences are credential scoped, exact, no-store and survive subscription repair', async t => {
+  const h = await harness(t), item = subscription();
+  const preference = (alertsEnabled: boolean) => h.app.inject({method: 'POST',url: '/api/push/preferences',headers: h.headers,
+    payload: {endpoint: item.endpoint, alertsEnabled}});
+  assert.equal((await preference(true)).statusCode, 404);
+  await savePushSubscription(h.db, 'invented-other', item, now);
+  assert.equal((await preference(true)).statusCode, 404);
+  assert.equal((await readPushSubscriptions(h.db))[0]!.alertsEnabled, false);
+  await savePushSubscription(h.db, h.credential, item, now);
+  const on = await preference(true);
+  assert.equal(on.statusCode, 200); assert.equal(on.headers['cache-control'], 'no-store');
+  assert.deepEqual(on.json(), {ok: true, alertsEnabled: true}); assert.ok(!on.body.includes(item.endpoint));
+  const repair = await h.app.inject({method: 'POST',url: '/api/push/subscribe',headers: h.headers,payload: item});
+  assert.deepEqual(repair.json(), {ok: true, alertsEnabled: true});
+  assert.equal((await readPushSubscriptions(h.db))[0]!.alertsEnabled, true);
+  assert.deepEqual((await preference(false)).json(), {ok: true, alertsEnabled: false});
+  await setPushAlerts(h.db, h.credential, item.endpoint, true, now);
+  assert.equal((await readPushSubscriptions(h.db))[0]!.alertsEnabled, true);
 });
 
 test('test route delegates only the current credential, maps cooldown and failure safely, and audits no secrets', async t => {

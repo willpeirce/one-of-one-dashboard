@@ -70,3 +70,17 @@ code { font-size: 0.85rem; }
 }
 
 #source-health .source-warning { color: #ffc43d; }
+
+/* Sources and Audit use the same compact button header as the other signed-in pages. */
+.utility-page .settings-header { flex-wrap: nowrap; align-items: center; }
+.utility-page .settings-nav { flex-wrap: nowrap; }
+.utility-page .settings-nav > .btn, .utility-page .account-menu > summary { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; }
+.utility-page .account-menu { margin: 0; padding: 0; border: 0; }
+.utility-page .account-links a, .utility-page .account-links button { min-height: 44px; }
+.utility-page .wrap { display: block; }
+.utility-page .wrap > * + * { margin-top: 1rem; }
+.utility-page .skip-link { z-index: 20; }
+.utility-page{background:transparent}
+.utility-page .sample-banner strong{color:var(--ink)}
+
+[data-waiting-read-health] > summary { box-sizing: border-box; min-height: 44px; min-width: 44px; padding-block: 12px; cursor: pointer; }

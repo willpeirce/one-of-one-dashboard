@@ -77,6 +77,9 @@ export interface Settings {
   googleContactName: string;
   mailchimpPlanLimit: number | null;
   mailchimpBillingDay: number | null;
+  gorgiasHandoverViewId: string;
+  gorgiasHandoverTag: string;
+  gorgiasHandoverWaitHours: number;
   blendedMetaTripwireGbp: number;
   creatorRules: {
     assetCapGbp: number;
@@ -89,9 +92,11 @@ export interface Settings {
     useAffiliateWording: boolean;
   };
   waitingContacts: { business: string; role: string }[];
+  waitingOnDays: number;
   deadlines: { label: string; date: string }[];
   keyExpiryDates: { keyName: KeyName; expiresOn: string }[];
   morningSummaryEnabled: boolean;
+  alertQuietHours: { start: string; end: string };
   morningOpensFirst: boolean;
   brand: 'one-of-one';
 }
@@ -174,14 +179,15 @@ export function defaultSettings(): Settings {
     googleContentShareMaxPct: 2, googleContentSpendFloorGbp: 5, googleNoSaleSpendFloorGbp: 25,
     googleBreakEvenReturnUk: 0, googleBreakEvenReturnUs: 0, googleContactName: '',
     mailchimpPlanLimit: null, mailchimpBillingDay: null,
+    gorgiasHandoverViewId: '', gorgiasHandoverTag: 'ai_handover', gorgiasHandoverWaitHours: 12,
     blendedMetaTripwireGbp: 28,
     creatorRules: {
       assetCapGbp: 200, minimumUsageMonths: 3, pushPriceBeforeExtendingUsage: true,
       acceptOpeningOffer: false, briefPaymentPercent: 50, deliveryPaymentPercent: 50,
       offerCreatorLink: true, useAffiliateWording: false,
     },
-    waitingContacts: [], deadlines: [], keyExpiryDates: [],
-    morningSummaryEnabled: false, morningOpensFirst: false, brand: appConfig.brand,
+    waitingContacts: [], waitingOnDays: 7, deadlines: [], keyExpiryDates: [],
+    morningSummaryEnabled: false, alertQuietHours: {start: '22:00', end: '07:00'}, morningOpensFirst: false, brand: appConfig.brand,
   };
 }
 
@@ -282,6 +288,7 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
   const value = object(input, Object.keys(defaults), '');
   const rules = object(value.creatorRules, Object.keys(defaults.creatorRules), 'creatorRules');
   const ad = object(value.adRules, Object.keys(adRulesDefaults()), 'adRules');
+  const quiet = object(value.alertQuietHours, ['start', 'end'], 'alertQuietHours');
   const parseMarket = (market: 'uk' | 'us') => {
     const p = `adRules.${market}`, r = object(ad[market], Object.keys(adRulesDefaults()[market]), p);
     const overrideGbp = number(r.overrideGbp, `${p}.overrideGbp`, 100_000, true, false, 0.01);
@@ -421,6 +428,21 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
     }, (row) => row.campaignId),
     mailchimpPlanLimit: number(value.mailchimpPlanLimit, 'mailchimpPlanLimit', Number.MAX_SAFE_INTEGER, true, true, 1),
     mailchimpBillingDay: number(value.mailchimpBillingDay, 'mailchimpBillingDay', 31, true, true, 1),
+    gorgiasHandoverViewId: (() => {
+      if (typeof value.gorgiasHandoverViewId !== 'string') return invalid('gorgiasHandoverViewId');
+      const id = value.gorgiasHandoverViewId.trim();
+      return id === '' || /^[1-9]\d{0,24}$/.test(id) ? id : invalid('gorgiasHandoverViewId');
+    })(),
+    gorgiasHandoverTag: (() => {
+      if (typeof value.gorgiasHandoverTag !== 'string') return invalid('gorgiasHandoverTag');
+      const tag = value.gorgiasHandoverTag.trim();
+      return tag.length > 0 && tag.length <= 80 && !/[\u0000-\u001f\u007f]/u.test(tag) ? tag : invalid('gorgiasHandoverTag');
+    })(),
+    gorgiasHandoverWaitHours: (() => {
+      const hours = value.gorgiasHandoverWaitHours;
+      return typeof hours === 'number' && Number.isFinite(hours) && hours >= 1 && hours <= 720
+        ? hours : invalid('gorgiasHandoverWaitHours');
+    })(),
     blendedMetaTripwireGbp: requiredNumber(value.blendedMetaTripwireGbp, 'blendedMetaTripwireGbp', 100_000, false, 0.01),
     creatorRules: {
       assetCapGbp: requiredNumber(rules.assetCapGbp, 'creatorRules.assetCapGbp', 100_000),
@@ -436,6 +458,7 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
       const parsed = object(row, ['business', 'role'], path);
       return { business: businessText(parsed.business, `${path}.business`), role: businessText(parsed.role, `${path}.role`) };
     }, (row) => `${row.business}/${row.role}`),
+    waitingOnDays: requiredNumber(value.waitingOnDays, 'waitingOnDays', 365, true, 1),
     deadlines: list(value.deadlines, 'deadlines', (row, path) => {
       const parsed = object(row, ['label', 'date'], path);
       return { label: text(parsed.label, `${path}.label`), date: date(parsed.date, `${path}.date`) };
@@ -445,6 +468,7 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
       return { keyName: choice(parsed.keyName, `${path}.keyName`, SETTINGS_KEY_NAMES), expiresOn: date(parsed.expiresOn, `${path}.expiresOn`) };
     }, (row) => row.keyName),
     morningSummaryEnabled: bool(value.morningSummaryEnabled, 'morningSummaryEnabled'),
+    alertQuietHours: {start: cutoff(quiet.start, 'alertQuietHours.start'), end: cutoff(quiet.end, 'alertQuietHours.end')},
     morningOpensFirst: bool(value.morningOpensFirst, 'morningOpensFirst'),
     brand: choice(value.brand, 'brand', ['one-of-one'] as const),
   };
@@ -493,6 +517,7 @@ function storedSettings(input: unknown): Settings {
     inboundStock: defaults.inboundStock,
     keyDates: defaults.keyDates,
     morningOpensFirst: defaults.morningOpensFirst,
+    alertQuietHours: defaults.alertQuietHours,
     corporationTaxPercent: defaults.corporationTaxPercent,
     googleNetworkSpendFloorGbp: defaults.googleNetworkSpendFloorGbp,
     googleNetworkRoasFloor: defaults.googleNetworkRoasFloor,
@@ -504,6 +529,10 @@ function storedSettings(input: unknown): Settings {
     googleContactName: defaults.googleContactName,
     mailchimpPlanLimit: defaults.mailchimpPlanLimit,
     mailchimpBillingDay: defaults.mailchimpBillingDay,
+    gorgiasHandoverViewId: defaults.gorgiasHandoverViewId,
+    gorgiasHandoverTag: defaults.gorgiasHandoverTag,
+    gorgiasHandoverWaitHours: defaults.gorgiasHandoverWaitHours,
+    waitingOnDays: defaults.waitingOnDays,
     ...input as Record<string, unknown>,
   };
   if (stored.adRules && typeof stored.adRules === 'object' && !Array.isArray(stored.adRules)

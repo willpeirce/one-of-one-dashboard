@@ -76,8 +76,12 @@ function historyHtml(snapshot: MorningSnapshot): string {
   return `<section class="mn-history"><h3>What you did</h3><ul id="mn-done-list">${rows.join('') || '<li><span>No presses yet today.</span></li>'}</ul></section>`;
 }
 export function morningDeckHtml(snapshot: MorningSnapshot, options: MorningViewOptions = {}): string {
+  const handover = snapshot.watchOnHandover?.length ?? 0;
+  const homeLine = snapshot.watchOnHome ? `${snapshot.watchOnHome} Watch ${snapshot.watchOnHome === 1 ? 'card is' : 'cards are'} on Home.` : '';
+  const handoverLine = handover ? `${handover} Watch ${handover === 1 ? 'card is' : 'cards are'} on Handover.` : '';
+  const clearLine = homeLine || handoverLine ? `Your Morning deck is clear. ${[homeLine, handoverLine].filter(Boolean).join(' ')}` : 'Nothing else needs you this morning.';
   return snapshot.cards[0] ? `<div class="mn-stack" data-mn-stack="${Math.min(3, snapshot.cards.length)}">${morningCardHtml(snapshot.cards[0], options)}</div>`
-    : `<section id="mn-all-clear" class="mn-all-clear"><span class="mn-clear-mark" aria-hidden="true">✓</span><h2 tabindex="-1">All clear</h2><p>${snapshot.watchOnHome ? `Your Morning deck is clear. ${snapshot.watchOnHome} Watch ${snapshot.watchOnHome === 1 ? 'card is' : 'cards are'} on Home.` : 'Nothing else needs you this morning.'}</p>${options.error ? `<p id="mn-error" class="mn-error" role="alert">✕ ${e(options.error)}</p>` : ''}${historyHtml(snapshot)}</section>`;
+    : `<section id="mn-all-clear" class="mn-all-clear"><span class="mn-clear-mark" aria-hidden="true">✓</span><h2 tabindex="-1">All clear</h2><p>${clearLine}</p>${options.error ? `<p id="mn-error" class="mn-error" role="alert">✕ ${e(options.error)}</p>` : ''}${historyHtml(snapshot)}</section>`;
 }
 export function morningProgressHtml(snapshot: MorningSnapshot): string {
   const done = Math.min(snapshot.completed, snapshot.total), current = snapshot.cards.length ? Math.min(done + 1, snapshot.total) : done;
@@ -85,12 +89,17 @@ export function morningProgressHtml(snapshot: MorningSnapshot): string {
 }
 export function morningLinesHtml(snapshot: MorningSnapshot): string {
   const brief = snapshot.brief;
-  const watch = snapshot.watchOnHome
+  const watch = snapshot.watchOnHandover?.length
+    ? `<button type="button" class="mn-watch-line" id="mn-watch" aria-haspopup="dialog"><span aria-hidden="true">△</span> Watch · ${snapshot.watchOnHome + snapshot.watchOnHandover.length} to check</button>`
+    : snapshot.watchOnHome
     ? `<a class="mn-watch-line" id="mn-more-home" href="/?from=morning"><span aria-hidden="true">△</span> Watch · ${snapshot.watchOnHome} on Home</a>`
     : '<span class="mn-watch-line" id="mn-watch-none"><span aria-hidden="true">△</span> Watch · none</span>';
   const coverage = brief?.moreHere ? ` · ${brief.moreHere} more here` : brief?.allInDeck ? ' · all in the deck' : '';
   const nudge = snapshot.summaryEnabled ? '<a id="mn-push-nudge" href="/settings#notifications" hidden>Notifications are off on this device</a>' : '';
   return `<div class="mn-summary-lines"><div class="mn-status-row"><button type="button" id="mn-good" class="mn-good-line" aria-haspopup="dialog"><span aria-hidden="true">✓</span> Good · ${snapshot.fine.length} fine</button>${watch}</div>${brief ? `<button type="button" class="mn-brief-line" id="mn-brief" data-mn-brief="${brief.status}" aria-haspopup="dialog"><span>${brief.status === 'ok' ? '✓ Good · ' : brief.status === 'unreadable' || brief.tone === 'warn' ? '△ Watch · ' : ''}${e(brief.text)}${e(coverage)}${brief.mode === 'sample' ? ' · Sample data' : ''}</span></button>` : ''}</div>${nudge}`;
+}
+export function morningWatchHtml(snapshot: MorningSnapshot): string {
+  return `<section><h3>On Home</h3><a class="mn-sheet-link" href="/?from=morning">${snapshot.watchOnHome ? `△ Home · ${snapshot.watchOnHome} Watch ${snapshot.watchOnHome === 1 ? 'card' : 'cards'}` : '✓ Home · no Watch cards'} ›</a></section>${(snapshot.watchOnHandover ?? []).map(row => `<section data-mn-handover-watch="${e(row.key)}"><h3>△ Watch · ${e(row.title)}</h3><p>${e(row.why)}</p><a class="mn-sheet-link" href="/handover">Open Handover ›</a></section>`).join('')}`;
 }
 export function morningBriefHtml(brief: MorningBrief): string {
   const diagnostics = brief.registerDiagnostics;

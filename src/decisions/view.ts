@@ -18,14 +18,14 @@ export interface DecisionsState {
   morningOmissions?: MorningHomeOmissions;
 }
 type Need = ShopifyDashboard['needs'][number];
-const sourceNames = { shopify: 'Shopify', 'j-and-j': 'J&J', meta: 'Meta', 'google-ads': 'Google Ads', mailchimp: 'Mailchimp', tiktok: 'TikTok', pulse: 'Pulse' };
+const sourceNames = { shopify: 'Shopify', 'j-and-j': 'J&J', meta: 'Meta', 'google-ads': 'Google Ads', mailchimp: 'Mailchimp', tiktok: 'TikTok', pulse: 'Pulse', gorgias: 'Gorgias', 'github-hq': 'GitHub HQ' };
 const source = (need: Need) => sourceNames[need.source];
 function needLink(need: Need): string {
   const external = /^https?:\/\//.test(need.link);
   const shopify = /^https:\/\/(?:admin\.shopify\.com|[^/]+\.myshopify\.com)\//.test(need.link);
   const label = shopify ? 'Open in Shopify' : need.link.startsWith('/settings') ? 'Open settings'
     : need.link.startsWith('/ads') ? 'Open ads' : need.link.startsWith('/fulfilment') ? 'Open fulfilment'
-    : need.link.startsWith('/morning') ? 'Open Morning' : 'Open source health';
+    : need.link.startsWith('/morning') ? 'Open Morning' : need.link.startsWith('/handover') ? 'Open handover' : 'Open source health';
   return `<a class="btn" href="${e(need.link)}"${external ? ' target="_blank" rel="noopener noreferrer"' : ''}>${label}</a>`;
 }
 const figure = (value?: {value:string;label:string}, mark='') => value

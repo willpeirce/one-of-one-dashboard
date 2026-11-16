@@ -1,7 +1,6 @@
-import { HQ_CELL_LIMIT, HQ_SECTION_ROW_LIMIT, HQ_TRUNCATED_STATUS_MARKER, hqCut, type HQRegisterResult, type HQTestRow, type HQTestSection } from './model.js';
+import { HQ_CELL_LIMIT, HQ_MALFORMED_ID_LIMIT, HQ_SECTION_ROW_LIMIT, HQ_TRUNCATED_STATUS_MARKER, hqCut, type HQRegisterResult, type HQTestRow, type HQTestSection } from './model.js';
 
 const widths: Record<HQTestSection,number>={live:9,queue:7,history:5};
-const sections=['live','queue','history'] as const;
 
 /** Split Markdown table cells without treating escaped pipes or code spans as separators. */
 function tableCells(line: string): string[] {
@@ -33,7 +32,8 @@ function tableCells(line: string): string[] {
 
 /** This bounded pipe-table reader skips individual malformed rows, not the whole register. */
 export function parseRegister(text: string): HQRegisterResult {
-  const collected: Record<HQTestSection,HQTestRow[]>={live:[],queue:[],history:[]};
+  const rows: HQTestRow[]=[], seen=new Set<string>();
+  const counts: Record<HQTestSection,number>={live:0,queue:0,history:0};
   let section: HQTestSection | 'watches' | null=null, readable=false, skippedRows=0, cappedRows=0;
   const headings = new Set<string>(), skippedCells = new Set<string>();
   for (const raw of text.split(/\r?\n/)) {
@@ -50,17 +50,20 @@ export function parseRegister(text: string): HQRegisterResult {
     const cells=rawCells.map(cell=>hqCut(cell,HQ_CELL_LIMIT));
     if (cells.every(cell=>/^:?-{2,}:?$/.test(cell.replaceAll(' ',''))) || cells[0]?.toLowerCase()==='id') continue;
     if (cells.length!==widths[section] || !cells[0]) {skippedRows++;if (cells[0]) skippedCells.add(cells[0]);continue;}
-    if (collected[section].length>=HQ_SECTION_ROW_LIMIT) {cappedRows++;skippedCells.add(cells[0]);continue;}
+    const id=cells[0].split(/\s+/)[0]!;
+    // First well-formed occurrence wins even when its section is already full.
+    if (seen.has(id)) {skippedRows++;continue;}
+    seen.add(id);
+    if (counts[section]>=HQ_SECTION_ROW_LIMIT) {cappedRows++;continue;}
     // A cut Status could otherwise lose a later qualification such as "capped at Leaning".
     if (section==='live' && Array.from(rawCells[8]!).length>HQ_CELL_LIMIT)
       cells[8]=hqCut(rawCells[8]!,HQ_CELL_LIMIT-HQ_TRUNCATED_STATUS_MARKER.length)+HQ_TRUNCATED_STATUS_MARKER;
-    const id=cells[0].split(/\s+/)[0]!;
-    collected[section].push({id,section,cells});
+    counts[section]++;rows.push({id,section,cells});
   }
-  const rows: HQTestRow[]=[], seen=new Set<string>();
-  for (const section of sections) for (const row of collected[section]) {
-    if (seen.has(row.id)) {skippedRows++;skippedCells.add(row.cells[0]!);continue;}
-    seen.add(row.id);rows.push(row);
+  const malformed = new Map<string,string>();
+  for (const cell of skippedCells) {
+    const id=cell.split(/\s+/)[0]!;
+    if (!seen.has(id) && !malformed.has(id)) malformed.set(id,cell);
   }
-  return {readable,rows,skippedRows,cappedRows,complete:headings.size===4,skippedCells:[...skippedCells]};
+  return {readable,rows,skippedRows,cappedRows,complete:headings.size===4,skippedCells:[...malformed.values()].slice(0,HQ_MALFORMED_ID_LIMIT)};
 }

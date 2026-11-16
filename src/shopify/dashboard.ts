@@ -22,7 +22,8 @@ import type { GoogleFlagDetail } from '../google-ads/model.js';
 
 export interface DashboardNeed {
   id: string; state: State; title: string; why: string; link: string;
-  source: 'shopify' | 'j-and-j' | 'meta' | 'google-ads' | 'mailchimp' | 'tiktok' | 'pulse';
+  source: 'shopify' | 'j-and-j' | 'meta' | 'google-ads' | 'mailchimp' | 'tiktok' | 'pulse' | 'gorgias' | 'github-hq';
+  sourceMode?: 'sample' | 'live';
   figure?: { value: string; label: string };
   googleFlag?: GoogleFlagDetail;
 }

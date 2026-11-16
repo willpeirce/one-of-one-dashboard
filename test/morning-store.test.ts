@@ -151,6 +151,20 @@ test('stored reminders and verdict acknowledgements still load and expire withou
   assert.equal((await h.db.query('SELECT 1 FROM pulse.morning_card_states')).rowCount, 0);
 });
 
+test('a deleted date clears its stored reminder only after a successful ticker read', async t => {
+  const date = card('invented-removed-date', {kind: 'date', sourceScope: 'ticker', state: 'info', eventDate: '2032-04-16'});
+  const h = await harness(t, input([date]));
+  await h.db.query(`INSERT INTO pulse.morning_card_states(mode,card_key,state,until_day,facts_hash,answer,credential_id,
+    pressed_at,title,card_kind,subject_id,source_scope) VALUES('live',$1,'parked','2032-04-13',$2,NULL,$3,$4,$5,'date',$6,'ticker')`,
+  [date.key, date.factsHash, h.credential, '2032-04-05T10:00:00Z', date.title, date.subjectId]);
+  assert.equal((await h.read()).parked.length, 1);
+  h.setInput({...input([]), sourceReadOk: {ticker: false}});
+  assert.equal((await h.read()).parked.length, 1, 'An unreadable ticker retains its last reminder');
+  h.setInput(input([]));
+  assert.equal((await h.read()).parked.length, 0);
+  assert.equal((await h.db.query('SELECT 1 FROM pulse.morning_card_states')).rowCount, 0);
+});
+
 test('Home and Morning can confirm a ready test after seven alarms, while parked, answered and wrong calls stay refused', async t => {
   const alarms = Array.from({length: 7}, (_, index) => card(`invented-urgent-${index}`, {kind: 'need', state: 'alarm', tier: 0, order: index, allowedPresses: ['ack']}));
   const call = card('invented-overflow-test', {kind: 'test-call', state: 'decide', tier: 1, sourceScope: 'tests',

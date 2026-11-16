@@ -81,6 +81,8 @@ export interface MorningSnapshot {
   /** Current eligible members remain available below the grouping threshold for a confirmed sequence. */
   pauseAll?: { cardKey: string; members: MorningPauseMember[]; deferred: boolean };
   mode: SourceMode; day: string; cards: MorningCard[]; more: number; watchOnHome: number; fine: MorningFine[];
+  /** Open Watch needs whose complete rows live on Handover rather than Home. */
+  watchOnHandover?: {key: string; title: string; why: string; sourceHref: '/handover'}[];
   datedFromCheck?: { text: string; lines?: string[] }[];
   parked: MorningAway[]; hidden: MorningAway[]; presses: MorningState[];
   metaActions: MorningMetaAction[]; passedDates: TickerPassed[]; answers: MorningState[];

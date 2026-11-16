@@ -8,12 +8,13 @@ class RequestFailed extends Error {
   }
 }
 
-async function post<T>(path: string, body: unknown): Promise<T> {
+async function post<T>(path: string, body: unknown, timeoutMs?: number): Promise<T> {
   const response = await fetch(path, {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    ...(timeoutMs === undefined ? {} : {signal: AbortSignal.timeout(timeoutMs)}),
   });
   if (!response.ok) throw new RequestFailed(response.status);
   return await response.json() as T;
@@ -79,7 +80,7 @@ signOut?.addEventListener('click', () => {
     let pushEndpoint: string | undefined;
     try { pushEndpoint = await unsubscribeForSignOut(); } catch { /* Device cleanup cannot prevent logout. */ }
     try {
-      await post('/auth/logout', pushEndpoint ? {pushEndpoint} : {});
+      await post('/auth/logout', pushEndpoint ? {pushEndpoint} : {}, 5_000);
       window.location.assign('/login');
     } catch (error) { cancelPushSignOut(); throw error; }
   }, 'Could not sign out. Try again.');

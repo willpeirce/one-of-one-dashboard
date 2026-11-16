@@ -1,4 +1,5 @@
 interface TestResult { ok: true; sent: number; failed: number; gone: number }
+interface DevicePreferences { alertsEnabled: boolean }
 const supported = (): boolean => window.isSecureContext && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 let registration: Promise<ServiceWorkerRegistration> | null = null;
 function worker(): Promise<ServiceWorkerRegistration> {
@@ -42,11 +43,11 @@ document.addEventListener('pulse:signing-out', event => {
   signingOut = true;
   (event as CustomEvent<Promise<unknown>[]>).detail.push(...subscriptionSaves);
 });
-async function saveSubscription(subscription: PushSubscription): Promise<void> {
-  if (signingOut) return;
-  const pending = request('/api/push/subscribe', payload(subscription));
+async function saveSubscription(subscription: PushSubscription): Promise<DevicePreferences | null> {
+  if (signingOut) return null;
+  const pending = request<DevicePreferences>('/api/push/subscribe', payload(subscription));
   subscriptionSaves.add(pending);
-  try { await pending; } finally { subscriptionSaves.delete(pending); }
+  try { return await pending; } finally { subscriptionSaves.delete(pending); }
 }
 
 const CLEANUP_TIMEOUT_MS = 1500;
@@ -58,7 +59,7 @@ function removalOwed(): boolean {
 function markRemoval(owed: boolean): void {
   // One boolean only: never persist an endpoint, keys or credential in browser storage.
   try { if (owed) localStorage.setItem(REMOVAL_OWED, '1'); else localStorage.removeItem(REMOVAL_OWED); } catch { /* Fall back to the same boolean cookie. */ }
-  try { document.cookie = `${REMOVAL_OWED}=${owed ? '1' : ''}; Path=/; SameSite=Strict; Max-Age=${owed ? 34_560_000 : 0}`; } catch { /* Storage availability cannot block sign-out. */ }
+  try { document.cookie = `${REMOVAL_OWED}=${owed ? '1' : ''}; Path=/; SameSite=Strict; Secure; Max-Age=${owed ? 34_560_000 : 0}`; } catch { /* Storage availability cannot block sign-out. */ }
 }
 async function bounded<T>(work: () => Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -88,10 +89,10 @@ export function finishPendingPushRemoval(): Promise<void> {
   })().finally(() => { removing = undefined; });
   return removing;
 }
-let repair: Promise<void> | undefined;
-function repairOnce(subscription: PushSubscription | null): Promise<void> {
+let repair: Promise<DevicePreferences | null> | undefined;
+function repairOnce(subscription: PushSubscription | null): Promise<DevicePreferences | null> {
   // A failed repair stays unknown for this page; focus/visibility reads never write again.
-  return repair ??= subscription ? saveSubscription(subscription) : Promise.resolve();
+  return repair ??= subscription ? saveSubscription(subscription) : Promise.resolve(null);
 }
 export function cancelPushSignOut(): void { document.dispatchEvent(new Event('pulse:sign-out-failed')); }
 document.addEventListener('pulse:sign-out-failed', () => { signingOut = false; });
@@ -100,25 +101,30 @@ export function initializePushDevice(): void {
   const root = document.getElementById('push-device'); if (!root) return;
   const element = <T extends HTMLElement = HTMLElement>(id: string): T => root.querySelector(`#${id}`) as T;
   const on = element<HTMLButtonElement>('push-turn-on'), off = element<HTMLButtonElement>('push-turn-off'), test = element<HTMLButtonElement>('push-send-test');
+  const alerts = element<HTMLButtonElement>('push-alerts');
   const status = element('push-device-status'), help = element('push-device-help'), message = element('push-device-message');
-  let subscription: PushSubscription | null = null, busy = false, retrySetup = false;
+  let subscription: PushSubscription | null = null, busy = false, retrySetup = false, turnOffFailed = false, alertsEnabled = false;
   function render(): void {
     const available = supported(), denied = available && Notification.permission === 'denied';
-    status.textContent = !available ? 'Notifications are unavailable here.' : denied ? 'Notifications are blocked.' : subscription ? retrySetup ? 'Notifications need setup.' : 'Notifications are on.' : 'Notifications are off.';
+    status.textContent = !available ? 'Notifications are unavailable here.' : denied ? 'Notifications are blocked.' : turnOffFailed ? 'Notifications may still be on.' : subscription ? retrySetup ? 'Notifications need setup.' : 'Notifications are on.' : 'Notifications are off.';
     help.textContent = !available ? 'Add Pulse to the home screen and open it from there to use notifications.'
       : denied ? 'Allow notifications for Pulse in your device or browser settings, then return here.' : '';
     on.hidden = !available || denied || !!subscription && !retrySetup;
     off.hidden = !available || denied || !subscription;
     test.hidden = !available || denied || !subscription || retrySetup;
     for (const button of [on, off, test]) button.disabled = busy;
+    alerts.setAttribute('aria-checked', String(alertsEnabled));
+    alerts.textContent = alertsEnabled ? '✓ Alerts · On' : '○ Alerts · Off';
+    alerts.disabled = busy || signingOut || !available || denied || !subscription || retrySetup;
   }
   function announce(text: string): void { message.textContent = text; }
   async function read(): Promise<void> {
     if (!supported() || Notification.permission === 'denied') { render(); return; }
     try { await finishPendingPushRemoval();
       subscription = await (await worker()).pushManager.getSubscription();
-      await repairOnce(subscription);
-      retrySetup = false; render(); }
+      const preferences = await repairOnce(subscription);
+      alertsEnabled = !!subscription && preferences?.alertsEnabled === true;
+      retrySetup = false; turnOffFailed = false; render(); }
     catch { retrySetup = true; render(); announce('Could not check this device. Try turning notifications on again.'); }
   }
   on.addEventListener('click', () => {
@@ -127,7 +133,7 @@ export function initializePushDevice(): void {
     let permission: Promise<NotificationPermission>;
     try { permission = Notification.permission === 'granted' ? Promise.resolve('granted') : Notification.requestPermission(); }
     catch { announce('Could not ask for notification permission. Try again.'); return; }
-    busy = true; announce(''); render();
+    busy = true; turnOffFailed = false; announce(''); render();
     void (async () => {
       let created: PushSubscription | null = null;
       try {
@@ -139,7 +145,8 @@ export function initializePushDevice(): void {
         subscription = existing ?? await serviceWorker.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: publicKeyBytes(publicKey) });
         if (!existing) created = subscription;
         if (signingOut) { if (created) { markRemoval(true); await revokeLocal(created); } return; }
-        await saveSubscription(subscription); repair = Promise.resolve();
+        const preferences = await saveSubscription(subscription); repair = Promise.resolve(preferences);
+        alertsEnabled = preferences?.alertsEnabled === true;
         retrySetup = false; announce('Notifications are on.');
       } catch {
         retrySetup = true;
@@ -158,9 +165,24 @@ export function initializePushDevice(): void {
         await request('/api/push/unsubscribe', { endpoint: subscription!.endpoint });
         await subscription!.unsubscribe(); subscription = await (await worker()).pushManager.getSubscription();
         if (subscription) throw new Error('The browser kept the subscription');
-        retrySetup = false; announce('Notifications are off.');
-      } catch { retrySetup = true; announce('Could not finish turning notifications off. Try again.'); }
+        retrySetup = false; turnOffFailed = false; alertsEnabled = false; repair = Promise.resolve(null); announce('Notifications are off.');
+      } catch { retrySetup = true; turnOffFailed = true; announce('Could not finish turning notifications off. Try again.'); }
       finally { busy = false; render(); (subscription ? off : on).focus(); }
+    })();
+  });
+  alerts.addEventListener('click', () => {
+    if (busy || signingOut || !subscription || retrySetup) return;
+    const enabled = !alertsEnabled, endpoint = subscription.endpoint;
+    busy = true; announce('Saving alerts…'); render();
+    void (async () => {
+      const pending = request<DevicePreferences>('/api/push/preferences', {endpoint, alertsEnabled: enabled});
+      subscriptionSaves.add(pending);
+      try {
+        const preferences = await pending; alertsEnabled = preferences.alertsEnabled === true;
+        repair = Promise.resolve(preferences);
+        announce(alertsEnabled ? 'Alerts are on for this device.' : 'Alerts are off for this device.');
+      } catch { announce('Could not save alerts. Try again.'); }
+      finally { subscriptionSaves.delete(pending); busy = false; render(); alerts.focus(); }
     })();
   });
   test.addEventListener('click', () => {

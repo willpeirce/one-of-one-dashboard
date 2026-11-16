@@ -1,6 +1,6 @@
 import { adSetName } from '../meta-adsets/name.js';
 import { activityObjectType, type MetaActivity } from '../meta-adsets/activity.js';
-import {parsePauseUncertainty} from '../meta-adsets/pause-uncertainty.js';
+import {pauseNeedsReview} from '../meta-adsets/pause-uncertainty.js';
 import type { AdSetRow } from '../meta-adsets/presentation.js';
 import { morningFacts, morningKey } from './model.js';
 import type { MorningCard, MorningInput, MorningSnapshot, MorningState } from './model-types.js';
@@ -36,7 +36,7 @@ export function morningPauseAll(input: MorningInput, openCards: readonly Morning
       && later.result === 'success' && later.action === 'resume' && later.time >= action.time)
     && !externallyResumed(byId.get(action.adSetId), input.activity, action.time)).map(action => action.adSetId));
   const uncertain = new Set(input.metaActions.filter(action => action.action === 'pause' && action.result === 'failed'
-    && parsePauseUncertainty(action.errorCode)?.phase === 'active' && !input.metaActions.some(later => later.adSetId === action.adSetId
+    && pauseNeedsReview(action.errorCode) && !input.metaActions.some(later => later.adSetId === action.adSetId
       && later.result === 'success' && later.time >= action.time)).map(action => action.adSetId));
   const eligible = openCards.filter(card => {
     const button = card.primary, row = byId.get(card.subjectId);

@@ -39,6 +39,9 @@ export function changedSourceScopes(cached: Settings,current: Settings): Set<str
   if (cached.metaAdAccountId !== current.metaAdAccountId) changed.add('meta');
   if (cached.googleCustomerId !== current.googleCustomerId || cached.googleLoginCustomerId !== current.googleLoginCustomerId) changed.add('google-ads');
   if (cached.tiktokAdvertiserId !== current.tiktokAdvertiserId) changed.add('tiktok');
+  if (cached.gorgiasHandoverViewId !== current.gorgiasHandoverViewId || cached.gorgiasHandoverTag !== current.gorgiasHandoverTag
+    || cached.gorgiasHandoverWaitHours !== current.gorgiasHandoverWaitHours) changed.add('gorgias');
+  if (cached.waitingOnDays !== current.waitingOnDays) changed.add('waiting-on');
   return changed;
 }
 
@@ -46,7 +49,8 @@ export function changedSourceScopes(cached: Settings,current: Settings): Set<str
 export function fenceDashboardScopes(dashboard: DashboardSnapshot,changed: ReadonlySet<string>): DashboardSnapshot {
   return {...dashboard,
     ...(dashboard.shopify ? {shopify: {...dashboard.shopify,
-      needs: dashboard.shopify.needs.filter(need => !changed.has(need.source)),
+      needs: dashboard.shopify.needs.filter(need => !changed.has(need.source)
+        && !(changed.has('waiting-on') && need.id === 'waiting-on-overdue')),
       checks: dashboard.shopify.checks.filter(check => ![...changed].some(source =>
         check.id.startsWith(`${source === 'google-ads' ? 'google' : source}-`))),
     }} : {}),

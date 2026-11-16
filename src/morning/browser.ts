@@ -4,14 +4,14 @@ import { updateMorningPushNudge } from '../push/browser.js';
 import { pauseAllSequential, undoPausesSequential, type PausedMorningSet } from './pause-all-browser.js';
 import type { TickerSnapshot } from '../ticker/model.js';
 import type { MorningAction, MorningButton, MorningCard, MorningLiveButton, MorningSnapshot, MorningState } from './model-types.js';
-import { morningBriefHtml, morningDay, morningDeckHtml, morningFineHtml, morningLinesHtml, morningMenuHtml, morningProgressHtml, morningWhyHtml, type MorningWindow } from './view.js';
+import { morningBriefHtml, morningDay, morningDeckHtml, morningFineHtml, morningLinesHtml, morningMenuHtml, morningProgressHtml, morningWatchHtml, morningWhyHtml, type MorningWindow } from './view.js';
 
 type PressUndo = {kind: 'morning'; cardKey: string; action: MorningAction | 'undo'; answer?: 'a' | 'b' | 'draw'; days?: 3 | 7};
 type Undo = PressUndo | {kind: 'ticker'; eventKey: string; action: 'next' | 'restore'} | {kind: 'live'; button: MorningLiveButton}
   | {kind: 'pauses'; paused: PausedMorningSet[]};
 type UndoPausesButton = {kind: 'undo-pauses'; label: string; confirm: string; paused: PausedMorningSet[]};
 type Command = {cardKey: string; button: MorningButton | UndoPausesButton};
-type SheetKind = 'why' | 'menu' | 'copy' | 'fine' | 'brief' | 'confirm';
+type SheetKind = 'why' | 'menu' | 'copy' | 'fine' | 'brief' | 'watch' | 'confirm';
 const root = document.querySelector<HTMLElement>('#mn-root');
 if (root) setup(root);
 
@@ -26,6 +26,7 @@ function setup(root: HTMLElement): void {
   let confirmation: Command | null = null, sheet: SheetKind | null = null, sheetCard: MorningCard | null = null;
   let opener: HTMLElement | null = null, expanded = false;
   const windows = new Map<string, MorningWindow>();
+  const cardErrors = new Map<string, string>();
   const initial = get<HTMLTemplateElement>('#mn-initial');
   try { snapshot = JSON.parse(initial.content.textContent ?? '') as MorningSnapshot; initial.remove(); root.dataset.mnReady = 'true'; }
   catch { get<HTMLElement>('#mn-read-status').textContent = 'ⓘ Could not read Morning. Refresh to try again.'; return; }
@@ -38,12 +39,15 @@ function setup(root: HTMLElement): void {
     stage.setAttribute('aria-busy', String(value));
   }
   function render(error?: string): void {
+    if (error && current()) cardErrors.set(current()!.key, error);
+    error = current() ? cardErrors.get(current()!.key) : error;
     stage.innerHTML = morningDeckHtml(snapshot, {window: selectedWindow(), ...(confirmation ? {confirm: 'confirm' in confirmation.button ? confirmation.button.confirm : undefined} : {}), error});
     get<HTMLElement>('#mn-progress').innerHTML = morningProgressHtml(snapshot);
     get<HTMLElement>('#mn-day').textContent = `${morningDay(snapshot.day)}${snapshot.mode === 'sample' ? ' · Sample data' : ''}`;
     get<HTMLElement>('#mn-lines').innerHTML = morningLinesHtml(snapshot);
     updateMorningPushNudge(snapshot.summaryEnabled === true);
     if (dialog.open && sheet === 'fine') sheetBody.innerHTML = morningFineHtml(snapshot, expanded);
+    if (dialog.open && sheet === 'watch') sheetBody.innerHTML = morningWatchHtml(snapshot);
     setBusy(busy);
     root.dataset.mnReady = 'true';
   }
@@ -110,6 +114,8 @@ function setup(root: HTMLElement): void {
     if (dialog.open && sheet === 'confirm') dialog.close();
     ++revision; setBusy(true);
     const button = command.button;
+    const pressedTitle = snapshot.cards.find(card => card.key === command.cardKey)?.title ?? 'Saved action';
+    cardErrors.delete(command.cardKey);
     if (button.kind === 'undo-pauses' || button.kind === 'live' && button.action === 'undo') hideToast();
     try {
       let next: MorningSnapshot | null = null, reverse: Undo | null = null, message = 'Saved', stamp = 'Saved', failed = false;
@@ -161,8 +167,10 @@ function setup(root: HTMLElement): void {
         catch { get<HTMLElement>('#mn-read-status').textContent = 'ⓘ Could not refresh Morning. Check the saved actions before trying again.'; }
       }
       const message = error instanceof Error ? error.message : 'Could not save. Try again.';
-      confirmation = null; render(message);
-      if (!current()) get<HTMLElement>('#mn-read-status').textContent = `✕ ${message}`;
+      confirmation = null;
+      cardErrors.set(command.cardKey, message);
+      render();
+      if (current()?.key !== command.cardKey) get<HTMLElement>('#mn-read-status').textContent = `✕ ${pressedTitle}: ${message}`;
       if (dialog.open) sheetStatus.textContent = message;
     } finally { setBusy(false); if (dialog.open) close.focus({preventScroll: true}); else focusCard(); }
   }
@@ -210,6 +218,7 @@ function setup(root: HTMLElement): void {
     if (kind === 'why' && card) { title.textContent = 'Why this is here'; sheetBody.innerHTML = morningWhyHtml(card, windows.get(card.key) ?? '3'); }
     if (kind === 'menu' && card) { title.textContent = 'More actions'; sheetBody.innerHTML = morningMenuHtml(card); }
     if (kind === 'fine') { title.textContent = 'The rest of this morning'; expanded = false; sheetBody.innerHTML = morningFineHtml(snapshot); }
+    if (kind === 'watch') { title.textContent = 'Watch'; sheetBody.innerHTML = morningWatchHtml(snapshot); }
     if (kind === 'brief' && snapshot.brief) {
       const brief = snapshot.brief; title.textContent = 'Morning check';
       sheetBody.innerHTML = morningBriefHtml(brief);
@@ -248,7 +257,7 @@ function setup(root: HTMLElement): void {
     if (target.closest('#mn-cancel')) { confirmation = null; if (dialog.open) dialog.close(); render(); focusCard(); return; }
     const windowButton = target.closest<HTMLButtonElement>('[data-mn-window]');
     if (windowButton && current()) { windows.set(current()!.key, windowButton.dataset.mnWindow as MorningWindow); render(); root.querySelector<HTMLButtonElement>(`[data-mn-window="${windowButton.dataset.mnWindow}"]`)?.focus({preventScroll: true}); return; }
-    for (const [selector, kind] of [['#mn-figure', 'why'], ['#mn-menu', 'menu'], ['#mn-good', 'fine'], ['#mn-brief', 'brief']] as const) {
+    for (const [selector, kind] of [['#mn-figure', 'why'], ['#mn-menu', 'menu'], ['#mn-good', 'fine'], ['#mn-brief', 'brief'], ['#mn-watch', 'watch']] as const) {
       const source = target.closest<HTMLElement>(selector); if (source) { openSheet(kind, source); return; }
     }
     if (target.closest('#mn-away-more')) { expanded = !expanded; sheetBody.innerHTML = morningFineHtml(snapshot, expanded); get<HTMLElement>('#mn-away-more').focus({preventScroll: true}); return; }
@@ -296,7 +305,7 @@ function setup(root: HTMLElement): void {
     const sameCard = sheetCard?.key === current()?.key;
     sheet = null; sheetCard = null; sheetBody.replaceChildren(); sheetStatus.textContent = '';
     // Refreshes can replace an opener. Only restore card controls for the same card.
-    const replacedOpener = opener && (['mn-brief', 'mn-good'].includes(opener.id)
+    const replacedOpener = opener && (['mn-brief', 'mn-good', 'mn-watch'].includes(opener.id)
       || sameCard && ['mn-menu', 'mn-figure', 'mn-primary'].includes(opener.id));
     const returnTo = opener?.isConnected ? opener : replacedOpener ? root.querySelector<HTMLElement>(`#${opener!.id}`) : null;
     if (returnTo?.getClientRects().length) returnTo.focus({preventScroll: true}); else focusCard();

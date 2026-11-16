@@ -165,12 +165,12 @@ test('HQ failed, incomplete and unreadable register reads cannot certify call cl
   assert.equal((await readHQFacts(db, later, 'sample')).registerReadOk, false, 'Missing key never confirms test lifecycle');
 });
 
-test('HQ partial register reads preserve old History identity, while removing the key hides every cached row without a query', async t => {
+test('HQ partial register reads preserve only a named malformed History identity, while a missing key hides cached rows without a query', async t => {
   const db = await createTestDatabase(); t.after(() => db.close());
   await saveHQRegister(db, {readable: true, rows: [row('T1', 'history')], skippedRows: 0}, '"first"', now);
   const original = (await readHQFacts(db, now, 'live')).tests[0]!;
   const later = new Date('2032-04-07T08:00:00Z');
-  await saveHQRegister(db, {readable: true, rows: [], skippedRows: 1, complete: false}, '"partial"', later);
+  await saveHQRegister(db, {readable: true, rows: [], skippedRows: 1, skippedCells: ['T1 malformed'], complete: false}, '"partial"', later);
   assert.deepEqual((await readHQFacts(db, later, 'live')).tests, [original]);
   await saveHQRegister(db, {readable: true, rows: [row('T1', 'history')], skippedRows: 0}, '"repaired"', later);
   assert.deepEqual((await readHQFacts(db, later, 'live')).tests, [original], 'Fixing one malformed row cannot invent a new verdict');
@@ -193,7 +193,7 @@ test('HQ first partial register waits for a complete baseline before treating la
   assert.equal((await readHQFacts(db, now, 'live')).tests.find(row => row.id === 'T3')!.initiallySeen, false);
 });
 
-test('HQ partial-cache retention stays at forty rows per section and prioritizes the current valid rows', async t => {
+test('HQ partial reads keep their valid rows without retaining unrelated missing rows', async t => {
   const db = await createTestDatabase(); t.after(() => db.close());
   const sections = ['live', 'queue', 'history'] as const;
   await saveHQRegister(db, {readable: true, rows: sections.flatMap(section => Array.from({length: 40}, (_, i) => row(`${section}-old-${i}`, section))), skippedRows: 0}, null, now);
@@ -201,8 +201,8 @@ test('HQ partial-cache retention stays at forty rows per section and prioritizes
     const fresh = sections.flatMap(section => Array.from({length: 25}, (_, i) => row(`${section}-new-${iteration}-${i}`, section)));
     await saveHQRegister(db, {readable: true, rows: fresh, skippedRows: 1, complete: false}, null, new Date(now.getTime() + (iteration + 1) * 3_600_000));
     const counts = await db.query<{section: string; count: string}>('SELECT section,count(*)::text FROM pulse.github_hq_tests GROUP BY section ORDER BY section');
-    assert.deepEqual(counts.rows.map(row => Number(row.count)), [40, 40, 40]);
-    const current = await readHQFacts(db, now, 'live'); assert.equal(current.tests.length, 120);
+    assert.deepEqual(counts.rows.map(row => Number(row.count)), [25, 25, 25]);
+    const current = await readHQFacts(db, now, 'live'); assert.equal(current.tests.length, 75);
     for (const candidate of fresh) assert.ok(current.tests.some(row => row.id === candidate.id));
   }
 });
@@ -236,7 +236,7 @@ test('a complete set of headings establishes the baseline and removes gone rows 
 });
 
 
-test('malformed and capped IDs retain their exact stored rows, first-seen marks and called answers', async t => {
+test('only malformed IDs retain exact stored rows and called answers; a capped row leaves storage', async t => {
   const db = await createTestDatabase(); t.after(() => db.close());
   const live = row('T1', 'live'); live.cells[5] = '2032-03-01';
   await saveHQRegister(db, {readable: true, complete: true, rows: [live, row('H1', 'history'), row('gone', 'history')], skippedRows: 0}, null, now);
@@ -259,15 +259,15 @@ test('malformed and capped IDs retain their exact stored rows, first-seen marks 
   const full = Array.from({length: 40}, (_, index) => `| N${index} | Site | Question | A vs B | Bar | 2032-04-01 | Later | Source | Waiting |`).join('\n');
   await saveHQRegister(db, parseRegister(source(`${full}\n| ${live.cells.join(' | ')} |`, '| H1 | Question | Draw | Rule | Evidence |')), null, new Date(+now + 3000));
   facts = await readHQFacts(db, now, 'live');
-  assert.deepEqual(facts.tests.find(row => row.id === 'T1'), original.find(row => row.id === 'T1'));
-  assert.equal(facts.tests.filter(row => row.section === 'live').length, 40, 'Protected rows reserve space within the existing cap');
-  assert.equal(facts.registerCappedRows, 2);
-  assert.equal((await readMorningResult(db, load, now)).snapshot.answers[0]!.cardKey, card.key);
+  assert.equal(facts.tests.find(row => row.id === 'T1'), undefined);
+  assert.deepEqual(facts.tests.filter(row => row.section === 'live').map(row => row.id),Array.from({length:40},(_,index)=>`N${index}`));
+  assert.equal(facts.registerCappedRows, 1);
+  assert.equal((await readMorningResult(db, load, now)).snapshot.answers.length, 0, 'A capped identity cannot indefinitely retain a called answer');
   await saveHQRegister(db, parseRegister(source('', '| H1 | Question | Draw | Rule | Evidence |')), null, new Date(+now + 4000));
   assert.equal((await readMorningResult(db, load, now)).snapshot.answers.length, 0, 'A genuinely absent called test still clears');
 });
 
-test('protected rows reserve capped storage without displacing other present stored identities', async t => {
+test('malformed rows keep their own last good values without displacing forty new valid rows or blocking a move', async t => {
   const db = await createTestDatabase(); t.after(() => db.close());
   const original = Array.from({length: 40}, (_, index) => row(`T${index}`, 'live'));
   await saveHQRegister(db, {readable: true, rows: original, skippedRows: 0}, null, now);
@@ -276,15 +276,69 @@ test('protected rows reserve capped storage without displacing other present sto
     rows: [...Array.from({length: 39}, (_, index) => row(`new${index}`, 'live')), original[39]!],
     skippedRows: 39, skippedCells: original.slice(0, 39).map(row => row.id)}, null, new Date(+now + 1000));
   let facts = await readHQFacts(db, now, 'live');
-  assert.deepEqual(facts.tests, before, 'New rows cannot crowd out an existing well-formed row');
-  assert.equal(facts.registerCappedRows, 39);
-  // A present row also survives a requested move into a section wholly occupied by protected rows.
+  assert.equal(facts.tests.length,79);
+  for(const old of before)assert.deepEqual(facts.tests.find(row=>row.id===old.id),old);
+  for(let index=0;index<39;index++)assert.ok(facts.tests.some(row=>row.id===`new${index}`));
+  assert.equal(facts.registerCappedRows, 0);
+  // Retained malformed rows cannot block a well-formed section change.
   await saveHQRegister(db, {readable: true, rows: [...original, row('Q1', 'queue')], skippedRows: 0}, null, now);
   const moving = (await readHQFacts(db, now, 'live')).tests.find(row => row.id === 'Q1');
   await saveHQRegister(db, {readable: true, complete: true, rows: [row('Q1', 'live')],
     skippedRows: 40, skippedCells: original.map(row => row.id)}, null, new Date(+now + 2000));
   facts = await readHQFacts(db, now, 'live');
-  assert.deepEqual(facts.tests.find(row => row.id === 'Q1'), moving);
-  assert.equal(facts.tests.filter(row => row.section === 'live').length, 40);
-  assert.equal(facts.registerCappedRows, 1);
+  const moved=facts.tests.find(row => row.id === 'Q1')!;
+  assert.equal(moved.section,'live');assert.equal(moved.firstSeenAt,moving!.firstSeenAt);
+  assert.equal(moved.sectionFirstSeenAt,new Date(+now+2000).toISOString());
+  assert.equal(facts.tests.filter(row => row.section === 'live').length, 41);
+  assert.equal(facts.registerCappedRows, 0);
+});
+
+test('register moves between two full sections follow the new file in one save',async t=>{
+  const db=await createTestDatabase();t.after(()=>db.close());
+  const live=Array.from({length:40},(_,index)=>row(`L${index}`,'live'));
+  const queue=Array.from({length:40},(_,index)=>row(`Q${index}`,'queue'));
+  await saveHQRegister(db,{readable:true,complete:true,rows:[...live,...queue],skippedRows:0},null,now);
+  const later=new Date(+now+3_600_000);
+  const current=[...queue.map(test=>row(test.id,'live')),...live.map(test=>row(test.id,'queue'))];
+  const source=`## Live\n${current.filter(test=>test.section==='live').map(test=>`| ${test.cells.join(' | ')} |`).join('\n')}\n## Queue\n${current.filter(test=>test.section==='queue').map(test=>`| ${test.cells.join(' | ')} |`).join('\n')}\n## History\n## Watches`;
+  await saveHQRegister(db,parseRegister(source),null,later);
+  const facts=await readHQFacts(db,later,'live');
+  assert.equal(facts.tests.length,80);assert.equal(facts.registerCappedRows,0);
+  for(const expected of current){
+    const actual=facts.tests.find(test=>test.id===expected.id)!;
+    assert.equal(actual.section,expected.section);assert.deepEqual(actual.cells,expected.cells);
+    assert.equal(actual.firstSeenAt,now.toISOString());assert.equal(actual.sectionFirstSeenAt,later.toISOString());
+  }
+});
+
+test('a first well-formed duplicate replaces its stored section and duplicate diagnostics do not freeze its old cells',async t=>{
+  const db=await createTestDatabase();t.after(()=>db.close());
+  await saveHQRegister(db,{readable:true,rows:[row('T1','live')],skippedRows:0},null,now);
+  const source='## History\n| T1 First | Invented changed question | Draw | Rule | Source |\n## Live\n| T1 Later | Site | Ignored question | A vs B | Bar | 2032-04-01 | Later | Source | Waiting |\n## Queue\n## Watches';
+  await saveHQRegister(db,parseRegister(source),null,new Date(+now+1000));
+  const facts=await readHQFacts(db,now,'live');
+  assert.equal(facts.registerSkippedRows,1);assert.equal(facts.tests.length,1);
+  assert.equal(facts.tests[0]!.section,'history');assert.equal(facts.tests[0]!.cells[1],'Invented changed question');
+});
+
+test('register storage retains escaped pipes within code spans exactly',async t=>{
+  const db=await createTestDatabase();t.after(()=>db.close());
+  const source='## Live\n| T1 | Site | Invented `left\\|right` | A vs B | Bar | 2032-04-01 | Later | Source | Waiting |\n## Queue\n## History\n## Watches';
+  await saveHQRegister(db,parseRegister(source),null,now);
+  assert.equal((await readHQFacts(db,now,'live')).tests[0]!.cells[2],'Invented `left\\|right`');
+});
+
+test('malformed identity retention remains bounded and cannot accumulate across reads',async t=>{
+  const db=await createTestDatabase();t.after(()=>db.close());
+  const sections=['live','queue','history'] as const;
+  let known=sections.flatMap(section=>Array.from({length:40},(_,index)=>row(`${section}-old-${index}`,section)));
+  await saveHQRegister(db,{readable:true,rows:known,skippedRows:0},null,now);
+  for(let iteration=0;iteration<3;iteration++){
+    const fresh=sections.flatMap(section=>Array.from({length:40},(_,index)=>row(`${section}-new-${iteration}-${index}`,section)));
+    await saveHQRegister(db,{readable:true,complete:true,rows:fresh,skippedRows:known.length,skippedCells:known.map(test=>test.id)},null,new Date(+now+iteration+1));
+    const facts=await readHQFacts(db,now,'live');
+    assert.equal(facts.tests.length,240);assert.equal((await db.query('SELECT 1 FROM pulse.github_hq_tests')).rowCount,240);
+    for(const current of fresh)assert.ok(facts.tests.some(test=>test.id===current.id));
+    known=facts.tests;
+  }
 });

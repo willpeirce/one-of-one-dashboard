@@ -40,15 +40,16 @@ test('HQ sample mode makes no calls or storage reads, and construction never sta
   assert.equal(live.mode, 'live'); assert.equal(calls, 0); await live.stop();
 });
 
-test('HQ configured-key whitespace is normalized before either file reaches its transport', async t => {
+test('HQ configured-key whitespace is normalized before any file reaches its transport', async t => {
   const db = await createTestDatabase(); t.after(() => db.close());
   const key = secret(), env = {GITHUB_HQ_TOKEN: ` \n${key}\r\n\t`}; await syncSourceHealth(db, env);
   let calls = 0;
   const worker = new HQWorker(db, env, {...quiet, clock: () => new Date('2032-05-01T08:00:00Z'), fetch: async (input, init) => {
     calls++; assert.equal(new Headers(init?.headers).get('authorization'), `Bearer ${key}`);
+    if (new URL(String(input)).pathname.endsWith('/waiting-on/latest.md')) return new Response(null, {status: 404});
     return new Response(new URL(String(input)).pathname.endsWith('/register.md') ? register() : month('2032-04-30'));
   }}); t.after(() => worker.stop());
-  assert.equal(worker.mode, 'live'); await worker.tick(); assert.equal(calls, 2); assert.equal((await health(db)).status, 'healthy');
+  assert.equal(worker.mode, 'live'); await worker.tick(); assert.equal(calls, 3); assert.equal((await health(db)).status, 'healthy');
 });
 
 test('HQ month-turn reads yesterday’s month, falls back only when absent, then switches to hourly and main reruns', async t => {
@@ -58,20 +59,21 @@ test('HQ month-turn reads yesterday’s month, falls back only when absent, then
   const calls: string[] = [];
   const worker = new HQWorker(db, env, {...quiet, clock: () => now, fetch: async input => {
     const url = new URL(String(input)); calls.push(`${url.pathname}?${url.searchParams.get('ref')}`);
+    if (url.pathname.endsWith('/waiting-on/latest.md')) return new Response(null, {status: 404});
     if (url.pathname.endsWith('/register.md')) return new Response(register(), {headers: {etag: '"register"'}});
     assert.ok(url.pathname.endsWith('/ops/ads-daily/2032-04.md'));
     if (url.searchParams.get('ref') === 'main') return new Response(mainReady ? month('2032-04-30', 're-run 1 May 09:50') : '# Invented month with no entry yet', {headers: {etag: mainReady ? '"main-ready"' : '"main-empty"'}});
     return branchReady ? new Response(month('2032-04-30'), {headers: {etag: '"branch"'}}) : new Response(null, {status: 404});
   }}); t.after(() => worker.stop());
-  await worker.tick(); assert.equal(calls.length, 3); assert.equal((await health(db)).status, 'healthy');
+  await worker.tick(); assert.equal(calls.length, 4); assert.equal((await health(db)).status, 'healthy');
   assert.equal((await readHQFacts(db, now, 'live')).report, null);
-  now = new Date('2032-05-01T06:39:00Z'); await worker.tick(); assert.equal(calls.length, 3);
-  now = new Date('2032-05-01T06:40:00Z'); await worker.tick(); assert.equal(calls.length, 5);
-  branchReady = true; now = new Date('2032-05-01T06:50:00Z'); await worker.tick(); assert.equal(calls.length, 7);
+  now = new Date('2032-05-01T06:39:00Z'); await worker.tick(); assert.equal(calls.length, 4);
+  now = new Date('2032-05-01T06:40:00Z'); await worker.tick(); assert.equal(calls.length, 6);
+  branchReady = true; now = new Date('2032-05-01T06:50:00Z'); await worker.tick(); assert.equal(calls.length, 8);
   assert.equal((await readHQFacts(db, now, 'live')).report!.ref, 'claude/ads-daily');
-  now = new Date('2032-05-01T07:00:00Z'); await worker.tick(); assert.equal(calls.length, 7, 'Finding yesterday slows month polling during the morning window');
+  now = new Date('2032-05-01T07:00:00Z'); await worker.tick(); assert.equal(calls.length, 8, 'Finding yesterday slows month polling during the morning window');
   mainReady = true; now = new Date('2032-05-01T07:50:00Z'); await worker.tick();
-  assert.equal(calls.length, 9, 'Main with yesterday skips the branch; the register remains hourly');
+  assert.equal(calls.length, 11, 'Main with yesterday skips the branch; register and waiting files remain hourly');
   const facts = await readHQFacts(db, now, 'live'); assert.equal(facts.report!.ref, 'main'); assert.match(facts.report!.runLabel, /re-run/);
 });
 
@@ -81,6 +83,7 @@ test('HQ 304 reuses stored summaries, restores health on restart, and a confirme
   let now = new Date('2032-05-01T08:00:00Z'), phase = 0, calls = 0;
   const options = {...quiet, clock: () => now, fetch: (async (input, init) => {
     calls++; const url = new URL(String(input)), headers = new Headers(init?.headers);
+    if (url.pathname.endsWith('/waiting-on/latest.md')) return new Response(null, {status: 404});
     if (phase === 1) {
       assert.equal(headers.get('if-none-match'), url.pathname.endsWith('/register.md') ? '"register"' : '"main"');
       return new Response(null, {status: 304});
@@ -90,12 +93,12 @@ test('HQ 304 reuses stored summaries, restores health on restart, and a confirme
     return new Response(month('2032-04-30', phase === 2 ? 're-run 1 May 11:41' : 'run 1 May 07:41'), {headers: {etag: '"main"'}});
   }) as typeof fetch};
   const worker = new HQWorker(db, env, options); t.after(() => worker.stop());
-  await worker.tick(); assert.equal(calls, 2);
+  await worker.tick(); assert.equal(calls, 3);
   phase = 1; now = new Date('2032-05-01T09:00:00Z'); await worker.tick();
-  assert.equal(calls, 4); const cached = await readHQFacts(db, now, 'live'); assert.equal(cached.report!.readAt, now.toISOString()); assert.equal(cached.registerReadOk, true);
+  assert.equal(calls, 6); const cached = await readHQFacts(db, now, 'live'); assert.equal(cached.report!.readAt, now.toISOString()); assert.equal(cached.registerReadOk, true);
   await syncSourceHealth(db, env); assert.equal((await health(db)).status, 'not_implemented');
   const restarted = new HQWorker(db, env, options); t.after(() => restarted.stop());
-  await restarted.tick(); assert.equal(calls, 4); assert.equal((await health(db)).status, 'healthy');
+  await restarted.tick(); assert.equal(calls, 6); assert.equal((await health(db)).status, 'healthy');
   phase = 2; now = new Date('2032-05-01T10:00:00Z'); await worker.tick();
   const branch = (await readHQFacts(db, now, 'live')).report!;
   assert.equal(branch.ref, 'claude/ads-daily'); assert.match(branch.runLabel, /re-run/); assert.equal((await health(db)).status, 'healthy');
@@ -108,6 +111,7 @@ test('HQ worker shares in-flight reads, contains failures, retains unreadable re
   const gate = new Promise<void>(resolve => {release = resolve;});
   const worker = new HQWorker(db, env, {...quiet, clock: () => now, fetch: async input => {
     calls++; if (phase === 0) await gate;
+    if (new URL(String(input)).pathname.endsWith('/waiting-on/latest.md')) return new Response(null, {status: 404});
     const isRegister = new URL(String(input)).pathname.endsWith('/register.md');
     if (phase === 1 && isRegister) return new Response('Invented unreadable file');
     if (phase === 2 && isRegister) return new Response(null, {status: 304});
@@ -115,7 +119,7 @@ test('HQ worker shares in-flight reads, contains failures, retains unreadable re
     return new Response(isRegister ? register(phase === 3) : month('2032-04-30'), {headers: {etag: '"invented"'}});
   }}); t.after(() => worker.stop());
   const first = worker.tick(), concurrent = worker.tick(); assert.equal(first, concurrent); release(); await first;
-  assert.equal(calls, 2); const initial = await readHQFacts(db, now, 'live'); assert.equal(initial.tests.length, 2);
+  assert.equal(calls, 3); const initial = await readHQFacts(db, now, 'live'); assert.equal(initial.tests.length, 2);
   phase = 1; now = new Date('2032-05-01T09:00:00Z'); await worker.tick();
   assert.deepEqual((await readHQFacts(db, now, 'live')).tests, initial.tests); assert.equal((await health(db)).status, 'error');
   phase = 2; now = new Date('2032-05-01T10:00:00Z'); await worker.tick(); assert.equal((await health(db)).status, 'error');
@@ -124,17 +128,18 @@ test('HQ worker shares in-flight reads, contains failures, retains unreadable re
   assert.equal((await health(db)).status, 'healthy'); const partial = await readHQFacts(db, now, 'live');
   assert.equal(partial.registerSkippedRows, 1); assert.equal(partial.registerReadOk, true);
   phase = 4; now = new Date('2032-05-01T12:00:00Z'); const before = calls; await worker.tick();
-  assert.equal(calls - before, 5, 'Four month attempts do not prevent the independent register read');
+  assert.equal(calls - before, 6, 'Four month attempts do not prevent independent register and waiting reads');
   assert.equal((await health(db)).status, 'error'); assert.equal((await readHQFacts(db, now, 'live')).registerReadOk, true);
-  await worker.stop(); await worker.tick(); assert.equal(calls - before, 5, 'Stopped workers never restart');
+  await worker.stop(); await worker.tick(); assert.equal(calls - before, 6, 'Stopped workers never restart');
 });
 
-test('HQ rate limits pause both files across worker restarts and a report-month change', async t => {
+test('HQ rate limits pause every file across worker restarts and a report-month change', async t => {
   const db = await createTestDatabase(); t.after(() => db.close());
   const env = {GITHUB_HQ_TOKEN: secret()}; await syncSourceHealth(db, env);
   let now = new Date('2032-05-01T08:00:00Z'), calls = 0;
   const options = {...quiet, clock: () => now, fetch: (async input => {
     if (++calls === 1) return new Response(null, {status: 429, headers: {'retry-after': '172800'}});
+    if (new URL(String(input)).pathname.endsWith('/waiting-on/latest.md')) return new Response(null, {status: 404});
     return new Response(new URL(String(input)).pathname.endsWith('/register.md') ? register() : month('2032-05-02'));
   }) as typeof fetch};
   const worker = new HQWorker(db, env, options); t.after(() => worker.stop());
@@ -143,7 +148,7 @@ test('HQ rate limits pause both files across worker restarts and a report-month 
   const restarted = new HQWorker(db, env, options); t.after(() => restarted.stop());
   await syncSourceHealth(db, env); await restarted.tick(); assert.equal(calls, 1); assert.equal((await health(db)).status, 'error');
   now = new Date('2032-05-03T08:00:00Z'); await restarted.tick();
-  assert.equal(calls, 3); assert.equal((await health(db)).status, 'healthy');
+  assert.equal(calls, 4); assert.equal((await health(db)).status, 'healthy');
 });
 
 test('both month refs missing at the new-month turn keep source health healthy before and after 09:00 UK', async t => {
@@ -171,6 +176,7 @@ test('a parser version change bypasses the old ETag and resumes conditional read
   const env = {GITHUB_HQ_TOKEN: secret()}; await syncSourceHealth(db, env);
   let now = new Date('2032-05-01T08:00:00Z'); const seen: (string | null)[] = [];
   const worker = new HQWorker(db, env, {...quiet, clock: () => now, fetch: async (url, init) => {
+    if (new URL(String(url)).pathname.endsWith('/waiting-on/latest.md')) return new Response(null, {status: 404});
     if (!new URL(String(url)).pathname.endsWith('/register.md')) return new Response(month('2032-04-30'));
     const etag = new Headers(init?.headers).get('if-none-match'); seen.push(etag);
     return etag ? new Response(null, {status: 304}) : new Response(register(), {headers: {etag: '"invented-version"'}});
@@ -189,6 +195,7 @@ test('a month parser upgrade rereads immediately without its old ETag and then r
   let now = new Date('2032-05-01T08:00:00Z'); const seen: (string | null)[] = [];
   const content = `## 2032-04-30 (Fri), run 1 May 07:41\n**Needs Will:** 1 item\n1. **Review: Invented Fern.**\n   - An invented retained detail.\n   - Card: info`;
   const worker = new HQWorker(db, env, {...quiet, clock: () => now, fetch: async (url, init) => {
+    if (new URL(String(url)).pathname.endsWith('/waiting-on/latest.md')) return new Response(null, {status: 404});
     if (new URL(String(url)).pathname.endsWith('/register.md')) return new Response(register());
     const etag = new Headers(init?.headers).get('if-none-match'); seen.push(etag);
     return etag ? new Response(null, {status: 304}) : new Response(content, {headers: {etag: '"invented-month-version"'}});
@@ -214,19 +221,20 @@ test('a month parser upgrade respects persisted rate limits and keeps failed ref
   let now = new Date('2032-05-01T08:00:00Z'), calls = 0; const monthEtags: (string | null)[] = [];
   const worker = new HQWorker(db, env, {...quiet, clock: () => now, fetch: async (url, init) => {
     calls++;
+    if (new URL(String(url)).pathname.endsWith('/waiting-on/latest.md')) return new Response(null, {status: 404});
     if (new URL(String(url)).pathname.endsWith('/register.md')) return new Response(register());
     monthEtags.push(new Headers(init?.headers).get('if-none-match'));
     return new Response(month('2032-04-30'), {headers: {etag: '"invented-paused-version"'}});
   }}); t.after(() => worker.stop());
-  await worker.tick(); assert.equal(calls, 2);
+  await worker.tick(); assert.equal(calls, 3);
   await db.query("UPDATE pulse.github_hq_reads SET parser_version=0 WHERE target_key='month:2032-04:main'");
   await failHQRead(db, {kind: 'month', month: '2032-04', ref: 'main'}, new HQReadError('rate_limit', 429, 120_000), now);
   now = new Date(+now + 60_000); await worker.tick();
-  assert.equal(calls, 2, 'Parser invalidation never bypasses the shared retry-after guard');
+  assert.equal(calls, 3, 'Parser invalidation never bypasses the shared retry-after guard');
   now = new Date(+now + 60_000); await worker.tick();
-  assert.equal(calls, 2, 'A failed upgrade does not force a request every worker tick after retry-after expires');
+  assert.equal(calls, 3, 'A failed upgrade does not force a request every worker tick after retry-after expires');
   now = new Date('2032-05-01T09:00:00Z'); await worker.tick();
-  assert.equal(calls, 4); assert.deepEqual(monthEtags, [null, null]);
+  assert.equal(calls, 6); assert.deepEqual(monthEtags, [null, null]);
   assert.equal((await health(db)).status, 'healthy');
 });
 
@@ -237,6 +245,7 @@ test('an interrupted month upgrade reparses the obsolete fallback branch without
   const branch = `## 2032-04-30 (Fri), run 1 May 07:41\n**Needs Will:** 1 item\n1. **Review: Invented Cedar.**\n   - An invented fallback detail.\n   - Card: info`;
   const worker = new HQWorker(db, env, {...quiet, clock: () => now, fetch: async (input, init) => {
     const url = new URL(String(input));
+    if (url.pathname.endsWith('/waiting-on/latest.md')) return new Response(null, {status: 404});
     if (url.pathname.endsWith('/register.md')) return new Response(register());
     const ref = url.searchParams.get('ref'); seen.push({ref, etag: new Headers(init?.headers).get('if-none-match')});
     return new Response(ref === 'main' ? '# Invented month with no report yet' : branch,

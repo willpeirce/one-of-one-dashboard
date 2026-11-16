@@ -5,7 +5,10 @@ import type { DashboardSnapshot } from '../src/dashboard-types.js';
 import { dashboardPage } from '../src/dashboard-view.js';
 import type { HQFacts } from '../src/github-hq/model.js';
 import { parseRegister } from '../src/github-hq/parse-register.js';
-import { homeTestsFromHq } from '../src/github-hq/presentation.js';
+import { addMorningHq, homeTestsFromHq } from '../src/github-hq/presentation.js';
+import { morningDeck } from '../src/morning/model.js';
+import { defaultSettings } from '../src/settings.js';
+import { tickerState } from '../src/ticker/model.js';
 import type { MorningSnapshot, MorningState } from '../src/morning/model-types.js';
 import { morningDay } from '../src/morning/view.js';
 
@@ -95,6 +98,60 @@ async function liveTests(page: Page, dashboard: DashboardSnapshot, morning: Morn
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
 }
 
+async function hideUnmeasuredTest(page: Page, dashboard: DashboardSnapshot): Promise<void> {
+  const now = new Date('2032-04-20T12:00:00Z'), row = {id: 'I503', section: 'live' as const,
+    cells: ['I503 invented unmeasured title', 'Site', 'Which invented shape helps?', 'A round; B square', 'Invented rate',
+      '2032-03-23', 'After enough mornings', 'Invented register', 'No reading yet'],
+    firstSeenAt: now.toISOString(), sectionFirstSeenAt: now.toISOString(), initiallySeen: true};
+  const facts: HQFacts = {sourceMode: 'live', report: null, registerReadAt: now.toISOString(), registerReadOk: true,
+    registerSkippedRows: 0, monthReadAt: null, tests: [row]};
+  let states: MorningState[] = [], rejectNext = true;
+  const input = () => addMorningHq({mode: 'live', needs: [], checks: [], creativeCards: [], settings: defaultSettings(),
+    ticker: tickerState([], [], now, 'live'), activity: [], metaActions: [], sourceReadOk: {}}, facts, now);
+  const fixture = () => ({...dashboard, tests: homeTestsFromHq(facts, states, now)});
+  const presses: object[] = [];
+  await page.route('**/api/dashboard', route => route.fulfill({json: fixture()}));
+  await page.route('**/api/events', route => route.fulfill({contentType: 'text/event-stream', body: `retry: 60000\nevent: dashboard\ndata: ${JSON.stringify(fixture())}\n\n`}));
+  await page.route('**/', route => route.fulfill({contentType: 'text/html', body: dashboardPage(fixture())}));
+  await page.route('**/api/morning/press', async route => {
+    const body = route.request().postDataJSON() as {cardKey: string; action: string}; presses.push(body);
+    if (rejectNext) { rejectNext = false; await route.fulfill({status: 409, json: {error: 'Invented changed test.'}}); return; }
+    const card = morningDeck(input(), [], now).candidates.find(candidate => candidate.kind === 'test-call')!;
+    assert.equal(body.cardKey, card.key); assert.ok(['hide', 'undo'].includes(body.action));
+    states = body.action === 'undo' ? [] : [{mode: 'live', cardKey: card.key, state: 'hidden', untilDay: null,
+      factsHash: card.factsHash, answer: null, credentialId: 'invented-browser-device', pressedAt: now.toISOString(), clearedAt: null,
+      title: card.title, kind: card.kind, subjectId: card.subjectId, sourceScope: card.sourceScope}];
+    await route.fulfill({json: morningDeck(input(), states, now).snapshot});
+  });
+  await page.goto('/'); await page.locator('html[data-dashboard-ready="true"]').waitFor();
+  const open = page.locator('#tests [data-hq-test-open="I503"]');
+  await open.click(); const hide = page.locator('#hq-tests-dialog [data-hq-test-hide="I503"]');
+  assert.equal(await hide.innerText(), 'Hide until it has a reading'); assert.ok((await hide.boundingBox())!.height >= 44);
+  await hide.click(); await page.waitForFunction(() => document.querySelector('#hq-tests-status')?.textContent?.includes('changed'));
+  assert.equal(await page.locator('#tests .tcard[data-hq-test-id="I503"]').count(), 1, 'A failed hide keeps the row');
+  assert.equal(await hide.isEnabled(), true, 'A failed hide can be retried in the same sheet'); await hide.click();
+  await page.locator('#hq-tests-dialog').waitFor({state: 'hidden'});
+  assert.equal(await page.locator('#tests .tcard').count(), 0);
+  const summary = page.locator('[data-hq-hidden-tests] summary'); await summary.waitFor();
+  assert.ok((await summary.boundingBox())!.height >= 44);
+  assert.equal(await page.evaluate(() => document.activeElement?.matches('[data-hq-hidden-tests] summary')), true);
+  assert.equal(presses.length, 2, 'Hide saves with one tap and no confirmation');
+  await page.reload(); await page.locator('html[data-dashboard-ready="true"]').waitFor();
+  assert.equal(await page.locator('#tests .tcard').count(), 0, 'A reload keeps the saved hide');
+  await summary.click(); const putBack = page.locator('[data-hq-test-put-back="I503"]');
+  assert.ok((await putBack.boundingBox())!.height >= 44); await putBack.click();
+  await page.locator('#tests .tcard[data-hq-test-id="I503"]').waitFor();
+  assert.equal(presses.length, 3, 'Put back also saves without confirmation');
+  await open.click(); await hide.click(); await page.locator('#hq-tests-dialog').waitFor({state: 'hidden'});
+  row.cells[8] = 'Reading 2032-04-20: A 3% n=4; B 2% n=3; ahead none; sure 60%; mornings 1';
+  await page.reload(); await page.locator('html[data-dashboard-ready="true"]').waitFor();
+  await page.locator('#tests .tcard[data-hq-test-id="I503"]').waitFor();
+  assert.equal(await page.locator('[data-hq-hidden-tests]').count(), 0, 'The first reading returns the test');
+  await open.click(); assert.equal(await hide.count(), 0, 'Measured tests do not offer this hide');
+  await page.locator('#hq-tests-close').click();
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+}
+
 /** HQ checks run after existing audit assertions and leave local and source data untouched. */
 export async function checkHQ(signedIn: BrowserContext): Promise<void> {
   const response = await signedIn.request.get('/api/morning'); assert.equal(response.status(), 200);
@@ -156,6 +213,7 @@ export async function checkHQ(signedIn: BrowserContext): Promise<void> {
         assert.equal(await page.evaluate(() => document.activeElement?.id), 'mn-brief');
         await originalLine.dispose();
         await liveTests(page, dashboard, actual);
+        await hideUnmeasuredTest(page, dashboard);
       } finally { releaseRead?.(); await page.close(); }
     }
     assert.deepEqual(errors, []); assert.deepEqual(unexpectedWrites, []); assert.equal(external, 0);

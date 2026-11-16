@@ -156,7 +156,7 @@ export async function checkMorning(signedIn: BrowserContext): Promise<void> {
     const bar = await context.newPage();
     try {
       // The widths the two usual viewports never load: six pills stay on one row with any chapter current.
-      for (const width of [375, 402, 430, 480, 1024, 1180, 1181]) {
+      for (const width of [375, 402, 430, 480, 861, 960, 1020, 1024, 1100, 1101, 1180, 1181]) {
         await bar.setViewportSize({width, height: 844});
         await bar.goto('/'); await bar.locator('html[data-dashboard-ready="true"]').waitFor();
         for (const go of ['hero', 'stock-chapter', 'tests', 'dials']) {
@@ -171,6 +171,22 @@ export async function checkMorning(signedIn: BrowserContext): Promise<void> {
         await bar.setViewportSize({width, height: 844}); await bar.goto(path);
         const height = await bar.locator('header.top').evaluate(element => element.getBoundingClientRect().height);
         assert.ok(height < 70, `${path} keeps a one-row header at ${width}px (${height}px)`);
+      }
+      for (const path of ['/sources', '/audit']) for (const width of [360, 390, 600, 768, 1280]) {
+        await bar.setViewportSize({width, height: 844}); await bar.goto(path);
+        const geometry = await bar.locator('header.top').evaluate(element => ({
+          height: element.getBoundingClientRect().height,
+          sideways: document.documentElement.scrollWidth - innerWidth,
+          controls: Array.from(element.querySelectorAll<HTMLElement>('.settings-nav > a, #account-menu > summary')).map(control => ({
+            text: control.textContent, height: control.getBoundingClientRect().height, width: control.getBoundingClientRect().width,
+          })),
+        }));
+        assert.ok(geometry.height < 70, `${path} keeps a one-row header at ${width}px (${geometry.height}px)`);
+        assert.ok(geometry.sideways <= 0, `${path} fits at ${width}px`);
+        for (const control of geometry.controls) assert.ok(control.height >= 44 && control.width >= 44, `${path} ${control.text} has a 44px tap target`);
+        await bar.locator('#account-menu > summary').click();
+        for (const label of ['Scorecard', 'Source health', 'Audit log']) assert.ok(await bar.locator('#account-menu').getByRole('link', {name: label, exact: true}).isVisible());
+        assert.ok(await bar.locator('#account-menu').getByRole('button', {name: 'Sign out', exact: true}).isVisible());
       }
     } finally { await bar.close(); }
     for (const width of [390, 1280]) {
@@ -452,6 +468,18 @@ export async function checkMorning(signedIn: BrowserContext): Promise<void> {
       assert.match(await fixturePage.locator('#mn-error').innerText(), /Invented action is no longer available/);
       await fixturePage.unroute('**/api/meta/adset/990099');
       const nextLive = {...live, key: 'invented-next-live-action', primary: {kind: 'live', label: 'Step invented second set', adSetId: '990098', action: 'budget', value: 6, confirm: 'Step invented second set from £5 to £6 a day?'} as MorningButton};
+      await fixturePage.route('**/api/meta/adset/990099', async route => {
+        fixture = {...fixture, cards: [nextLive, live]};
+        await route.fulfill({status: 409, json: {error: 'Invented original set refused.'}});
+      });
+      await fixturePage.locator('#mn-primary').click(); await fixturePage.locator('#mn-confirm').click();
+      await fixturePage.waitForFunction(() => document.querySelector('#mn-card')?.getAttribute('data-mn-card') === 'invented-next-live-action');
+      assert.equal(await fixturePage.locator('#mn-error').count(), 0, 'A different first card never inherits the original action error');
+      assert.match(await fixturePage.locator('#mn-read-status').innerText(), /Invented original set refused/);
+      fixture = {...fixture, cards: [live]};
+      await fixturePage.evaluate(() => document.dispatchEvent(new Event('visibilitychange'))); await shown(fixturePage, fixture);
+      assert.match(await fixturePage.locator('#mn-error').innerText(), /Invented original set refused/, 'The error stays attached to the pressed card');
+      await fixturePage.unroute('**/api/meta/adset/990099');
       const commands: object[] = [];
       await fixturePage.route('**/api/meta/adset/*', async route => {
         const body = route.request().postDataJSON(); commands.push(body);

@@ -7,7 +7,7 @@ import { decisionRows } from '../meta-adsets/decision-rows.js';
 import { activityObjectType } from '../meta-adsets/activity.js';
 import { morningPauseAll } from './pause-all.js';
 import { morningCheckItems } from './check-items.js';
-import {parsePauseUncertainty,pauseUncertaintyNote} from '../meta-adsets/pause-uncertainty.js';
+import {pauseNeedsReview,pauseUncertaintyNote} from '../meta-adsets/pause-uncertainty.js';
 import type { AdSetRow } from '../meta-adsets/presentation.js';
 import type { DashboardNeed } from '../shopify/dashboard.js';
 import type { MorningAction, MorningAway, MorningButton, MorningCard, MorningFigure, MorningInput,
@@ -24,7 +24,7 @@ export const morningFacts = (kind: MorningKind, subjectId: string, state: Mornin
   digest([kind, subjectId, state, typeof rules === 'string' ? rules : [...rules].sort()]);
 
 const sourceNames: Record<string, string> = { shopify: 'Shopify', 'j-and-j': 'J&J', meta: 'Meta',
-  'google-ads': 'Google', mailchimp: 'Mailchimp', tiktok: 'TikTok', pulse: 'Pulse' };
+  'google-ads': 'Google', mailchimp: 'Mailchimp', tiktok: 'TikTok', pulse: 'Pulse', gorgias: 'Gorgias', 'github-hq': 'GitHub HQ' };
 const sourceName = (source: string): string => sourceNames[source] ?? source;
 const readTime = (input: MorningInput, scope: string): string => input.sourceReadAt?.[scope]
   ? `last read ${input.sourceReadAt[scope]}` : 'waiting for a successful read';
@@ -42,17 +42,17 @@ function identity(kind: MorningKind, subjectId: string, state: MorningTone, rule
     factsHash: morningFacts(kind, subjectId, state, ruleId) };
 }
 function needCard(need: DashboardNeed, input: MorningInput, order: number): MorningCard {
-  const alarm = need.state === 'alarm', watchdog = input.checks.some(check => check.id === need.id && check.status === 'tripped');
+  const alarm = need.state === 'alarm', decide = need.state === 'decide', watchdog = input.checks.some(check => check.id === need.id && check.status === 'tripped');
   const source = sourceName(need.source);
   const title = need.link.startsWith('/settings') ? 'Open settings' : need.link.startsWith('/ads') ? 'Open ads'
     : need.link.startsWith('/fulfilment') ? 'Open fulfilment' : need.link.startsWith('/sources') ? 'Open source health'
-    : need.link.startsWith('/morning') ? 'Open Morning' : 'Open source';
-  return { ...identity('need', need.id, alarm ? 'alarm' : 'warn', need.id), sourceScope: `needs:${need.source}`,
-    tier: alarm ? 0 : watchdog ? 2 : 5, order: watchdog ? order : 100 + order,
+    : need.link.startsWith('/morning') ? 'Open Morning' : need.link.startsWith('/handover') ? 'Open handover' : 'Open source';
+  return { ...identity('need', need.id, alarm ? 'alarm' : decide ? 'decide' : 'warn', need.id), sourceScope: `needs:${need.source}`,
+    tier: alarm ? 0 : decide ? 1 : watchdog ? 2 : 5, order: watchdog ? order : 100 + order,
     title: need.title, lane: source, source: need.source,
-    figure: plain(need.figure?.value ?? source, need.figure?.label ?? (alarm ? 'Needs attention' : 'Watch')),
+    figure: plain(need.figure?.value ?? source, need.figure?.label ?? (alarm ? 'Needs attention' : decide ? 'Decide' : 'Watch')),
     why: need.why, whyLine: need.why, rule: watchdog ? `Watchdog: ${need.id}` : `Dashboard rule: ${need.id}`,
-    sourceLine: `${source} · ${input.mode === 'sample' ? 'sample data · ' : ''}${readTime(input, `needs:${need.source}`)}`,
+    sourceLine: `${source} · ${(need.sourceMode ?? input.mode) === 'sample' ? 'sample data · ' : ''}${readTime(input, `needs:${need.source}`)}`,
     sourceHref: need.link, primary: link(title, need.link),
     secondary: alarm ? save('Seen', 'ack') : park(), menu: alarm ? [] : [hide()],
     allowedPresses: alarm ? ['ack'] : ['park', 'hide'],
@@ -83,8 +83,7 @@ function adCard(row: AdSetRow, input: MorningInput, order: number, today: string
   const state = kind === 'meta-watch' ? 'warn' : 'decide';
   const ruleId = verdict.reasons.find(reason => reason.verdict === word)?.rule ?? word;
   const uncertain = input.metaActions.find(action => action.adSetId === row.set.id
-    && (action.result === 'pending' && parsePauseUncertainty(action.errorCode)?.phase === 'waiting'
-      || action.result === 'failed' && parsePauseUncertainty(action.errorCode)?.phase === 'active')
+    && (action.result === 'pending' || action.result === 'failed' && pauseNeedsReview(action.errorCode))
     && !input.metaActions.some(later => later.adSetId === action.adSetId && later.result === 'success' && later.time >= action.time));
   const waiting = uncertain?.result === 'pending';
   const view = input.adSets!, actions = view.mode === 'live' && view.actionsEnabled && row.set.owner === 'ours' && !waiting;
@@ -195,7 +194,7 @@ function externalChanges(input: MorningInput, today: string): MorningCard[] {
 function allCards(input: MorningInput, today: string): MorningCard[] {
   const excluded = new Set(input.excludeNeedIds ?? []);
   const needs = input.needs.filter(need => !need.id.startsWith('stock:') && !need.id.startsWith('attach:') && !excluded.has(need.id)
-    && (need.state === 'alarm' || need.state === 'warn')).map((need, index) => needCard(need, input, index));
+    && (need.state === 'alarm' || need.state === 'decide' || need.state === 'warn')).map((need, index) => needCard(need, input, index));
   const ads = input.adSets && (input.mode === 'sample' || input.adSets.mode === 'live')
     ? decisionRows(input.adSets).filter(row => row.set.status !== 'PAUSED'
       && !(row.verdict?.verdict === 'Step' && input.metaActions.some(action => action.adSetId === row.set.id
@@ -212,6 +211,8 @@ function stateApplies(row: MorningState, card: MorningCard | undefined, input: M
   if (row.state === 'answered') return !input.sourceReadOk[row.sourceScope] || !!input.liveTestIds?.includes(row.subjectId);
   if (row.state === 'seen') return true;
   if (card) return row.factsHash === card.factsHash;
+  // A removed date must also remove its old reminder, once the ticker read is trusted.
+  if (row.kind === 'date' && input.sourceReadOk[row.sourceScope]) return false;
   if (row.state === 'parked') return true;
   if (row.kind === 'need' && input.checks.some(check => check.id === row.subjectId && check.status === 'unknown')) return true;
   return !input.sourceReadOk[row.sourceScope];
@@ -238,7 +239,7 @@ function actionsToday(input: MorningInput, today: string, now: Date): MorningMet
 
 /** Candidates stay complete for Home omissions; only decisions belong in the deck. */
 export function morningDeckMember(card: MorningCard): boolean {
-  if (card.kind === 'need') return card.state === 'alarm';
+  if (card.kind === 'need') return card.state === 'alarm' || card.state === 'decide';
   if (card.kind === 'check-item') return true;
   if (['meta-watch', 'date', 'fading', 'make-next', 'new-verdict'].includes(card.kind)) return false;
   // A test call is a decision only when a stored reading backs it; one with no reading stays on Home.
@@ -251,6 +252,7 @@ function deckPriority(card: MorningCard): number {
   if (card.kind === 'meta-slipping') return 3;
   if (card.kind === 'check-item' && card.state === 'decide') return 3.5;
   if (card.kind === 'meta-step' || card.kind === 'test-call') return 4;
+  if (card.kind === 'need' && card.state === 'decide') return 4.5;
   if (card.kind === 'done-for-you') return 5;
   if (card.kind === 'google') return 6;
   return 7;
@@ -258,7 +260,7 @@ function deckPriority(card: MorningCard): number {
 function answeredDeckCard(row: MorningState, card: MorningCard | undefined): boolean {
   // One by one changes presentation; the individual decisions still need answers.
   if (row.kind === 'pause-all') return false;
-  if (row.kind === 'need') return row.state === 'seen';
+  if (row.kind === 'need') return row.state === 'seen' || card?.state === 'decide' || row.sourceScope === 'needs:gorgias';
   if (row.kind === 'check-item') return true;
   if (row.kind === 'google' && row.sourceScope === 'check') return true;
   if (card) return morningDeckMember(card);
@@ -308,7 +310,10 @@ export function morningDeck(input: MorningInput, rows: readonly MorningState[], 
   const cards = offered.filter(card => !omitted.has(card.key));
   const brief = input.brief && check.eligible ? { ...input.brief, moreHere: omitted.size,
     allInDeck: check.totalItemCount > 0 && check.representedItemCount - omitted.size === check.totalItemCount } : input.brief ?? null;
-  const watchOnHome = openCards.filter(card => !morningDeckMember(card) && card.state === 'warn').length;
+  const watches = openCards.filter(card => !morningDeckMember(card) && card.state === 'warn');
+  const watchOnHandover = watches.filter(card => card.kind === 'need' && card.sourceHref === '/handover')
+    .map(card => ({key: card.key, title: card.title, why: card.why, sourceHref: '/handover' as const}));
+  const watchOnHome = watches.length - watchOnHandover.length;
   const fine = input.checks.filter(check => check.status === 'pass').map(check => ({ id: check.id, label: check.name }));
   const clearSets = input.adSets?.rows.filter(row => row.set.owner === 'ours' && row.verdict?.verdict === 'Clear').length ?? 0;
   if (clearSets) fine.push({ id: 'meta-clear', label: `${clearSets} of our ad ${clearSets === 1 ? 'sets is' : 'sets are'} clear` });
@@ -320,6 +325,7 @@ export function morningDeck(input: MorningInput, rows: readonly MorningState[], 
     ...(input.settings.morningSummaryEnabled ? { summaryEnabled: true } : {}),
     ...(group.coverage ? {pauseAll: group.coverage} : {}),
     more: omitted.size, watchOnHome, fine,
+    ...(watchOnHandover.length ? {watchOnHandover} : {}),
     ...(check.datedFromCheck.length ? {datedFromCheck: check.datedFromCheck} : {}),
     parked: active.filter(row => row.state === 'parked' || row.state === 'answered' && row.answer === 'hold').map(away),
     hidden: active.filter(row => row.state === 'hidden').map(away), presses, metaActions, passedDates,

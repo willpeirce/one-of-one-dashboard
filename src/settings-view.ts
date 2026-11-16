@@ -219,6 +219,14 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     number('mailchimpPlanLimit', 'Mailchimp plan contact limit', { nullable: true, integer: true, min: 1, max: Number.MAX_SAFE_INTEGER, hint: 'Use the total-contact limit from your plan.' }),
     number('mailchimpBillingDay', 'Mailchimp billing day of month', { nullable: true, integer: true, min: 1, max: 31, hint: 'Days 29–31 use the last day in shorter months. A fresh audience above the limit raises a Watch item in the seven days before billing.' }),
   ], values)}</div>`);
+  const handover = section('Customer service', 'Choose the handover queue to read from Gorgias.', `<div class="settings-grid">${fields([
+    {key: 'gorgiasHandoverViewId', label: 'Gorgias handover view ID', optional: true, maxlength: 25, hint: 'Use the view ID from the probe. Leave blank to use the tag below.'},
+    {key: 'gorgiasHandoverTag', label: 'Handover tag', maxlength: 80, hint: 'Used only when no view ID is set.'},
+    number('gorgiasHandoverWaitHours', 'Reply decision after (hours)', {min: 1, max: 720, step: 'any'}),
+  ], values)}</div>`);
+  const waiting = section('Waiting on others', 'Follow-ups from HQ and rows you add on Handover.', `<div class="settings-grid">${fields([
+    number('waitingOnDays', 'Waiting warning after (UK days)', {min: 1, max: 365, integer: true}),
+  ], values)}</div>`);
   const creators = section('Creator negotiation', 'Your rules for agreeing an asset and its usage.', `<div class="settings-grid">${fields([
     number('assetCapGbp', 'Maximum fee per asset (£)'),
     number('minimumUsageMonths', 'Minimum usage (months)', { integer: true }),
@@ -247,11 +255,16 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     { key: 'keyName', label: 'Key name', options: SETTINGS_KEY_NAMES.map((key) => ({ value: key, label: key })) },
     { key: 'expiresOn', label: 'Expiry date', type: 'date' },
   ], values.keyExpiryDates, 'Dates only. Key values stay in hosting Secrets.')}`);
-  const preferences = section('Summary & brand', 'The morning summary starts switched off.', `<div class="settings-grid">${fields([
+  const summaryControl = fields([
+    { ...checkbox('morningSummaryEnabled', 'Enable the 08:00 UK summary'), hint: 'One morning summary for all devices with notifications enabled. Alerts below are saved for this device only.' },
+  ], values);
+  const preferences = section('Summary & brand', 'Summary and device alerts start switched off.', `<div class="settings-grid">${fields([
     { key: 'brand', label: 'Brand', options: [{ value: 'one-of-one', label: 'One of One' }], hint: 'Kinda Rare comes in a later stage.' },
-    { ...checkbox('morningSummaryEnabled', 'Enable the 08:00 UK summary'), hint: 'One push at 08:00 UK with what needs you.' },
     { ...checkbox('morningOpensFirst', 'Open Morning first each day'), hint: 'Your first Home visit each UK day opens Morning on this device.' },
-  ], values)}</div>${pushDeviceHtml()}`);
+  ], values)}</div>${pushDeviceHtml(summaryControl)}<div class="settings-grid">${fields([
+    {key: 'start', label: 'Alert quiet hours start (UK)', type: 'time'},
+    {key: 'end', label: 'Alert quiet hours end (UK)', type: 'time'},
+  ], values.alertQuietHours, 'alertQuietHours')}</div><p class="setting-help">Trips wait until quiet hours end if the check is still tripped. Recoveries during quiet hours are dropped. Matching start and end times turn quiet hours off. The daily summary and manual test keep their own timing.</p>`);
   return `<!doctype html>
 <html lang="en" data-theme="dark">
 <head>
@@ -279,7 +292,7 @@ ${tickerHead()}</head>
     <div class="settings-intro"><p class="eyebrow">Your business, your rules</p><h1>Settings</h1><p>Real business settings, saved in Pulse. Dashboard figures remain labelled sample data while source feeds are being built.</p></div>
     <form id="settings-form" data-version="${snapshot.version}" method="post" action="/api/settings">
       <input type="hidden" id="saved-meta-owner-rules" value="${escapeHtml(JSON.stringify(values.metaOwners))}">
-      <fieldset id="settings-fields"><legend class="settings-sr-only">Business settings</legend>${goals}${advertising}${costs}${stock}${pace}${campaigns}${email}${creators}${keyDates}${dates}${preferences}</fieldset>
+      <fieldset id="settings-fields"><legend class="settings-sr-only">Business settings</legend>${goals}${advertising}${costs}${stock}${pace}${campaigns}${email}${handover}${waiting}${creators}${keyDates}${dates}${preferences}</fieldset>
       <div class="settings-savebar glass"><div><p id="settings-message" role="status" aria-live="polite">Choose Save settings for these fields, or Save beside a campaign owner.</p><p class="setting-help">Unknown costs can stay blank. Saving adds an audit entry.</p></div><button class="btn settings-save" id="settings-save" type="submit" disabled>Save settings</button></div>
     </form>
     <p id="auth-message" role="status" aria-live="polite"></p>

@@ -7,26 +7,29 @@ export interface StoredPushSubscription extends PushSubscription {
   createdAt: string;
   lastSuccessAt: string | null;
   failures: number;
+  alertsEnabled: boolean;
 }
+export interface PushDevicePreferences { alertsEnabled: boolean }
 
 export async function readPushSubscriptions(db: Database, credentialId?: string): Promise<StoredPushSubscription[]> {
   const result = await db.query<{
     endpoint: string; p256dh: string; auth: string; credential_id: string;
-    created_at: Date | string; last_success_at: Date | string | null; failures: number;
-  }>(`SELECT endpoint,p256dh,auth,credential_id,created_at,last_success_at,failures FROM pulse.push_subscriptions
+    created_at: Date | string; last_success_at: Date | string | null; failures: number; alerts_enabled: boolean;
+  }>(`SELECT endpoint,p256dh,auth,credential_id,created_at,last_success_at,failures,alerts_enabled FROM pulse.push_subscriptions
     ${credentialId === undefined ? '' : 'WHERE credential_id=$1'} ORDER BY created_at,endpoint`, credentialId === undefined ? [] : [credentialId]);
   return result.rows.map(row => ({endpoint: row.endpoint, keys: {p256dh: row.p256dh, auth: row.auth},
     credentialId: row.credential_id, createdAt: new Date(row.created_at).toISOString(),
-    lastSuccessAt: row.last_success_at ? new Date(row.last_success_at).toISOString() : null, failures: row.failures}));
+    lastSuccessAt: row.last_success_at ? new Date(row.last_success_at).toISOString() : null, failures: row.failures, alertsEnabled: row.alerts_enabled}));
 }
 
-export async function savePushSubscription(db: Database, credentialId: string, subscription: PushSubscription, now: Date): Promise<void> {
-  await db.transaction(async tx => {
+export async function savePushSubscription(db: Database, credentialId: string, subscription: PushSubscription, now: Date): Promise<PushDevicePreferences> {
+  return db.transaction(async tx => {
     // Endpoints can move between credentials. One local lock also makes the ten-device cap atomic.
     await tx.query('SELECT pg_advisory_xact_lock(1668244583,hashtext($1))', ['push-subscriptions']);
     const saved = await tx.query(`INSERT INTO pulse.push_subscriptions(endpoint,p256dh,auth,credential_id,created_at)
       VALUES($1,$2,$3,$4,$5) ON CONFLICT(endpoint) DO UPDATE SET
       created_at=CASE WHEN push_subscriptions.credential_id=EXCLUDED.credential_id THEN push_subscriptions.created_at ELSE EXCLUDED.created_at END,
+      alerts_enabled=CASE WHEN push_subscriptions.credential_id=EXCLUDED.credential_id THEN push_subscriptions.alerts_enabled ELSE false END,
       last_success_at=CASE WHEN push_subscriptions.credential_id=EXCLUDED.credential_id AND push_subscriptions.p256dh=EXCLUDED.p256dh
         AND push_subscriptions.auth=EXCLUDED.auth THEN push_subscriptions.last_success_at ELSE NULL END,
       failures=CASE WHEN push_subscriptions.credential_id=EXCLUDED.credential_id AND push_subscriptions.p256dh=EXCLUDED.p256dh
@@ -35,10 +38,27 @@ export async function savePushSubscription(db: Database, credentialId: string, s
       WHERE (push_subscriptions.credential_id,push_subscriptions.p256dh,push_subscriptions.auth)
         IS DISTINCT FROM (EXCLUDED.credential_id,EXCLUDED.p256dh,EXCLUDED.auth) RETURNING endpoint`,
     [subscription.endpoint,subscription.keys.p256dh,subscription.keys.auth,credentialId,now]);
-    if (!saved.rowCount) return;
-    await tx.query(`DELETE FROM pulse.push_subscriptions WHERE endpoint IN
-      (SELECT endpoint FROM pulse.push_subscriptions WHERE credential_id=$1 ORDER BY created_at DESC,endpoint DESC OFFSET 10)`, [credentialId]);
-    await tx.query('INSERT INTO pulse.audit_log(event,credential_id,occurred_at) VALUES($1,$2,$3)', ['Push notifications enabled',credentialId,now]);
+    if (saved.rowCount) {
+      await tx.query(`DELETE FROM pulse.push_subscriptions WHERE endpoint IN
+        (SELECT endpoint FROM pulse.push_subscriptions WHERE credential_id=$1 ORDER BY created_at DESC,endpoint DESC OFFSET 10)`, [credentialId]);
+      await tx.query('INSERT INTO pulse.audit_log(event,credential_id,occurred_at) VALUES($1,$2,$3)', ['Push notifications enabled',credentialId,now]);
+    }
+    const current = await tx.query<{alerts_enabled: boolean}>(
+      'SELECT alerts_enabled FROM pulse.push_subscriptions WHERE endpoint=$1 AND credential_id=$2', [subscription.endpoint,credentialId]);
+    return {alertsEnabled: current.rows[0]?.alerts_enabled ?? false};
+  });
+}
+
+export async function setPushAlerts(db: Database, credentialId: string, endpoint: string, enabled: boolean, now: Date): Promise<PushDevicePreferences | null> {
+  return db.transaction(async tx => {
+    await tx.query('SELECT pg_advisory_xact_lock(1668244583,hashtext($1))', ['push-subscriptions']);
+    const changed = await tx.query(`UPDATE pulse.push_subscriptions SET alerts_enabled=$3
+      WHERE endpoint=$1 AND credential_id=$2 AND alerts_enabled IS DISTINCT FROM $3 RETURNING endpoint`, [endpoint,credentialId,enabled]);
+    if (changed.rowCount) await tx.query('INSERT INTO pulse.audit_log(event,credential_id,occurred_at) VALUES($1,$2,$3)',
+      [enabled ? 'Push alerts enabled' : 'Push alerts disabled',credentialId,now]);
+    const current = await tx.query<{alerts_enabled: boolean}>(
+      'SELECT alerts_enabled FROM pulse.push_subscriptions WHERE endpoint=$1 AND credential_id=$2', [endpoint,credentialId]);
+    return current.rows[0] ? {alertsEnabled: current.rows[0].alerts_enabled} : null;
   });
 }
 

@@ -22,12 +22,18 @@ test('Morning exposes the saved summary switch only when on and leaves device su
   assert.equal(Object.hasOwn(enabled, 'subscription'), false);
 });
 
-test('the device notification row is inside Summary and brand but adds no Settings key', () => {
+test('device Alerts sits beside the existing daily summary without becoming a global Settings field', () => {
   const values = defaultSettings(), html = settingsPage({ values, version: 0 }, [], 'sample', now);
-  assert.match(html, /One push at 08:00 UK with what needs you\./);
+  assert.match(html, /One morning summary for all devices with notifications enabled\./);
   assert.match(html, /Summary &amp; brand[\s\S]*id="notifications"/);
   const row = html.match(/<section class="push-device"[\s\S]*?<\/section>/)![0];
   assert.match(row, /Notifications on this device/);
-  assert.doesNotMatch(row, /data-setting-path=|name=/);
+  assert.match(row, /data-setting-path="morningSummaryEnabled"/);
+  assert.equal((html.match(/data-setting-path="morningSummaryEnabled"/g) ?? []).length, 1);
+  assert.match(row, /id="push-alerts" type="button" role="switch" aria-label="Alerts" aria-checked="false" disabled/);
+  assert.match(row, /○ Alerts · Off/);
+  assert.match(row, /on this device only\. Saved immediately\./);
+  const alerts = row.match(/<button[^>]+id="push-alerts"[^>]*>/)![0];
+  assert.doesNotMatch(alerts, /data-setting-path=|name=/);
   for (const id of ['push-turn-on', 'push-turn-off', 'push-send-test']) assert.match(row, new RegExp(`id="${id}" type="button" hidden`));
 });

@@ -13,7 +13,7 @@ Updated in every pull request.
 | Large build 3 · B | Durable watchdog trip/recovery pushes, UK quiet hours, per-device Alerts and monthly upload reminder | built on `large-build-3`; additive migration 071 and top-level `alertQuietHours` Settings object | none to merge; enable Alerts on each device after deployment | Confirm real phone trip/recovery replacement and upload delivery; existing summary/test behavior is retained |
 | Large build 3 · C | GET-only Gorgias handover, privacy projection, signed-in Handover page and overdue-reply Decide need | built on `large-build-3`; additive migration 072 and three top-level Settings keys; sample mode without keys | after merge: GORGIAS_DOMAIN, GORGIAS_EMAIL, GORGIAS_API_KEY; run probe then set gorgiasHandoverViewId | Live probe and ticket-link shape pending. Closed this week is an observed minimum, not an exact historical total after reopen/deletion; tag-mode scans may need a view on large accounts |
 | Large build 3 · D | Waiting on others from an hourly HQ file, local additions, reversible Done and an overdue Watch need | built on `large-build-3`; additive migration 073 and top-level `waitingOnDays` default seven | existing optional GITHUB_HQ_TOKEN; external file at ops/waiting-on/latest.md | Confirm the file format, count-only diagnostics, missing-file state and Done/Put back after deployment; the app does not create the external routine. No direct new Home Watch row: use its account-menu link or Morning's Watch sheet |
-| Large build 3 · E | Issues from low-star reviews, handover tickets and replacement costs | not built: the earlier coding session hit its usage limit after D; local partial drafts never reached the shipped branch or completed verification | no key or technical safety blocker was established | Deferred work, not a feature in this pull request |
+| Large build 3 · E | Issues from low-star reviews, handover tickets and replacement costs | not built in that session: it hit its usage limit after D; local partial drafts never reached the shipped branch or completed verification | no key or technical safety blocker was established | Subsequently completed in Large build 4 · C |
 | Large build 3 · G | Keep sample customer-service decisions out of a live Shopify dashboard; singular customer wording; reconcile build records | built on `large-build-3`; full local checks pass; no migration or Settings change | none | Check source-mode combinations and singular/plural titles after deployment; Handover keeps its four sample tickets |
 | Morning decisions · A | Decisions-first deck, uncapped progress, compact Good/Watch controls and matching push summary | built on `morning-decisions`; no migration or Settings change | none | phone layout and live ordering after deployment |
 | Morning decisions · B | One more day, three/seven-day holds and lifetime flat-budget cost judgement | built on `morning-decisions`; nested `adRules.flatJudgeGbp` default; no migration | none | flat test thresholds and hold controls after deployment |
@@ -179,15 +179,19 @@ No migration, Setting, dependency, source read or outbound call; the Gorgias wor
 
 ## Next step
 
-**Home handover count** is on `home-handover-count`. After an approved merge: the Shell merge and Republish (no migration). Then check that the flag beside the market switch shows the same open count as `/handover` and opens it, at phone and desktop widths.
+**Large build 4** is on `large-build-4` in [PR #56](https://github.com/willpeirce/one-of-one-dashboard/pull/56), from main `188e728`. A–D are built, checked and pushed in order; E consolidates the records. The stretch Kits page is included. Kits is an addition outside the plan's stages; Issues completes that portion of stage six without the model. Supplier imports and the planner remain unbuilt.
 
-**Large build 3** is on `large-build-3` in [PR #54](https://github.com/willpeirce/one-of-one-dashboard/pull/54). Parts A–D are built and pushed; G adds the customer-service sample-mode guard, singular wording and these records. Part E is not built: the earlier coding session hit its usage limit after D. Partial local drafts were not integrated into the shipped branch, fully verified, committed or pushed, and are excluded from this pull request. No missing-key or technical safety blocker was established. G's typecheck, all 1,302 PostgreSQL tests, build, complete Chromium browser suite and secret scan pass locally; PR checks verify the pushed head. The recorded A–D results remain their separate checked boundaries.
+After review and an approved merge, the deployment maintainer follows the existing deployment procedure; production applies additive migrations 074 and 075 on startup. **Will adds nothing for this build:** no new key or required Settings value. Claude owns the external HQ routine that writes both kit files, the existing waiting-file routine and all live/device acceptance. Until the kit files exist, live Kits reads “Not set up yet” without sample rows or a source failure. The optional Issues tag map can stay empty. This build performs no merge or deployment.
 
-**Large build 3 · Not done or known gaps:** Issues, supplier imports, the planner, Discord, the UGC tab and Ask remain unbuilt. The Gorgias live probe and ticket-link shape, the external HQ waiting-on routine/file, and actual installed-phone alert delivery still need post-merge acceptance. Weekly Gorgias closures remain an observed minimum. No deployment is performed by this build.
+Final local validation: typecheck, all 1,396 PostgreSQL tests, production build, the complete Chromium browser suite and the unchanged secret scanner pass. Each feature part has its own checked/pushed boundary; GitHub CI also checks the final PR head. Existing Home hero pins and chapter budgets are unchanged. A adds only its permitted chapter pins and new Kits budget; D changes only the authorized Home hash for its two navigation links. Detailed rendered diffs, measurements and rollback checks are in DECISIONS.
+
+**Large build 4 · Not done or known gaps:** all requested A–D features are built. External HQ file creation and live agreement, the Gorgias probe/view/ticket-link confirmation, installed-phone delivery and existing live Meta/Morning acceptance remain Claude's checks. Gorgias history and weekly closures are observed minimums; text-only order joins and missing replacement-cost inputs cannot prove complete historical totals. Supplier imports, the planner, Discord, the UGC tab and Ask remain separate unbuilt features.
+
+**Earlier build records:** Home handover count and Large build 3 are included in the starting main. Large build 3's Part E was omitted because its session hit the usage limit after D; no missing-key or technical safety blocker was established. Its partial local drafts were never shipped. Large build 4 · C now completes Issues. The prior G checks and Home handover-count regressions remain part of the suite; their live acceptance is included below.
 
 **Large build 4 · B carry review:** the small local fixes are the view/tag polling and freshness rule, and the explanation of the weekly closure minimum. Remaining items are recorded individually in DECISIONS:
 
-- Issues: scheduled for Part C of this build, after B's checked checkpoint.
+- Issues: completed in Part C after B's checked checkpoint, including cases, replacement costs and Watch needs.
 - Supplier imports and the planner: separate unbuilt stage-six features, beyond the carry scope.
 - Discord: a separate source integration, outside this build's permitted outbound calls.
 - UGC tab: needs work and a feed in the other app.
@@ -198,11 +202,14 @@ No migration, Setting, dependency, source read or outbound call; the Gorgias wor
 - Waiting-on routine/file: external HQ work for Claude; live format/count agreement and Done/Put back acceptance follow it.
 - Installed-phone alert/summary delivery and replacement: Claude's device checks, with the existing Alerts choice.
 - Large build 3 layouts, unconfirmed-pause retry, source-mode wording and Home/Handover count/link parity: Claude's deployed phone/desktop acceptance.
+- Morning decisions and warm-instance first byte below half a second: Claude's deployed phone and timing acceptance; fixtures do not establish live latency.
 - Extra push check types and a direct Waiting Watch row on Home: outside the explicitly requested alert and Home scope; the existing Handover routes remain available.
 
-**After tax** is built on `after-tax`, stacked on PR #50; merge PR #50 first, then this one (its base moves to main). After an approved merge: the Shell merge, `npm run migrate` (applies 070), Republish, then the hero shows After tax under Net profit and Settings shows Corporation tax rate (%).
+**Earlier checkpoints below are historical and already included in the starting main.** Their acceptance notes remain recorded; they are not instructions to merge those branches again.
 
-**Stock chapter and review Dismiss** is built on `home-stock-reviews` for review. After an approved merge: the Shell merge, `npm run migrate` (applies 069 to the dev database; production applies it on start), Republish, then on a phone: Home opens on Stock with both dials and the pack bars; dismissing a review removes it, Undo brings it back, Dismiss all clears the list and the hero flag; the Next pill sits inside the strip.
+**After tax** added migration 070, After tax under Net profit and Corporation tax rate (%) in Settings.
+
+**Stock chapter and review Dismiss** added migration 069. Home opens on Stock with both dials and the pack bars; dismissing a review removes it, Undo brings it back, Dismiss all clears the list and the hero flag; the Next pill sits inside the strip.
 
 **Morning card fixes** merged on 11 Nov as [PR #49](https://github.com/willpeirce/one-of-one-dashboard/pull/49), no migration.
 
@@ -220,20 +227,19 @@ After an approved merge, the deployment maintainer runs the Shell merge, any mig
 
 ## Needs from Will
 
-For **Home handover count**, nothing is needed to merge: no key and no Setting. It reads whichever handover view or tag Settings already names, so changing `gorgiasHandoverViewId` changes this number, the Handover page and the reply card together.
+For **Large build 4**, none: no new key or required Settings value before or after merge. `gorgiasIssueTags` is optional and defaults empty; keyword classification works without it. Kits reuses the existing optional HQ connection. Claude owns the HQ file-writing routines and the live checks listed above.
 
-For **Large build 3**, no source key is needed to merge. After merge and deployment:
+Existing optional setup from earlier builds remains available; these are not new Large build 4 requirements:
 
-- Add `GORGIAS_DOMAIN`, `GORGIAS_EMAIL` and `GORGIAS_API_KEY` in Replit Secrets to enable the read-only Gorgias connection. Do not put their values in the repository or pull request.
-- Run `npm run probe:gorgias`, record its safe shape/count result, then set `gorgiasHandoverViewId` to the intended view named by the probe. Until a view is selected, the configured handover tag is used. Confirm the ticket links against the live account.
-- Turn on **Alerts** in **Notifications on this device** on the phone; it remains off until chosen on each device. Check a real trip/recovery replacement and the monthly upload reminder.
-- If the HQ waiting file is wanted, supply `ops/waiting-on/latest.md` through the existing HQ setup. A missing file stays healthy and reads “Not set up yet”; local manual rows work meanwhile.
+- `GORGIAS_DOMAIN`, `GORGIAS_EMAIL` and `GORGIAS_API_KEY` enable the read-only connection. Values belong only in Replit Secrets. Optional `gorgiasHandoverViewId` selects the view once Claude's safe probe identifies it; otherwise the configured handover tag is used. Home, Handover and the reply card share that selection.
+- **Alerts**, in **Notifications on this device**, is the existing per-device opt-in and remains off until selected. Device acceptance belongs to Claude.
+- Existing optional `GITHUB_HQ_TOKEN` enables HQ reads. The external waiting and kit files are Claude's routine work, not an input required from Will for this build.
 
 For Morning decisions, no new key or pre-merge value is needed. Review the invented `adRules.flatJudgeGbp` default of £60 when configuring flat-budget tests. Live actions continue to use the existing switches and guards.
 
 Optional `GITHUB_HQ_TOKEN` enables the HQ reader; record its expiry in Settings. Live Settings can supply Google share/spend bars, UK/US break-even returns, an optional Google contact and key dates; `morningOpensFirst` and `morningSummaryEnabled` are off by default. No pre-merge values are required.
 
-The existing source-mode boundaries and labelled samples remain. No new Home section, automatic budget change or source write is introduced. The spec, AGENTS.md, replit.md and key handling remain unchanged.
+The existing source-mode boundaries and labelled samples remain. Kits is this task's one authorized new Home chapter. No automatic budget change or source write is introduced. The spec, AGENTS.md, replit.md and key handling remain unchanged.
 
 **Video recovery follow-up (superseded 25 Oct):** the old rule kept successful reports with omitted video fields pending. Migration 040 and the narrow-report zero rule above replace that behaviour; an absent ad-day row still waits, up to three reads. The narrow repair supplies the matching daily hold denominator for hourly-only rows while preserving known values when that field is omitted. Existing migrations 034–035 are unchanged.
 

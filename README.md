@@ -48,6 +48,12 @@ Gorgias stays in sample mode until all three existing keys are present: `GORGIAS
 
 After adding those keys, run `npm run probe:gorgias` once. It makes one tickets-page GET and one views-page GET, printing counts, field names, view IDs/names and pagination shapes, never ticket values. Set `gorgiasHandoverViewId` to the handover view ID it reports; until then the reader filters for `gorgiasHandoverTag` (default `ai_handover`). `gorgiasHandoverWaitHours` defaults to 12. Confirm the ticket link shape in the live account and record the probe result in DECISIONS. Reads have a one-minute budget; a large account may need a configured view to fit. The closed-this-week figure is a labelled observed minimum, because closure history beyond the permitted ticket fields is not retained.
 
+## Issues
+
+The third section of signed-in **Handover** compares this month's and last month's observed issues. It reads stored reviews of three stars or fewer and stored handover ticket subjects/tags; it makes no new source call and uses no model. Tap a reason for its cases. Quotes are capped at 120 characters, with no reviewer field. Explicit four- or five-digit hash order numbers join matching observations; missing or ambiguous numbers cannot establish a join.
+
+Migration **075** extends the Settings audit allowlist for `gorgiasIssueTags`. Its optional editor under **Settings → Customer service** maps existing tags to the ten reasons, starts empty and never changes Gorgias tags. Keyword rules apply otherwise. Three current-month cases at least twice the previous count raise a Watch linking to Handover. Cost of fixes uses replacement/resend orders' existing landed costs and actual or estimated fulfilment; missing components or history remain explicit. Sample cases and costs never enter a live aggregate.
+
 ## Kits
 
 Home's Kits chapter reads `ops/kit-board/kits.json` and `ops/kit-board/orders.json` from HQ `main` through the existing optional `GITHUB_HQ_TOKEN`. Migration **074** adds only the stored cache and exact read targets. The after-listen HQ worker checks hourly with ETags; each file is capped at 256 KB, with forty kits and two hundred order rows. Missing files are healthy and show **Not set up yet**; failed reads retain the last good rows. Sources lists skipped and capped counts.

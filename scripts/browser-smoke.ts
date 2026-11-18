@@ -5,6 +5,7 @@ import { checkScorecard } from './browser-scorecard.js';
 import { checkHandoverBase } from './browser-handover-base.js';
 import { checkHandoverGorgias } from './browser-handover-gorgias.js';
 import { checkWaitingOn } from './browser-waiting-on.js';
+import { checkIssues } from './browser-issues.js';
 import { checkMorningHandover } from './morning-handover-browser-check.js';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -1828,6 +1829,8 @@ async function run(): Promise<void> {
     await checkHandoverGorgias(context);
     step = 'check Waiting on others local actions, manual drafts and safe refresh';
     await checkWaitingOn(context);
+    step = 'check Issues reasons, private cases, stored pagination and sample boundaries';
+    await checkIssues(context);
     step = 'check Morning Watch links to the page that holds each open need';
     await checkMorningHandover(context);
     step = 'check shared Next up strip, local persistence and accessible modal at phone and desktop widths';

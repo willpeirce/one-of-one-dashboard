@@ -42,6 +42,7 @@ export function changedSourceScopes(cached: Settings,current: Settings): Set<str
   if (cached.gorgiasHandoverViewId !== current.gorgiasHandoverViewId || cached.gorgiasHandoverTag !== current.gorgiasHandoverTag
     || cached.gorgiasHandoverWaitHours !== current.gorgiasHandoverWaitHours) changed.add('gorgias');
   if (cached.waitingOnDays !== current.waitingOnDays) changed.add('waiting-on');
+  if (changed.has('gorgias') || JSON.stringify(cached.gorgiasIssueTags) !== JSON.stringify(current.gorgiasIssueTags)) changed.add('issues');
   return changed;
 }
 
@@ -50,12 +51,14 @@ export function fenceDashboardScopes(dashboard: DashboardSnapshot,changed: Reado
   return {...dashboard,
     ...(dashboard.shopify ? {shopify: {...dashboard.shopify,
       needs: dashboard.shopify.needs.filter(need => !changed.has(need.source)
-        && !(changed.has('waiting-on') && need.id === 'waiting-on-overdue')),
+        && !(changed.has('waiting-on') && need.id === 'waiting-on-overdue')
+        && !(changed.has('issues') && need.readScope === 'needs:issues')),
       checks: dashboard.shopify.checks.filter(check => ![...changed].some(source =>
         check.id.startsWith(`${source === 'google-ads' ? 'google' : source}-`))),
     }} : {}),
     sourceHealth: dashboard.sourceHealth?.filter(source => !changed.has(source.source)),
     ...(changed.has('meta') ? {creatives: undefined} : {}),
     ...(changed.has('gorgias') ? {handover: undefined} : {}),
+    ...(changed.has('issues') ? {issuesRead: undefined} : {}),
   };
 }

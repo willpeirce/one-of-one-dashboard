@@ -173,5 +173,7 @@ export interface DashboardSnapshot {
   reviews?: import('./judgeme/model.js').ReviewsPanel;
   /** Open handover tickets for the Home flag. A count and read state only; absent until a read has completed. */
   handover?: import('./gorgias/home-count.js').HandoverCount;
+  /** Issues freshness only: no quotes, ticket details or case arrays leave for Home. */
+  issuesRead?: {ok: boolean; checkedAt: string | null};
   creatives?: import('./creatives/presentation-types.js').CreativeOverview;
 }

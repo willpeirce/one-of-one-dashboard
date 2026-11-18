@@ -14,6 +14,7 @@ import type { ActorChoices } from './meta-adsets/activity.js';
 import { appConfig } from './config.js';
 import { inboundProductWarning } from './shopify/stock-gap.js';
 import { pushDeviceHtml } from './push/view.js';
+import {ISSUE_REASONS, ISSUE_TAG_LIMIT, ISSUE_TAG_TEXT_LIMIT} from './issues/taxonomy.js';
 
 function escapeHtml(value: string | number): string {
   return String(value).replace(/[&<>"']/g, (character) => ({
@@ -223,7 +224,12 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     {key: 'gorgiasHandoverViewId', label: 'Gorgias handover view ID', optional: true, maxlength: 25, hint: 'Use the view ID from the probe. Leave blank to use the tag below.'},
     {key: 'gorgiasHandoverTag', label: 'Handover tag', maxlength: 80, hint: 'Used only when no view ID is set.'},
     number('gorgiasHandoverWaitHours', 'Reply decision after (hours)', {min: 1, max: 720, step: 'any'}),
-  ], values)}</div>`);
+  ], values)}</div>${collection('gorgiasIssueTags', 'Issue tag', [
+    {key: 'tag', label: 'Gorgias tag', maxlength: ISSUE_TAG_TEXT_LIMIT},
+    {key: 'reason', label: 'Issue reason', options: [{value: '', label: 'Choose a reason'},
+      ...ISSUE_REASONS.map(value => ({value, label: value[0]!.toUpperCase() + value.slice(1)}))]},
+  ], values.gorgiasIssueTags, 'Classify stored tickets by their existing tags. Matching ignores case; the first matching row wins. With no matching tag, Issues uses the stored subject. This never changes a tag in Gorgias.',
+  undefined, {maxRows: ISSUE_TAG_LIMIT, heading: 'Issue tag map'})}`);
   const waiting = section('Waiting on others', 'Follow-ups from HQ and rows you add on Handover.', `<div class="settings-grid">${fields([
     number('waitingOnDays', 'Waiting warning after (UK days)', {min: 1, max: 365, integer: true}),
   ], values)}</div>`);

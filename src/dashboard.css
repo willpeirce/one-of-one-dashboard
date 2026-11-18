@@ -409,6 +409,11 @@ button[disabled]{cursor:not-allowed}.act[disabled]{opacity:.5}
 .hero-market-row{display:flex;align-items:center;gap:8px;min-width:0;margin-bottom:12px}
 .hero-market-row #market{margin-bottom:0}
 .review-flag{height:44px;min-width:0;padding:6px 11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:1px solid var(--line);border-radius:999px;background:var(--glass-2);color:var(--decide);font-family:var(--disp);font-size:13px;font-weight:600;cursor:pointer}
+.handover-flag{flex:0 1 auto;min-width:44px;height:44px;padding:6px 11px;overflow:hidden;line-height:30px;text-align:center;text-overflow:ellipsis;white-space:nowrap;border:1px solid var(--line);border-radius:999px;background:var(--glass-2);color:var(--decide);font-family:var(--disp);font-size:13px;font-weight:600;text-decoration:none}
+.handover-flag[data-state="good"]{color:var(--good)}
+.handover-flag[data-state="warn"]{color:var(--warn)}
+/* A phone row holds the market switch, a waiting review flag and the count: the word folds, the number never does. */
+@media (max-width:519px){.hero-market-row:has(.review-flag:not([hidden])) .handover-flag{flex-shrink:0}.hero-market-row:has(.review-flag:not([hidden])) .hf-word{display:none}.hero-market-row:has(.review-flag:not([hidden])):has(.handover-flag:not([hidden])){gap:6px}.hero-market-row:has(.review-flag:not([hidden])):has(.handover-flag:not([hidden])) :is(.review-flag,.handover-flag){padding-inline:8px}}
 .profit-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .profit-line{display:flex;flex-wrap:wrap;align-content:start;align-items:center;gap:8px;min-width:0;border:1px solid var(--line);border-radius:var(--r2);padding:10px 14px;background:var(--glass);color:var(--ink);cursor:pointer;text-align:left;overflow-wrap:anywhere}
 .profit-line .sv{font-size:20px}

@@ -4,6 +4,7 @@ Updated in every pull request.
 
 | Stage | What | Code | Keys in Replit | Live check ("Done when") |
 |---|---|---|---|---|
+| Home handover count · 18 Nov | Open handover tickets as one flag beside the market switch, linking to Handover; hidden until a read completes and whenever Gorgias is on sample data beside live Shopify | built on `home-handover-count`; no migration, Setting or dependency; Home fold budgets unchanged | none new: uses the existing Gorgias keys and handover view Setting | After merge and Republish: the flag shows the same open count as `/handover`, at 390 and 1280 px, and opens `/handover` |
 | Large build 3 · A | Header and narrow-screen carry fixes, incomplete-life fallback, pending-pause expiry, reversible unmeasured-test hiding, register retention and push cleanup | built on `large-build-3`; parser version 4; no migration or Settings change | none | Check installed-phone layout and deliberate retry after an unconfirmed action; no automatic retry is added |
 | Large build 3 · B | Durable watchdog trip/recovery pushes, UK quiet hours, per-device Alerts and monthly upload reminder | built on `large-build-3`; additive migration 071 and top-level `alertQuietHours` Settings object | none to merge; enable Alerts on each device after deployment | Confirm real phone trip/recovery replacement and upload delivery; existing summary/test behavior is retained |
 | Large build 3 · C | GET-only Gorgias handover, privacy projection, signed-in Handover page and overdue-reply Decide need | built on `large-build-3`; additive migration 072 and three top-level Settings keys; sample mode without keys | after merge: GORGIAS_DOMAIN, GORGIAS_EMAIL, GORGIAS_API_KEY; run probe then set gorgiasHandoverViewId | Live probe and ticket-link shape pending. Closed this week is an observed minimum, not an exact historical total after reopen/deletion; tag-mode scans may need a view on large accounts |
@@ -160,7 +161,21 @@ Branch **tile-wording**. Will asked for less text in the hero stat boxes: the ti
 
 No migration, Setting, dependency or source read. Sample and live behave the same. Validation: see DECISIONS, 14 Nov (Tile wording).
 
+## Small change: Home handover count · 18 Nov
+
+Branch **home-handover-count**. Will asked for one number on Home: how many tickets are in his Gorgias handover folder now (the total, not the new ones).
+
+1. **The flag**: a second flag in the market row, after the review flag: `◆ 12 handover`, a link to `/handover`. It counts the open tickets in the handover view or tag Settings already selects, the same rows `/handover` lists.
+2. **States**: `◆ N` (Decide colour) when tickets are open, `✓ 0` (good) for a completed read of an empty folder, `△ N` (Watch) when the Gorgias read is failing or stale and N is the last successful read. Icon, number and word, never colour alone.
+3. **Hidden, never guessed**: no flag until a read has completed, and none when Gorgias is on sample data beside live Shopify (no keys). An all-sample dashboard reads `◆ 4 sample handover`.
+4. **Phone**: at 519 px and below, beside a waiting review flag, the word folds away and `◆ N` stays. The accessible name always reads in full ("12 open handover tickets").
+5. **Snapshot**: `handover` carries a count and its read state only; no ticket id, name, subject, channel or tag reaches Home.
+
+No migration, Setting, dependency, source read or outbound call; the Gorgias worker and GET-only client are untouched. Home fold budgets are unchanged (not raised); the Home markup pin is re-taken for the one added line. Validation: see DECISIONS, 18 Nov (Home handover count).
+
 ## Next step
+
+**Home handover count** is on `home-handover-count`. After an approved merge: the Shell merge and Republish (no migration). Then check that the flag beside the market switch shows the same open count as `/handover` and opens it, at phone and desktop widths.
 
 **Large build 3** is on `large-build-3` in [PR #54](https://github.com/willpeirce/one-of-one-dashboard/pull/54). Parts A–D are built and pushed; G adds the customer-service sample-mode guard, singular wording and these records. Part E is not built: the earlier coding session hit its usage limit after D. Partial local drafts were not integrated into the shipped branch, fully verified, committed or pushed, and are excluded from this pull request. No missing-key or technical safety blocker was established. G's typecheck, all 1,302 PostgreSQL tests, build, complete Chromium browser suite and secret scan pass locally; PR checks verify the pushed head. The recorded A–D results remain their separate checked boundaries.
 
@@ -185,6 +200,8 @@ After an approved merge, the deployment maintainer runs the Shell merge, any mig
 **Build 10 Nov gaps (historical; alert scope superseded by Large build 3):** HQ/routine writing, machine access to local answers, measuring tests from orders or insights and Ask remain unbuilt. Large build 3 adds watchdog/recovery pushes and the first-working-day monthly upload push; it does not add the earlier proposed Monday cadence. No Creative Diversity column, Home Dismiss control, ad-level pause or change to Meta action route rules/limits is included. Push delivery is tested through an injected transport; delivery to a real installed phone remains a live check. Manual push tests are limited per credential within the running process; restarting resets that minute cooldown. The daily summary claim persists across restarts and is retained even if all deliveries fail or no devices are registered. Unreadable-order counts are replaced at each cursor wrap, so recovery can take one sweep to appear; old state restarts a sweep and retains its previous displayed count until that wrap. The shared Step rule now requires no change today on Home, Ads and Morning; Undo still counts as a change today and does not restore Step. Kill and Slipping are unchanged. Push summaries expire at noon UK; manual tests keep a one-hour TTL and no replacement tag. Actual delivery still depends on device/provider availability, and delivery already in flight cannot be recalled. Failed local removal is remembered by a nonprivate boolean and retried before automatic repair on a later page load. Existing unavailable-source and historical-stock limitations continue to apply.
 
 ## Needs from Will
+
+For **Home handover count**, nothing is needed to merge: no key and no Setting. It reads whichever handover view or tag Settings already names, so changing `gorgiasHandoverViewId` changes this number, the Handover page and the reply card together.
 
 For **Large build 3**, no source key is needed to merge. After merge and deployment:
 

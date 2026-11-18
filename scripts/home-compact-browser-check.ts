@@ -43,6 +43,8 @@ export function compactHomeFixture(base: DashboardSnapshot): DashboardSnapshot {
       verifiedBuyer: true, photoCount: 1, body: long.repeat(3), createdAt: `2026-10-${String(26 - index).padStart(2,'0')}T12:00:00Z`,
       published: false, hidden: false, flagged: false, source: null, curated: 'ok'}))};
   fixture.reviews.rows.reverse(); // Deliberately out of presentation order: low stars and newest must win.
+  // Three digits beside a waiting review flag is the tight case for the shared row.
+  fixture.handover = {mode: 'live', current: true, open: 137, checkedAt: instant};
   fixture.creatives.mode = 'live';
   fixture.creatives.selection = {...fixture.creatives.selection, window: '3d', market: 'all', owner: 'all', liftWindow: 7};
   const group = fixture.creatives.top.groups[0];
@@ -142,6 +144,28 @@ async function budget(page: Page, width: number, waiting = true): Promise<void> 
     assert.ok(Math.abs(flagBox.y + flagBox.height / 2 - marketBox.y - marketBox.height / 2) < 1);
     assert.equal(await flag.evaluate(el => getComputedStyle(el).textOverflow), 'ellipsis');
   }
+  // The handover count shares the review flag's single row: a full-size link whose number is never clipped.
+  const handover = page.locator('#hero .handover-flag');
+  assert.equal(await handover.isVisible(), true);
+  assert.equal(await handover.getAttribute('href'), '/handover');
+  assert.equal(await handover.getAttribute('aria-label'), '137 open handover tickets');
+  assert.equal(await handover.locator('.hf-figure').innerText(), '◆ 137');
+  const countBox = await handover.boundingBox(), switchBox = await page.locator('#market').boundingBox();
+  const sharedRow = await page.locator('.hero-market-row').boundingBox();
+  assert.ok(countBox && switchBox && sharedRow);
+  assert.ok(countBox.height >= 44 && countBox.width >= 44, 'The count is a full-size tap target');
+  assert.ok(sharedRow.height <= 44, 'The handover count cannot make another row');
+  assert.ok(countBox.x >= switchBox.x + switchBox.width, 'The count is right of the market switch');
+  assert.ok(countBox.x + countBox.width <= sharedRow.x + sharedRow.width + .5, 'The count stays inside the row');
+  assert.ok(Math.abs(countBox.y + countBox.height / 2 - switchBox.y - switchBox.height / 2) < 1);
+  assert.equal(await handover.evaluate(el => el.scrollWidth <= el.clientWidth), true, 'The count is never clipped');
+  // On a phone the word folds only while a review flag needs the room; the number stays.
+  assert.equal(await handover.locator('.hf-word').isVisible(), !(width === 390 && waiting));
+  if (waiting) {
+    const reviewBox = await flag.boundingBox();
+    assert.ok(reviewBox && countBox.x >= reviewBox.x + reviewBox.width, 'The count follows the review flag');
+    assert.equal(await flag.evaluate(el => el.scrollWidth <= el.clientWidth), true, `${width}px: the review flag keeps its full label beside the count`);
+  }
   const top = await page.locator('.hero-grid').evaluate(el => el.getBoundingClientRect().top + scrollY);
   // Hard Home fold budgets: never raise these numbers to accommodate a regression.
   const heroTop = width === 390 ? 500 : 410;
@@ -225,6 +249,25 @@ export async function checkHomeCompact(context: BrowserContext): Promise<void> {
         await replay();
         await budget(page, viewport.width, false);
       }
+      // The count follows each snapshot: no completed read hides it, a clear folder says so, a stale read is marked.
+      const waitingHandover = fixture.handover!, count = page.locator('#hero .handover-flag');
+      delete fixture.handover;
+      await replay();
+      assert.equal(await count.isVisible(), false);
+      assert.equal(await count.getAttribute('aria-label'), null);
+      assert.equal(await count.textContent(), '');
+      fixture.handover = {...waitingHandover, open: 0};
+      await replay();
+      assert.equal(await count.innerText(), '✓ 0 handover');
+      assert.equal(await count.getAttribute('data-state'), 'good');
+      fixture.handover = {...waitingHandover, current: false};
+      await replay();
+      assert.equal(await count.innerText(), '△ 137 handover');
+      assert.equal(await count.getAttribute('data-state'), 'warn');
+      assert.match((await count.getAttribute('aria-label'))!, /last successful read/);
+      fixture.handover = waitingHandover;
+      await replay();
+      assert.equal(await count.innerText(), '◆ 137 handover');
       fixture.reviews = {...waitingReviews, rows: [], unreadCount: 2};
       await replay();
       assert.equal(await page.locator('#hero .review-flag').innerText(), 'Some reviews could not be read');

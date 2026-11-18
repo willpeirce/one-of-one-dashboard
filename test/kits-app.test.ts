@@ -53,6 +53,13 @@ test('sample Kits reach Home through its shared renderer and leave Morning decis
   assert.equal(sheet.json<{orders: unknown[]}>().orders.length, 5);
   for (const item of ['Printed sample', 'Inner trays', 'Outer cartons', 'Label sheets', 'Packing sleeves']) assert.match(sheet.body, new RegExp(item));
   assert.doesNotMatch(sheet.body, /"supplier"|a supplier|"ref"/);
+  const pageSheet = await app.inject({url: '/api/kits/box-b?suppliers=1', headers});
+  assert.equal(pageSheet.statusCode, 200);
+  assert.equal(pageSheet.json<{orders: {supplier: string}[]}>().orders.filter(row => row.supplier === 'a supplier').length, 5);
+  const kits = await app.inject({url: '/kits', headers});
+  assert.equal(kits.statusCode, 200);
+  for (const name of ['Box A', 'Box B', 'Box C', 'Box D', 'Box E', 'Box F']) assert.ok(kits.body.includes(name));
+  assert.match(kits.body, /Sample data/); assert.match(kits.body, /a supplier/);
   assert.equal((await db.query('SELECT 1 FROM pulse.kit_board_kits')).rowCount, 0, 'Samples never seed the live kit table');
   assert.equal((await db.query('SELECT 1 FROM pulse.kit_board_orders')).rowCount, 0, 'Samples never seed the live order table');
   const sources = await app.inject({url: '/sources', headers});
@@ -78,6 +85,10 @@ test('a live Shopify dashboard with no HQ key has no sample Kits, including thro
   assert.match(chapter(home.body), /Not set up yet/); assert.doesNotMatch(chapter(home.body), /Sample data|Box [A-F]/);
   const sheet = await app.inject({url: '/api/kits/box-b', headers});
   assert.equal(sheet.statusCode, 404); assert.doesNotMatch(sheet.body, /Box B/);
+  assert.equal((await app.inject({url: '/api/kits/box-b?suppliers=1', headers})).statusCode, 404);
+  const kits = await app.inject({url: '/kits', headers});
+  assert.equal(kits.statusCode, 200); assert.match(kits.body, /Not set up yet/);
+  assert.doesNotMatch(kits.body, /Box [A-F]|the kit maker|a supplier|Sample data/);
 });
 
 test('live HQ with a pending or missing kit file shows Not set up yet and never substitutes sample kits', async t => {
@@ -89,6 +100,9 @@ test('live HQ with a pending or missing kit file shows Not set up yet and never 
     const home = await app.inject({url: '/?check=1', headers});
     assert.match(chapter(home.body), /Not set up yet/); assert.doesNotMatch(chapter(home.body), /Sample data|Box [A-F]/);
     assert.equal((await app.inject({url: '/api/kits/box-b', headers})).statusCode, 404);
+    const kits = await app.inject({url: '/kits', headers});
+    assert.equal(kits.statusCode, 200); assert.match(kits.body, /Not set up yet/);
+    assert.doesNotMatch(kits.body, /Box [A-F]|a supplier|Sample data/);
     const sources = await app.inject({url: '/sources', headers});
     assert.match(sources.body, /data-kits-read-health/);
     assert.match(sources.body, missing ? /the file is absent; this is not an error/ : /Waiting for the first file read/);

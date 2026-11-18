@@ -1,10 +1,13 @@
 import type {HomeKits, KitSheet} from './presentation-types.js';
 import {homeKitsHtml, kitSheetHtml} from './view.js';
 
-let current: HomeKits | undefined, installed = false, beforeOpen: (() => void) | undefined, generation = 0;
+export interface KitSheetScope {mode: 'sample' | 'live'; ready: boolean; ids: readonly string[]}
+export interface KitSheetOptions {onOpen?: () => void; suppliers?: boolean}
+let current: HomeKits | undefined, scope: KitSheetScope | undefined, installed = false, generation = 0;
+let options: KitSheetOptions = {};
 let opener: HTMLElement | null = null;
 const element = <T extends HTMLElement = HTMLElement>(id: string): T | null => document.getElementById(id) as T | null;
-const listed = (id: string): boolean => !!current?.ready && [...current.cards, ...current.folded].some(row => row.id === id);
+const listed = (id: string): boolean => !!scope?.ready && scope.ids.includes(id);
 
 /** A different use of the shared sheet owns any later response or refresh. */
 export function releaseKitSheet(): void {
@@ -32,7 +35,7 @@ async function show(id: string, source: HTMLElement): Promise<void> {
   if (!listed(id)) return;
   const dialog = element<HTMLDialogElement>('sheet'), title = element('sh-title'), body = element('sh-extra'), dot = element('sh-dot');
   if (!dialog || !title || !body || !dot) return;
-  beforeOpen?.(); const request = ++generation; opener = source;
+  options.onOpen?.(); const request = ++generation; opener = source;
   title.textContent = source.querySelector('.kit-name, .kit-folded-name strong')?.textContent ?? 'Kit';
   dot.className = 'dot info'; dot.textContent = '○';
   const detail = element('sh-dl'); if (detail) detail.hidden = true;
@@ -42,11 +45,12 @@ async function show(id: string, source: HTMLElement): Promise<void> {
   if (!dialog.open) dialog.showModal();
   element('sh-x')?.focus();
   try {
-    const response = await fetch(`/api/kits/${encodeURIComponent(id)}`, {credentials: 'same-origin', headers: {Accept: 'application/json'}});
+    const response = await fetch(`/api/kits/${encodeURIComponent(id)}${options.suppliers ? '?suppliers=1' : ''}`, {credentials: 'same-origin', headers: {Accept: 'application/json'}});
     if (response.status === 401) { location.assign('/login'); return; }
     if (!response.ok) throw new Error(response.status === 404 ? 'This kit is no longer listed. Refresh to check the latest file.' : 'Could not load this kit. Close and try again.');
     const sheet = await response.json() as KitSheet;
-    if (request !== generation || !dialog.open || dialog.dataset.kitSheet !== id || !listed(id) || sheet.mode !== current?.mode) return;
+    if (request !== generation || !dialog.open || dialog.dataset.kitSheet !== id || !listed(id)) return;
+    if (sheet.mode !== scope?.mode || sheet.id !== id) throw new Error('The kit source changed. Close and refresh to check the latest file.');
     title.textContent = sheet.name; body.innerHTML = kitSheetHtml(sheet);
   } catch (error) {
     if (request !== generation || !dialog.open || dialog.dataset.kitSheet !== id) return;
@@ -56,17 +60,24 @@ async function show(id: string, source: HTMLElement): Promise<void> {
   }
 }
 export function updateHomeKits(view: HomeKits | undefined, onOpen?: () => void): void {
-  const previousMode = current?.mode;
-  current = view; beforeOpen = onOpen;
-  const dialog = element<HTMLDialogElement>('sheet'), openId = dialog?.dataset.kitSheet;
-  if (openId && (!listed(openId) || previousMode !== view?.mode)) {
-    dialog?.close(); releaseKitSheet();
-  }
+  current = view;
   const root = element('kits');
   if (root) {
     const expanded = root.querySelector('[data-kits-fold]')?.getAttribute('aria-expanded') === 'true';
     root.innerHTML = homeKitsHtml(view);
     const toggle = root.querySelector<HTMLElement>('[data-kits-fold]'); if (expanded && toggle) fold(toggle);
+  }
+  installKitSheets({mode: view?.mode ?? 'live', ready: view?.ready ?? false,
+    ids: view ? [...view.cards, ...view.folded].map(row => row.id) : []}, {onOpen});
+}
+
+/** Both pages use the same lazy detail loader, ordering controls and focus ownership. */
+export function installKitSheets(next: KitSheetScope, nextOptions: KitSheetOptions = {}): void {
+  const previousMode = scope?.mode;
+  scope = next; options = nextOptions;
+  const dialog = element<HTMLDialogElement>('sheet'), openId = dialog?.dataset.kitSheet;
+  if (openId && (!listed(openId) || previousMode !== next.mode)) {
+    dialog?.close(); releaseKitSheet();
   }
   if (installed) return;
   installed = true;

@@ -139,7 +139,7 @@ test('kit titles, actions, notes and unknown state words remain text, not markup
     launchLabel: attack, series: attack, owner: attack, with: attack, waitingSince: '2032-04-01', milestone: attack})]);
   const chapter = homeKitsHtml(homeKits(source, 'live', now)), sheet = kitSheetHtml(kitSheet(source, 'box-a', now)!);
   for (const html of [chapter, sheet]) {
-    assert.doesNotMatch(html, /<script|style=|onclick=|href=/);
+    assert.doesNotMatch(html.replace('href="/kits"', ''), /<script|style=|onclick=|href=/);
     assert.match(html, /&lt;script&gt;alert\(&quot;invented&quot;\)&lt;\/script&gt;/);
   }
   source.kits.rows[0]!.status = attack;

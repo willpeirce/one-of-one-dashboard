@@ -484,6 +484,8 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   });
   // Fixed paths only; the server never exposes repository or environment files.
   const assets = [
+    ['kits-page.js', 'text/javascript; charset=utf-8'] as const,
+    ['kits-page.css', 'text/css; charset=utf-8'] as const,
     ['issues.css', 'text/css; charset=utf-8'] as const,
     ['kits.css', 'text/css; charset=utf-8'] as const,
     ...['browser.js', 'dashboard.js', 'settings.js', 'fulfilment.js', 'creatives.js', 'adsets.js', 'ticker.js', 'morning.js', 'handover.js'].map(name => [name, 'text/javascript; charset=utf-8'] as const),

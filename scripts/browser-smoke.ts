@@ -22,6 +22,7 @@ import { calculateSeriesPace, paceDate, paceNumber } from '../src/series-pace/mo
 import type { SeriesPaceMarketView } from '../src/series-pace/presentation.js';
 import { checkHomeCompact } from './home-compact-browser-check.js';
 import { checkKits } from './browser-kits.js';
+import { checkKitsPage } from './browser-kits-page.js';
 import { checkHomeChapters, checkFulfilmentChapter } from './chapter-browser-check.js';
 import { checkDrops } from './browser-drops.js';
 import { checkMarketHero, installMarketUpdateHook } from './browser-market.js';
@@ -1807,6 +1808,8 @@ async function run(): Promise<void> {
     await checkHomeCompact(context);
     step = 'check Kits cards, folded rows, sheet orders, sample boundaries and reduced motion';
     await checkKits(context);
+    step = 'check the Kits page timeline, shared cards, suppliers and private navigation';
+    await checkKitsPage(context);
     step = 'check Google tiles, independent live promotion and market choices';
     await checkGoogleWidgets(context);
     step = 'check separate Shopify and Mailchimp views, sample flow labels and audience promotion';

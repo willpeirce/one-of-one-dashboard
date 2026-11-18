@@ -60,6 +60,8 @@ Home's Kits chapter reads `ops/kit-board/kits.json` and `ops/kit-board/orders.js
 
 The files accept either an array or an object with `updated` and `rows`. The bounded field contract lives in `src/kits/model.ts`; unknown fields and order `ref` are never stored. Claude supplies the HQ writing routine after merge. No new key or Settings value is required. Without the HQ key, invented boxes appear only on a sample dashboard. Kit sheets read this app's stored rows on demand, and Kits never writes to HQ or raises a decision or alert.
 
+**All kits** in the chapter heading and **Kits** in the account menu open `/kits`. It uses the same cards and sheets, shows every kit, and adds supplier names to its order details. The launch line runs from this UK month to the last target month; it scrolls inside its own box on a phone, with every date also listed in text. Very long ranges retain their dates while spacing out tick labels. The page groups orders in kit-file order, preserving order-file rows and putting unmatched orders under **Other**. Home's sheets still omit suppliers.
+
 ## Waiting on others
 
 Signed-in **Handover → Waiting on others** reads `ops/waiting-on/latest.md` from the configured HQ repository's `main` branch using the existing optional `GITHUB_HQ_TOKEN`. After migration **073**, the existing background worker checks it hourly and reuses ETags. A missing file says **Not set up yet** and does not fail source health. Failed reads retain the last good rows with a source warning. This app does not create or edit the routine or the file.

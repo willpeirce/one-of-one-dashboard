@@ -1,6 +1,11 @@
 :root{--foil:linear-gradient(90deg,#c5f9f6 0%,#d9c9ff 34%,#f4cce5 67%,#f7e7af 100%)}
-.kits-heading{align-items:center}
-.kits-heading .kits-summary{margin-left:auto;align-self:center;flex-basis:auto;padding-left:0;font-size:11px;text-align:right;max-width:62%;line-height:1.45}
+.kits-heading{align-items:center;gap:8px}
+.kits-heading .chapter-copy{flex:0 0 108px}
+.kits-heading .chapter-eyebrow{white-space:nowrap}
+.kits-heading .kits-summary{margin-left:auto;align-self:center;flex:1;min-width:0;padding-left:0;font-size:11px;text-align:right;max-width:none;line-height:1.45}
+.kits-all-link{display:inline-flex;align-items:center;justify-content:center;flex:none;min-height:44px;min-width:44px;margin-left:auto;padding:8px;color:var(--ink-2);font-size:11px;text-decoration:none;border-radius:8px}
+.kits-all-link:hover{background:var(--glass)}
+#account-menu a[href="/kits"]{display:flex;align-items:center;min-height:44px}
 .kits-sample,.kits-notice{font-size:12px;color:var(--muted);margin:0 0 12px;overflow-wrap:anywhere}
 .kit-cards{display:grid;grid-template-columns:1fr;gap:12px}
 .kit-card{display:grid;grid-template-rows:auto 9px auto auto;gap:12px;min-width:0;min-height:44px;width:100%;padding:16px;border:1px solid var(--line-2);border-radius:var(--r2);background:var(--glass);color:var(--ink);text-align:left;cursor:pointer;transition:background .16s,border-color .16s}

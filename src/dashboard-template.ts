@@ -63,6 +63,7 @@ ${tickerHtml()}
     <div class="hero-market-row">
       <div class="seg" role="tablist" id="market" aria-label="Market"><button role="tab" type="button" aria-selected="true" data-market="all">All</button><button role="tab" type="button" aria-selected="false" data-market="uk">UK</button><button role="tab" type="button" aria-selected="false" data-market="us">US</button></div>
       <button class="review-flag" type="button" data-rv hidden></button>
+      <a class="handover-flag" href="/handover" data-handover-flag hidden></a>
     </div>
     <div class="four hero-grid">
       <button type="button" class="tile coral stat" data-k="net" data-g="hero" data-src="shopify" data-state="info" data-source="shopify" data-mode="sample"><span class="sl">Net sales</span><span class="sv big"></span><span class="spark" aria-hidden="true"></span><span class="ss"></span></button>

@@ -77,6 +77,7 @@ import {registerHandover} from './handover/routes.js';
 import {GorgiasWorker} from './gorgias/worker.js';
 import {readGorgiasFacts} from './gorgias/store.js';
 import {gorgiasNeeds} from './gorgias/needs.js';
+import {handoverCount} from './gorgias/home-count.js';
 import {gorgiasSectionHtml} from './handover/gorgias-view.js';
 import {readWaitingView} from './waiting-on/store.js';
 import {waitingNeeds} from './waiting-on/needs.js';
@@ -266,6 +267,8 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     applyMailchimpDashboard(result,mailchimpFacts,settings.values,mailchimpAt);
     result.shopify?.needs.push(...mailchimpBillingNeeds(mailchimpFacts,settings.values,mailchimpAt));
     result.shopify?.needs.push(...gorgiasNeeds(gorgiasFacts,settings.values,shopify.mode));
+    const handover = handoverCount(gorgiasFacts,shopify.mode);
+    if (handover) result.handover = handover;
     result.shopify?.needs.push(...waitingNeeds(waitingView));
     // Radar describes actual ad connections even when Shopify numbers use sample data.
     result.adSources = adSources; result.reviews = reviewRows; result.adSets = adSets; result.creatives = creatives;

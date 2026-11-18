@@ -170,5 +170,7 @@ export interface DashboardSnapshot {
   fulfilment?: import('./fulfilment/store.js').FulfilmentOverview;
   metaCampaigns?: { unconfirmedCount: number };
   reviews?: import('./judgeme/model.js').ReviewsPanel;
+  /** Open handover tickets for the Home flag. A count and read state only; absent until a read has completed. */
+  handover?: import('./gorgias/home-count.js').HandoverCount;
   creatives?: import('./creatives/presentation-types.js').CreativeOverview;
 }

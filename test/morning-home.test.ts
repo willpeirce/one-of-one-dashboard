@@ -116,6 +116,8 @@ test('Home without Morning state performs one read, adds no property and retains
     // 12 Nov 2026: re-taken after a line-by-line diff against main a463cc2: the Live / Wins / Coming up aside and its 38 sample texts left, the Stock heading reads Series 1 / Stock without its button, and the On the table pill became Stock.
     // 14 Nov 2026: re-taken for Tile wording after a line-by-line diff against main f09d280: only the 16 Contribution subtitles lost "Estimate" / "Estimate · so far".
     // Part C: exact rendered diff against main f0c0714 adds only Handover in the account menu; see DECISIONS.
+    // 18 Nov 2026: re-taken for the Home handover count against main 324804b. The only added line is the hidden
+    // <a class="handover-flag" href="/handover" data-handover-flag hidden></a> after the review flag; removing it restores a6918cc4….
     assert.equal(markup.includes(morningLink), false);
     let pinned = markup;
     for (const part of morningNavigation) {
@@ -125,7 +127,7 @@ test('Home without Morning state performs one read, adds no property and retains
     assert.match(markup, /<nav class="pills" aria-label="Sections"><a class="pill pill-morning" href="\/morning"/, 'Morning leads the top bar');
     assert.match(markup, /<nav class="account-links" aria-label="Account">\s*<a href="\/morning">Morning<\/a>/, 'Morning leads the account menu');
     assert.equal(createHash('sha256').update(pinned).digest('hex'),
-      'a6918cc4866cd1675c5c5eaf4df569762d2816db5a137c6358662efd30764a64');
+      '4f6896ff2ce9b59e7c233eed4cec806ea7b23ad400403dda11c3b93f10cf3276');
   });
 });
 

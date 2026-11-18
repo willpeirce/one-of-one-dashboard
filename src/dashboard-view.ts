@@ -12,6 +12,7 @@ import { formatNumber, formatMetricNumber, formatPounds } from './money.js';
 import { seriesPaceCardHtml } from './series-pace/presentation.js';
 import { reviewsFlagLabel, reviewsGreeting, reviewsPanelHtml } from './judgeme/presentation.js';
 import { homeTestsHtml } from './github-hq/view.js';
+import { handoverFlagHtml } from './gorgias/home-count.js';
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({
@@ -49,6 +50,7 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
       `<button class="review-flag" type="button" data-rv aria-label="${escapeHtml(reviewsGreeting(snapshot.reviews))}"${label === null ? ' hidden' : ''}>${escapeHtml(label ?? '')}</button>`);
     content = content.replace(/(<section class="chapter revs" id="reviews"[^>]*>)[\s\S]*?<\/section>/, (_section, tag: string) => `${tag}${reviewsPanelHtml(snapshot.reviews!)}</section>`);
   }
+  content = content.replace('<a class="handover-flag" href="/handover" data-handover-flag hidden></a>', handoverFlagHtml(snapshot.handover));
   if (pace?.kind === 'series-pace') content = content.replace(/<article\b[^>]*data-model-id="w017"[^>]*><\/article>/,
     `<article class="tile series-pace" data-source="shopify" data-mode="${pace.mode}" data-model-id="w017" aria-label="Series 1 sell-out pace">${seriesPaceCardHtml(pace.value, pace.mode)}</article>`);
   const heroKeys = ['net', 'orders', 'aov', 'cac', 'cr', 'spend', 'roas', 'margin', 'contribution', 'profit', 'afterTax'] as const;

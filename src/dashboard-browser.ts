@@ -18,6 +18,7 @@ import { formatLike, formatMetricNumber, formatNumber, formatPounds } from './mo
 import { paceState, seriesPaceCardHtml, seriesPaceDial, seriesPaceSummary, seriesPaceSheetHtml, type SeriesPaceCard } from './series-pace/presentation.js';
 import type { SeriesPaceMarket } from './series-pace/model.js';
 import { reviewProductTitle, reviewsFlagLabel, reviewsGreeting, reviewsPanelHtml, reviewSheetHtml } from './judgeme/presentation.js';
+import { handoverFlagHtml } from './gorgias/home-count.js';
 
 const states: Record<State, [string, string]> = {
   good: ['Good', '✓'], warn: ['Watch', '△'], decide: ['Decide', '◆'], alarm: ['Alarm', '✕'],
@@ -413,6 +414,7 @@ function renderHealth(): void {
     return { key, name, measure, alarms: byGroup[key]?.alarm ?? 0, title: weakest ? details.get(weakest)?.title ?? measure.label : measure.label, ...(weakest ? { target: weakest.id } : {}) };
   });
   renderReviewFlag();
+  renderHandoverFlag();
   const html = dropsHtml(areas), drops = get('#drops');
   if (drops.dataset.content !== html) { drops.innerHTML = html; drops.dataset.content = html; }
 }
@@ -442,6 +444,15 @@ function miniChart(detail: Detail, dial?: SheetDetail['dial']): string {
 const hiddenReviews = new Set<string>();
 let reviewToastTimer: number | undefined;
 let lastDismissed: string[] = [];
+let handoverFlagMarkup: string | undefined;
+/** The count follows each snapshot; an unchanged flag keeps its element and focus. */
+function renderHandoverFlag(): void {
+  const html = handoverFlagHtml(snapshot.handover);
+  if (html === handoverFlagMarkup) return;
+  const flag = get('#hero [data-handover-flag]'), focused = document.activeElement === flag;
+  flag.outerHTML = html; handoverFlagMarkup = html;
+  if (focused) get('#hero [data-handover-flag]').focus();
+}
 function renderReviewFlag(): void {
   const flag = get('#hero [data-rv]'), label = snapshot.reviews ? reviewsFlagLabel(snapshot.reviews) : null;
   flag.hidden = label === null;

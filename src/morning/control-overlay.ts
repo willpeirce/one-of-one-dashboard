@@ -56,5 +56,6 @@ export function fenceDashboardScopes(dashboard: DashboardSnapshot,changed: Reado
     }} : {}),
     sourceHealth: dashboard.sourceHealth?.filter(source => !changed.has(source.source)),
     ...(changed.has('meta') ? {creatives: undefined} : {}),
+    ...(changed.has('gorgias') ? {handover: undefined} : {}),
   };
 }

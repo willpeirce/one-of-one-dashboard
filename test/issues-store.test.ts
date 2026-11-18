@@ -106,3 +106,68 @@ test('live Gorgias with sample Shopify excludes sample reviews, and a newly conf
   const pending = await readIssues(db, {...source, JUDGEME_API_TOKEN: randomBytes(32).toString('hex')}, settings, now, 'sample');
   assert.equal(pending.status, 'unavailable'); assert.equal(pending.rows.flatMap(row => row.cases).length, 1); assert.deepEqual(issuesNeeds(pending), []);
 });
+
+test('ticket-fed Watch needs wait for the current handover scope to have observed the whole earlier month', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const source = env(true), settings = defaultSettings(); delete source.JUDGEME_API_TOKEN;
+  await syncSourceHealth(db, source);
+  const scope = gorgiasScope(source.GORGIAS_DOMAIN!, settings), rows = [ticket('83001'), ticket('83002'), ticket('83003')];
+  const poll = async (selected: string, at: Date, tickets: GorgiasTicket[] = []) => saveGorgiasPoll(db, selected,
+    {tickets, closedThisWeek: 0}, {finishedAt: at, weekStart: gorgiasWeekStart(at), nextRun: new Date(+at + 600_000)});
+  const readOnly: Database = {query: (text, values) => {
+    assert.match(text.trim(), /^SELECT\b/, 'The history guard reads existing rows only'); return db.query(text, values);
+  }, transaction: async () => {throw new Error('Issues never writes');}, close: async () => {}};
+  await poll(scope, now, rows);
+  let view = await readIssues(readOnly, source, settings, now, 'live');
+  assert.deepEqual(issuesNeeds(view), []);
+  assert.equal(view.ticketHistoryCoversLastMonth, false);
+  await poll(scope, new Date('2032-03-10T12:00:00Z'));
+  for (const unrelated of [gorgiasScope(`another-${source.GORGIAS_DOMAIN}`, settings),
+    gorgiasScope(source.GORGIAS_DOMAIN!, {...settings, gorgiasHandoverTag: 'invented-other'}),
+    gorgiasScope(source.GORGIAS_DOMAIN!, {...settings, gorgiasHandoverViewId: '84001'})])
+    await poll(unrelated, new Date('2032-02-28T12:00:00Z'));
+  await poll(scope, now, rows);
+  view = await readIssues(readOnly, source, settings, now, 'live');
+  const observed = view.rows;
+  assert.equal(view.status, 'ready'); assert.equal(view.rows.find(row => row.reason === 'missing item')!.current, 3);
+  assert.equal(view.ticketHistoryCoversLastMonth, false, 'Other accounts, tags and views cannot certify this scope');
+  assert.deepEqual(issuesNeeds(view), []);
+  assert.equal(view.notes.filter(note => note.includes('Watch needs involving')).length, 1);
+  await poll(scope, new Date('2032-02-28T12:00:00Z'));
+  await poll(scope, now, rows);
+  view = await readIssues(readOnly, source, settings, now, 'live');
+  assert.equal(view.ticketHistoryCoversLastMonth, true);
+  assert.deepEqual(view.rows, observed);
+  assert.deepEqual(issuesNeeds(view).map(need => need.id), ['issues-2']);
+  assert.equal(view.notes.some(note => note.includes('Watch needs involving')), false);
+});
+
+test('ticket history uses the saved observation at UK month start, not the earlier Monday label', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const source = env(true), settings = defaultSettings(); delete source.JUDGEME_API_TOKEN;
+  await syncSourceHealth(db, source);
+  const at = new Date('2032-05-18T12:00:00Z'), boundary = new Date('2032-03-31T23:00:00Z');
+  const scope = gorgiasScope(source.GORGIAS_DOMAIN!, settings), rows = ['83001', '83002', '83003'].map(id =>
+    ticket(id, {createdAt: '2032-05-07T12:00:00Z', updatedAt: at.toISOString(), lastCustomerMessageAt: at.toISOString()}));
+  const poll = async (when: Date, tickets: GorgiasTicket[] = []) => saveGorgiasPoll(db, scope,
+    {tickets, closedThisWeek: 0}, {finishedAt: when, weekStart: gorgiasWeekStart(when), nextRun: new Date(+when + 600_000)});
+  await poll(new Date(+boundary + 1));
+  await poll(at, rows);
+  const first = (await db.query<{week_start: string}>(
+    'SELECT week_start::text FROM pulse.gorgias_weekly WHERE scope=$1 ORDER BY week_start LIMIT 1', [scope])).rows[0]!;
+  assert.ok(first.week_start < '2032-04-01', 'The week label precedes the first actual observation');
+  let view = await readIssues(db, source, settings, at, 'live');
+  assert.equal(view.lastMonth, '2032-04'); assert.equal(view.ticketHistoryCoversLastMonth, false);
+  assert.deepEqual(issuesNeeds(view), []);
+  await poll(boundary);
+  await poll(at, rows);
+  view = await readIssues(db, source, settings, at, 'live');
+  assert.equal(view.ticketHistoryCoversLastMonth, true, 'UK midnight is the prior UTC evening during BST');
+  assert.equal(issuesNeeds(view).length, 1);
+  await poll(new Date(+boundary + 86_400_000));
+  await poll(at, rows);
+  view = await readIssues(db, source, settings, at, 'live');
+  assert.equal(view.ticketHistoryCoversLastMonth, false,
+    'An overwritten first-week read cannot prove an earlier first observation that the store no longer retains');
+  assert.deepEqual(issuesNeeds(view), []);
+});

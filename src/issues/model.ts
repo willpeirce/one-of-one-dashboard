@@ -5,7 +5,7 @@ import type {SourceMode} from '../sources.js';
 import type {DashboardNeed} from '../shopify/dashboard.js';
 import {ISSUE_REASONS, type IssueReason, type IssueTagRule} from './taxonomy.js';
 import {issueClassification} from './keywords.js';
-import {issueDoubled} from './trend.js';
+import {issueWatchState} from './trend.js';
 export {issueDoubled} from './trend.js';
 export {ISSUE_REASONS, type IssueReason, type IssueTagRule} from './taxonomy.js';
 
@@ -18,7 +18,7 @@ export interface IssueSource<T> {
 export interface IssueInputs {
   dashboardMode: SourceMode;
   reviews: IssueSource<IssueReview>;
-  tickets: IssueSource<IssueTicket> & {domain: string};
+  tickets: IssueSource<IssueTicket> & {domain: string; historyCoversLastMonth?: boolean};
 }
 export interface IssueCase {
   id: string; reason: IssueReason; month: string; createdAt: string; orderNumber: string | null;
@@ -27,7 +27,7 @@ export interface IssueCase {
 export interface IssueReasonRow {reason: IssueReason; current: number; previous: number; cases: IssueCase[]}
 export interface IssuesView {
   mode: SourceMode; status: 'ready' | 'pending' | 'unavailable'; thisMonth: string; lastMonth: string;
-  asOf: string; checkedAt: string | null; rows: IssueReasonRow[]; notes: string[];
+  asOf: string; checkedAt: string | null; rows: IssueReasonRow[]; notes: string[]; ticketHistoryCoversLastMonth: boolean;
 }
 export function issueMonths(now: Date): {thisMonth: string; lastMonth: string} {
   const thisMonth = ukToday(now).slice(0, 7), year = Number(thisMonth.slice(0, 4)), month = Number(thisMonth.slice(5));
@@ -98,13 +98,17 @@ export function buildIssuesView(input: IssueInputs, tagRules: readonly IssueTagR
   }
   if (mode === 'sample') notes.unshift('Sample data · invented cases and dates.');
   const checkedAt = sources.map(source => source.checkedAt).filter((at): at is string => !!at && Number.isFinite(Date.parse(at))).sort()[0] ?? null;
-  return {mode, status, thisMonth, lastMonth, asOf: now.toISOString(), checkedAt, notes,
+  const view: IssuesView = {mode, status, thisMonth, lastMonth, asOf: now.toISOString(), checkedAt, notes,
+    ticketHistoryCoversLastMonth: input.tickets.mode === mode && input.tickets.historyCoversLastMonth === true,
     rows: ISSUE_REASONS.map(reason => ({reason, current: cases.filter(row => row.reason === reason && row.month === thisMonth).length,
       previous: cases.filter(row => row.reason === reason && row.month === lastMonth).length, cases: cases.filter(row => row.reason === reason)}))};
+  if (mode === 'live' && view.rows.some(row => issueWatchState(row, view) === 'history'))
+    notes.push('Watch needs involving handover tickets wait until stored ticket history covers the whole of last month.');
+  return view;
 }
 export function issuesNeeds(view: IssuesView): DashboardNeed[] {
   if (view.mode !== 'live' || view.status !== 'ready') return [];
-  return view.rows.filter(row => issueDoubled(row.current, row.previous)).map(row => ({
+  return view.rows.filter(row => issueWatchState(row, view) === 'watch').map(row => ({
     id: `issues-${ISSUE_REASONS.indexOf(row.reason)}`, source: 'pulse', sourceMode: 'live', readScope: 'needs:issues', state: 'warn',
     title: `${row.reason[0]!.toUpperCase()}${row.reason.slice(1)} · ${row.current} this month`,
     why: `${row.current} observed cases this month against ${row.previous} last month. ${row.cases.filter(item => item.month === view.thisMonth).slice(0, 5).map(item => item.reference).join(' · ')}.`,
@@ -121,7 +125,7 @@ export function sampleIssuesView(now: Date): IssuesView {
     {id: '91003', rating: 2, body: 'A scratched slab was in this invented kit. Order #41003.', createdAt: current},
     {id: '91004', rating: 2, body: 'The invented slab was scratched. Order #41004.', createdAt: previous},
     {id: '91005', rating: 3, body: 'The invented box arrived with a bent corner.', createdAt: current},
-  ]}, tickets: {mode: 'sample', status: 'ready', checkedAt: current, domain: 'invented-helpdesk', rows: [
+  ]}, tickets: {mode: 'sample', status: 'ready', checkedAt: current, domain: 'invented-helpdesk', historyCoversLastMonth: true, rows: [
     {id: '81001', subject: 'Scratched slab for order #41001', tags: [], createdAt: current},
     {id: '81002', subject: 'The markers have dried out', tags: [], createdAt: current},
   ]}}, [], sampleNow);

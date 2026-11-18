@@ -33,6 +33,26 @@ test('Issues pending reads show unknown counts and suppress sample costs beside 
   assert.match(issuesCasesHtml(buildIssueCasesPage(view, 'scratched slab')!), /Missing readings are not zero cases/);
 });
 
+test('row Watch badges use the same ticket-history and Other exclusions while case sheets stay unchanged', () => {
+  const facts = {dashboardMode: 'live' as const,
+    reviews: {mode: 'live' as const, status: 'ready' as const, rows: [], checkedAt: now.toISOString()},
+    tickets: {mode: 'live' as const, status: 'ready' as const, domain: 'invented-helpdesk', historyCoversLastMonth: false,
+      checkedAt: now.toISOString(), rows: Array.from({length: 6}, (_, index) => ({id: String(83001 + index),
+        subject: index < 3 ? 'An invented slab is scratched' : 'An invented question', tags: [], createdAt: now.toISOString()}))}};
+  const held = buildIssuesView(facts, [], now), heldHtml = issuesSectionHtml(held, costs());
+  const button = (html: string, reason: string) => html.split(`data-issue-reason="${reason}"`)[1]!.split('</button>')[0]!;
+  assert.doesNotMatch(button(heldHtml, 'scratched slab'), /△ Watch/);
+  assert.doesNotMatch(button(heldHtml, 'other'), /△ Watch/);
+  assert.match(heldHtml, /Watch needs involving handover tickets wait until stored ticket history covers the whole of last month\./);
+  facts.tickets.historyCoversLastMonth = true;
+  const complete = buildIssuesView(facts, [], now), completeHtml = issuesSectionHtml(complete, costs());
+  assert.match(button(completeHtml, 'scratched slab'), /△ Watch/);
+  assert.doesNotMatch(button(completeHtml, 'other'), /△ Watch/);
+  assert.deepEqual(complete.rows, held.rows);
+  for (const reason of ['scratched slab', 'other'] as const)
+    assert.equal(issuesCasesHtml(buildIssueCasesPage(complete, reason)!), issuesCasesHtml(buildIssueCasesPage(held, reason)!));
+});
+
 test('unknown replacement cost components are not presented as complete totals or zero replacement orders', () => {
   const view = costs();
   view.mode = 'live'; view.status = 'unavailable';

@@ -2,9 +2,9 @@ import type {Database} from '../db.js';
 import type {Settings} from '../settings.js';
 import type {SourceMode} from '../sources.js';
 import {readGorgiasHistory} from '../gorgias/store.js';
-import {gorgiasSource} from '../gorgias/scope.js';
+import {gorgiasScope, gorgiasSource} from '../gorgias/scope.js';
 import {REVIEW_POLL_MS} from '../judgeme/worker.js';
-import {buildIssuesView, sampleIssuesView, type IssueInputs, type IssueReview, type IssuesView} from './model.js';
+import {buildIssuesView, issueMonths, sampleIssuesView, type IssueInputs, type IssueReview, type IssuesView} from './model.js';
 
 /** No new store: use every retained low-star review, including dismissed or moderated ones. */
 async function reviews(db: Database, now: Date): Promise<IssueInputs['reviews']> {
@@ -28,15 +28,21 @@ async function reviews(db: Database, now: Date): Promise<IssueInputs['reviews']>
 
 /** Stored reads only. Sample cases are built only when the dashboard and both issue sources are sample. */
 export async function readIssues(db: Database, env: NodeJS.ProcessEnv, settings: Settings, now: Date, dashboardMode: SourceMode): Promise<IssuesView> {
-  const reviewMode: SourceMode = env.JUDGEME_API_TOKEN?.trim() ? 'live' : 'sample', ticketMode = gorgiasSource(env).mode;
-  if (dashboardMode === 'sample' && reviewMode === 'sample' && ticketMode === 'sample') return sampleIssuesView(now);
-  const [reviewRead, ticketRead] = await Promise.all([
+  const reviewMode: SourceMode = env.JUDGEME_API_TOKEN?.trim() ? 'live' : 'sample', ticketSource = gorgiasSource(env);
+  if (dashboardMode === 'sample' && reviewMode === 'sample' && ticketSource.mode === 'sample') return sampleIssuesView(now);
+  const [reviewRead, ticketRead, history] = await Promise.all([
     reviewMode === 'live' ? reviews(db, now) : Promise.resolve<IssueInputs['reviews']>({mode: 'sample', status: 'pending', checkedAt: null, rows: []}),
-    ticketMode === 'live' ? readGorgiasHistory(db, env, settings, now) : null,
+    ticketSource.mode === 'live' ? readGorgiasHistory(db, env, settings, now) : null,
+    // week_start can predate the first poll; the earliest week's saved read is a conservative observation bound.
+    ticketSource.mode === 'live' && ticketSource.domain ? db.query<{complete: boolean}>(
+      `SELECT fetched_at <= ($2::date::timestamp AT TIME ZONE 'Europe/London') AS complete
+       FROM pulse.gorgias_weekly WHERE scope=$1 ORDER BY week_start LIMIT 1`,
+      [gorgiasScope(ticketSource.domain, settings), `${issueMonths(now).lastMonth}-01`]) : null,
   ]);
   const tickets: IssueInputs['tickets'] = !ticketRead ? {mode: 'sample', status: 'pending', checkedAt: null, domain: '', rows: []}
     : {mode: ticketRead.mode, status: !ticketRead.checkedAt ? 'pending' : ticketRead.status === 'live' ? 'ready' : 'unavailable',
-      checkedAt: ticketRead.checkedAt, domain: ticketRead.domain, rows: ticketRead.tickets.map(row => ({id: row.id,
+      checkedAt: ticketRead.checkedAt, domain: ticketRead.domain, historyCoversLastMonth: history?.rows[0]?.complete === true,
+      rows: ticketRead.tickets.map(row => ({id: row.id,
         subject: row.subject, tags: row.tags, createdAt: row.createdAt}))};
   return buildIssuesView({dashboardMode, reviews: reviewRead, tickets}, settings.gorgiasIssueTags, now);
 }

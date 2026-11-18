@@ -106,6 +106,49 @@ test('trend needs start at three cases and doubling, include only five reference
   assert.deepEqual(issuesNeeds({...view, status: 'pending'}), []);
 });
 
+test('Other never raises a Watch regardless of count or ticket history', () => {
+  for (const count of [3, 12, 99]) {
+    const facts = input(Array.from({length: count}, (_, index) => review(String(93000 + index), 'An invented question')));
+    for (const complete of [false, true]) {
+      facts.tickets.historyCoversLastMonth = complete;
+      facts.tickets.rows = [{id: '83001', subject: 'Another invented question', tags: [], createdAt: current}];
+      const view = buildIssuesView(facts, [], now), other = view.rows.find(row => row.reason === 'other')!;
+      assert.equal(other.current, count + 1);
+      assert.deepEqual(issuesNeeds(view), []);
+      assert.equal(view.notes.some(note => note.includes('Watch needs involving')), false);
+    }
+  }
+});
+
+test('current ticket evidence waits for whole-month history without changing counts or cases, with one explanation', () => {
+  const facts = input([review('93001', 'Scratched slab #43001'), review('93002'), review('93003'), review('93004', undefined, previous)]);
+  facts.tickets.rows = [{id: '83001', subject: 'Scratched slab #43001', tags: [], createdAt: current},
+    ...Array.from({length: 3}, (_, index) => ({id: String(83002 + index), subject: 'An invented missing item', tags: [], createdAt: current}))];
+  const held = buildIssuesView(facts, [], now);
+  assert.equal(held.rows[0]!.current, 3); assert.equal(held.rows[0]!.previous, 1);
+  assert.deepEqual(held.rows[0]!.cases.find(row => row.orderNumber === '43001')!.sources, ['judgeme', 'gorgias']);
+  assert.deepEqual(issuesNeeds(held), []);
+  assert.equal(held.notes.filter(note => note.includes('Watch needs involving')).length, 1);
+  facts.tickets.historyCoversLastMonth = true;
+  const complete = buildIssuesView(facts, [], now);
+  assert.deepEqual(complete.rows, held.rows, 'Observation counts, joined evidence and ordering do not change');
+  assert.deepEqual(issuesNeeds(complete).map(row => row.id), ['issues-0', 'issues-2']);
+  assert.equal(complete.notes.some(note => note.includes('Watch needs involving')), false);
+  assert.deepEqual(issuesNeeds({...complete, mode: 'sample'}), []);
+});
+
+test('reviews-only current reasons keep the doubling rule despite unrelated or previous-month tickets', () => {
+  const facts = input([review('93001'), review('93002'), review('93003')]);
+  facts.tickets.rows = [{id: '83001', subject: 'Scratched slab', tags: [], createdAt: previous},
+    {id: '83002', subject: 'An invented missing item', tags: [], createdAt: current}];
+  const view = buildIssuesView(facts, [], now);
+  assert.equal(view.ticketHistoryCoversLastMonth, false);
+  assert.equal(view.rows[0]!.previous, 1);
+  assert.deepEqual(issuesNeeds(view).map(row => row.id), ['issues-0']);
+  assert.equal(view.notes.some(note => note.includes('Watch needs involving')), false,
+    'A single ticket is below the Watch floor and needs no explanation');
+});
+
 test('sample fixtures are labelled and never join live evidence; live Gorgias remains live beside sample Shopify', () => {
   const sample = sampleIssuesView(new Date('2032-04-01T00:01:00Z'));
   assert.equal(sample.mode, 'sample'); assert.equal(sample.status, 'ready'); assert.equal(total(sample), 6);
@@ -113,6 +156,12 @@ test('sample fixtures are labelled and never join live evidence; live Gorgias re
   assert.match(sample.notes[0]!, /Sample/); assert.ok(cases(sample).every(row => row.ticketHref === null));
   const facts = input([review('91001')]); facts.reviews.mode = 'sample'; facts.tickets.mode = 'sample';
   let view = buildIssuesView(facts, [], now); assert.equal(view.mode, 'live'); assert.equal(view.status, 'pending'); assert.equal(total(view), 0);
+  const excluded = input([review('93001'), review('93002'), review('93003')]);
+  excluded.reviews.mode = 'sample'; excluded.tickets.mode = 'sample'; excluded.tickets.historyCoversLastMonth = true;
+  excluded.tickets.rows = Array.from({length: 3}, (_, index) => ({id: String(83001 + index),
+    subject: 'An invented missing item', tags: [], createdAt: current}));
+  const liveWithoutSources = buildIssuesView(excluded, [], now);
+  assert.equal(total(liveWithoutSources), 0); assert.deepEqual(issuesNeeds(liveWithoutSources), []);
   facts.dashboardMode = 'sample'; facts.tickets.mode = 'live';
   facts.tickets.rows = [{id: '81001', subject: 'Missing slab', tags: [], createdAt: current}];
   view = buildIssuesView(facts, [], now); assert.equal(view.mode, 'live'); assert.equal(total(view), 1);

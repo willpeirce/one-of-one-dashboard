@@ -8,6 +8,7 @@ import { addDays, ukToday } from '../hero-range.js';
 import { dataset, orderNet, ratio, type Facts } from './metrics.js';
 import type { Order, Sessions } from './model.js';
 import { geoNotice } from './geo-notice.js';
+import {gorgiasFreshMs} from '../gorgias/model.js';
 
 export interface Check { id: string; name: string; status: 'pass' | 'tripped' | 'unknown'; why: string; link: string }
 export interface AdsCheckEntryState { day: string; status: 'ok' | 'needs' | 'unreadable' }
@@ -130,7 +131,7 @@ export function evaluateWatchdogs(facts: Facts, now: Date, settings: Settings, o
   // Reviews remain a reading decision; their connection status never changes business health.
   const otherFailures = health.filter(h => h.source !== 'judgeme' && (h.source !== 'anthropic' || h.scanWaiting !== 0) && h.mode === 'live'
     && (h.status === 'error' && h.consecutiveFailures >= 2
-      || h.source === 'gorgias' && h.lastSuccessAt && checkNow.getTime() - new Date(h.lastSuccessAt).getTime() > 6 * 60_000));
+      || h.source === 'gorgias' && h.lastSuccessAt && checkNow.getTime() - new Date(h.lastSuccessAt).getTime() > gorgiasFreshMs(settings)));
   const expiry = settings.keyExpiryDates.filter(k => k.expiresOn <= addDays(day, 14));
   add('self', 'Self-check', failed.length || otherFailures.length || expiry.length ? 'tripped' : facts.jobs.some(j => j.name in intervals && !j.last_success_at && !(facts.mode === 'sample' && j.name === 'subscriptions')) ? 'unknown' : 'pass',
     [...failed.map(j => `${j.name}: failed ${formatNumber(j.failures)} times; last worked at ${j.last_success_at ? formatUkTime(j.last_success_at) : 'never'}`), ...otherFailures.map(h => `${h.name}: last worked at ${h.lastSuccessAt ? formatUkTime(h.lastSuccessAt) : 'never'}`), ...expiry.map(k => `${k.keyName}: expires ${k.expiresOn}`)].join(' · ') || 'No repeated failures, stale feeds or keys within 14 days of expiry.', '');

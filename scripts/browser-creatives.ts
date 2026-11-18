@@ -5,7 +5,7 @@ import { dashboardPage } from '../src/dashboard-view.js';
 import type { DashboardSnapshot } from '../src/dashboard-types.js';
 import { defaultSettings, type Settings } from '../src/settings.js';
 import type { CreativeData } from '../src/creatives/model.js';
-import type { CreativeSelection, CreativeView, CreativeSheet } from '../src/creatives/presentation-types.js';
+import type { CreativeSelection, CreativeView, CreativeSheet, CreativeLibrary } from '../src/creatives/presentation-types.js';
 import { aggregateCreativeGroups, topCreatives } from '../src/creatives/ranking.js';
 import { creativePerformance } from '../src/creatives/performance.js';
 import { sampleCreativeData, sampleCreativePicture } from '../src/creatives/sample.js';
@@ -258,7 +258,7 @@ export async function checkCreatives(context: BrowserContext): Promise<void> {
             && Object.entries(expected).every(([name, selected]) => (url.searchParams.get(name) ?? '') === selected);
         });
         await page.locator(`#creative-filters [name="${key}"]`).selectOption(value);
-        const view = await (await response).json() as CreativeView;
+        const view = await (await response).json() as CreativeLibrary;
         await page.waitForFunction(ids => {
           const actual = Array.from(document.querySelectorAll('#creative-gallery .creative-tile')).map(element => element.getAttribute('data-group-id'));
           return JSON.stringify(actual) === JSON.stringify(ids);
@@ -269,23 +269,33 @@ export async function checkCreatives(context: BrowserContext): Promise<void> {
       const images = await filter('kind', 'image');
       assert.ok(images.groups.length >= 2 && images.groups.every(group => group.group.kind === 'image'));
       assert.equal(await page.locator('#creative-gallery .creative-play').count(), 0);
+      const expectedIds = (selection: CreativeSelection) => aggregateCreativeGroups(all, selection)
+        .sort((a, b) => b.group.firstSeen.localeCompare(a.group.firstSeen) || a.group.id.localeCompare(b.group.id))
+        .map(group => group.group.id);
       const ours = await filter('owner', 'ours');
-      assert.ok(ours.groups.length && ours.groups.every(group => group.ads.every(ad => ad.owner === 'ours')));
+      assert.ok(ours.groups.length && ours.groups.every(group => group.owners.every(owner => owner === 'ours')));
+      assert.deepEqual(ours.groups.map(group => group.group.id), expectedIds({kind: 'image', owner: 'ours'}), 'The compact overview keeps the exact filtered group membership and order');
       await filter('owner', 'freelancer');
       const us = await filter('market', 'us');
-      assert.ok(us.groups.length && us.groups.every(group => group.ads.every(ad => ad.market === 'us')));
+      assert.ok(us.groups.length && us.groups.every(group => group.markets.every(market => market === 'us')));
+      assert.deepEqual(us.groups.map(group => group.group.id), expectedIds({kind: 'image', owner: 'freelancer', market: 'us'}));
       const inactive = await filter('live', 'false');
-      assert.ok(inactive.groups.every(group => group.ads.every(ad => ad.effectiveStatus !== 'ACTIVE')));
+      assert.deepEqual(inactive.groups.map(group => group.group.id), expectedIds({kind: 'image', owner: 'freelancer', market: 'us', live: false}));
       assert.match(await page.locator('#creative-gallery').innerText(), /No creatives match these filters/);
       await filter('kind', 'all'); await filter('owner', 'all'); await filter('market', 'all'); await filter('live', 'all');
       await filter('attribute', 'format');
       const attribute = await filter('value', 'unboxing-flat-lay');
       assert.deepEqual(attribute.groups.map(group => group.group.id), ['sample-image-1']);
-      await filter('attribute', '');
+      const libraryBeforeScan = await filter('attribute', '');
       if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/creative-gallery-${width}.png`, fullPage: true });
       // A browser-only invented live response exercises the enabled control; no model request leaves the app.
       const scanSheet = await (await context.request.get('/api/creatives/sample-image-1')).json() as CreativeSheet;
       scanSheet.mode = 'live'; scanSheet.scan = { enabled: true, line: 'Scan: on · 0 scanned · 0 failed · £0.00 of £1.00 today · invented-browser-model', message: null };
+      const liveLibrary: CreativeLibrary = {...libraryBeforeScan, mode: 'live', scan: scanSheet.scan,
+        cards: libraryBeforeScan.cards.map(card => ({...card, mode: 'live'}))};
+      await page.route(apiPattern, route => route.fulfill({json: liveLibrary}));
+      assert.equal((await filter('attribute', '')).mode, 'live');
+      await page.locator('#creative-panel .creative-panel[data-mode="live"]').waitFor();
       const sheetPattern = /\/api\/creatives\/sample-image-1(?:\?|$)/;
       const scanPattern = '**/api/creatives/sample-image-1/scan';
       await page.route(sheetPattern, route => route.fulfill({ json: scanSheet }));
@@ -301,6 +311,9 @@ export async function checkCreatives(context: BrowserContext): Promise<void> {
       if (process.env.PULSE_SCREENSHOT_DIR) await page.locator('#creative-sheet').screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/creative-scan-${width}.png` });
       await page.locator('[data-creative-close]').click();
       await page.unroute(sheetPattern); await page.unroute(scanPattern);
+      await page.unroute(apiPattern);
+      assert.equal((await filter('attribute', '')).mode, 'sample');
+      await page.locator('#creative-panel .creative-panel[data-mode="sample"]').waitFor();
 
     }
   } finally { await page.close(); }

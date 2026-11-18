@@ -1,7 +1,7 @@
 import {readFile} from 'node:fs/promises';
 import type {Database} from '../db.js';
 import {ukToday} from '../hero-range.js';
-import {GORGIAS_FRESH_MS, GORGIAS_SAMPLE_NOW, gorgiasOldestFirst, gorgiasWeekStart,
+import {GORGIAS_SAMPLE_NOW, gorgiasFreshMs, gorgiasOldestFirst, gorgiasWeekStart,
   type GorgiasFacts, type GorgiasPollInput, type GorgiasPollResult, type GorgiasSelection, type GorgiasTicket} from './model.js';
 import {parseGorgiasTicket} from './privacy.js';
 import {gorgiasScope, gorgiasSource} from './scope.js';
@@ -71,7 +71,7 @@ async function facts(db: Database, env: NodeJS.ProcessEnv, selection: GorgiasSel
     [scope, weekStart, now, ukToday(new Date(weekStart))]),
   ]);
   const age = sync?.lastSuccessAt ? now.getTime() - Date.parse(sync.lastSuccessAt) : null;
-  const status = sync?.lastError || sync?.failures || age !== null && (age < 0 || age > GORGIAS_FRESH_MS)
+  const status = sync?.lastError || sync?.failures || age !== null && (age < 0 || age > gorgiasFreshMs(selection))
     ? 'unavailable' : sync?.lastSuccessAt ? 'live' : 'pending';
   return {...base, status, checkedAt: sync?.lastSuccessAt ?? null, tickets: rows.rows.map(ticket),
     openedThisWeek: sync?.lastSuccessAt ? Number(counts.rows[0]?.opened ?? 0) : null,
@@ -139,7 +139,7 @@ export async function recordGorgiasFailure(db: Database, scope: string, now: Dat
 }
 
 /** Restore stored health after listen, without a source call or a successful-read claim. */
-export async function restoreGorgiasHealth(db: Database, scope: string, now: Date): Promise<GorgiasSync | null> {
+export async function restoreGorgiasHealth(db: Database, scope: string, now: Date, selection: GorgiasSelection): Promise<GorgiasSync | null> {
   const sync = await readGorgiasSync(db, scope);
   if (!sync) {
     await db.query(`UPDATE pulse.source_health SET status='not_implemented',last_attempt_at=NULL,last_success_at=NULL,
@@ -147,7 +147,7 @@ export async function restoreGorgiasHealth(db: Database, scope: string, now: Dat
     return null;
   }
   const age = sync.lastSuccessAt ? now.getTime() - Date.parse(sync.lastSuccessAt) : null;
-  const healthy = age !== null && age >= 0 && age <= GORGIAS_FRESH_MS && !sync.lastError && !sync.failures;
+  const healthy = age !== null && age >= 0 && age <= gorgiasFreshMs(selection) && !sync.lastError && !sync.failures;
   await db.query(`UPDATE pulse.source_health SET status=$1,last_attempt_at=$2,last_success_at=$3,consecutive_failures=$4,
     updated_at=$5 WHERE source='gorgias' AND mode='live'`,
   [healthy ? 'healthy' : 'error', sync.lastAttemptAt, sync.lastSuccessAt, sync.failures, now]);

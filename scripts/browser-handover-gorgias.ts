@@ -31,6 +31,9 @@ export async function checkHandoverGorgias(context: BrowserContext): Promise<voi
       assert.equal(await page.locator('[data-gorgias-ticket] a[href^="https:"]').count(), 0);
       await assertHandoverLayout(page, width);
       assert.match(await page.locator('[data-gorgias-summary]').innerText(), /Opened this week.*Closed this week.*Oldest wait/s);
+      const closed = page.locator('[data-gorgias-summary] dt:text-is("Closed this week") + dd');
+      assert.match(await closed.innerText(), /^At least \d+$/);
+      assert.match((await closed.getAttribute('title'))!, /Observed minimum.*reopened or deleted.*closure history is not retained/);
     }
     const fixture: GorgiasFacts = {mode: 'live', status: 'live', domain: 'invented-helpdesk', checkedAt: '2032-04-07T12:00:00.000Z',
       asOf: '2032-04-07T12:00:00.000Z', weekStart: '2032-04-04T23:00:00.000Z', openedThisWeek: 5, closedThisWeek: 2,
@@ -47,6 +50,7 @@ export async function checkHandoverGorgias(context: BrowserContext): Promise<voi
     assert.equal(await link.getAttribute('href'), 'https://invented-helpdesk.gorgias.com/app/ticket/53001');
     assert.equal(await link.getAttribute('rel'), 'noopener noreferrer');
     assert.match(await page.locator('.handover-state').innerText(), /◆ Reply/);
+    assert.equal(await page.locator('[data-gorgias-summary] dt:text-is("Closed this week") + dd').innerText(), 'At least 2');
     assert.equal(await page.locator('.handover-person').innerText(), 'Mira P.');
     await assertHandoverLayout(page, 390);
   } finally {await page.close();}

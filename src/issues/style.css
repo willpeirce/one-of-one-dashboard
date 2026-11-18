@@ -1,0 +1,40 @@
+.issues-body{display:grid;gap:16px;min-width:0}
+.issues-source-notes{list-style:none;padding:0;margin:0;display:grid;gap:6px;font-size:12px;color:var(--ink-2);overflow-wrap:anywhere}
+.issues-table{width:100%;table-layout:fixed;border-collapse:collapse;overflow-wrap:anywhere;font-size:13px}
+.issues-table caption{text-align:left;padding:0 0 10px;font-size:12px;color:var(--muted)}
+.issues-table th,.issues-table td{padding:8px;border-bottom:1px solid var(--line);text-align:right;vertical-align:middle}
+.issues-table th:first-child{width:56%;text-align:left;padding-left:0}
+.issues-table thead th{font-size:12px;font-weight:500;color:var(--ink-2)}
+.issues-table thead small{display:block;color:var(--muted);font-size:10px;font-weight:400;margin-top:3px}
+.issues-table tbody th{font-weight:500}
+.issues-table tbody td{font:600 18px/1.3 var(--disp);font-variant-numeric:tabular-nums}
+.issues-table button{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px;width:100%;padding:9px 10px;text-align:left;border:1px solid var(--line);border-radius:12px;background:var(--glass);font:inherit;cursor:pointer;overflow-wrap:anywhere}
+.issues-table button:not(:disabled):hover{background:var(--glass-2);border-color:var(--line-2)}
+.issues-table button:disabled{background:transparent;border-color:transparent;color:var(--muted);cursor:default}
+.issues-table button small{font-size:10px;white-space:nowrap}
+.issues-watch{color:var(--warn)}
+.issues-costs{display:grid;gap:12px;margin-top:8px;min-width:0}
+.issues-costs h3{font-size:22px}
+.issues-cost-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.issues-cost{padding:16px;border:1px solid var(--line);border-radius:16px;background:var(--glass);min-width:0;overflow-wrap:anywhere}
+.issues-cost>p:first-child{font-size:12px;color:var(--ink-2)}
+.issues-cost>p:first-child span{display:block;color:var(--muted);font-size:10px}
+.issues-cost>strong{display:block;font:600 24px/1.3 var(--disp);margin:8px 0 4px}
+.issues-cost>small{font-size:11px;color:var(--ink-2)}
+.issues-cost .issues-cost-detail{font-size:11px;color:var(--muted);line-height:1.6;margin-top:8px}
+#issues-sheet{border:0;padding:0;background:transparent;max-width:none;width:100%;margin:auto 0 0;max-height:92vh;color:var(--ink)}
+#issues-sheet::backdrop{background:rgba(10,0,40,.55);backdrop-filter:blur(4px)}
+.issues-sheet-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
+.issues-sheet-head h2{font-size:24px;overflow-wrap:anywhere}
+#issues-sheet .btn{min-height:44px;min-width:44px;display:inline-flex;align-items:center;justify-content:center}
+#issues-sheet [hidden]{display:none!important}
+.issues-case-month{margin-bottom:22px;display:grid;gap:12px}
+.issues-case-month h3{font-size:18px}
+.issues-case{padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--glass);min-width:0;overflow-wrap:anywhere}
+.issues-case header{display:flex;align-items:baseline;justify-content:space-between;gap:10px;font-size:12px}
+.issues-case header span{font-size:10px;color:var(--muted);white-space:nowrap}
+.issues-case-source{font-size:11px;color:var(--muted);margin:8px 0}
+.issues-case blockquote{margin:10px 0;font-size:13px;color:var(--ink-2);line-height:1.6}
+#issues-sheet-message{font-size:12px;color:var(--ink-2);margin:12px 0 0}
+#issues-sheet-message:empty{display:none}
+@media(max-width:520px){.issues-table{font-size:12px}.issues-table th:first-child{width:54%}.issues-table th,.issues-table td{padding-inline:4px}.issues-table button{align-items:flex-start;flex-direction:column;gap:4px;padding:8px}.issues-table thead th{font-size:10px}.issues-table thead small{font-size:9px}.issues-cost{padding:12px}.issues-cost>strong{font-size:20px}.issues-sheet-head h2{font-size:21px}}

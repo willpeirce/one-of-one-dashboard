@@ -43,16 +43,16 @@ function identity(kind: MorningKind, subjectId: string, state: MorningTone, rule
 }
 function needCard(need: DashboardNeed, input: MorningInput, order: number): MorningCard {
   const alarm = need.state === 'alarm', decide = need.state === 'decide', watchdog = input.checks.some(check => check.id === need.id && check.status === 'tripped');
-  const source = sourceName(need.source);
+  const source = sourceName(need.source), scope = need.readScope ?? `needs:${need.source}`;
   const title = need.link.startsWith('/settings') ? 'Open settings' : need.link.startsWith('/ads') ? 'Open ads'
     : need.link.startsWith('/fulfilment') ? 'Open fulfilment' : need.link.startsWith('/sources') ? 'Open source health'
     : need.link.startsWith('/morning') ? 'Open Morning' : need.link.startsWith('/handover') ? 'Open handover' : 'Open source';
-  return { ...identity('need', need.id, alarm ? 'alarm' : decide ? 'decide' : 'warn', need.id), sourceScope: `needs:${need.source}`,
+  return { ...identity('need', need.id, alarm ? 'alarm' : decide ? 'decide' : 'warn', need.id), sourceScope: scope,
     tier: alarm ? 0 : decide ? 1 : watchdog ? 2 : 5, order: watchdog ? order : 100 + order,
     title: need.title, lane: source, source: need.source,
     figure: plain(need.figure?.value ?? source, need.figure?.label ?? (alarm ? 'Needs attention' : decide ? 'Decide' : 'Watch')),
     why: need.why, whyLine: need.why, rule: watchdog ? `Watchdog: ${need.id}` : `Dashboard rule: ${need.id}`,
-    sourceLine: `${source} · ${(need.sourceMode ?? input.mode) === 'sample' ? 'sample data · ' : ''}${readTime(input, `needs:${need.source}`)}`,
+    sourceLine: `${source} · ${(need.sourceMode ?? input.mode) === 'sample' ? 'sample data · ' : ''}${readTime(input, scope)}`,
     sourceHref: need.link, primary: link(title, need.link),
     secondary: alarm ? save('Seen', 'ack') : park(), menu: alarm ? [] : [hide()],
     allowedPresses: alarm ? ['ack'] : ['park', 'hide'],

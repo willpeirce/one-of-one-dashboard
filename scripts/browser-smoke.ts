@@ -5,6 +5,7 @@ import { checkScorecard } from './browser-scorecard.js';
 import { checkHandoverBase } from './browser-handover-base.js';
 import { checkHandoverGorgias } from './browser-handover-gorgias.js';
 import { checkWaitingOn } from './browser-waiting-on.js';
+import { checkIssues } from './browser-issues.js';
 import { checkMorningHandover } from './morning-handover-browser-check.js';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -20,12 +21,15 @@ import { defaultSettings, type SettingsSnapshot } from '../src/settings.js';
 import { calculateSeriesPace, paceDate, paceNumber } from '../src/series-pace/model.js';
 import type { SeriesPaceMarketView } from '../src/series-pace/presentation.js';
 import { checkHomeCompact } from './home-compact-browser-check.js';
+import { checkKits } from './browser-kits.js';
+import { checkKitsPage } from './browser-kits-page.js';
 import { checkHomeChapters, checkFulfilmentChapter } from './chapter-browser-check.js';
 import { checkDrops } from './browser-drops.js';
 import { checkMarketHero, installMarketUpdateHook } from './browser-market.js';
 import { checkGrossHistoryProgress } from './browser-gross-history.js';
 import { metricSign } from '../src/metric-sign.js';
 import { checkCreatives } from './browser-creatives.js';
+import { checkCreativeLazyAds } from './browser-creatives-lazy.js';
 import { checkCreativeSettings } from './browser-creative-settings.js';
 import { checkActorSettings } from './browser-actor-settings.js';
 import { checkGoogleWidgets } from './browser-google.js';
@@ -1802,6 +1806,10 @@ async function run(): Promise<void> {
 
     step = 'check compact Home budgets and re-rendered actions on the dense fixture';
     await checkHomeCompact(context);
+    step = 'check Kits cards, folded rows, sheet orders, sample boundaries and reduced motion';
+    await checkKits(context);
+    step = 'check the Kits page timeline, shared cards, suppliers and private navigation';
+    await checkKitsPage(context);
     step = 'check Google tiles, independent live promotion and market choices';
     await checkGoogleWidgets(context);
     step = 'check separate Shopify and Mailchimp views, sample flow labels and audience promotion';
@@ -1809,6 +1817,8 @@ async function run(): Promise<void> {
 
     step = 'check creative pictures, playing media, windows and gallery filters at phone and desktop widths';
     await checkCreatives(context);
+    step = 'check compact Library groups and bounded ad-page retry and selection races';
+    await checkCreativeLazyAds(context);
     step = 'check ad-set decisions and Ads table in both widths and colour preferences';
     for(const viewport of viewports) for(const colorScheme of ['light','dark'] as const) {
       const adsPage=await context.newPage();await adsPage.setViewportSize(viewport);await adsPage.emulateMedia({colorScheme});
@@ -1822,6 +1832,8 @@ async function run(): Promise<void> {
     await checkHandoverGorgias(context);
     step = 'check Waiting on others local actions, manual drafts and safe refresh';
     await checkWaitingOn(context);
+    step = 'check Issues reasons, private cases, stored pagination and sample boundaries';
+    await checkIssues(context);
     step = 'check Morning Watch links to the page that holds each open need';
     await checkMorningHandover(context);
     step = 'check shared Next up strip, local persistence and accessible modal at phone and desktop widths';

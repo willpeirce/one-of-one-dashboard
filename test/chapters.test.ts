@@ -5,10 +5,10 @@ import { getSampleDashboard } from '../src/sample-dashboard.js';
 import { fulfilmentPage, type Summary } from '../src/fulfilment/view.js';
 import { emptyModel } from '../src/fulfilment/model.js';
 
-test('Home has four neutral chapter headings while the hero stays without a chapter', () => {
+test('Home has five neutral chapter headings while the hero stays without a chapter', () => {
   const html = dashboardPage(getSampleDashboard()).split('<div id="dashboard-state"')[0]!;
-  const chapters = [['stock-chapter', '1', 'Series 1', 'Stock'], ['reviews', '2', 'Customers', 'New reviews'],
-    ['tests', '3', 'Experiments', 'Tests'], ['dials', '4', 'By source', 'Dials']];
+  const chapters = [['stock-chapter', '1', 'Series 1', 'Stock'], ['kits', '2', 'In the making', 'Kits'],
+    ['reviews', '3', 'Customers', 'New reviews'], ['tests', '4', 'Experiments', 'Tests'], ['dials', '5', 'By source', 'Dials']];
   for (const [id, number, category, title] of chapters) {
     const section = html.match(new RegExp(`<section class="([^"]*)" id="${id}"[^>]*>([\\s\\S]*?)<\\/section>`));
     assert.ok(section, `${id} section is present`);
@@ -18,7 +18,7 @@ test('Home has four neutral chapter headings while the hero stays without a chap
     assert.match(section[2]!, new RegExp(`class="chapter-eyebrow">${category}<`));
     assert.match(section[2]!, new RegExp(`class="chapter-title" id="${id}-title">[\\s\\S]*?${title}`));
   }
-  assert.equal((html.match(/class="chapter-number"/g) ?? []).length, 4);
+  assert.equal((html.match(/class="chapter-number"/g) ?? []).length, 5);
   const hero = html.match(/<section class="hero" id="hero">([\s\S]*?)<\/section>/)![1]!;
   assert.doesNotMatch(hero, /chapter-heading|chapter-number/);
 });

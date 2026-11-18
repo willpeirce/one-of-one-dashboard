@@ -5,7 +5,8 @@ import { HQ_REGISTER_PARSER_VERSION, HQ_MONTH_PARSER_VERSION } from './model.js'
 import { parseMonth } from './parse-month.js';
 import { parseRegister } from './parse-register.js';
 import { parseWaiting } from './parse-waiting.js';
-import { beginHQRead, failHQRead, hqRateLimited, readHQReports, readHQSync, saveHQMonth, saveHQRegister, saveHQWaiting, saveHQWaitingMissing, touchHQRead, type HQSync } from './store.js';
+import { beginHQRead, failHQRead, hqRateLimited, readHQReports, readHQSync, saveHQMonth, saveHQRegister, saveHQWaiting, saveHQWaitingMissing, saveHQKits, saveHQKitsMissing, touchHQRead, type HQSync } from './store.js';
+import {KIT_PARSER_VERSION, parseKits, parseKitOrders} from '../kits/model.js';
 
 export const HQ_HOURLY_MS = 60 * 60_000;
 export const HQ_MORNING_MS = 10 * 60_000;
@@ -74,15 +75,23 @@ export class HQWorker {
         const parsed = parseRegister(result.text);
         await saveHQRegister(this.db, parsed, result.etag, now);
         if (!parsed.readable) throw new HQReadError('unreadable');
-      } else {
+      } else if (target.kind === 'waiting') {
         const parsed = parseWaiting(result.text);
         await saveHQWaiting(this.db, parsed, result.etag, now);
+        if (!parsed.readable) throw new HQReadError('unreadable');
+      } else {
+        const parsed = target.kind === 'kits' ? parseKits(result.text) : parseKitOrders(result.text);
+        await saveHQKits(this.db, target.kind, parsed, result.etag, now);
         if (!parsed.readable) throw new HQReadError('unreadable');
       }
     } catch (error) {
       let safe = error instanceof HQReadError ? error : new HQReadError('storage');
       if (target.kind === 'waiting' && safe.code === 'not_found') {
         try { await saveHQWaitingMissing(this.db, now); return; }
+        catch { safe = new HQReadError('storage'); }
+      }
+      if ((target.kind === 'kits' || target.kind === 'kit-orders') && safe.code === 'not_found') {
+        try { await saveHQKitsMissing(this.db, target.kind, now); return; }
         catch { safe = new HQReadError('storage'); }
       }
       try { console.error(`GitHub HQ worker read failed (${safe.code}).`); } catch { /* Diagnostics are non-fatal. */ }
@@ -97,7 +106,8 @@ export class HQWorker {
       return;
     }
     const main: HQTarget = {kind: 'month', month, ref: 'main'}, branch: HQTarget = {kind: 'month', month, ref: 'claude/ads-daily'}, register: HQTarget = {kind: 'register'}, waiting: HQTarget = {kind: 'waiting'};
-    const targets = [main, branch, register, waiting];
+    const kitTargets: HQTarget[] = [{kind: 'kits'}, {kind: 'kit-orders'}];
+    const targets = [main, branch, register, waiting, ...kitTargets];
     let reads = await readHQSync(this.db, targets), reports = await readHQReports(this.db, day), attempted = false;
     const mainKey = hqTargetInfo(main).key, branchKey = hqTargetInfo(branch).key;
     const mainDue = due(reads.get(mainKey), now, hqMonthInterval(now, reports.length > 0), HQ_MONTH_PARSER_VERSION);
@@ -128,17 +138,28 @@ export class HQWorker {
       && due(reads.get('waiting-on'), now, HQ_HOURLY_MS, HQ_WAITING_PARSER_VERSION)) {
       attempted = true; await this.read(waiting, reads.get('waiting-on'), now);
     }
+    for (const target of kitTargets) {
+      reads = await readHQSync(this.db, targets);
+      if (this.closing || [...reads.values()].some(row => row.retryAfterAt && Date.parse(row.retryAfterAt) > now.getTime())) break;
+      const key = hqTargetInfo(target).key;
+      if (due(reads.get(key), now, HQ_HOURLY_MS, KIT_PARSER_VERSION)) {
+        attempted = true; await this.read(target, reads.get(key), now);
+      }
+    }
     reads = await readHQSync(this.db, targets); reports = await readHQReports(this.db, day);
     const mainRead = reads.get(mainKey), branchRead = reads.get(branchKey), registerRead = reads.get('register'), waitingRead = reads.get('waiting-on');
     const mainHasReport = reports.some(report => report.ref === 'main');
     const monthOk = good(mainRead) && (mainHasReport || good(branchRead) || branchRead?.errorCode === 'not_found')
       || mainRead?.errorCode === 'not_found' && (good(branchRead) || branchRead?.errorCode === 'not_found');
     const waitingOk = good(waitingRead) || waitingRead?.errorCode === 'not_found';
-    const healthy = monthOk && good(registerRead) && waitingOk;
+    const kitReads = kitTargets.map(target => reads.get(hqTargetInfo(target).key));
+    const kitsOk = kitReads.every(read => good(read) || read?.errorCode === 'not_found');
+    const healthy = monthOk && good(registerRead) && waitingOk && kitsOk;
     const monthSuccess = good(mainRead) ? mainRead!.lastSuccessAt : good(branchRead) ? branchRead!.lastSuccessAt : monthOk ? [mainRead?.lastAttemptAt, branchRead?.lastAttemptAt].filter((at): at is string => !!at).sort()[0] ?? null : null;
     const waitingSuccess = good(waitingRead) ? waitingRead!.lastSuccessAt : waitingOk ? waitingRead?.lastAttemptAt : null;
-    const successAt = healthy && monthSuccess && registerRead?.lastSuccessAt && waitingSuccess
-      ? [monthSuccess, registerRead.lastSuccessAt, waitingSuccess].sort()[0]! : null;
+    const kitSuccess = kitReads.map(read => good(read) ? read!.lastSuccessAt : read?.errorCode === 'not_found' ? read.lastAttemptAt : null);
+    const successAt = healthy && monthSuccess && registerRead?.lastSuccessAt && waitingSuccess && kitSuccess.every(at => !!at)
+      ? [monthSuccess, registerRead.lastSuccessAt, waitingSuccess, ...kitSuccess as string[]].sort()[0]! : null;
     const lastAttempt = [...reads.values()].map(row => row.lastAttemptAt).filter((value): value is string => !!value).sort().at(-1) ?? now.toISOString();
     // Restore a persisted healthy/error state after syncSourceHealth resets implemented live sources on startup.
     await this.db.query(`UPDATE pulse.source_health SET status=$1,last_attempt_at=$2,

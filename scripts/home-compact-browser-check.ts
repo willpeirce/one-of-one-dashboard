@@ -117,6 +117,32 @@ async function visibleControls(scope: Locator): Promise<Locator[]> {
   return visible;
 }
 
+/** A separate sample budget for the one new chapter; existing chapter budgets stay unchanged. */
+export async function checkKitsBudget(page: Page, width: 390 | 1280): Promise<void> {
+  const section = page.locator('#kits'), box = await section.boundingBox();
+  // Fixed sample measures 682.140625px at 390 and 321.75px at 1280; each cap has under 40px slack.
+  const maximum = width === 390 ? 710 : 340;
+  assert.ok(box && box.height <= maximum, `${width}px #kits height ${box?.height} exceeds ${maximum}`);
+  const all = await visibleControls(section), shown: Locator[] = [];
+  const headingLink = section.locator('.kits-heading a[data-kits-all][href="/kits"]');
+  assert.equal(await headingLink.count(), 1);
+  assert.equal(await headingLink.innerText(), 'All kits');
+  assert.equal(await headingLink.isVisible(), true);
+  for (const control of all) {
+    if (!await control.evaluate(element => element.matches('.kits-heading a[data-kits-all][href="/kits"]'))) shown.push(control);
+  }
+  assert.equal(all.length, shown.length + 1, 'The only added control is the requested All kits heading link');
+  assert.equal(shown.length, 4, 'The folded sample Kits chapter has three cards and one fold button');
+  for (const control of shown) assert.equal(await control.evaluate(element => element.matches('.kit-card,[data-kits-fold]')), true);
+  assert.equal(await section.locator('.kit-card').count(), 3);
+  assert.equal(await section.locator('[data-kits-fold]').getAttribute('aria-expanded'), 'false');
+  for (const control of all) {
+    const bounds = await control.boundingBox();
+    assert.ok(bounds && bounds.height >= 44 && bounds.width >= 44, 'Kits controls have 44px tap targets');
+  }
+  console.log('KITS GEOMETRY', width, {height: box.height, maximum, controls: shown.length});
+}
+
 async function assertPrimaryLiveDials(page: Page): Promise<void> {
   for (const id of ['w001','w002','w019']) {
     const liveTile = page.locator(`#p-ads [data-primary-dials] [data-model-id="${id}"][data-mode=live]`);

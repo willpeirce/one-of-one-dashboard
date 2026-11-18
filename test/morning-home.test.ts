@@ -126,8 +126,11 @@ test('Home without Morning state performs one read, adds no property and retains
     }
     assert.match(markup, /<nav class="pills" aria-label="Sections"><a class="pill pill-morning" href="\/morning"/, 'Morning leads the top bar');
     assert.match(markup, /<nav class="account-links" aria-label="Account">\s*<a href="\/morning">Morning<\/a>/, 'Morning leads the account menu');
+    // Part A: exact diff against main 188e728 adds only Kits, its stylesheet and chapter renumbering; see DECISIONS.
+    // Part D: exact diff against c898723 adds only the All kits heading link and Kits account-menu link;
+    // removing those links and A's additions restores main 188e728 byte for byte; see DECISIONS.
     assert.equal(createHash('sha256').update(pinned).digest('hex'),
-      '4f6896ff2ce9b59e7c233eed4cec806ea7b23ad400403dda11c3b93f10cf3276');
+      '9c0efec82583a714bf404af8dbdc44e62250a036863206b11da1167548ac82fa');
   });
 });
 

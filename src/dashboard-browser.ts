@@ -1,5 +1,6 @@
 import { stockPacksHtml } from './stock/view.js';
 import { updateHomeTests } from './github-hq/browser.js';
+import { releaseKitSheet, updateHomeKits } from './kits/browser.js';
 import {footerChipHtml} from './home-layout.js';
 import {arrangeHomeDials} from './home-layout-browser.js';
 import { hourLabel, hourlyTop, monotoneSegments } from './hourly-orders.js';
@@ -111,6 +112,7 @@ function renderSeriesPace(element: HTMLElement, card: SeriesPaceCard, mode: 'sam
 }
 
 function showSeriesPaceDetail(element: HTMLElement, market: SeriesPaceMarket, reopen: boolean): void {
+  releaseKitSheet();
   const widget = snapshot.widgets.w017;
   if (widget?.kind !== 'series-pace') return;
   if (reopen) seriesSheetGeneration += 1;
@@ -514,6 +516,7 @@ async function undoDismiss(): Promise<void> {
 }
 
 function showDetail(element: HTMLElement, reopen = true): void {
+  releaseKitSheet();
   const reviewId = element.dataset.reviewOpen;
   if (reviewId && snapshot.reviews) {
     const review = snapshot.reviews.rows.find(row => row.id === reviewId);
@@ -554,6 +557,7 @@ function showDetail(element: HTMLElement, reopen = true): void {
 }
 
 function showTemplate(id: string, title: string, reopen = true): void {
+  releaseKitSheet();
   openTemplateId = id; openDetail = undefined;
   get('#sh-title').textContent = title;
   get('#sh-dot').className = 'dot info'; get('#sh-dot').textContent = 'i';
@@ -669,6 +673,7 @@ function updateSnapshot(next: DashboardSnapshot, initial = false): void {
   if(connectionStatus)connectionStatus.innerHTML=footerChipHtml(snapshot.sourceHealth);
   arrangeHomeDials(document);
   if (snapshot.shopify) get('#stock-packs').innerHTML = stockPacksHtml(snapshot.shopify);
+  updateHomeKits(snapshot.kits, () => { openDetail = undefined; openTemplateId = undefined; });
   renderHealth();
   document.documentElement.dataset.updatedAt = snapshot.generatedAt;
   get('#update-status').textContent = `Updated ${new Date(snapshot.generatedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Europe/London' })}`;

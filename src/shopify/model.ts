@@ -155,8 +155,9 @@ export type Order = Omit<ReturnType<typeof cleanOrder>, 'lines' | 'refunds' | 'f
 export const channelOrder = (order: Order): boolean => !order.test;
 export const paidOrder = (o: Order): boolean => !o.test && !o.cancelledAt && ['PAID', 'PARTIALLY_REFUNDED', 'REFUNDED'].includes(o.financialStatus);
 export const orderTotalPence = (order: Order): number => order.totalPence ?? order.itemsAfterDiscountsPence + order.shippingPence + (order.taxesIncluded ? order.itemTaxPence : order.taxPence);
+export const isReplacementOrder = (order: Pick<Order, 'tags'>): boolean => (order.tags ?? []).some(tag => freeOrderTag.test(tag.trim()));
 export function isFreeOrder(order: Order): boolean {
-  return orderTotalPence(order) === 0 || (order.tags ?? []).some(tag => freeOrderTag.test(tag.trim()));
+  return orderTotalPence(order) === 0 || isReplacementOrder(order);
 }
 export type Inventory = Omit<NonNullable<ReturnType<typeof cleanInventory>>, 'quantities'> & { quantities: { name: string; quantity: number }[] };
 export interface Sessions { day: string; sessions: number; carts: number; checkouts: number; completed: number; uk: number; us: number; missouri: number; ukCarts: number; usCarts: number; ukCheckouts: number; usCheckouts: number; ukCompleted: number; usCompleted: number; marketReliable: boolean; provenance?: string; partial?: boolean }

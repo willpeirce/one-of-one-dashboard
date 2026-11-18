@@ -151,6 +151,7 @@ export interface SampleText extends SampleProvenance {
 
 /** Presentation data is deliberately independent of source-key readiness in stage 0b. */
 export interface DashboardSnapshot {
+  kits?: import('./kits/presentation-types.js').HomeKits;
   tests?: import('./github-hq/presentation-types.js').HomeTests;
   morningOmissions?: import('./morning/model-types.js').MorningHomeOmissions;
   adSets?: import('./meta-adsets/presentation.js').AdSetsView;
@@ -172,5 +173,7 @@ export interface DashboardSnapshot {
   reviews?: import('./judgeme/model.js').ReviewsPanel;
   /** Open handover tickets for the Home flag. A count and read state only; absent until a read has completed. */
   handover?: import('./gorgias/home-count.js').HandoverCount;
+  /** Issues freshness only: no quotes, ticket details or case arrays leave for Home. */
+  issuesRead?: {ok: boolean; checkedAt: string | null};
   creatives?: import('./creatives/presentation-types.js').CreativeOverview;
 }

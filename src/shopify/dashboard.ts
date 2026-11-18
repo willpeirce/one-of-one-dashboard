@@ -24,6 +24,8 @@ export interface DashboardNeed {
   id: string; state: State; title: string; why: string; link: string;
   source: 'shopify' | 'j-and-j' | 'meta' | 'google-ads' | 'mailchimp' | 'tiktok' | 'pulse' | 'gorgias' | 'github-hq';
   sourceMode?: 'sample' | 'live';
+  /** A combined local rule certifies its own read rather than borrowing one source's health. */
+  readScope?: 'needs:issues';
   figure?: { value: string; label: string };
   googleFlag?: GoogleFlagDetail;
 }

@@ -28,6 +28,19 @@ export type CreativeOverview = Omit<CreativeView, 'groups' | 'top'> & {
   groups: CreativeGroupSummary[];
   top: ReturnType<typeof topCreativeSummaries>;
 };
+/** Library tiles need only their visible figures; evidence remains in the selected sheet. */
+export interface CreativeLibraryGroup {
+  group: Pick<CreativeGroupSummary['group'], 'id' | 'title' | 'kind' | 'thumbnailUrl'>;
+  totals: Pick<CreativeGroupSummary['totals'], 'spend' | 'purchases' | 'roas' | 'costPerPurchase'>;
+  markets: CreativeGroupSummary['markets']; owners: CreativeGroupSummary['owners'];
+}
+export type CreativeLibrary = Omit<CreativeOverview, 'groups' | 'top'> & {
+  groups: CreativeLibraryGroup[];
+  top: Omit<CreativeOverview['top'], 'groups'> & {groups: CreativeLibraryGroup[]};
+};
+export interface CreativeAdPage {
+  groupId: string; mode: SourceMode; accountId: string; ads: CreativeAd[]; nextOffset: number | null; version: string;
+}
 export interface CreativeSheet {
   mode: SourceMode; group: GroupPerformance; scan: CreativeScanView;
   windows: { window: CreativeWindow; totals: GroupPerformance['totals'] }[];
@@ -35,4 +48,5 @@ export interface CreativeSheet {
   frequency: { value: number | null; eligible: boolean };
   links: { label: string; url: string }[];
   ads: CreativeAd[]; attributes: ResolvedAttribute[]; note: string; brief?: string; finding?: CreativeBullet;
+  adPage?: {total: number; adSetCount: number; nextOffset: number | null; version: string; accountId: string};
 }

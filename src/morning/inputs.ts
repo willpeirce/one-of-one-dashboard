@@ -31,6 +31,7 @@ export function morningInputFromDashboard(dashboard: DashboardSnapshot, settings
     google: healthy('google-ads') && (mode === 'sample' || coverage?.google === true), tests: false,
     'needs:j-and-j': true,
     'needs:pulse': [...health.values()].filter(row => row.mode === 'live').every(row => row.status === 'healthy'),
+    'needs:issues': dashboard.issuesRead?.ok === true,
   };
   for (const source of ['shopify', 'meta', 'google-ads', 'mailchimp', 'tiktok', 'gorgias', 'github-hq']) sourceReadOk[`needs:${source}`] = healthy(source);
   sourceReadOk['needs:meta'] = healthy('meta') && healthy('shopify') && !!sourceReadOk.adsets && !!sourceReadOk.activity;
@@ -42,6 +43,7 @@ export function morningInputFromDashboard(dashboard: DashboardSnapshot, settings
   sourceReadAt.activity = adSets?.activity?.lastRead ?? null;
   sourceReadAt.google = coverage?.googleReadAt ?? null;
   sourceReadAt['needs:google-ads'] = coverage?.googleReadAt ?? null;
+  sourceReadAt['needs:issues'] = dashboard.issuesRead?.checkedAt ?? null;
   return addMorningGoogle({
     mode, needs: dashboard.shopify?.needs ?? [], checks: dashboard.shopify?.checks ?? [], adSets,
     creativeCards: creatives?.cards ?? [], creativeFigures: creativeFigures(creatives), ticker, settings,

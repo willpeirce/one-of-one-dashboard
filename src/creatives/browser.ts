@@ -1,12 +1,12 @@
 import { fullEvidenceHtml } from './lift-view.js';
 import type { LiftWindowDays } from './lifts.js';
-import type { CreativeView, CreativeOverview, CreativeSheet, CreativeSelection } from './presentation-types.js';
-import { creativePanelHtml, creativeGalleryHtml, creativeCardsHtml, creativeSheetHtml, creativeAttributesHtml, creativeTagRowHtml, creativeAttributeFiltersHtml } from './view.js';
+import type { CreativeLibrary, CreativeOverview, CreativeSheet, CreativeSelection, CreativeAdPage } from './presentation-types.js';
+import { creativePanelHtml, creativeGalleryHtml, creativeCardsHtml, creativeSheetHtml, creativeAttributesHtml, creativeTagRowHtml, creativeAttributeFiltersHtml, creativeAdCopyHtml, creativeAdsHtml } from './view.js';
 import type { ResolvedAttribute } from './attributes.js';
 import { creativeScanControlHtml, type CreativeScanView } from './scan-view.js';
 import type { ScanResult } from './scan.js';
 
-let view: CreativeOverview | undefined;
+let view: CreativeLibrary | undefined;
 const knownGroups = new Set<string>();
 let selection: CreativeSelection = { window: '3d', market: 'all', owner: 'all' };
 let rememberedWindow: LiftWindowDays = 7;
@@ -20,11 +20,13 @@ let noteGeneration = 0;
 let pendingNote: { sheet: CreativeSheet; value: string; generation: number } | undefined;
 let noteWrites = Promise.resolve();
 const savingTags = new Set<string>();
+const loadingAds = new WeakSet<CreativeSheet>();
+class CreativeReadError extends Error {constructor(readonly statusCode: number) {super('Could not update creatives. Try again.');}}
 const element = <T extends HTMLElement>(selector: string) => document.querySelector<T>(selector);
 async function read<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(path, { credentials: 'same-origin', cache: 'no-store', ...(body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}) });
   if (response.status === 401) { window.location.assign('/login'); throw new Error('Sign in to continue.'); }
-  if (!response.ok) throw new Error('Could not update creatives. Try again.');
+  if (!response.ok) throw new CreativeReadError(response.status);
   return await response.json() as T;
 }
 function status(message: string): void {
@@ -32,8 +34,15 @@ function status(message: string): void {
     const target = element(selector); if (target) target.textContent = message;
   }
 }
-function render(next: CreativeOverview): void {
-  if (view?.accountId !== next.accountId || view?.mode !== next.mode) knownGroups.clear();
+function render(next: CreativeLibrary): void {
+  if (view?.accountId !== next.accountId || view?.mode !== next.mode) {
+    knownGroups.clear();
+    if (view) {
+      sheetGeneration++; activeSheet = undefined; noteGeneration++; pendingNote = undefined;
+      if (noteTimer) clearTimeout(noteTimer);
+      element<HTMLDialogElement>('#creative-sheet')?.close();
+    }
+  }
   for (const row of next.groups) knownGroups.add(row.group.id);
   for (const row of next.merged) knownGroups.add(row.id);
   view = next;
@@ -59,7 +68,7 @@ async function refresh(): Promise<void> {
   const current = ++generation;
   const params = new URLSearchParams(Object.entries(selection).map(([key, value]) => [key, String(value)]));
   try {
-    const next = await read<CreativeView>(`/api/creatives?${params}`);
+    const next = await read<CreativeLibrary>(`/api/creatives?${params}`);
     if (current === generation) render(next);
   } catch { if (current === generation) status('Could not refresh creatives. Showing the last read.'); }
 }
@@ -67,7 +76,7 @@ async function openSheet(groupId: string, tagging = false): Promise<void> {
   const dialog = element<HTMLDialogElement>('#creative-sheet');
   const body = element('#creative-sheet-body');
   if (!dialog || !body) return;
-  const current = ++sheetGeneration;
+  const current = ++sheetGeneration, scope = view && {accountId: view.accountId, mode: view.mode};
   flushNote();
   activeSheet = undefined;
   noteGeneration++;
@@ -77,7 +86,8 @@ async function openSheet(groupId: string, tagging = false): Promise<void> {
     await noteWrites;
     if (current !== sheetGeneration || !dialog.open) return;
     const sheet = await read<CreativeSheet>(`/api/creatives/${encodeURIComponent(groupId)}?window=${selection.window ?? '3d'}&liftWindow=${selection.liftWindow ?? 7}&market=${selection.market ?? 'all'}`);
-    if (current !== sheetGeneration || !dialog.open) return;
+    if (current !== sheetGeneration || !dialog.open || scope && (scope.accountId !== view?.accountId || scope.mode !== view.mode)) return;
+    if (scope && (sheet.mode !== scope.mode || sheet.adPage && sheet.adPage.accountId !== scope.accountId)) throw new CreativeReadError(409);
     activeSheet = sheet;
     body.innerHTML = creativeSheetHtml(sheet);
     if (tagging) {
@@ -89,7 +99,40 @@ async function openSheet(groupId: string, tagging = false): Promise<void> {
       const fallback = element('#creative-video-refused'); if (fallback) fallback.hidden = false;
     });
     if (video?.error) { const fallback = element('#creative-video-refused'); if (fallback) fallback.hidden = false; }
-  } catch { if (current === sheetGeneration) body.innerHTML = '<h2 id="creative-sheet-title">Creative unavailable</h2><p>Could not read this creative. Close and try again.</p>'; }
+    void loadAds(sheet, current);
+  } catch (error) {
+    if (current === sheetGeneration) body.innerHTML = error instanceof CreativeReadError && error.statusCode === 409
+      ? '<h2 id="creative-sheet-title">Creative changed</h2><p>The creative account changed. Close, refresh the Library and open it again.</p>'
+      : '<h2 id="creative-sheet-title">Creative unavailable</h2><p>Could not read this creative. Close and try again.</p>';
+  }
+}
+async function loadAds(sheet: CreativeSheet, requestGeneration: number): Promise<void> {
+  if (!sheet.adPage || sheet.adPage.nextOffset === null || loadingAds.has(sheet)) return;
+  loadingAds.add(sheet);
+  const retry = element<HTMLButtonElement>('[data-creative-ads-retry]'); if (retry) {retry.hidden = true; retry.disabled = true;}
+  try {
+    while (sheet.adPage.nextOffset !== null) {
+      const offset: number = sheet.adPage.nextOffset;
+      const page: CreativeAdPage = await read<CreativeAdPage>(`/api/creatives/${encodeURIComponent(sheet.group.group.id)}/ads?offset=${offset}&version=${encodeURIComponent(sheet.adPage.version)}`);
+      if (requestGeneration !== sheetGeneration || activeSheet !== sheet || !element<HTMLDialogElement>('#creative-sheet')?.open) return;
+      if (page.groupId !== sheet.group.group.id || page.mode !== sheet.mode || page.accountId !== sheet.adPage.accountId
+        || page.version !== sheet.adPage.version || page.ads.length > 50 || page.ads.length === 0
+        || offset !== sheet.ads.length || offset + page.ads.length > sheet.adPage.total
+        || page.nextOffset === null && offset + page.ads.length !== sheet.adPage.total
+        || page.nextOffset !== null && page.nextOffset !== offset + page.ads.length
+        || page.ads.some(ad => sheet.ads.some(saved => saved.id === ad.id))) throw new CreativeReadError(409);
+      sheet.ads.push(...page.ads); sheet.group.ads = sheet.ads; sheet.adPage.nextOffset = page.nextOffset;
+      const copy = element('#creative-ad-copy'); if (copy) copy.innerHTML = creativeAdCopyHtml(sheet);
+      const list = element('#creative-ad-rows'); if (list) list.outerHTML = creativeAdsHtml(sheet);
+    }
+  } catch (error) {
+    if (requestGeneration !== sheetGeneration || activeSheet !== sheet) return;
+    const changed = error instanceof CreativeReadError && error.statusCode === 409;
+    const message = element('[data-creative-ads-status]');
+    if (message) message.textContent = changed ? 'This creative changed. Close and open it again to read its current ads.'
+      : `Could not load more ads. ${sheet.ads.length} of ${sheet.adPage.total} shown. Try again.`;
+    const retry = element<HTMLButtonElement>('[data-creative-ads-retry]'); if (retry) {retry.hidden = changed; retry.disabled = false;}
+  } finally {loadingAds.delete(sheet);}
 }
 function showLinkedCreative(): void {
   if (location.pathname !== '/creatives' || !location.hash) return;
@@ -201,6 +244,7 @@ async function mergeAction(action: 'merge' | 'split' | 'undo', groupIds: string[
 document.addEventListener('click', event => {
   const target = event.target instanceof Element ? event.target : undefined;
   if (!target) return;
+  if (target.closest('[data-creative-ads-retry]')) {if (activeSheet) void loadAds(activeSheet, sheetGeneration); return;}
   const evidence = target.closest<HTMLElement>('[data-full-evidence]')?.dataset.fullEvidence;
   if (view && (evidence === 'video' || evidence === 'image')) {
     flushNote(); sheetGeneration++; activeSheet = undefined; noteGeneration++;
@@ -277,7 +321,7 @@ dialog?.addEventListener('close', () => {
 dialog?.addEventListener('click', event => { if (event.target === dialog) dialog.close(); });
 const state = element('#creative-state');
 if (state) {
-  try { const next = JSON.parse(state.dataset.view ?? '{}') as CreativeView; selection = { ...next.selection, liftWindow: rememberedWindow }; render(next); state.remove(); showLinkedCreative(); if (rememberedWindow !== (next.selection.liftWindow ?? 7)) void refresh(); }
+  try { const next = JSON.parse(state.dataset.view ?? '{}') as CreativeLibrary; selection = { ...next.selection, liftWindow: rememberedWindow }; render(next); state.remove(); showLinkedCreative(); if (rememberedWindow !== (next.selection.liftWindow ?? 7)) void refresh(); }
   catch { status('Could not finish loading creatives. Refresh to try again.'); }
 }
 window.addEventListener('hashchange', showLinkedCreative);

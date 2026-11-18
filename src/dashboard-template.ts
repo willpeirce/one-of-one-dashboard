@@ -92,11 +92,13 @@ ${tickerHtml()}
   </div>
 </section>
 
+<section class="chapter kits" id="kits" aria-labelledby="kits-title"></section>
+
 <section class="chapter revs" id="reviews" aria-labelledby="reviews-title"></section>
 <div class="rv-toast" id="review-toast" role="status" aria-live="polite" hidden><span id="review-toast-text"></span><button class="btn" type="button" id="review-undo">Undo</button></div>
 
 <section class="chapter tests" id="tests" aria-labelledby="tests-title">
-  <header class="chapter-heading"><span class="chapter-number" aria-hidden="true">3</span><div class="chapter-copy"><p class="chapter-eyebrow">Experiments</p><h2 class="chapter-title" id="tests-title"><span data-sample-text="t0200">{{sample:t0200}}</span></h2></div><span class="shm" id="testcount"><span data-sample-text="t0201">{{sample:t0201}}</span></span></header>
+  <header class="chapter-heading"><span class="chapter-number" aria-hidden="true">4</span><div class="chapter-copy"><p class="chapter-eyebrow">Experiments</p><h2 class="chapter-title" id="tests-title"><span data-sample-text="t0200">{{sample:t0200}}</span></h2></div><span class="shm" id="testcount"><span data-sample-text="t0201">{{sample:t0201}}</span></span></header>
   <article class="tcard" data-state="info" data-g="growth" data-id="t1" data-kind="coin" data-test="{{widget:w006}}" data-source="shopify" data-mode="sample" data-model-id="w006">
     <div class="thead"><span class="tlane">Featured · <span class="chip info ghost">Sample</span></span><span class="src" aria-hidden="true"><svg class="ic"><use href="#i-bag"></use></svg></span><button class="rt" type="button" data-sheet="{{widget:w007}}" data-model-id="w007"><h3 class="test-name"><span data-sample-text="t0203">{{sample:t0203}}</span></h3><span class="rec"><span data-sample-text="t0204">{{sample:t0204}}</span></span></button><span class="chip info" data-tchip><span data-sample-text="t0205">{{sample:t0205}}</span></span></div>
     <div class="tbody"><div class="tbars" data-bars></div><div class="tsure" data-sure></div></div>
@@ -118,7 +120,7 @@ ${tickerHtml()}
 </section>
 
 <section class="chapter dials" id="dials" aria-labelledby="dials-title">
-  <header class="chapter-heading"><span class="chapter-number" aria-hidden="true">4</span><div class="chapter-copy"><p class="chapter-eyebrow">By source</p><h2 class="chapter-title" id="dials-title"><span data-sample-text="t0245">{{sample:t0245}}</span></h2></div><span class="shm" id="dialcount"><span data-sample-text="t0246">{{sample:t0246}}</span></span></header>
+  <header class="chapter-heading"><span class="chapter-number" aria-hidden="true">5</span><div class="chapter-copy"><p class="chapter-eyebrow">By source</p><h2 class="chapter-title" id="dials-title"><span data-sample-text="t0245">{{sample:t0245}}</span></h2></div><span class="shm" id="dialcount"><span data-sample-text="t0246">{{sample:t0246}}</span></span></header>
   <div class="tabs" id="tabs" role="tablist">
     <button class="tab" role="tab" data-tab="ads" aria-label="Ads" aria-selected="true"><svg class="ic"><use href="#i-meta"></use></svg><span class="t"><span data-sample-text="t0247">{{sample:t0247}}</span></span><span class="dot info"></span></button>
     <button class="tab" role="tab" data-tab="store" aria-label="Store" aria-selected="false"><svg class="ic"><use href="#i-bag"></use></svg><span class="t"><span data-sample-text="t0248">{{sample:t0248}}</span></span><span class="dot info"></span></button>

@@ -16,7 +16,10 @@ export function scrubGorgiasText(value: unknown, knownNames: readonly string[] =
     .replace(/\bp\.?\s*o\.?\s*box\s+[\w-]+\b/giu, '…')
     .replace(/\b(?:(?:flat|apartment|apt|unit|suite|ste)\s*#?[\w-]+[, ]+)?\d{1,5}[a-z]?(?:[-/]\d{1,5})?\s+(?:[\p{L}][\p{L}'’.-]*\s+){0,5}(?:street|st|road|rd|lane|ln|avenue|ave|drive|dr|close|court|ct|way|boulevard|blvd|place|pl|terrace|tce|crescent|cres|gardens|grove|parkway|pkwy|circle|cir|square|sq)\b(?:[.,]?\s*(?:flat|apartment|apt|unit|suite|ste)\s*#?[\w-]+)?/giu, '…')
     .replace(/\b(?:GIR\s?0AA|[a-z]{1,2}\d[a-z\d]?\s?\d[a-z]{2})\b/giu, '…')
-    .replace(/\b\d{5}(?:-\d{4})?\b/gu, '…')
+    // An explicit short order marker is operational identity, not a ZIP code. ZIP+4,
+    // phone continuations and longer numbers still pass through the scrubbers below.
+    .replace(/\b\d{5}(?:-\d{4})?\b/gu, (match: string, offset: number, body: string) =>
+      body[offset - 1] === '#' && /^\d{5}$/.test(match) ? match : '…')
     .replace(/(?:\+\s*)?\(?\d[\d\s().-]{5,}\d\)?/gu, match => (match.match(/\d/g)?.length ?? 0) >= 7 ? '…' : match)
     .replace(/\d{6,}/gu, '…')
     .replace(/\s+/gu, ' ').trim();

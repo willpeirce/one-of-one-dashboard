@@ -34,7 +34,7 @@ async function checkChapter(page: Page, id: string, number: string, category: st
 
 /** Call on the hydrated Home page at each test width; snapshot re-renders use the same review heading. */
 export async function checkHomeChapters(page: Page): Promise<void> {
-  assert.equal(await page.locator('main > .chapter').count(), 4);
+  assert.equal(await page.locator('main > .chapter').count(), 5);
   assert.equal(await page.locator('#hero .chapter-heading').count(), 0);
   const sourceRowsFit = await page.locator('.chapter .trow').evaluateAll(rows => rows.every(row => {
     const box = row.getBoundingClientRect();
@@ -45,7 +45,8 @@ export async function checkHomeChapters(page: Page): Promise<void> {
   }));
   assert.equal(sourceRowsFit, true, 'Source labels, icons and test-row content fit inside the chapter cards');
   for (const [id, number, category, title] of [['stock-chapter', '1', 'Series 1', 'Stock'],
-    ['reviews', '2', 'Customers', 'New reviews'], ['tests', '3', 'Experiments', 'Tests'], ['dials', '4', 'By source', 'Dials']]) {
+    ['kits', '2', 'In the making', 'Kits'], ['reviews', '3', 'Customers', 'New reviews'],
+    ['tests', '4', 'Experiments', 'Tests'], ['dials', '5', 'By source', 'Dials']]) {
     await checkChapter(page, id!, number!, category!, title!);
   }
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));

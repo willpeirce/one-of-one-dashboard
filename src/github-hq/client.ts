@@ -1,12 +1,14 @@
 import { appConfig } from '../config.js';
 import { HQ_MONTH_PARSER_VERSION, HQ_REGISTER_PARSER_VERSION } from './model.js';
+import {KIT_BODY_LIMIT, KIT_PARSER_VERSION} from '../kits/model.js';
 
 export const HQ_BODY_LIMIT = 4 * 1024 * 1024;
 export const HQ_TIMEOUT_MS = 10_000;
-export type HQTarget = {kind: 'month'; month: string; ref: 'main' | 'claude/ads-daily'} | {kind: 'register'} | {kind: 'waiting'};
+export type HQTarget = {kind: 'month'; month: string; ref: 'main' | 'claude/ads-daily'} | {kind: 'register'} | {kind: 'waiting'}
+  | {kind: 'kits'} | {kind: 'kit-orders'};
 export const HQ_WAITING_PARSER_VERSION = 1;
 export const hqParserVersion = (target: HQTarget): number => target.kind === 'month' ? HQ_MONTH_PARSER_VERSION
-  : target.kind === 'register' ? HQ_REGISTER_PARSER_VERSION : HQ_WAITING_PARSER_VERSION;
+  : target.kind === 'register' ? HQ_REGISTER_PARSER_VERSION : target.kind === 'waiting' ? HQ_WAITING_PARSER_VERSION : KIT_PARSER_VERSION;
 export type HQReadResult = {status: 'modified'; text: string; etag: string | null}
   | {status: 'not-modified'; etag: string | null};
 export type HQErrorCode = 'target' | 'timeout' | 'network' | 'http' | 'denied' | 'not_found' | 'redirect'
@@ -28,6 +30,8 @@ export function hqTargetInfo(target: HQTarget): {key: string; path: string; ref:
   const keys = Object.keys(target).sort().join(',');
   if (target.kind === 'register' && keys === 'kind') return {key: 'register', path: 'ops/tests/register.md', ref: 'main'};
   if (target.kind === 'waiting' && keys === 'kind') return {key: 'waiting-on', path: 'ops/waiting-on/latest.md', ref: 'main'};
+  if (target.kind === 'kits' && keys === 'kind') return {key: 'kits', path: 'ops/kit-board/kits.json', ref: 'main'};
+  if (target.kind === 'kit-orders' && keys === 'kind') return {key: 'kit-orders', path: 'ops/kit-board/orders.json', ref: 'main'};
   if (target.kind === 'month' && keys === 'kind,month,ref' && typeof target.month === 'string'
     && /^(?!0000)\d{4}-(?:0[1-9]|1[0-2])$/.test(target.month) && ['main', 'claude/ads-daily'].includes(target.ref)) {
     return {key: `month:${target.month}:${target.ref}`, path: `ops/ads-daily/${target.month}.md`, ref: target.ref};
@@ -46,9 +50,9 @@ function aborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
     promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
   });
 }
-async function boundedText(response: Response, signal: AbortSignal): Promise<string> {
+async function boundedText(response: Response, signal: AbortSignal, limit: number): Promise<string> {
   const length = Number(response.headers.get('content-length'));
-  if (Number.isFinite(length) && length > HQ_BODY_LIMIT) {
+  if (Number.isFinite(length) && length > limit) {
     void response.body?.cancel().catch(() => {}); throw new HQReadError('too_large');
   }
   if (!response.body) return '';
@@ -59,7 +63,7 @@ async function boundedText(response: Response, signal: AbortSignal): Promise<str
       const result = await aborted(reader.read(), signal);
       if (result.done) break;
       size += result.value.byteLength;
-      if (size > HQ_BODY_LIMIT) throw new HQReadError('too_large');
+      if (size > limit) throw new HQReadError('too_large');
       chunks.push(result.value);
     }
     try { return new TextDecoder('utf-8', {fatal: true}).decode(Buffer.concat(chunks, size)); }
@@ -111,7 +115,7 @@ export class HQClient {
           throw new HQReadError(status === 429 || status === 403 && (response.headers.get('x-ratelimit-remaining') === '0' || response.headers.has('retry-after')) ? 'rate_limit'
             : status === 401 || status === 403 ? 'denied' : status === 404 ? 'not_found' : status >= 300 && status < 400 ? 'redirect' : 'http', status, wait);
         }
-        const text = await boundedText(response, signal);
+        const text = await boundedText(response, signal, target.kind === 'kits' || target.kind === 'kit-orders' ? KIT_BODY_LIMIT : HQ_BODY_LIMIT);
         this.log({status, requestId, attempt}); return {status: 'modified', text, etag: nextEtag};
       } catch (error) {
         const safe = error instanceof HQReadError ? error : new HQReadError(signal.aborted ? 'timeout' : 'network');

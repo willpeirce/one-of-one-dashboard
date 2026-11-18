@@ -20,7 +20,8 @@ const env = () => ({GITHUB_HQ_TOKEN: randomBytes(24).toString('hex')});
 const quiet = {log: () => {}, sleep: async () => {}};
 const source = async (db: Database) => (await readSourceHealth(db)).find(row => row.source === 'github-hq')!;
 const metadata = async (db: Database) => (await readHQSync(db, [{kind: 'waiting'}])).get('waiting-on')!;
-const otherFile = (url: URL) => new Response(url.pathname.endsWith('/register.md') ? register : month);
+const otherFile = (url: URL) => url.pathname.includes('/kit-board/') ? new Response(null, {status: 404})
+  : new Response(url.pathname.endsWith('/register.md') ? register : month);
 
 test('waiting migration permits only the new fixed main path, replays, and preserves existing targets', async t => {
   const db = await createTestDatabase(); t.after(() => db.close());
@@ -99,8 +100,8 @@ test('waiting uses hourly main-only ETags, shares in-flight work, and notifies o
     return etag ? new Response(null, {status: 304}) : new Response(waiting(), {headers: {etag: '"invented-waiting"'}});
   }}); t.after(() => worker.stop());
   const first = worker.tick(); assert.equal(worker.tick(), first); await first;
-  assert.equal(calls, 3); assert.equal(writes, 1); assert.equal((await source(db)).status, 'healthy');
-  clock = new Date(+now + HQ_HOURLY_MS - 1); await worker.tick(); assert.equal(calls, 3); assert.equal(writes, 1);
+  assert.equal(calls, 5); assert.equal(writes, 1); assert.equal((await source(db)).status, 'healthy');
+  clock = new Date(+now + HQ_HOURLY_MS - 1); await worker.tick(); assert.equal(calls, 5); assert.equal(writes, 1);
   clock = new Date(+now + HQ_HOURLY_MS); await worker.tick();
   assert.deepEqual(seen, [null, '"invented-waiting"']); assert.equal(writes, 2);
   assert.equal((await readWaitingView(db, 'live', clock)).readAt, clock.toISOString());

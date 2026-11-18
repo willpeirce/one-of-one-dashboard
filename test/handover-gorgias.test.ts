@@ -24,7 +24,7 @@ test('Customer service sorts by customer waiting time, omits closed/out-of-hando
   assert.deepEqual(Array.from(html.matchAll(/data-gorgias-ticket="(\d+)"/g), match => match[1]), ['52002', '52003', '52001']);
   assert.match(html, /Oldest wait<\/dt><dd>2d 2h<\/dd>/);
   assert.match(html, /Opened this week<\/dt><dd>7<\/dd>/);
-  assert.match(html, /Closed this week<\/dt><dd>At least 3<\/dd>/);
+  assert.match(html, /Closed this week<\/dt><dd title="Observed minimum: reopened or deleted tickets can make the full weekly count unavailable; closure history is not retained\.">At least 3<\/dd>/);
   assert.match(html, /ticket opened; customer message time not supplied/);
   assert.match(html, /This app only reads; reply in Gorgias/);
   assert.match(html, /Counts cover tickets observed in handover/);
@@ -61,7 +61,7 @@ test('missing reads never claim an empty handover or invent weekly counts; failu
   const retained = gorgiasSectionHtml(facts([ticket('52001')], {status: 'unavailable', closedThisWeek: null}));
   assert.match(retained, /Showing the last successful read/);
   assert.match(retained, /data-gorgias-ticket="52001"/);
-  assert.match(retained, /Closed this week<\/dt><dd>Awaiting read/);
+  assert.match(retained, /Closed this week<\/dt><dd title="[^"]+">Awaiting read/);
 });
 
 test('rendering uses only minimized fields, escapes source text and folds the ticket tail without dropping it', () => {

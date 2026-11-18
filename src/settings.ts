@@ -8,6 +8,7 @@ import { sourceDefinitions } from './sources.js';
 import { isSeriesDate, seriesPaceDates } from './series-pace/dates.js';
 import type { InboundStock } from './shopify/stock-gap.js';
 import { tickerEventKey, tickerKinds, type KeyDate } from './ticker/model.js';
+import {ISSUE_REASONS, ISSUE_TAG_LIMIT, ISSUE_TAG_TEXT_LIMIT, type IssueTagRule} from './issues/taxonomy.js';
 
 export const SETTINGS_KEY_NAMES = Object.freeze(sourceDefinitions.flatMap((source) => [...source.requiredKeys]));
 type KeyName = (typeof SETTINGS_KEY_NAMES)[number];
@@ -80,6 +81,7 @@ export interface Settings {
   gorgiasHandoverViewId: string;
   gorgiasHandoverTag: string;
   gorgiasHandoverWaitHours: number;
+  gorgiasIssueTags: IssueTagRule[];
   blendedMetaTripwireGbp: number;
   creatorRules: {
     assetCapGbp: number;
@@ -180,6 +182,7 @@ export function defaultSettings(): Settings {
     googleBreakEvenReturnUk: 0, googleBreakEvenReturnUs: 0, googleContactName: '',
     mailchimpPlanLimit: null, mailchimpBillingDay: null,
     gorgiasHandoverViewId: '', gorgiasHandoverTag: 'ai_handover', gorgiasHandoverWaitHours: 12,
+    gorgiasIssueTags: [],
     blendedMetaTripwireGbp: 28,
     creatorRules: {
       assetCapGbp: 200, minimumUsageMonths: 3, pushPriceBeforeExtendingUsage: true,
@@ -443,6 +446,14 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
       return typeof hours === 'number' && Number.isFinite(hours) && hours >= 1 && hours <= 720
         ? hours : invalid('gorgiasHandoverWaitHours');
     })(),
+    gorgiasIssueTags: list(value.gorgiasIssueTags, 'gorgiasIssueTags', (row, path) => {
+      const parsed = object(row, ['tag', 'reason'], path);
+      if (typeof parsed.tag !== 'string') return invalid(`${path}.tag`);
+      const tag = parsed.tag.trim();
+      if (!tag || tag.length > ISSUE_TAG_TEXT_LIMIT || /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(tag))
+        return invalid(`${path}.tag`);
+      return {tag, reason: choice(parsed.reason, `${path}.reason`, ISSUE_REASONS)};
+    }, row => row.tag, ISSUE_TAG_LIMIT),
     blendedMetaTripwireGbp: requiredNumber(value.blendedMetaTripwireGbp, 'blendedMetaTripwireGbp', 100_000, false, 0.01),
     creatorRules: {
       assetCapGbp: requiredNumber(rules.assetCapGbp, 'creatorRules.assetCapGbp', 100_000),
@@ -532,6 +543,7 @@ function storedSettings(input: unknown): Settings {
     gorgiasHandoverViewId: defaults.gorgiasHandoverViewId,
     gorgiasHandoverTag: defaults.gorgiasHandoverTag,
     gorgiasHandoverWaitHours: defaults.gorgiasHandoverWaitHours,
+    gorgiasIssueTags: defaults.gorgiasIssueTags,
     waitingOnDays: defaults.waitingOnDays,
     ...input as Record<string, unknown>,
   };

@@ -249,7 +249,10 @@ function initializeSettings(form: HTMLFormElement): void {
 
   function readValues(): JsonObject {
     // Only each campaign's Save confirms its owner. Keep rules for missing campaigns too.
-    const values: JsonObject = { metaOwners: structuredClone(savedMetaOwners) };
+    // Retain a saved map when the optional Issues editor is absent after a feature rollback.
+    const issueTags = form.querySelector<HTMLInputElement>('#saved-gorgias-issue-tags');
+    const values: JsonObject = { metaOwners: structuredClone(savedMetaOwners),
+      gorgiasIssueTags: JSON.parse(issueTags?.value ?? '[]') };
     form.querySelectorAll<SettingInput>('[data-setting-path]').forEach((input) => {
       if (!input.closest('[data-settings-list]')) setPath(values, input.dataset.settingPath!, inputValue(input));
     });
@@ -330,6 +333,8 @@ function initializeSettings(form: HTMLFormElement): void {
           savedValues = structuredClone(result.values);
           savedMetaOwners = structuredClone(result.values.metaOwners) as typeof savedMetaOwners;
           ownerRules.value = JSON.stringify(savedMetaOwners);
+          const issueTags = form.querySelector<HTMLInputElement>('#saved-gorgias-issue-tags');
+          if (issueTags) issueTags.value = JSON.stringify(result.values.gorgiasIssueTags ?? []);
           if (campaign) {
             const owner = savedMetaOwners.find((rule) => rule.campaignId === campaign.dataset.metaCampaign)!.owner;
             campaign.dataset.savedOwner = owner;

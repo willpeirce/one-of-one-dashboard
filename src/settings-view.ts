@@ -292,6 +292,7 @@ ${tickerHead()}</head>
     <div class="settings-intro"><p class="eyebrow">Your business, your rules</p><h1>Settings</h1><p>Real business settings, saved in Pulse. Dashboard figures remain labelled sample data while source feeds are being built.</p></div>
     <form id="settings-form" data-version="${snapshot.version}" method="post" action="/api/settings">
       <input type="hidden" id="saved-meta-owner-rules" value="${escapeHtml(JSON.stringify(values.metaOwners))}">
+      <input type="hidden" id="saved-gorgias-issue-tags" value="${escapeHtml(JSON.stringify(values.gorgiasIssueTags))}">
       <fieldset id="settings-fields"><legend class="settings-sr-only">Business settings</legend>${goals}${advertising}${costs}${stock}${pace}${campaigns}${email}${handover}${waiting}${creators}${keyDates}${dates}${preferences}</fieldset>
       <div class="settings-savebar glass"><div><p id="settings-message" role="status" aria-live="polite">Choose Save settings for these fields, or Save beside a campaign owner.</p><p class="setting-help">Unknown costs can stay blank. Saving adds an audit entry.</p></div><button class="btn settings-save" id="settings-save" type="submit" disabled>Save settings</button></div>
     </form>

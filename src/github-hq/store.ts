@@ -6,6 +6,8 @@ import { HQ_REGISTER_PARSER_VERSION, hqCut, hqDate, HQ_CELL_LIMIT, HQ_ITEM_LIMIT
   type HQBriefEntry, type HQBriefItem, type HQBriefTag, type HQFacts, type HQRegisterResult, type HQStoredBriefEntry, type HQStoredTestRow } from './model.js';
 import type { HQWaitingResult } from './parse-waiting.js';
 import { replaceWaitingFile } from '../waiting-on/store.js';
+import {KIT_PARSER_VERSION, type KitFileKind, type KitRow, type KitOrderRow, type KitParseResult} from '../kits/model.js';
+import {replaceKitFile} from '../kits/store.js';
 
 export interface HQSync {
   key: string; etag: string | null; lastAttemptAt: string | null; lastSuccessAt: string | null;
@@ -158,6 +160,37 @@ export async function saveHQWaitingMissing(db: Database, now: Date): Promise<voi
         parser_version=$2,headings_complete=true,skipped_rows=0,capped_rows=0`, [now, HQ_WAITING_PARSER_VERSION]);
   });
 }
+export async function saveHQKits(db: Database, kind: KitFileKind,
+  result: KitParseResult<KitRow> | KitParseResult<KitOrderRow>, etag: string | null, now: Date): Promise<void> {
+  const target: HQTarget = {kind}, {key, path, ref} = hqTargetInfo(target);
+  if (!result.readable) {
+    // Match Waiting: a bad body is remembered but never replaces the last good rows.
+    await db.query(`INSERT INTO pulse.github_hq_reads(target_key,path,ref,etag,last_attempt_at,error_code,
+        parsed_available,readable,parser_version,headings_complete)
+      VALUES($1,$2,$3,$4,$5,'unreadable',true,false,$6,false)
+      ON CONFLICT(target_key) DO UPDATE SET etag=EXCLUDED.etag,last_attempt_at=EXCLUDED.last_attempt_at,
+        error_code='unreadable',parsed_available=true,readable=false,parser_version=$6,
+        headings_complete=false,skipped_rows=0,capped_rows=0`, [key, path, ref, etag, now, KIT_PARSER_VERSION]);
+    return;
+  }
+  await db.transaction(async tx => {
+    await replaceKitFile(tx, kind, result, now);
+    await success(tx, target, etag, now, result.skippedRows);
+    await tx.query('UPDATE pulse.github_hq_reads SET capped_rows=$2,headings_complete=true WHERE target_key=$1', [key, result.cappedRows]);
+  });
+}
+export async function saveHQKitsMissing(db: Database, kind: KitFileKind, now: Date): Promise<void> {
+  const {key, path, ref} = hqTargetInfo({kind});
+  await db.transaction(async tx => {
+    await replaceKitFile(tx, kind, null, now);
+    await tx.query(`INSERT INTO pulse.github_hq_reads(target_key,path,ref,last_attempt_at,error_code,
+        parsed_available,readable,initialized,parser_version,headings_complete)
+      VALUES($1,$2,$3,$4,'not_found',true,true,true,$5,true)
+      ON CONFLICT(target_key) DO UPDATE SET etag=NULL,last_attempt_at=EXCLUDED.last_attempt_at,
+        error_code='not_found',retry_after_at=NULL,parsed_available=true,readable=true,initialized=true,
+        parser_version=$5,headings_complete=true,skipped_rows=0,capped_rows=0`, [key, path, ref, now, KIT_PARSER_VERSION]);
+  });
+}
 export async function touchHQRead(db: Database, target: HQTarget, etag: string | null, now: Date): Promise<void> {
   const {key, path, ref} = hqTargetInfo(target);
   await db.transaction(async tx => {
@@ -167,9 +200,13 @@ export async function touchHQRead(db: Database, target: HQTarget, etag: string |
     if (!previous.readable) throw new HQReadError('unreadable', 304);
     if (target.kind === 'waiting' && !(await tx.query("SELECT 1 FROM pulse.waiting_on_file WHERE singleton AND status='ready'")).rowCount)
       throw new HQReadError('invalid', 304);
+    if ((target.kind === 'kits' || target.kind === 'kit-orders')
+      && !(await tx.query("SELECT 1 FROM pulse.kit_board_files WHERE kind=$1 AND status='ready'", [target.kind])).rowCount)
+      throw new HQReadError('invalid', 304);
     await success(tx, target, etag ?? previous.etag, now, previous.skippedRows, previous.initialized);
     if (target.kind === 'month') await tx.query('UPDATE pulse.github_hq_reports SET read_at=$3 WHERE path=$1 AND ref=$2', [path, ref, now]);
     if (target.kind === 'waiting') await tx.query('UPDATE pulse.waiting_on_file SET read_at=$1 WHERE singleton', [now]);
+    if (target.kind === 'kits' || target.kind === 'kit-orders') await tx.query('UPDATE pulse.kit_board_files SET read_at=$2 WHERE kind=$1', [target.kind, now]);
   });
 }
 interface ReportRow extends Record<string, unknown> {

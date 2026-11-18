@@ -46,7 +46,7 @@ export function reviewsPanelHtml(panel: ReviewsPanel): string {
     <span class="review-subject"><span class="review-rating" aria-label="${row.rating} out of 5 stars">★ ${row.rating}</span> <span class="review-product">${esc(reviewProductTitle(row.productTitle))}${row.market ? ` · ${esc(row.market)}` : ''}</span></span>
     <span class="rec">${esc(row.body)}</span><span class="age">${reviewAge(row.createdAt, panel.asOf)}</span><span class="review-chevron" aria-hidden="true">›</span></button>
     <button class="rv-dismiss" type="button" data-review-dismiss="${esc(row.id)}" aria-label="Dismiss ${row.rating} star review of ${esc(reviewProductTitle(row.productTitle))}" title="Dismiss">✕</button></div>`;
-  return `<header class="chapter-heading rvhead"><span class="chapter-number" aria-hidden="true">2</span>
+  return `<header class="chapter-heading rvhead"><span class="chapter-number" aria-hidden="true">3</span>
     <div class="chapter-copy"><p class="chapter-eyebrow">Customers</p><h2 class="chapter-title" id="reviews-title">New reviews <span class="chip info" id="rvcount">${rows.length ? `${count(rows.length)} waiting` : esc(reviewsGreeting(panel))}</span></h2><span class="shm">${esc(status)}</span></div>
     ${rows.length ? `<button class="act" id="review-dismiss-all" type="button" aria-label="Dismiss all ${count(rows.length)} reviews">Dismiss all</button>` : ''}</header>
     ${panel.unreadCount > 0 ? `<p class="note" data-review-notice>${count(panel.unreadCount)} reviews could not be read</p>` : ''}

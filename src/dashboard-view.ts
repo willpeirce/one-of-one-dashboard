@@ -13,6 +13,7 @@ import { seriesPaceCardHtml } from './series-pace/presentation.js';
 import { reviewsFlagLabel, reviewsGreeting, reviewsPanelHtml } from './judgeme/presentation.js';
 import { homeTestsHtml } from './github-hq/view.js';
 import { handoverFlagHtml } from './gorgias/home-count.js';
+import { homeKitsHtml } from './kits/view.js';
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({
@@ -41,7 +42,7 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
   }
   const pace = snapshot.widgets.w017;
   if (snapshot.creatives) {
-    content = content.replace(/(<header class="chapter-heading"><span class="chapter-number" aria-hidden="true">4<\/span>[\s\S]*?<\/header>)/, `$1<div id="creative-panel">${creativePanelHtml(snapshot.creatives, true)}</div>`);
+    content = content.replace(/(<header class="chapter-heading"><span class="chapter-number" aria-hidden="true">5<\/span>[\s\S]*?<\/header>)/, `$1<div id="creative-panel">${creativePanelHtml(snapshot.creatives, true)}</div>`);
     content += creativeDialogHtml();
   }
   if (snapshot.reviews) {
@@ -78,6 +79,8 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
   if (snapshot.fulfilment) {
     content = content.replace('<div id="shopify-panels">', `<div id="fulfilment-glance">${glance(snapshot.fulfilment)}</div><div id="shopify-panels">`);
   }
+  content = content.replace(/(<section class="chapter kits" id="kits"[^>]*>)[\s\S]*?<\/section>/,
+    (_section, tag: string) => `${tag}${homeKitsHtml(snapshot.kits)}</section>`);
   content = content.replace(/type="button" disabled(?= title=)/g, 'type="button" disabled data-unbuilt');
   // Labels are already HTML-escaped with the snapshot bindings above.
   content = content.replace(/(<button\b[^>]*\bdata-unbuilt\b[^>]*aria-label="([^"]*)"[^>]*>)Not built yet<\/button>/g,
@@ -113,6 +116,7 @@ export function dashboardPage(snapshot: DashboardSnapshot): string {
   <link rel="stylesheet" href="/assets/fulfilment.css">
   <link rel="stylesheet" href="/assets/creatives.css"><link rel="stylesheet" href="/assets/adsets.css">
   <link rel="stylesheet" href="/assets/home-compact.css"><link rel="stylesheet" href="/assets/home-panels.css">
+  <link rel="stylesheet" href="/assets/kits.css">
   <script type="module" src="/assets/browser.js"></script>
   <script type="module" src="/assets/dashboard.js"></script>
 ${tickerHead()}</head>

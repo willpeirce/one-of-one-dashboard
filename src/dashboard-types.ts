@@ -151,6 +151,7 @@ export interface SampleText extends SampleProvenance {
 
 /** Presentation data is deliberately independent of source-key readiness in stage 0b. */
 export interface DashboardSnapshot {
+  kits?: import('./kits/presentation-types.js').HomeKits;
   tests?: import('./github-hq/presentation-types.js').HomeTests;
   morningOmissions?: import('./morning/model-types.js').MorningHomeOmissions;
   adSets?: import('./meta-adsets/presentation.js').AdSetsView;

@@ -14,7 +14,7 @@ import { morningDay } from '../src/morning/view.js';
 
 async function sampleTests(page: Page, width: number): Promise<void> {
   const chapter = page.locator('#tests');
-  assert.equal(await chapter.locator('.chapter-number').innerText(), '3');
+  assert.equal(await chapter.locator('.chapter-number').innerText(), '4');
   assert.equal((await chapter.locator('.chapter-eyebrow').textContent())?.trim(), 'Experiments');
   assert.equal(await chapter.locator('#tests-title').innerText(), 'Tests');
   assert.equal(await chapter.locator('.tcard').count(), 1);

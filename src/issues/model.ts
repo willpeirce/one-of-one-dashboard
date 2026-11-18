@@ -112,15 +112,17 @@ export function issuesNeeds(view: IssuesView): DashboardNeed[] {
   }));
 }
 export function sampleIssuesView(now: Date): IssuesView {
-  const months = issueMonths(now), current = now.toISOString(), previous = `${months.lastMonth}-03T12:00:00Z`;
-  return buildIssuesView({dashboardMode: 'sample', reviews: {mode: 'sample', status: 'ready', checkedAt: now.toISOString(), rows: [
+  // A rebuild is not a new sample read: unchanged SSE snapshots must stay equal within the hour.
+  const sampleNow = new Date(Math.floor(now.getTime() / 3_600_000) * 3_600_000);
+  const months = issueMonths(sampleNow), current = sampleNow.toISOString(), previous = `${months.lastMonth}-03T12:00:00Z`;
+  return buildIssuesView({dashboardMode: 'sample', reviews: {mode: 'sample', status: 'ready', checkedAt: current, rows: [
     {id: '91001', rating: 2, body: 'The invented slab has a scratch. Order #41001.', createdAt: current},
     {id: '91002', rating: 3, body: 'The slab arrived scratched. Order #41002.', createdAt: current},
     {id: '91003', rating: 2, body: 'A scratched slab was in this invented kit. Order #41003.', createdAt: current},
     {id: '91004', rating: 2, body: 'The invented slab was scratched. Order #41004.', createdAt: previous},
     {id: '91005', rating: 3, body: 'The invented box arrived with a bent corner.', createdAt: current},
-  ]}, tickets: {mode: 'sample', status: 'ready', checkedAt: now.toISOString(), domain: 'invented-helpdesk', rows: [
+  ]}, tickets: {mode: 'sample', status: 'ready', checkedAt: current, domain: 'invented-helpdesk', rows: [
     {id: '81001', subject: 'Scratched slab for order #41001', tags: [], createdAt: current},
     {id: '81002', subject: 'The markers have dried out', tags: [], createdAt: current},
-  ]}}, [], now);
+  ]}}, [], sampleNow);
 }

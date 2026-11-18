@@ -3,7 +3,8 @@ import {parseKits, parseKitOrders, type KitFacts} from './model.js';
 
 /** Six invented kits, dated from the same sample clock as their Home display. */
 export function sampleKitFacts(now: Date): KitFacts {
-  const today = ukToday(now), readAt = now.toISOString();
+  // A rebuild is not a new sample read: unchanged SSE snapshots must stay equal within the hour.
+  const today = ukToday(now), readAt = new Date(Math.floor(now.getTime() / 3_600_000) * 3_600_000).toISOString();
   const kits = parseKits(JSON.stringify({updated: readAt, rows: [
     {id: 'box-a', name: 'Box A', series: 'The first collection', status: 'live', gate: 5,
       launch_target: addDays(today, -21), launch_label: 'Now available', next_action: 'Review the first month', owner: 'Will'},

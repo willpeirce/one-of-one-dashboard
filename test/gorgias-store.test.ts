@@ -3,12 +3,13 @@ import {randomBytes} from 'node:crypto';
 import test from 'node:test';
 import type {Database} from '../src/db.js';
 import {defaultSettings} from '../src/settings.js';
-import {syncSourceHealth} from '../src/sources.js';
+import {readSourceHealth, syncSourceHealth} from '../src/sources.js';
 import {GORGIAS_SAMPLE_NOW, gorgiasTicketHref, gorgiasWaitHours, gorgiasWaitLabel, gorgiasWeekStart, type GorgiasTicket} from '../src/gorgias/model.js';
 import {parseGorgiasTicket} from '../src/gorgias/privacy.js';
 import {gorgiasScope, gorgiasSource} from '../src/gorgias/scope.js';
 import {readGorgiasFacts, readGorgiasHistory, readGorgiasSync, readKnownGorgiasTickets, recordGorgiasFailure, restoreGorgiasHealth, saveGorgiasPoll} from '../src/gorgias/store.js';
 import {createTestDatabase} from './helpers/database.js';
+import {handoverCount} from '../src/gorgias/home-count.js';
 
 const now = new Date('2032-04-07T12:00:00Z');
 const domain = `invented-${randomBytes(6).toString('hex')}`, email = `reader-${randomBytes(6).toString('hex')}@example.invalid`;
@@ -106,13 +107,47 @@ test('a failed Gorgias save rolls back membership and counts; stored errors and 
   const failed = await readGorgiasFacts(db, source, selection, failureAt);
   assert.equal(failed.status, 'unavailable'); assert.equal(failed.checkedAt, now.toISOString()); assert.equal(failed.tickets.length, 1);
   assert.equal((await readGorgiasSync(db, scope))?.nextRunAt, retryAt.toISOString());
-  await syncSourceHealth(db, source); await restoreGorgiasHealth(db, scope, failureAt);
+  await syncSourceHealth(db, source); await restoreGorgiasHealth(db, scope, failureAt, selection);
   const health = (await db.query<{status: string; consecutive_failures: number}>("SELECT status,consecutive_failures FROM pulse.source_health WHERE source='gorgias'")).rows[0]!;
   assert.equal(health.status, 'error'); assert.equal(health.consecutive_failures, 1);
   await recordGorgiasFailure(db, scope, failureAt, retryAt, 'http');
   assert.equal((await readGorgiasSync(db, scope))?.failures, 2);
   await poll(db, scope, [row()], 0, retryAt);
   assert.equal((await readGorgiasSync(db, scope))?.failures, 0);
-  await syncSourceHealth(db, source); await restoreGorgiasHealth(db, scope, retryAt);
+  await syncSourceHealth(db, source); await restoreGorgiasHealth(db, scope, retryAt, selection);
   assert.equal((await readGorgiasFacts(db, source, selection, retryAt)).status, 'live');
+});
+
+test('stored facts, Home count and restored health use the same view/tag freshness threshold', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const source = env(); await syncSourceHealth(db, source);
+  for (const [viewId, minutes] of [['71001', 6], ['', 30]] as const) {
+    const selection = {...settings(), gorgiasHandoverViewId: viewId}, scope = gorgiasScope(source.GORGIAS_DOMAIN, selection);
+    await poll(db, scope, [row('81001', {viewId: viewId || null})]);
+    const boundary = new Date(+now + minutes * 60_000);
+    let facts = await readGorgiasFacts(db, source, selection, boundary);
+    assert.equal(facts.status, 'live'); assert.equal(handoverCount(facts, 'live')!.current, true);
+    assert.equal((await readSourceHealth(db, undefined, {gorgias: selection, now: boundary})).find(row => row.source === 'gorgias')!.status, 'healthy');
+    await restoreGorgiasHealth(db, scope, boundary, selection);
+    assert.equal((await db.query<{status: string}>("SELECT status FROM pulse.source_health WHERE source='gorgias'")).rows[0]!.status, 'healthy');
+    const stale = new Date(+boundary + 1);
+    facts = await readGorgiasFacts(db, source, selection, stale);
+    assert.equal(facts.status, 'unavailable'); assert.equal(facts.tickets.length, 1);
+    assert.equal(handoverCount(facts, 'live')!.current, false);
+    const display = (await readSourceHealth(db, undefined, {gorgias: selection, now: stale})).find(row => row.source === 'gorgias')!;
+    assert.equal(display.status, 'error'); assert.match(display.statusText!, /△ Stale/);
+    assert.equal((await db.query<{status: string}>("SELECT status FROM pulse.source_health WHERE source='gorgias'")).rows[0]!.status, 'healthy',
+      'A display freshness check never writes or invents a source failure');
+    await restoreGorgiasHealth(db, scope, stale, selection);
+    assert.equal((await db.query<{status: string}>("SELECT status FROM pulse.source_health WHERE source='gorgias'")).rows[0]!.status, 'error');
+  }
+  const displayContext = {gorgias: settings(), now: new Date(+now + 60 * 60_000)};
+  const failed = (await readSourceHealth(db, undefined, displayContext)).find(row => row.source === 'gorgias')!;
+  assert.equal(failed.status, 'error'); assert.equal(failed.statusText, undefined, 'An existing failed status keeps precedence over the stale overlay');
+  await syncSourceHealth(db, source);
+  assert.equal((await readSourceHealth(db, undefined, displayContext)).find(row => row.source === 'gorgias')!.status, 'not_implemented',
+    'A pending source is still pending until its selection is restored');
+  await syncSourceHealth(db, {});
+  const sample = (await readSourceHealth(db, undefined, displayContext)).find(row => row.source === 'gorgias')!;
+  assert.equal(sample.mode, 'sample'); assert.equal(sample.status, 'waiting_for_keys'); assert.equal(sample.lastSuccessAt, null);
 });

@@ -1,6 +1,7 @@
 import { formatUkTime } from './uk-time.js';
 import type { Database } from './db.js';
 import { scanFailureLabel, type ScanHealth } from './creatives/scan-health.js';
+import {gorgiasFreshMs, type GorgiasSelection} from './gorgias/model.js';
 
 export const sourceDefinitions = [
   { id: 'shopify', name: 'Shopify', stage: 1, requiredKeys: ['SHOPIFY_CLIENT_ID', 'SHOPIFY_CLIENT_SECRET'] },
@@ -89,7 +90,8 @@ interface HealthRow extends Record<string, unknown> {
   updated_at: Date;
 }
 
-export async function readSourceHealth(db: Database, scanHealth?: ScanHealth): Promise<SourceHealth[]> {
+export async function readSourceHealth(db: Database, scanHealth?: ScanHealth,
+  context?: {gorgias: GorgiasSelection; now: Date}): Promise<SourceHealth[]> {
   const { rows } = await db.query<HealthRow>(
     `SELECT source, mode, status, last_success_at, last_attempt_at,
             consecutive_failures, updated_at FROM pulse.source_health`,
@@ -99,17 +101,21 @@ export async function readSourceHealth(db: Database, scanHealth?: ScanHealth): P
     const row = bySource.get(id);
     if (!row) return [];
     const scan = id === 'anthropic' ? scanHealth : undefined;
+    const gorgiasAge = id === 'gorgias' && context && row.last_success_at ? context.now.getTime() - new Date(row.last_success_at).getTime() : null;
+    const gorgiasStale = row.mode === 'live' && row.status === 'healthy' && gorgiasAge !== null
+      && (gorgiasAge < 0 || gorgiasAge > gorgiasFreshMs(context!.gorgias));
     return [{
       source: id,
       name,
       stage,
       requiredKeys,
       mode: scan ? scan.status === 'waiting_for_keys' ? 'sample' : 'live' : row.mode,
-      status: scan?.status ?? row.status,
+      status: scan?.status ?? (gorgiasStale ? 'error' : row.status),
       lastSuccessAt: scan ? scan.lastSuccessAt ? new Date(scan.lastSuccessAt) : null : row.last_success_at,
       lastAttemptAt: scan ? scan.lastAttemptAt ? new Date(scan.lastAttemptAt) : null : row.last_attempt_at,
       consecutiveFailures: scan?.consecutiveFailures ?? row.consecutive_failures,
       updatedAt: row.updated_at,
+      ...(gorgiasStale ? {statusText: '△ Stale · last successful read retained'} : {}),
       ...(scan ? { scanAttempt: scan.lastAttemptAt
         ? `Last attempt ${formatUkTime(scan.lastAttemptAt)} · ${scan.lastAttemptStatus === 'skipped' ? '↷ Skipped' : scan.lastAttemptStatus === 'done' ? `done${scan.httpStatus ? ` (http ${scan.httpStatus})` : ''}` : scanFailureLabel(scan.reason, scan.httpStatus, scan.providerCode, scan.providerMessage)}${scan.lastAttemptSeconds !== null ? ` · ${scan.lastAttemptSeconds} seconds` : ''}`
         : undefined, scanWaiting: scan.enabled ? scan.waiting : 0, scanSkipped: scan.skipped, statusText: scan.status === 'waiting_for_keys' ? 'Waiting for keys'

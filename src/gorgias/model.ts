@@ -1,7 +1,7 @@
 import {addDays, ukToday} from '../hero-range.js';
 
 export const GORGIAS_POLL_MS = 2 * 60_000;
-export const GORGIAS_FRESH_MS = 3 * GORGIAS_POLL_MS;
+export const GORGIAS_TAG_POLL_MS = 10 * 60_000;
 export const GORGIAS_SAMPLE_NOW = '2032-04-07T12:00:00.000Z';
 
 /** Only this minimized ticket shape crosses the source boundary or reaches storage. */
@@ -19,6 +19,9 @@ export interface GorgiasTicket {
   subject: string;
 }
 export interface GorgiasSelection {gorgiasHandoverViewId: string; gorgiasHandoverTag: string}
+export const gorgiasPollMs = (selection: Pick<GorgiasSelection, 'gorgiasHandoverViewId'>): number =>
+  selection.gorgiasHandoverViewId ? GORGIAS_POLL_MS : GORGIAS_TAG_POLL_MS;
+export const gorgiasFreshMs = (selection: Pick<GorgiasSelection, 'gorgiasHandoverViewId'>): number => 3 * gorgiasPollMs(selection);
 export interface GorgiasPollInput {
   viewId: string;
   tag: string;

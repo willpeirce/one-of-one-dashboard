@@ -24,6 +24,7 @@ import { readScanHealth, scanEnabled, scanPricesReady } from './scan-health.js';
 import type { CreativeScanView } from './scan-view.js';
 import { readCreativeLifts, recomputeCreativeLifts, type CreativeLift } from './lifts.js';
 import { deriveCreativeLiftPresentation, makeCreativeBrief } from './lift-presentation.js';
+import {compactCreativeLibrary, CREATIVE_AD_PAGE_SIZE, creativeAdsVersion, creativeAdsInReadOrder, pageCreativeSheet} from './library.js';
 
 class CreativeInputError extends Error { readonly statusCode = 400; constructor() { super('Invalid creative request.'); } }
 const accountFor = (data: CreativeData, settings: Settings) => data.mode === 'sample' ? SAMPLE_CREATIVE_ACCOUNT : settings.metaAdAccountId;
@@ -165,11 +166,11 @@ export function registerCreatives(app: FastifyInstance, db: Database, auth: Auth
   app.get('/creatives', async (request, reply) => {
     if (!await auth.session(request)) return reply.redirect('/login');
     const settings = (await readSettings(db)).values;
-    return reply.type('text/html; charset=utf-8').send(creativesPage(await readCreativeView(db, settings, env, clock(), parseSelection(request.query))));
+    return reply.type('text/html; charset=utf-8').send(creativesPage(compactCreativeLibrary(await readCreativeOverview(db, settings, env, clock(), parseSelection(request.query)))));
   });
   app.get('/api/creatives', async (request, reply) => {
     if (!await auth.session(request)) return reply.code(401).send({ error: 'Sign in to continue.' });
-    return readCreativeView(db, (await readSettings(db)).values, env, clock(), parseSelection(request.query));
+    return compactCreativeLibrary(await readCreativeOverview(db, (await readSettings(db)).values, env, clock(), parseSelection(request.query)));
   });
   app.get('/api/creatives/:groupId', async (request, reply) => {
     if (!await auth.session(request)) return reply.code(401).send({ error: 'Sign in to continue.' });
@@ -183,7 +184,24 @@ export function registerCreatives(app: FastifyInstance, db: Database, auth: Auth
     sheet.scan = scanView(await readScanHealth(db, settings, { mode: data.mode, accountId: accountFor(data, settings), now: clock() }));
     sheet.scan.groupSkipped = sheet.scan.skippedGroupIds?.includes(sheet.group.group.id) ?? false;
     // Media loads independently through /media; remote frame downloads must not delay the sheet.
-    return sheet;
+    return pageCreativeSheet(sheet, accountFor(data, settings));
+  });
+  app.get('/api/creatives/:groupId/ads', async (request, reply) => {
+    if (!await auth.session(request)) return reply.code(401).send({error: 'Sign in to continue.'});
+    const query = request.query as Record<string, unknown>;
+    if (Object.keys(query).length !== 2 || typeof query.offset !== 'string' || !/^(?:0|[1-9]\d{0,8})$/.test(query.offset)
+      || typeof query.version !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(query.version)
+      || Number(query.offset) % CREATIVE_AD_PAGE_SIZE !== 0) throw new CreativeInputError();
+    const {settings, data} = await current(), accountId = accountFor(data, settings);
+    const group = parentGroup((request.params as {groupId: string}).groupId, data.groups);
+    if (!group) return reply.code(404).send({error: 'Creative not found.'});
+    const index = indexCreativeData(data), all = creativeAdsInReadOrder(index.adsByGroup.get(group.id) ?? []);
+    const version = creativeAdsVersion(data.mode, accountId, group.id, all);
+    if (version !== query.version) return reply.code(409).send({error: 'This creative changed. Close and open it again.'});
+    const offset = Number(query.offset);
+    if (offset >= all.length && offset !== 0) throw new CreativeInputError();
+    const ads = all.slice(offset, offset + CREATIVE_AD_PAGE_SIZE);
+    return {groupId: group.id, mode: data.mode, accountId, ads, nextOffset: offset + ads.length < all.length ? offset + ads.length : null, version};
   });
   app.post('/api/creatives/:groupId/attributes', { preHandler: localWrite }, async (request, reply) => {
     if (!await auth.session(request)) return reply.code(401).send({ error: 'Sign in to continue.' });

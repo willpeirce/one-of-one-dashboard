@@ -10,13 +10,17 @@ const facts: Facts = {mode: 'sample', sample: true, counts: {}, pendingWebhooks:
   geoNotice: null, noticeDetails: [], records: [], jobs: []};
 const health: SourceHealth = {source: 'gorgias', name: 'Gorgias', stage: 5, requiredKeys: [], mode: 'live', status: 'healthy',
   lastSuccessAt: at, lastAttemptAt: at, consecutiveFailures: 0, updatedAt: at};
-const check = (source: SourceHealth, now: Date) => evaluateWatchdogs(facts, new Date('2030-01-01T12:00:00Z'), defaultSettings(),
+const check = (source: SourceHealth, now: Date, viewId = '') => evaluateWatchdogs(facts, new Date('2030-01-01T12:00:00Z'),
+  {...defaultSettings(), gorgiasHandoverViewId: viewId},
   blankObservation(), [], [source], {entry: null, now}).find(row => row.id === 'self')!;
 
-test('Self-check counts repeated Gorgias failures and six-minute staleness using the local clock in mixed source modes', () => {
-  assert.equal(check(health, new Date(+at + 6 * 60_000)).status, 'pass');
-  const stale = check(health, new Date(+at + 6 * 60_000 + 1));
-  assert.equal(stale.status, 'tripped'); assert.equal(stale.link, '/sources'); assert.match(stale.why, /Gorgias/);
+test('Self-check follows view/tag freshness using the local clock in mixed source modes', () => {
+  for (const [viewId, minutes] of [['71001', 6], ['', 30]] as const) {
+    assert.equal(check(health, new Date(+at + minutes * 60_000), viewId).status, 'pass');
+    const stale = check(health, new Date(+at + minutes * 60_000 + 1), viewId);
+    assert.equal(stale.status, 'tripped'); assert.equal(stale.link, '/sources'); assert.match(stale.why, /Gorgias/);
+  }
+  assert.equal(check(health, new Date(+at + 9 * 60_000)).status, 'pass', 'Tag mode stays fresh between ten-minute polls');
   assert.equal(check({...health, mode: 'sample'}, new Date(+at + 60 * 60_000)).status, 'pass');
   assert.equal(check({...health, status: 'error', consecutiveFailures: 1}, at).status, 'pass');
   assert.equal(check({...health, status: 'error', consecutiveFailures: 2}, at).status, 'tripped');

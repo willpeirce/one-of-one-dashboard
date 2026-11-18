@@ -5,6 +5,7 @@ Updated in every pull request.
 | Stage | What | Code | Keys in Replit | Live check ("Done when") |
 |---|---|---|---|---|
 | Large build 4 · A | Kits chapter after Stock, compact tracks and on-demand stored detail; two hourly HQ JSON files | built on `large-build-4`; additive migration 074; no Settings key, dependency or source write | none new; existing optional GITHUB_HQ_TOKEN | Claude adds the HQ file-writing routine and checks file agreement after merge; missing files stay healthy and show Not set up yet |
+| Large build 4 · B | Compact Library response and bounded stored ad pages; Gorgias view/tag polling and matching freshness; explained closure minimum | built on `large-build-4`; no migration or Settings change; previous gaps reviewed individually in DECISIONS | none new | Claude owns the remaining probe, file-agreement and installed-phone checks; separate unbuilt features remain listed below |
 | Home handover count · 18 Nov | Open handover tickets as one flag beside the market switch, linking to Handover; hidden until a read completes and whenever Gorgias is on sample data beside live Shopify | built on `home-handover-count`; no migration, Setting or dependency; Home fold budgets unchanged | none new: uses the existing Gorgias keys and handover view Setting | After merge and Republish: the flag shows the same open count as `/handover`, at 390 and 1280 px, and opens `/handover` |
 | Large build 3 · A | Header and narrow-screen carry fixes, incomplete-life fallback, pending-pause expiry, reversible unmeasured-test hiding, register retention and push cleanup | built on `large-build-3`; parser version 4; no migration or Settings change | none | Check installed-phone layout and deliberate retry after an unconfirmed action; no automatic retry is added |
 | Large build 3 · B | Durable watchdog trip/recovery pushes, UK quiet hours, per-device Alerts and monthly upload reminder | built on `large-build-3`; additive migration 071 and top-level `alertQuietHours` Settings object | none to merge; enable Alerts on each device after deployment | Confirm real phone trip/recovery replacement and upload delivery; existing summary/test behavior is retained |
@@ -181,6 +182,21 @@ No migration, Setting, dependency, source read or outbound call; the Gorgias wor
 **Large build 3** is on `large-build-3` in [PR #54](https://github.com/willpeirce/one-of-one-dashboard/pull/54). Parts A–D are built and pushed; G adds the customer-service sample-mode guard, singular wording and these records. Part E is not built: the earlier coding session hit its usage limit after D. Partial local drafts were not integrated into the shipped branch, fully verified, committed or pushed, and are excluded from this pull request. No missing-key or technical safety blocker was established. G's typecheck, all 1,302 PostgreSQL tests, build, complete Chromium browser suite and secret scan pass locally; PR checks verify the pushed head. The recorded A–D results remain their separate checked boundaries.
 
 **Large build 3 · Not done or known gaps:** Issues, supplier imports, the planner, Discord, the UGC tab and Ask remain unbuilt. The Gorgias live probe and ticket-link shape, the external HQ waiting-on routine/file, and actual installed-phone alert delivery still need post-merge acceptance. Weekly Gorgias closures remain an observed minimum. No deployment is performed by this build.
+
+**Large build 4 · B carry review:** the small local fixes are the view/tag polling and freshness rule, and the explanation of the weekly closure minimum. Remaining items are recorded individually in DECISIONS:
+
+- Issues: scheduled for Part C of this build, after B's checked checkpoint.
+- Supplier imports and the planner: separate unbuilt stage-six features, beyond the carry scope.
+- Discord: a separate source integration, outside this build's permitted outbound calls.
+- UGC tab: needs work and a feed in the other app.
+- Ask: needs a separate model and data-access feature.
+- Gorgias fields, envelope, timestamps, views and ticket URL: Claude must confirm them through the live probe/account.
+- Large-account tag scans: the bounded scan may need a selected view; Claude checks completion after the probe.
+- Exact historical weekly closures: unavailable from the permitted retained fields; the app continues to show a minimum.
+- Waiting-on routine/file: external HQ work for Claude; live format/count agreement and Done/Put back acceptance follow it.
+- Installed-phone alert/summary delivery and replacement: Claude's device checks, with the existing Alerts choice.
+- Large build 3 layouts, unconfirmed-pause retry, source-mode wording and Home/Handover count/link parity: Claude's deployed phone/desktop acceptance.
+- Extra push check types and a direct Waiting Watch row on Home: outside the explicitly requested alert and Home scope; the existing Handover routes remain available.
 
 **After tax** is built on `after-tax`, stacked on PR #50; merge PR #50 first, then this one (its base moves to main). After an approved merge: the Shell merge, `npm run migrate` (applies 070), Republish, then the hero shows After tax under Net profit and Settings shows Corporation tax rate (%).
 

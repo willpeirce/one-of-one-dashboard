@@ -27,6 +27,7 @@ import { checkMarketHero, installMarketUpdateHook } from './browser-market.js';
 import { checkGrossHistoryProgress } from './browser-gross-history.js';
 import { metricSign } from '../src/metric-sign.js';
 import { checkCreatives } from './browser-creatives.js';
+import { checkCreativeLazyAds } from './browser-creatives-lazy.js';
 import { checkCreativeSettings } from './browser-creative-settings.js';
 import { checkActorSettings } from './browser-actor-settings.js';
 import { checkGoogleWidgets } from './browser-google.js';
@@ -1812,6 +1813,8 @@ async function run(): Promise<void> {
 
     step = 'check creative pictures, playing media, windows and gallery filters at phone and desktop widths';
     await checkCreatives(context);
+    step = 'check compact Library groups and bounded ad-page retry and selection races';
+    await checkCreativeLazyAds(context);
     step = 'check ad-set decisions and Ads table in both widths and colour preferences';
     for(const viewport of viewports) for(const colorScheme of ['light','dark'] as const) {
       const adsPage=await context.newPage();await adsPage.setViewportSize(viewport);await adsPage.emulateMedia({colorScheme});

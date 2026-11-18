@@ -5,7 +5,7 @@ import type {Database} from '../src/db.js';
 import {readSettings} from '../src/settings.js';
 import {syncSourceHealth} from '../src/sources.js';
 import {GorgiasReadError} from '../src/gorgias/client.js';
-import {GORGIAS_POLL_MS, type GorgiasPollInput, type GorgiasPollResult, type GorgiasTicket} from '../src/gorgias/model.js';
+import {GORGIAS_POLL_MS, GORGIAS_TAG_POLL_MS, gorgiasPollMs, type GorgiasPollInput, type GorgiasPollResult, type GorgiasTicket} from '../src/gorgias/model.js';
 import {gorgiasScope} from '../src/gorgias/scope.js';
 import {readGorgiasFacts, readGorgiasHistory, readGorgiasSync, saveGorgiasPoll} from '../src/gorgias/store.js';
 import {GorgiasWorker} from '../src/gorgias/worker.js';
@@ -20,7 +20,7 @@ const ticket: GorgiasTicket = {id: '81001', status: 'open', channel: 'email', ta
   customer: 'Invented F.', subject: 'Invented missing slab'};
 const result = (): GorgiasPollResult => ({tickets: [{...ticket}], closedThisWeek: 0});
 
-test('Gorgias construction and sample ticks do no I/O; live ticks are single-flight, every two minutes and stop safely', async t => {
+test('Gorgias construction and sample ticks do no I/O; tag-mode ticks are single-flight, every ten minutes and stop safely', async t => {
   const db = await createTestDatabase(); t.after(() => db.close());
   const source = env(); await syncSourceHealth(db, source); await readSettings(db);
   let reads = 0, writes = 0, now = initial, release!: () => void, entered!: () => void;
@@ -41,13 +41,13 @@ test('Gorgias construction and sample ticks do no I/O; live ticks are single-fli
   await inside; assert.equal(reads, 1); assert.equal(writes, 0);
   release(); await first; assert.equal(writes, 1);
   await worker.tick(); assert.equal(reads, 1, 'A repeated tick inside the interval does not poll again');
-  now = new Date(initial.getTime() + GORGIAS_POLL_MS); await worker.tick(); assert.equal(reads, 2); assert.equal(writes, 2);
+  now = new Date(initial.getTime() + GORGIAS_TAG_POLL_MS); await worker.tick(); assert.equal(reads, 2); assert.equal(writes, 2);
   assert.deepEqual(inputs[0]?.knownTickets, []);
   assert.deepEqual(inputs[1]?.knownTickets, [{id: ticket.id, status: 'open', inHandover: true}]);
   assert.equal(inputs[0]?.weekStart, '2032-04-04T23:00:00.000Z');
   const facts = await readGorgiasFacts(db, source, (await readSettings(db)).values, now);
   assert.equal(facts.status, 'live'); assert.equal(facts.tickets.length, 1);
-  await worker.stop(); now = new Date(now.getTime() + GORGIAS_POLL_MS); await worker.tick(); worker.start();
+  await worker.stop(); now = new Date(now.getTime() + GORGIAS_TAG_POLL_MS); await worker.tick(); worker.start();
   assert.equal(reads, 2, 'Stopped workers cannot be restarted accidentally');
 });
 
@@ -60,7 +60,7 @@ test('failed Gorgias reads retain the last complete list, log only fixed diagnos
   const worker = new GorgiasWorker(db, source, {clock: () => now, onWrite: () => {notifications++;}, reader: {async readHandover() {
     calls++; if (calls > 1) throw new GorgiasReadError('rate_limit', 429, retryAt); return result();
   }}});
-  await worker.tick(); now = new Date(initial.getTime() + GORGIAS_POLL_MS); await assert.doesNotReject(worker.tick());
+  await worker.tick(); now = new Date(initial.getTime() + GORGIAS_TAG_POLL_MS); await assert.doesNotReject(worker.tick());
   let facts = await readGorgiasFacts(db, source, selection, now);
   assert.equal(facts.status, 'unavailable'); assert.equal(facts.checkedAt, initial.toISOString()); assert.equal(facts.tickets.length, 1);
   assert.equal(notifications, 2, 'A failed poll also publishes the changed health');
@@ -167,4 +167,49 @@ test('the commit checks selection inside its transaction, after the last outside
   assert.equal((await readGorgiasHistory(db, source, before, initial)).tickets.length, 0);
   assert.equal((await readGorgiasSync(db, gorgiasScope(source.GORGIAS_DOMAIN, before))), null);
   assert.equal((await db.query<{status: string}>("SELECT status FROM pulse.source_health WHERE source='gorgias'")).rows[0]?.status, 'not_implemented');
+});
+
+test('view mode polls at two minutes, tag mode at ten, and Settings changes choose a new scope immediately', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const source = env(); await syncSourceHealth(db, source); await readSettings(db);
+  let now = initial; const reads: {viewId: string; at: number}[] = [];
+  const worker = new GorgiasWorker(db, source, {clock: () => now, reader: {async readHandover(input) {
+    reads.push({viewId: input.viewId, at: +now}); return result();
+  }}}); t.after(() => worker.stop());
+  assert.equal(gorgiasPollMs({gorgiasHandoverViewId: ''}), GORGIAS_TAG_POLL_MS);
+  assert.equal(gorgiasPollMs({gorgiasHandoverViewId: '71001'}), GORGIAS_POLL_MS);
+  await worker.tick(); assert.equal(reads.length, 1);
+  for (const elapsed of [GORGIAS_POLL_MS, GORGIAS_TAG_POLL_MS - 1]) {
+    now = new Date(+initial + elapsed); await worker.tick(); assert.equal(reads.length, 1);
+  }
+  now = new Date(+initial + GORGIAS_TAG_POLL_MS); await worker.tick(); assert.equal(reads.length, 2);
+  now = new Date(+now + 1);
+  await db.query("UPDATE pulse.settings SET values=jsonb_set(values,'{gorgiasHandoverViewId}','\"71001\"')");
+  await worker.tick(); assert.equal(reads.length, 3); assert.equal(reads.at(-1)!.viewId, '71001');
+  const viewAt = +now;
+  now = new Date(viewAt + GORGIAS_POLL_MS - 1); await worker.tick(); assert.equal(reads.length, 3);
+  now = new Date(viewAt + GORGIAS_POLL_MS); await worker.tick(); assert.equal(reads.length, 4);
+  const current = (await readSettings(db)).values;
+  assert.equal((await readGorgiasSync(db, gorgiasScope(source.GORGIAS_DOMAIN, current)))!.nextRunAt,
+    new Date(+now + GORGIAS_POLL_MS).toISOString());
+  // A different tag is a new scope and is not held by the old view's scheduled time.
+  await db.query("UPDATE pulse.settings SET values=jsonb_set(jsonb_set(values,'{gorgiasHandoverViewId}','\"\"'),'{gorgiasHandoverTag}','\"invented-new-tag\"')");
+  await worker.tick(); assert.equal(reads.length, 5); assert.equal(reads.at(-1)!.viewId, '');
+  const tagAt = +now;
+  now = new Date(tagAt + GORGIAS_TAG_POLL_MS - 1); await worker.tick(); assert.equal(reads.length, 5);
+  now = new Date(tagAt + GORGIAS_TAG_POLL_MS); await worker.tick(); assert.equal(reads.length, 6);
+});
+
+test('restarting with an old two-minute tag schedule applies ten minutes without shortening durable deferral', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const source = env(); await syncSourceHealth(db, source); const selection = (await readSettings(db)).values;
+  const scope = gorgiasScope(source.GORGIAS_DOMAIN, selection);
+  await saveGorgiasPoll(db, scope, result(), {weekStart: '2032-04-04T23:00:00.000Z', finishedAt: initial,
+    nextRun: new Date(+initial + GORGIAS_POLL_MS)});
+  let now = new Date(+initial + GORGIAS_POLL_MS), calls = 0;
+  const worker = new GorgiasWorker(db, source, {clock: () => now, reader: {async readHandover() {calls++; return result();}}});
+  t.after(() => worker.stop());
+  await worker.tick(); assert.equal(calls, 0);
+  now = new Date(+initial + GORGIAS_TAG_POLL_MS - 1); await worker.tick(); assert.equal(calls, 0);
+  now = new Date(+initial + GORGIAS_TAG_POLL_MS); await worker.tick(); assert.equal(calls, 1);
 });

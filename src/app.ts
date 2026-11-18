@@ -128,7 +128,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     const live = !!sourceEnv.META_ACCESS_TOKEN && !!settings.metaAdAccountId;
     return readSourceHealth(db,await readScanHealth(db,settings,{
       accountId: live ? settings.metaAdAccountId : 'sample-meta-account', mode: live ? 'live' : 'sample', now: creativeNow(),
-    }));
+    }), {gorgias: settings, now: localNow()});
   }
   const creativeSettings = (await readSettings(db)).values;
   if (!sourceEnv.META_ACCESS_TOKEN || !creativeSettings.metaAdAccountId) await seedCreativeSample(db, creativeSettings, creativeNow());

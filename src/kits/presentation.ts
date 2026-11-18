@@ -20,7 +20,7 @@ export function kitDateLabel(date: string | null, today: string): string {
 export function kitLaunchDistance(date: string | null, today: string): string {
   if (!date) return '';
   const days = dayCount(today, date) - 1;
-  return days < 0 ? '' : days < 14 ? `${days} ${days === 1 ? 'day' : 'days'}` : `${Math.round(days / 7)} wks`;
+  return days < 0 ? '' : days === 0 ? 'Today' : days < 14 ? `${days} ${days === 1 ? 'day' : 'days'}` : `${Math.round(days / 7)} wks`;
 }
 /** Excludes the starting day, includes today; at most six iterations even for very old dates. */
 export function kitWorkingDays(since: string, today: string): number {

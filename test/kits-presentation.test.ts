@@ -3,7 +3,7 @@ import test from 'node:test';
 import {type KitRow, type KitOrderRow, type KitFacts} from '../src/kits/model.js';
 import {sampleKitFacts} from '../src/kits/sample.js';
 import {homeKits, kitCard, kitDateLabel, kitLaunchDistance, kitSheet, kitStatus, kitStepAside, kitWaitingChip, kitWorkingDays} from '../src/kits/presentation.js';
-import {homeKitsHtml, kitCardHtml, kitSheetHtml, kitTrackHtml, kitTrackLabel} from '../src/kits/view.js';
+import {homeKitsHtml, kitCardHtml, kitFoldedHtml, kitSheetHtml, kitTrackHtml, kitTrackLabel} from '../src/kits/view.js';
 
 const now = new Date('2032-04-07T12:00:00Z');
 const kit = (change: Partial<KitRow> = {}): KitRow => ({id: 'box-a', name: 'Box A', series: 'Invented collection', status: 'in flight',
@@ -35,7 +35,7 @@ test('kit status prefixes keep known words and unknown tags neutral; four active
 test('launch countdown uses UK calendar dates across both clock changes and a year end', () => {
   for (const instant of ['2032-03-28T00:30:00Z', '2032-03-28T22:30:00Z'])
     assert.equal(kitCard(kit({launchTarget: '2032-03-29'}), new Date(instant)).distance, '1 day');
-  assert.equal(kitCard(kit({launchTarget: '2032-03-29'}), new Date('2032-03-28T23:30:00Z')).distance, '0 days');
+  assert.equal(kitCard(kit({launchTarget: '2032-03-29'}), new Date('2032-03-28T23:30:00Z')).distance, 'Today');
   for (const instant of ['2032-10-31T00:30:00Z', '2032-10-31T23:30:00Z'])
     assert.equal(kitCard(kit({launchTarget: '2032-11-01'}), new Date(instant)).distance, '1 day');
   assert.equal(kitCard(kit({launchTarget: '2033-01-01'}), new Date('2032-12-31T23:30:00Z')).distance, '1 day');
@@ -46,6 +46,18 @@ test('launch countdown uses UK calendar dates across both clock changes and a ye
   assert.equal(kitLaunchDistance('2032-04-25', '2032-04-07'), '3 wks');
   assert.equal(kitLaunchDistance('2032-04-06', '2032-04-07'), '');
   assert.equal(kitLaunchDistance(null, '2032-04-07'), '');
+});
+
+test('launch distance says Today, 1 day, 13 days and 2 wks on both cards and folded rows', () => {
+  for (const [target, expected] of [['2032-04-07', 'Today'], ['2032-04-08', '1 day'],
+    ['2032-04-20', '13 days'], ['2032-04-21', '2 wks']] as const) {
+    assert.equal(kitLaunchDistance(target, '2032-04-07'), expected);
+    const view = homeKits(facts([kit({launchTarget: target}), kit({id: 'box-b', name: 'Box B', status: 'planned', launchTarget: target})]), 'live', now);
+    assert.equal(view.cards[0]!.distance, expected);
+    assert.equal(view.folded[0]!.distance, expected);
+    assert.ok(kitCardHtml(view.cards[0]!).includes(`<strong>${expected}</strong>`));
+    assert.ok(kitFoldedHtml(view.folded[0]!).includes(`<small>${expected}</small>`));
+  }
 });
 
 test('waiting needs three working days, excludes weekends and never becomes a failure colour', () => {

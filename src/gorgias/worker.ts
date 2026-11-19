@@ -3,7 +3,7 @@ import {readSettings} from '../settings.js';
 import {GorgiasClient, GorgiasReadError, gorgiasCredentials, type GorgiasClientOptions, type GorgiasReader} from './client.js';
 import {GORGIAS_POLL_MS, GORGIAS_TAG_POLL_MS, gorgiasPollMs, gorgiasWeekStart} from './model.js';
 import {gorgiasScope, gorgiasSource} from './scope.js';
-import {readKnownGorgiasTickets, recordGorgiasFailure, restoreGorgiasHealth, saveGorgiasPoll} from './store.js';
+import {readGorgiasIntentBackfillIds, readKnownGorgiasTickets, recordGorgiasFailure, restoreGorgiasHealth, saveGorgiasPoll} from './store.js';
 
 export interface GorgiasWorkerOptions extends GorgiasClientOptions {
   clock?: () => Date;
@@ -61,8 +61,11 @@ export class GorgiasWorker {
       }
       if (now.getTime() < this.#next) return;
       this.#next = now.getTime() + interval;
+      const [knownTickets, intentBackfillIds] = await Promise.all([
+        readKnownGorgiasTickets(this.db, scope), readGorgiasIntentBackfillIds(this.db, scope, now),
+      ]);
       const result = await this.#reader!.readHandover({viewId: settings.gorgiasHandoverViewId, tag: settings.gorgiasHandoverTag,
-        knownTickets: await readKnownGorgiasTickets(this.db, scope), weekStart: gorgiasWeekStart(now), asOf: now.toISOString()});
+        knownTickets, intentBackfillIds, weekStart: gorgiasWeekStart(now), asOf: now.toISOString()});
       const finishedAt = this.options.clock?.() ?? new Date();
       // Lock the Settings row through commit: a concurrent save cannot certify the previous selection as current.
       const saved = await saveGorgiasPoll(this.db, scope, result, {weekStart: gorgiasWeekStart(now), finishedAt, nextRun: new Date(this.#next),

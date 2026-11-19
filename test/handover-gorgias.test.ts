@@ -6,7 +6,7 @@ import { gorgiasSectionHtml } from '../src/handover/gorgias-view.js';
 // Every name, ID and time is invented; these are the allowed stored fields only.
 const asOf = '2032-04-07T12:00:00.000Z';
 function ticket(id: string, overrides: Partial<GorgiasTicket> = {}): GorgiasTicket {
-  return {id, status: 'open', channel: 'email', tags: ['ai_handover'], inHandover: true, viewId: null,
+  return {id, status: 'open', channel: 'email', tags: ['ai_handover'], inHandover: true, viewId: null, aiIntent: null,
     createdAt: '2032-04-06T10:00:00.000Z', updatedAt: '2032-04-07T09:00:00.000Z',
     lastCustomerMessageAt: '2032-04-07T00:00:00.000Z', customer: 'Mira P.', subject: 'An invented missing item', ...overrides};
 }

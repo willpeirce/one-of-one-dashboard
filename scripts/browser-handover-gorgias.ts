@@ -37,7 +37,7 @@ export async function checkHandoverGorgias(context: BrowserContext): Promise<voi
     }
     const fixture: GorgiasFacts = {mode: 'live', status: 'live', domain: 'invented-helpdesk', checkedAt: '2032-04-07T12:00:00.000Z',
       asOf: '2032-04-07T12:00:00.000Z', weekStart: '2032-04-04T23:00:00.000Z', openedThisWeek: 5, closedThisWeek: 2,
-      tickets: [{id: '53001', status: 'open', channel: 'chat', tags: ['ai_handover'], inHandover: true, viewId: null,
+      tickets: [{id: '53001', status: 'open', channel: 'chat', tags: ['ai_handover'], inHandover: true, viewId: null, aiIntent: null,
         customer: 'Mira P.', subject: 'An invented missing item', createdAt: '2032-04-06T08:00:00.000Z',
         updatedAt: '2032-04-07T09:00:00.000Z', lastCustomerMessageAt: '2032-04-06T10:00:00.000Z'}]};
     await page.route('**/handover', route => route.fulfill({contentType: 'text/html', body: handoverPage([

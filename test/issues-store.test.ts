@@ -24,7 +24,7 @@ const review = (id: string, overrides: Partial<Review> = {}): Review => ({id, ra
   market: null, verifiedBuyer: false, photoCount: 0, body: 'The invented slab is scratched', createdAt: '2032-04-07T12:00:00Z',
   published: false, hidden: false, flagged: false, source: null, curated: 'ok', ...overrides});
 const ticket = (id: string, overrides: Partial<GorgiasTicket> = {}): GorgiasTicket => ({id, status: 'open', channel: 'email',
-  tags: [], inHandover: true, viewId: null, createdAt: '2032-04-08T12:00:00Z', updatedAt: now.toISOString(),
+  tags: [], inHandover: true, viewId: null, aiIntent: null, createdAt: '2032-04-08T12:00:00Z', updatedAt: now.toISOString(),
   lastCustomerMessageAt: now.toISOString(), customer: 'Invented C.', subject: 'An invented missing item', ...overrides});
 
 test('Issues reads every retained low-star review regardless of Home dismissal or moderation, with no writes or outbound reads', async t => {

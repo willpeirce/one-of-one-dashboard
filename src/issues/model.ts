@@ -140,7 +140,8 @@ export function sampleIssuesView(now: Date): IssuesView {
     {id: '91004', rating: 2, body: 'The invented slab was scratched. Order #41004.', createdAt: previous},
     {id: '91005', rating: 3, body: 'The invented box arrived with a bent corner.', createdAt: current},
   ]}, tickets: {mode: 'sample', status: 'ready', checkedAt: current, domain: 'invented-helpdesk', historyCoversLastMonth: true, rows: [
-    {id: '81001', subject: 'Scratched slab for order #41001', tags: [], createdAt: current},
-    {id: '81002', subject: 'The markers have dried out', tags: [], createdAt: current},
+    {id: '81001', subject: 'Scratched slab for order #41001', tags: [], aiIntent: 'Product::Quality Issues', createdAt: current},
+    {id: '81002', subject: 'New invented message', tags: [], aiIntent: 'Order::Missing Item', createdAt: current},
+    {id: '81003', subject: 'New invented question', tags: [], aiIntent: 'Product::Availability', createdAt: current},
   ]}}, [], sampleNow);
 }

@@ -1,0 +1,31 @@
+{
+  "data": [
+    {
+      "id": 86401,
+      "object_type": "Ticket",
+      "managed_type": "contact_reason",
+      "label": "AI Intent",
+      "deactivated_datetime": null
+    },
+    {
+      "id": 86402,
+      "object_type": "Ticket",
+      "managed_type": "ai_intent",
+      "label": "Invented retired intent",
+      "deactivated_datetime": "2032-04-01T12:00:00Z"
+    },
+    {
+      "id": 86403,
+      "object_type": "Ticket",
+      "managed_type": "ai_intent",
+      "label": "Invented managed intent",
+      "deactivated_datetime": null
+    }
+  ],
+  "object": "list",
+  "uri": "/api/custom-fields",
+  "meta": {
+    "prev_cursor": null,
+    "next_cursor": null
+  }
+}

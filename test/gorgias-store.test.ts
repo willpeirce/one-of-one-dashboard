@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {randomBytes} from 'node:crypto';
+import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import type {Database} from '../src/db.js';
 import {defaultSettings} from '../src/settings.js';
@@ -10,6 +11,8 @@ import {gorgiasScope, gorgiasSource} from '../src/gorgias/scope.js';
 import {readGorgiasIntentBackfillIds, readGorgiasFacts, readGorgiasHistory, readGorgiasSync, readKnownGorgiasTickets, recordGorgiasFailure, restoreGorgiasHealth, saveGorgiasPoll} from '../src/gorgias/store.js';
 import {createTestDatabase} from './helpers/database.js';
 import {handoverCount} from '../src/gorgias/home-count.js';
+import {gorgiasNeeds} from '../src/gorgias/needs.js';
+import {gorgiasSectionHtml} from '../src/handover/gorgias-view.js';
 
 const now = new Date('2032-04-07T12:00:00Z');
 const domain = `invented-${randomBytes(6).toString('hex')}`, email = `reader-${randomBytes(6).toString('hex')}@example.invalid`;
@@ -45,7 +48,20 @@ test('sample Gorgias has four invented minimized tickets and makes no database r
   const db: Database = {query: async () => {throw new Error('No sample database read');}, transaction: async () => {throw new Error('No sample write');}, close: async () => {}};
   const facts = await readGorgiasFacts(db, {}, settings(), now);
   assert.equal(facts.mode, 'sample'); assert.equal(facts.status, 'sample'); assert.equal(facts.asOf, GORGIAS_SAMPLE_NOW);
-  assert.equal(facts.tickets.length, 4); assert.equal(facts.closedThisWeek, 0);
+  assert.equal(facts.tickets.length, 4); assert.equal(facts.closedThisWeek, 0); assert.equal(facts.openedThisWeek, 4);
+  assert.deepEqual(facts.tickets.map(ticket => ticket.aiIntent), [
+    'Product::Quality Issues', 'Order::Missing Item', 'Product::Availability', 'Shipping::Delay',
+  ], 'The active managed field supplies only two levels; its label and position do not select it');
+  const metadata = JSON.parse(await readFile(new URL('./fixtures/gorgias/custom-fields.json', import.meta.url), 'utf8')) as {data: {id: number}[]};
+  const serialized = JSON.stringify(facts);
+  assert.doesNotMatch(serialized, /custom_fields|managed_type|Discarded invented leaf/);
+  assert.ok(metadata.data.every(field => !serialized.includes(String(field.id))), 'No source field identifier reaches the facts');
+  assert.deepEqual(await readGorgiasFacts(db, {}, settings(), new Date(+now + 180_000)), facts, 'Sample timestamps remain fixed');
+  const html = gorgiasSectionHtml(facts);
+  assert.match(html, /Sample data · four invented tickets, names and times/);
+  assert.equal((html.match(/data-gorgias-ticket=/g) ?? []).length, 4);
+  assert.equal(gorgiasNeeds(facts, settings(), 'sample')[0]!.title, 'Sample · Reply to 4 customers · oldest 2d 2h');
+  assert.equal(handoverCount(facts, 'live'), undefined, 'Sample handover data remains excluded beside live Home');
   assert.ok(facts.tickets.every(ticket => ticket.status === 'open' && ticket.inHandover && ticket.customer.split(' ').length <= 2));
   facts.tickets.length = 0;
   assert.equal((await readGorgiasHistory(db, {}, settings(), now)).tickets.length, 4, 'Callers cannot mutate the cached sample');

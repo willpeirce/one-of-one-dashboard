@@ -3,7 +3,7 @@ import type {Database} from '../db.js';
 import {ukToday} from '../hero-range.js';
 import {GORGIAS_SAMPLE_NOW, gorgiasFreshMs, gorgiasOldestFirst, gorgiasWeekStart,
   type GorgiasFacts, type GorgiasPollInput, type GorgiasPollResult, type GorgiasSelection, type GorgiasTicket} from './model.js';
-import {normalizeGorgiasIntent, parseGorgiasTicket} from './privacy.js';
+import {gorgiasTicketId, normalizeGorgiasIntent, parseGorgiasTicket} from './privacy.js';
 import {gorgiasScope, gorgiasSource} from './scope.js';
 
 const iso = (value: Date | string | null): string | null => value ? new Date(value).toISOString() : null;
@@ -48,9 +48,19 @@ const ticket = (row: TicketRow): GorgiasTicket => ({id: row.ticket_id, status: r
 let sampleRead: Promise<GorgiasFacts> | undefined;
 async function sampleFacts(): Promise<GorgiasFacts> {
   sampleRead ??= (async (): Promise<GorgiasFacts> => {
-    const raw = JSON.parse(await readFile(new URL('../../test/fixtures/gorgias/tickets.json', import.meta.url), 'utf8')) as {data?: unknown[]};
-    if (!Array.isArray(raw.data) || raw.data.length !== 4) throw new Error('Invalid sample');
-    const tickets = raw.data.map(row => parseGorgiasTicket(row, {inHandover: true, viewId: null}));
+    const [ticketText, fieldText] = await Promise.all(['tickets.json', 'custom-fields.json'].map(file =>
+      readFile(new URL(`../../test/fixtures/gorgias/${file}`, import.meta.url), 'utf8')));
+    const raw = JSON.parse(ticketText!) as {data?: unknown[]}, fields = JSON.parse(fieldText!) as {data?: unknown[]};
+    if (!Array.isArray(raw.data) || raw.data.length !== 4 || !Array.isArray(fields.data)) throw new Error('Invalid sample');
+    let fieldId: string | null = null;
+    for (const value of fields.data) {
+      if (value === null || typeof value !== 'object' || Array.isArray(value)) continue;
+      const field = value as Record<string, unknown>;
+      if (field.managed_type === 'ai_intent' && field.object_type === 'Ticket' && field.deactivated_datetime == null) {
+        fieldId = gorgiasTicketId(field.id); break;
+      }
+    }
+    const tickets = raw.data.map(row => parseGorgiasTicket(row, {inHandover: true, viewId: null}, fieldId));
     const weekStart = gorgiasWeekStart(new Date(GORGIAS_SAMPLE_NOW));
     return {mode: 'sample', status: 'sample', domain: 'invented-helpdesk', checkedAt: GORGIAS_SAMPLE_NOW, asOf: GORGIAS_SAMPLE_NOW,
       weekStart, openedThisWeek: tickets.filter(row => row.createdAt >= weekStart && row.createdAt <= GORGIAS_SAMPLE_NOW).length,

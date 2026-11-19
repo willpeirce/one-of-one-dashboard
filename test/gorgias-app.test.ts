@@ -93,7 +93,7 @@ test('live Gorgias puts the open handover total on Home as a link, with no ticke
   const pending = (await app.inject({url: '/api/dashboard', headers})).json();
   assert.equal(Object.hasOwn(pending, 'handover'), false, 'Keys present but no completed read yet: no number');
   const ticket = (id: string, change: Partial<GorgiasTicket> = {}): GorgiasTicket => ({id, status: 'open', channel: 'email',
-    tags: ['ai_handover'], inHandover: true, viewId: null, createdAt: '2032-01-05T09:00:00Z', updatedAt: now.toISOString(),
+    tags: ['ai_handover'], inHandover: true, viewId: null, aiIntent: null, createdAt: '2032-01-05T09:00:00Z', updatedAt: now.toISOString(),
     lastCustomerMessageAt: '2032-04-06T10:00:00Z', customer: 'Fern L.', subject: 'Invented slab question', ...change});
   // Old and new tickets count alike: the number is the folder's open total, never "new since".
   const saved = await saveGorgiasPoll(db, gorgiasScope(domain, defaultSettings()), {closedThisWeek: 1, tickets: [

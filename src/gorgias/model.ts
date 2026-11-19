@@ -17,6 +17,7 @@ export interface GorgiasTicket {
   lastCustomerMessageAt: string | null;
   customer: string;
   subject: string;
+  aiIntent: string | null;
 }
 export interface GorgiasSelection {gorgiasHandoverViewId: string; gorgiasHandoverTag: string}
 export const gorgiasPollMs = (selection: Pick<GorgiasSelection, 'gorgiasHandoverViewId'>): number =>
@@ -29,8 +30,16 @@ export interface GorgiasPollInput {
   /** ISO instants: the start is Monday midnight in Europe/London. */
   weekStart: string;
   asOf: string;
+  /** Stored eligible IDs, in oldest-first order; the client makes at most twenty detail reads. */
+  intentBackfillIds?: readonly string[];
 }
-export interface GorgiasPollResult {tickets: GorgiasTicket[]; closedThisWeek: number}
+export interface GorgiasPollResult {
+  tickets: GorgiasTicket[];
+  closedThisWeek: number;
+  intentFieldAvailable?: boolean;
+  /** Intent-only observations, including a checked missing ticket; never membership or closure facts. */
+  intentBackfill?: {id: string; aiIntent: string | null}[];
+}
 export interface GorgiasFacts {
   mode: 'sample' | 'live';
   status: 'sample' | 'pending' | 'live' | 'unavailable';

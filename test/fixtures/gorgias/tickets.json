@@ -31,7 +31,13 @@
       "created_datetime": "2032-04-05T09:00:00.000000",
       "updated_datetime": "2032-04-05T10:00:00.000000",
       "last_received_message_datetime": "2032-04-05T10:00:00.000000",
-      "closed_datetime": null
+      "closed_datetime": null,
+      "custom_fields": {
+        "86403": {
+          "id": 86403,
+          "value": "Product::Quality Issues::Discarded invented leaf"
+        }
+      }
     },
     {
       "id": 81002,
@@ -64,7 +70,13 @@
       "created_datetime": "2032-04-06T08:00:00.000000",
       "updated_datetime": "2032-04-06T11:00:00.000000",
       "last_received_message_datetime": "2032-04-06T11:00:00.000000",
-      "closed_datetime": null
+      "closed_datetime": null,
+      "custom_fields": {
+        "86403": {
+          "id": 86403,
+          "value": "Order::Missing Item::Discarded invented leaf"
+        }
+      }
     },
     {
       "id": 81003,
@@ -97,7 +109,13 @@
       "created_datetime": "2032-04-06T12:00:00.000000",
       "updated_datetime": "2032-04-07T04:00:00.000000",
       "last_received_message_datetime": "2032-04-07T04:00:00.000000",
-      "closed_datetime": null
+      "closed_datetime": null,
+      "custom_fields": {
+        "86403": {
+          "id": 86403,
+          "value": "Product::Availability::Discarded invented leaf"
+        }
+      }
     },
     {
       "id": 81004,
@@ -130,7 +148,13 @@
       "created_datetime": "2032-04-07T08:00:00.000000",
       "updated_datetime": "2032-04-07T10:00:00.000000",
       "last_received_message_datetime": "2032-04-07T10:00:00.000000",
-      "closed_datetime": null
+      "closed_datetime": null,
+      "custom_fields": {
+        "86403": {
+          "id": 86403,
+          "value": "Shipping::Delay::Discarded invented leaf"
+        }
+      }
     }
   ],
   "object": "list",

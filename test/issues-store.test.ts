@@ -24,7 +24,7 @@ const review = (id: string, overrides: Partial<Review> = {}): Review => ({id, ra
   market: null, verifiedBuyer: false, photoCount: 0, body: 'The invented slab is scratched', createdAt: '2032-04-07T12:00:00Z',
   published: false, hidden: false, flagged: false, source: null, curated: 'ok', ...overrides});
 const ticket = (id: string, overrides: Partial<GorgiasTicket> = {}): GorgiasTicket => ({id, status: 'open', channel: 'email',
-  tags: [], inHandover: true, viewId: null, createdAt: '2032-04-08T12:00:00Z', updatedAt: now.toISOString(),
+  tags: [], inHandover: true, viewId: null, aiIntent: null, createdAt: '2032-04-08T12:00:00Z', updatedAt: now.toISOString(),
   lastCustomerMessageAt: now.toISOString(), customer: 'Invented C.', subject: 'An invented missing item', ...overrides});
 
 test('Issues reads every retained low-star review regardless of Home dismissal or moderation, with no writes or outbound reads', async t => {
@@ -170,4 +170,25 @@ test('ticket history uses the saved observation at UK month start, not the earli
   assert.equal(view.ticketHistoryCoversLastMonth, false,
     'An overwritten first-week read cannot prove an earlier first observation that the store no longer retains');
   assert.deepEqual(issuesNeeds(view), []);
+});
+
+test('Issues carries stored safe intent into classification and exclusion without new source calls or storage', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const source = env(true), settings = defaultSettings(); await syncSourceHealth(db, source);
+  await saveReviews(db, [review('94001', {body: 'Scratched slab #44001'})], now);
+  await saveGorgiasPoll(db, gorgiasScope(source.GORGIAS_DOMAIN!, settings), {closedThisWeek: 0, intentFieldAvailable: true, tickets: [
+    ticket('84001', {subject: 'New invented message #44001', aiIntent: 'Shipping::Delivered Not Received::Discarded leaf'}),
+    ticket('84002', {subject: 'Wrong item #44002', aiIntent: 'Product::Availability'}),
+    ticket('84003', {subject: 'Missing slab', aiIntent: null}),
+  ]}, {finishedAt: now, weekStart: gorgiasWeekStart(now), nextRun: new Date(+now + 600_000)});
+  const readOnly: Database = {query: (text, values) => {
+    assert.match(text.trim(), /^SELECT\b/); return db.query(text, values);
+  }, transaction: async () => {throw new Error('Issues never writes');}, close: async () => {}};
+  const view = await readIssues(readOnly, source, settings, now, 'live'), observed = view.rows.flatMap(row => row.cases);
+  assert.equal(view.status, 'ready'); assert.equal(observed.length, 2);
+  assert.equal(observed.find(row => row.orderNumber === '44001')!.reason, 'lost parcel');
+  assert.equal(observed.find(row => row.id === 'gorgias:84003')!.reason, 'missing slab');
+  assert.equal(observed.some(row => row.orderNumber === '44002'), false);
+  assert.ok(view.notes.includes('Questions and requests left out, not problems: 1 this month, 0 last month.'));
+  assert.doesNotMatch(JSON.stringify(view), /Discarded leaf|aiIntent|custom_fields|Invented C\./);
 });

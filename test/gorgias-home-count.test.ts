@@ -9,7 +9,7 @@ import {defaultSettings} from '../src/settings.js';
 
 const now = new Date('2032-04-07T12:00:00Z');
 function ticket(id: string, change: Partial<GorgiasTicket> = {}): GorgiasTicket {
-  return {id, status: 'open', channel: 'email', tags: ['ai_handover'], inHandover: true, viewId: null,
+  return {id, status: 'open', channel: 'email', tags: ['ai_handover'], inHandover: true, viewId: null, aiIntent: null,
     createdAt: '2032-04-05T09:00:00Z', updatedAt: now.toISOString(), lastCustomerMessageAt: '2032-04-07T00:00:00Z',
     customer: 'Fern L.', subject: 'Invented slab question', ...change};
 }

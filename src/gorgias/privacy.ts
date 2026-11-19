@@ -44,6 +44,24 @@ export function gorgiasTicketId(value: unknown): string {
   if (typeof id !== 'string' || !/^[1-9]\d{0,24}$/.test(id)) throw new Error('Invalid Gorgias identifier.');
   return id;
 }
+
+/** Only the first two controlled intent levels may leave the read. Never retain a free-text leaf. */
+export function normalizeGorgiasIntent(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const levels = value.split('::', 2);
+  if (levels.length !== 2 || levels.some(level => /[^A-Za-z &]/.test(level) || !/[A-Za-z]/.test(level))) return null;
+  const intent = levels.map(level => level.trim()).join('::');
+  return intent.length <= 80 ? intent : null;
+}
+
+export function parseGorgiasIntentFields(value: unknown, fieldId: string | null): string | null {
+  if (fieldId === null) return null;
+  const fields = record(value);
+  if (!Object.hasOwn(fields, fieldId)) return null;
+  const field = record(fields[fieldId]);
+  try { if (gorgiasTicketId(field.id) !== fieldId) return null; } catch { return null; }
+  return normalizeGorgiasIntent(field.value);
+}
 function person(customer: Record<string, unknown>): { label: string; names: string[] } {
   const full = plain(customer.name), first = plain(customer.firstname), last = plain(customer.lastname);
   const words = full.split(/\s+/u);
@@ -56,7 +74,7 @@ function person(customer: Record<string, unknown>): { label: string; names: stri
 }
 
 /** Explicit allowlist: bodies, customer objects, email, addresses and closure times cannot escape. */
-export function parseGorgiasTicket(value: unknown, membership: {inHandover: boolean; viewId: string | null}): GorgiasTicket {
+export function parseGorgiasTicket(value: unknown, membership: {inHandover: boolean; viewId: string | null}, intentFieldId: string | null = null): GorgiasTicket {
   const row = record(value), customer = person(record(row.customer));
   if (row.status !== 'open' && row.status !== 'closed') throw new Error('Invalid Gorgias status.');
   const createdAt = normalizedGorgiasDate(row.created_datetime);
@@ -72,5 +90,6 @@ export function parseGorgiasTicket(value: unknown, membership: {inHandover: bool
     inHandover: membership.inHandover && row.status === 'open', viewId: membership.viewId,
     createdAt, updatedAt: normalizedGorgiasDate(row.updated_datetime),
     lastCustomerMessageAt: normalizedGorgiasDate(row.last_received_message_datetime),
-    customer: customer.label, subject: scrubGorgiasText(row.subject, customer.names)};
+    customer: customer.label, subject: scrubGorgiasText(row.subject, customer.names),
+    aiIntent: parseGorgiasIntentFields(row.custom_fields, intentFieldId)};
 }

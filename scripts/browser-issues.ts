@@ -49,6 +49,10 @@ export async function checkIssues(context: BrowserContext): Promise<void> {
   const sampleResponse = await context.request.get('/api/issues/scratched%20slab'); assert.equal(sampleResponse.status(), 200);
   const sample = await sampleResponse.json() as IssueCasesPage;
   assert.equal(sample.mode, 'sample'); assert.ok(sample.total > 0);
+  const intentResponse = await context.request.get('/api/issues/missing%20item'); assert.equal(intentResponse.status(), 200);
+  const intentSample = await intentResponse.json() as IssueCasesPage;
+  assert.equal(intentSample.mode, 'sample'); assert.equal(intentSample.total, 1);
+  assert.equal(intentSample.cases[0]!.id, 'gorgias:81002');
   const page = await context.newPage();
   try {
     for (const width of [360, 390, 1280]) {
@@ -61,6 +65,7 @@ export async function checkIssues(context: BrowserContext): Promise<void> {
       assert.equal(await section.locator('[data-issues-root]').getAttribute('data-mode'), 'sample');
       assert.equal(await page.locator('html').getAttribute('data-theme'), 'dark');
       assert.match(await section.innerText(), /Sample data · invented cases and counts/);
+      assert.match(await section.innerText(), /Questions and requests left out, not problems: 1 this month, 0 last month\./);
       assert.deepEqual(await section.locator('[data-issue-reason]').evaluateAll(rows => rows.map(row => row.getAttribute('data-issue-reason'))), [...ISSUE_REASONS]);
       assert.match(await section.locator('[data-issues-costs]').innerText(), /Cost of fixes.*This month.*Last month/s);
       assert.equal(await section.locator('[data-issues-cost]').count(), 2);
@@ -77,6 +82,17 @@ export async function checkIssues(context: BrowserContext): Promise<void> {
       await privacyAndLayout(page, width);
       await page.keyboard.press('Escape'); await page.locator('#issues-sheet').waitFor({state: 'hidden'});
       assert.equal(await open.evaluate(element => document.activeElement === element), true, 'Closing cases restores the reason button focus');
+      const intentOpen = section.locator('[data-issue-reason="missing item"]');
+      assert.equal(await intentOpen.locator('xpath=ancestor::tr').locator('[data-issue-current]').innerText(), '1');
+      await intentOpen.click(); await page.locator('#issues-sheet[open] [data-issue-case="gorgias:81002"]').waitFor();
+      assert.equal(await page.locator('#issues-sheet-title').innerText(), 'Missing item');
+      assert.equal(await page.locator('[data-issue-case]').count(), 1, 'The generic sample message becomes one case through its intent');
+      assert.deepEqual(await page.locator('[data-issue-case="gorgias:81002"] .issues-case-source').allTextContents(),
+        ['ⓘ Gorgias ticket', 'ⓘ Sample ticket · no live link']);
+      assert.equal(await page.locator('[data-issue-quote]').count(), 0); assert.equal(await page.locator('[data-issue-ticket]').count(), 0);
+      await privacyAndLayout(page, width);
+      await page.keyboard.press('Escape'); await page.locator('#issues-sheet').waitFor({state: 'hidden'});
+      assert.equal(await intentOpen.evaluate(element => document.activeElement === element), true);
     }
 
     let inputs = liveInputs(), view = buildIssuesView(inputs, [], now);

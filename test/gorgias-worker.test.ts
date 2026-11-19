@@ -17,7 +17,7 @@ const blankCredential = ' '.repeat(2);
 const env = () => ({GORGIAS_DOMAIN: domain, GORGIAS_EMAIL: email, GORGIAS_API_KEY: randomBytes(32).toString('hex')});
 const ticket: GorgiasTicket = {id: '81001', status: 'open', channel: 'email', tags: ['ai_handover'], inHandover: true, viewId: null,
   createdAt: '2032-04-06T10:00:00.000Z', updatedAt: initial.toISOString(), lastCustomerMessageAt: null,
-  customer: 'Invented F.', subject: 'Invented missing slab'};
+  customer: 'Invented F.', subject: 'Invented missing slab', aiIntent: null};
 const result = (): GorgiasPollResult => ({tickets: [{...ticket}], closedThisWeek: 0});
 
 test('Gorgias construction and sample ticks do no I/O; tag-mode ticks are single-flight, every ten minutes and stop safely', async t => {
@@ -212,4 +212,27 @@ test('restarting with an old two-minute tag schedule applies ten minutes without
   await worker.tick(); assert.equal(calls, 0);
   now = new Date(+initial + GORGIAS_TAG_POLL_MS - 1); await worker.tick(); assert.equal(calls, 0);
   now = new Date(+initial + GORGIAS_TAG_POLL_MS); await worker.tick(); assert.equal(calls, 1);
+});
+
+test('Gorgias worker supplies bounded intent candidates and saves only intent enrichment from completed backfill reads', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const source = env(); await syncSourceHealth(db, source); const selection = (await readSettings(db)).values;
+  const scope = gorgiasScope(source.GORGIAS_DOMAIN, selection);
+  const old = {...ticket, id: '85001', status: 'closed' as const, inHandover: false, createdAt: '2032-03-04T12:00:00.000Z'};
+  await saveGorgiasPoll(db, scope, {tickets: [old, ticket], closedThisWeek: 3},
+    {weekStart: '2032-04-04T23:00:00.000Z', finishedAt: initial, nextRun: new Date(+initial + GORGIAS_TAG_POLL_MS)});
+  const at = new Date(+initial + GORGIAS_TAG_POLL_MS);
+  let received: GorgiasPollInput | null = null;
+  const worker = new GorgiasWorker(db, source, {clock: () => at, reader: {async readHandover(input) {
+    received = input;
+    return {tickets: [ticket], closedThisWeek: 0, intentFieldAvailable: true,
+      intentBackfill: [{id: old.id, aiIntent: 'Order::Damaged'}]};
+  }}}); t.after(() => worker.stop());
+  await worker.tick();
+  assert.ok(received);
+  assert.deepEqual((received as GorgiasPollInput).intentBackfillIds, [old.id, ticket.id]);
+  const history = await readGorgiasHistory(db, source, selection, at);
+  assert.deepEqual(history.tickets.find(row => row.id === old.id), {...old, aiIntent: 'Order::Damaged'});
+  assert.equal(history.closedThisWeek, 3);
+  assert.equal(history.tickets.filter(row => row.inHandover).length, 1);
 });

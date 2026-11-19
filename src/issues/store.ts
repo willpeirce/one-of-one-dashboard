@@ -43,6 +43,6 @@ export async function readIssues(db: Database, env: NodeJS.ProcessEnv, settings:
     : {mode: ticketRead.mode, status: !ticketRead.checkedAt ? 'pending' : ticketRead.status === 'live' ? 'ready' : 'unavailable',
       checkedAt: ticketRead.checkedAt, domain: ticketRead.domain, historyCoversLastMonth: history?.rows[0]?.complete === true,
       rows: ticketRead.tickets.map(row => ({id: row.id,
-        subject: row.subject, tags: row.tags, createdAt: row.createdAt}))};
+        subject: row.subject, tags: row.tags, createdAt: row.createdAt, aiIntent: row.aiIntent}))};
   return buildIssuesView({dashboardMode, reviews: reviewRead, tickets}, settings.gorgiasIssueTags, now);
 }

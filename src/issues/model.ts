@@ -5,12 +5,13 @@ import type {SourceMode} from '../sources.js';
 import type {DashboardNeed} from '../shopify/dashboard.js';
 import {ISSUE_REASONS, type IssueReason, type IssueTagRule} from './taxonomy.js';
 import {issueClassification} from './keywords.js';
+import {classifyIssueTicket} from './intents.js';
 import {issueWatchState} from './trend.js';
 export {issueDoubled} from './trend.js';
 export {ISSUE_REASONS, type IssueReason, type IssueTagRule} from './taxonomy.js';
 
 export interface IssueReview {id: string; rating: number; body: string; createdAt: string}
-export interface IssueTicket {id: string; subject: string; tags: string[]; createdAt: string}
+export interface IssueTicket {id: string; subject: string; tags: string[]; createdAt: string; aiIntent?: string | null}
 export interface IssueSource<T> {
   mode: SourceMode; status: 'ready' | 'pending' | 'unavailable'; rows: T[];
   checkedAt?: string | null; note?: string;
@@ -40,13 +41,17 @@ export function issueOrderNumber(text: string): string | null {
 }
 interface Evidence {
   source: 'judgeme' | 'gorgias'; id: string; createdAt: string; orderNumber: string | null;
-  reason: IssueReason; mapped: boolean; quote: string | null; ticketHref: string | null;
+  reason: IssueReason; rank: 0 | 1 | 2; quote: string | null; ticketHref: string | null;
 }
 const sourceOrder = (source: Evidence['source']): number => source === 'judgeme' ? 0 : 1;
 const evidenceOrder = (a: Evidence, b: Evidence): number => a.createdAt.localeCompare(b.createdAt)
   || sourceOrder(a.source) - sourceOrder(b.source) || a.id.localeCompare(b.id);
-function evidence(input: IssueInputs, mode: SourceMode, tagRules: readonly IssueTagRule[], now: Date): Evidence[] {
+function evidence(input: IssueInputs, mode: SourceMode, tagRules: readonly IssueTagRule[], now: Date): {
+  rows: Evidence[]; excludedThisMonth: number; excludedLastMonth: number;
+} {
   const rows: Evidence[] = [], seen = new Set<string>();
+  const {thisMonth, lastMonth} = issueMonths(now);
+  let excludedThisMonth = 0, excludedLastMonth = 0;
   const take = (source: Evidence['source'], id: string, createdAt: string): string | null => {
     const key = `${source}:${id}`, time = Date.parse(createdAt);
     if (!id || seen.has(key) || !Number.isFinite(time) || time > now.getTime()) return null;
@@ -56,23 +61,30 @@ function evidence(input: IssueInputs, mode: SourceMode, tagRules: readonly Issue
     if (!Number.isInteger(review.rating) || review.rating < 1 || review.rating > 3) continue;
     const createdAt = take('judgeme', review.id, review.createdAt); if (!createdAt) continue;
     const text = scrubGorgiasText(review.body, [], Array.from(review.body).length), classified = issueClassification(text);
-    rows.push({source: 'judgeme', id: review.id, createdAt, orderNumber: issueOrderNumber(text), ...classified,
+    rows.push({source: 'judgeme', id: review.id, createdAt, orderNumber: issueOrderNumber(text), reason: classified.reason, rank: 0,
       quote: Array.from(text).slice(0, 120).join('') || null, ticketHref: null});
   }
   if (input.tickets.mode === mode && input.tickets.status !== 'pending') for (const ticket of input.tickets.rows) {
     const createdAt = take('gorgias', ticket.id, ticket.createdAt); if (!createdAt) continue;
-    const classified = issueClassification(ticket.subject, ticket.tags, tagRules);
+    const classified = classifyIssueTicket(ticket.subject, ticket.tags, ticket.aiIntent, tagRules);
+    if (classified === null) {
+      const month = ukToday(new Date(createdAt)).slice(0, 7);
+      if (month === thisMonth) excludedThisMonth++;
+      else if (month === lastMonth) excludedLastMonth++;
+      continue;
+    }
     rows.push({source: 'gorgias', id: ticket.id, createdAt, orderNumber: issueOrderNumber(ticket.subject), ...classified,
       quote: null, ticketHref: mode === 'live' ? gorgiasTicketHref(input.tickets.domain, ticket.id) : null});
   }
-  return rows.sort(evidenceOrder);
+  return {rows: rows.sort(evidenceOrder), excludedThisMonth, excludedLastMonth};
 }
 export function buildIssuesView(input: IssueInputs, tagRules: readonly IssueTagRule[], now: Date): IssuesView {
   const mode: SourceMode = input.dashboardMode === 'live' || input.reviews.mode === 'live' || input.tickets.mode === 'live' ? 'live' : 'sample';
   const sources = [input.reviews, input.tickets].filter(source => source.mode === mode), completed = sources.some(source => source.status !== 'pending');
   const status = !completed ? 'pending' : sources.some(source => source.status !== 'ready') ? 'unavailable' : 'ready';
   const {thisMonth, lastMonth} = issueMonths(now), groups = new Map<string, Evidence[]>();
-  for (const row of evidence(input, mode, tagRules, now)) {
+  const observed = evidence(input, mode, tagRules, now);
+  for (const row of observed.rows) {
     const key = row.orderNumber ? `order:${row.orderNumber}` : `${row.source}:${row.id}`;
     const group = groups.get(key) ?? []; group.push(row); groups.set(key, group);
   }
@@ -80,8 +92,8 @@ export function buildIssuesView(input: IssueInputs, tagRules: readonly IssueTagR
   for (const [id, group] of groups) {
     const first = group[0]!, month = ukToday(new Date(first.createdAt)).slice(0, 7);
     if (month !== thisMonth && month !== lastMonth) continue;
-    // A mapped ticket is the explicit operator classification. Otherwise the earliest evidence wins.
-    const picked = group.find(row => row.source === 'gorgias' && row.mapped) ?? first;
+    // Tag mapping outranks intent, then keywords. Chronological order resolves equal evidence.
+    const picked = group.reduce((best, row) => row.rank > best.rank ? row : best, first);
     const quote = group.find(row => row.quote)?.quote ?? null, ticket = group.find(row => row.ticketHref);
     cases.push({id, reason: picked.reason, month, createdAt: first.createdAt, orderNumber: first.orderNumber,
       sources: [...new Set(group.map(row => row.source))], quote, ticketHref: ticket?.ticketHref ?? null,
@@ -90,6 +102,8 @@ export function buildIssuesView(input: IssueInputs, tagRules: readonly IssueTagR
   cases.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id));
   const notes = ['Counts cover stored observations, not a complete account history. Handover tickets are those observed in the selected view or tag.',
     'Each explicit order number counts once, in its earliest observed month. Without one unambiguous order number, each review or ticket counts once.'];
+  if (observed.excludedThisMonth || observed.excludedLastMonth)
+    notes.push(`${observed.excludedThisMonth} handover tickets this month and ${observed.excludedLastMonth} last month were questions or requests, not problems, and are left out.`);
   for (const [name, source] of [['Judge.me reviews', input.reviews], ['Gorgias handover', input.tickets]] as const) {
     if (source.mode !== mode) notes.push(`${name}: waiting for keys; sample cases are excluded.`);
     else if (source.status === 'pending') notes.push(`${name}: waiting for the first successful read.`);

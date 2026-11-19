@@ -189,6 +189,6 @@ test('Issues carries stored safe intent into classification and exclusion withou
   assert.equal(observed.find(row => row.orderNumber === '44001')!.reason, 'lost parcel');
   assert.equal(observed.find(row => row.id === 'gorgias:84003')!.reason, 'missing slab');
   assert.equal(observed.some(row => row.orderNumber === '44002'), false);
-  assert.ok(view.notes.includes('1 handover tickets this month and 0 last month were questions or requests, not problems, and are left out.'));
+  assert.ok(view.notes.includes('Questions and requests left out, not problems: 1 this month, 0 last month.'));
   assert.doesNotMatch(JSON.stringify(view), /Discarded leaf|aiIntent|custom_fields|Invented C\./);
 });

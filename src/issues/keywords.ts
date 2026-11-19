@@ -12,7 +12,7 @@ const rules: ReadonlyArray<{reason: IssueReason; patterns: readonly RegExp[]}> =
     /\b(?:box|carton|packaging)\b.{0,35}\b(?:damaged|crushed|dented|bent|torn|broken)\b/iu]},
   {reason: 'lost parcel', patterns: [/\b(?:lost|missing)\b.{0,35}\b(?:parcel|package|shipment|delivery)\b/iu,
     /\b(?:parcel|package|shipment)\b.{0,35}\b(?:lost|missing|never arrived|not arrived|not delivered)\b/iu,
-    /\b(?:(?:never|not|haven['’]t) (?:received|got)|didn['’]t (?:receive|get|got))\b.{0,35}\b(?:(?:parcel|package|order|shipment|kit|item)s?|deliver(?:y|ies))\b/iu,
+    /\b(?:(?:never|not|haven['’]t) (?:received|got)|didn['’]t (?:receive|get|got))\b(?:(?!\b(?:refunds?|repl(?:y|ies)|responses?|answers?|emails?|confirmations?|tracking|updates?|(?:marker|pen|slab|sticker|card|cap|piece|part|refill)s?|(?:one|two|three|some|any|a few|all) items?)\b).){0,35}\b(?:(?:parcel|package|order|shipment|kit|item)s?|deliver(?:y|ies))\b/iu,
     /\b(?:never arrived|never delivered|lost in transit)\b/iu]},
   {reason: 'late delivery', patterns: [/\b(?:late|delayed|overdue)\b.{0,35}\b(?:delivery|parcel|package|shipment|order)\b/iu,
     /\b(?:delivery|parcel|package|shipment|order)\b.{0,35}\b(?:late|delayed|overdue)\b/iu,

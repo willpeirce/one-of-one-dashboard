@@ -103,7 +103,7 @@ export function buildIssuesView(input: IssueInputs, tagRules: readonly IssueTagR
   const notes = ['Counts cover stored observations, not a complete account history. Handover tickets are those observed in the selected view or tag.',
     'Each explicit order number counts once, in its earliest observed month. Without one unambiguous order number, each review or ticket counts once.'];
   if (observed.excludedThisMonth || observed.excludedLastMonth)
-    notes.push(`${observed.excludedThisMonth} handover tickets this month and ${observed.excludedLastMonth} last month were questions or requests, not problems, and are left out.`);
+    notes.push(`Questions and requests left out, not problems: ${observed.excludedThisMonth} this month, ${observed.excludedLastMonth} last month.`);
   for (const [name, source] of [['Judge.me reviews', input.reviews], ['Gorgias handover', input.tickets]] as const) {
     if (source.mode !== mode) notes.push(`${name}: waiting for keys; sample cases are excluded.`);
     else if (source.status === 'pending') notes.push(`${name}: waiting for the first successful read.`);

@@ -7,7 +7,7 @@ import {readIssues} from '../src/issues/store.js';
 import {defaultSettings} from '../src/settings.js';
 
 const now = new Date('2032-04-07T12:03:00Z');
-const excluded = '1 handover tickets this month and 0 last month were questions or requests, not problems, and are left out.';
+const excluded = 'Questions and requests left out, not problems: 1 this month, 0 last month.';
 
 test('sample Issues demonstrates an intent-only reason and excluded question while preserving its observed total and hourly clock', () => {
   const view = sampleIssuesView(now), cases = view.rows.flatMap(row => row.cases);
@@ -32,6 +32,6 @@ test('the sample intent case and exclusion count stay out of a live dashboard wh
   const live = await readIssues(db, {}, defaultSettings(), now, 'live');
   assert.equal(live.mode, 'live'); assert.equal(live.status, 'pending');
   assert.equal(live.rows.flatMap(row => row.cases).length, 0);
-  assert.equal(live.notes.some(note => note.includes('are left out.')), false);
+  assert.equal(live.notes.some(note => note.startsWith('Questions and requests left out, not problems: ')), false);
   assert.deepEqual(issuesNeeds(live), []);
 });

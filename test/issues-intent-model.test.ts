@@ -12,7 +12,7 @@ const input = (reviews: IssueReview[] = [], tickets: IssueTicket[] = []): IssueI
   reviews: {mode: 'live', status: 'ready', checkedAt: now.toISOString(), rows: reviews},
   tickets: {mode: 'live', status: 'ready', checkedAt: now.toISOString(), rows: tickets, domain: 'invented-helpdesk'}});
 const cases = (view: IssuesView) => view.rows.flatMap(row => row.cases);
-const exclusionNotes = (view: IssuesView) => view.notes.filter(note => note.includes('are left out.'));
+const exclusionNotes = (view: IssuesView) => view.notes.filter(note => note.startsWith('Questions and requests left out, not problems: '));
 
 test('joined cases choose tag mapping before intent before keywords while retaining the earliest month and review quote', () => {
   const facts = input([review('92001', 'Scratched slab #42001', previous), review('92002', 'Scratched slab #42002', previous)], [
@@ -70,7 +70,7 @@ test('an excluded earlier ticket cannot anchor a review month or contribute a ti
   assert.equal(observed.length, 1);
   assert.equal(observed[0]!.month, '2032-04'); assert.equal(observed[0]!.reason, 'scratched slab');
   assert.deepEqual(observed[0]!.sources, ['judgeme']); assert.equal(observed[0]!.ticketHref, null);
-  assert.deepEqual(exclusionNotes(view), ['1 handover tickets this month and 1 last month were questions or requests, not problems, and are left out.']);
+  assert.deepEqual(exclusionNotes(view), ['Questions and requests left out, not problems: 1 this month, 1 last month.']);
   assert.doesNotMatch(JSON.stringify(view.rows), /82001|82002/);
 });
 
@@ -96,7 +96,7 @@ test('excluded counts are unique tickets in their own UK month, not orders, and 
   ]);
   const view = buildIssuesView(facts, [], now);
   assert.equal(cases(view).length, 0);
-  assert.deepEqual(exclusionNotes(view), ['2 handover tickets this month and 1 last month were questions or requests, not problems, and are left out.']);
+  assert.deepEqual(exclusionNotes(view), ['Questions and requests left out, not problems: 2 this month, 1 last month.']);
   facts.tickets.rows = [ticket('82004', 'Invented question', 'Product::Usage', '2032-02-07T12:00:00Z')];
   assert.deepEqual(exclusionNotes(buildIssuesView(facts, [], now)), []);
 });

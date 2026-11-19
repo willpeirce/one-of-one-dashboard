@@ -65,7 +65,7 @@ export async function checkIssues(context: BrowserContext): Promise<void> {
       assert.equal(await section.locator('[data-issues-root]').getAttribute('data-mode'), 'sample');
       assert.equal(await page.locator('html').getAttribute('data-theme'), 'dark');
       assert.match(await section.innerText(), /Sample data · invented cases and counts/);
-      assert.match(await section.innerText(), /1 handover tickets this month and 0 last month were questions or requests, not problems, and are left out\./);
+      assert.match(await section.innerText(), /Questions and requests left out, not problems: 1 this month, 0 last month\./);
       assert.deepEqual(await section.locator('[data-issue-reason]').evaluateAll(rows => rows.map(row => row.getAttribute('data-issue-reason'))), [...ISSUE_REASONS]);
       assert.match(await section.locator('[data-issues-costs]').innerText(), /Cost of fixes.*This month.*Last month/s);
       assert.equal(await section.locator('[data-issues-cost]').count(), 2);

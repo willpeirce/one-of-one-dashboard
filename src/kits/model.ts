@@ -4,7 +4,7 @@ import type {SourceMode} from '../sources.js';
 export const KIT_BODY_LIMIT = 256 * 1024;
 export const KIT_ROW_LIMIT = 40;
 export const KIT_ORDER_LIMIT = 200;
-export const KIT_PARSER_VERSION = 2;
+export const KIT_PARSER_VERSION = 3;
 export type KitFileKind = 'kits' | 'kit-orders';
 export interface KitRow {
   id: string; name: string; series: string; status: string; gate: number;

@@ -15,10 +15,11 @@ export async function replaceKitFile(db: Database, kind: KitFileKind,
     await db.query('DELETE FROM pulse.kit_board_kits');
     for (const [order, row] of ((result?.rows ?? []) as KitRow[]).slice(0, KIT_ROW_LIMIT).entries()) {
       await db.query(`INSERT INTO pulse.kit_board_kits(id,row_order,name,series,status,gate,launch_target,launch_label,
-        brief_due,milestone,next_action,owner,waiting_with,waiting_since,note)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+        brief_due,milestone,next_action,owner,waiting_with,waiting_since,note,sellout_target,next_date,move_note)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
       [row.id, order, row.name, row.series, row.status, row.gate, row.launchTarget, row.launchLabel, row.briefDue,
-        row.milestone, row.nextAction, row.owner, row.with, row.waitingSince, row.note]);
+        row.milestone, row.nextAction, row.owner, row.with, row.waitingSince, row.note,
+        row.selloutTarget ?? null, row.nextDate ?? null, row.moveNote ?? null]);
     }
   } else {
     await db.query('DELETE FROM pulse.kit_board_orders');
@@ -42,6 +43,7 @@ interface StoredKit extends Record<string, unknown> {
   launch_target: string | null; launch_label: string | null; brief_due: string | null;
   milestone: string | null; next_action: string; owner: string; waiting_with: string;
   waiting_since: string | null; note: string;
+  sellout_target: string | null; next_date: string | null; move_note: string | null;
 }
 interface StoredOrder extends Record<string, unknown> {
   id: string; kit: string; supplier: string; item: string; qty: number | null;
@@ -55,7 +57,7 @@ export async function readKitFacts(db: Database, mode: SourceMode, now: Date): P
     (SELECT COALESCE(jsonb_agg(f),'[]'::jsonb) FROM pulse.kit_board_files f) AS files,
     (SELECT COALESCE(jsonb_agg(k ORDER BY k.row_order),'[]'::jsonb) FROM
       (SELECT id,row_order,name,series,status,gate,launch_target::text,launch_label,brief_due::text,
-        milestone,next_action,owner,waiting_with,waiting_since::text,note FROM pulse.kit_board_kits
+        milestone,next_action,owner,waiting_with,waiting_since::text,note,sellout_target::text,next_date,move_note FROM pulse.kit_board_kits
         ORDER BY row_order LIMIT $1) k) AS kits,
     (SELECT COALESCE(jsonb_agg(o ORDER BY o.row_order),'[]'::jsonb) FROM
       (SELECT id,row_order,kit,supplier,item,qty,ordered_date::text,eta::text,status FROM pulse.kit_board_orders
@@ -72,7 +74,8 @@ export async function readKitFacts(db: Database, mode: SourceMode, now: Date): P
   return {mode, kits: file('kits', data.kits.map(row => ({id: row.id, name: row.name, series: row.series,
     status: row.status, gate: row.gate, launchTarget: row.launch_target, launchLabel: row.launch_label,
     briefDue: row.brief_due, milestone: row.milestone, nextAction: row.next_action, owner: row.owner,
-    with: row.waiting_with, waitingSince: row.waiting_since, note: row.note}))),
+    with: row.waiting_with, waitingSince: row.waiting_since, note: row.note,
+    selloutTarget: row.sellout_target, nextDate: row.next_date, moveNote: row.move_note}))),
   orders: file('kit-orders', data.orders.map(row => ({id: row.id, kit: row.kit, supplier: row.supplier,
     item: row.item, qty: row.qty, date: row.ordered_date, eta: row.eta, status: row.status})))};
 }

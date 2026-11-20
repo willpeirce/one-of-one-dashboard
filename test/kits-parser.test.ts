@@ -17,6 +17,7 @@ test('kit files accept the two envelopes and retain only the explicit permitted 
     assert.equal(kits.updatedAt, wrapped ? '2032-04-07T12:00:00.000Z' : null);
     assert.deepEqual(kits.rows[0], {id: 'box-a', name: 'Box A', series: 'Invented collection', status: 'in flight', gate: 2,
       launchTarget: '2032-08-14', launchLabel: 'Invented launch', briefDue: '2032-05-01', milestone: 'Review the proof',
+      selloutTarget: null, nextDate: null, moveNote: null,
       nextAction: 'Check the sample', owner: 'Will', with: 'the kit maker', waitingSince: '2032-04-01', note: 'Invented note'});
     const orders = parseKitOrders(JSON.stringify(wrapped ? {updated: '2032-04-07T12:00:00Z', rows: [order()]} : [order()]));
     assert.equal(orders.rows.length, 1); assert.equal(orders.rows[0]!.qty, 2400);
@@ -28,11 +29,12 @@ test('kit files accept the two envelopes and retain only the explicit permitted 
 });
 
 test('kit strings are trimmed, stripped of controls and capped in Unicode characters at each field bound', () => {
-  const limits = {id: 40, name: 40, series: 80, status: 30, launch_label: 60, milestone: 120,
+  const limits = {id: 40, name: 40, series: 80, status: 30, launch_label: 60, milestone: 120, next_date: 28, move_note: 60,
     next_action: 200, owner: 20, with: 120, note: 300};
   const input = {...kit(), ...Object.fromEntries(Object.keys(limits).map(key => [key, key === 'id' ? 'a'.repeat(45) : ` \0\t${'📦'.repeat(350)}\u007f `]))};
   const row = parseKits(JSON.stringify([input])).rows[0]!;
   const fields = {id: 'id', name: 'name', series: 'series', status: 'status', launch_label: 'launchLabel', milestone: 'milestone',
+    next_date: 'nextDate', move_note: 'moveNote',
     next_action: 'nextAction', owner: 'owner', with: 'with', note: 'note'} as const;
   for (const [source, bound] of Object.entries(limits)) {
     const value = row[fields[source as keyof typeof fields]]!;
@@ -43,6 +45,24 @@ test('kit strings are trimmed, stripped of controls and capped in Unicode charac
   for (const [field, bound] of [['id', 40], ['kit', 40], ['supplier', 80], ['item', 160], ['status', 160]] as const)
     assert.equal(Array.from(storedOrder[field]).length, bound);
   assert.equal(parseKits(JSON.stringify([{...kit(), next_action: '  first\nsecond\u2028third  '}])).rows[0]!.nextAction, 'firstsecond third');
+});
+
+test('optional kit dates and move notes use bounded plain text and preserve old rows', () => {
+  const row = parseKits(JSON.stringify([{...kit(), sellout_target: ' 2032-09-14 ',
+    next_date: ' \tOrder due 3 Mar\u007f ', move_note: ' \0Next check\u2028Tue 9 Mar ' }])).rows[0]!;
+  assert.equal(row.selloutTarget, '2032-09-14');
+  assert.equal(row.nextDate, 'Order due 3 Mar');
+  assert.equal(row.moveNote, 'Next check Tue 9 Mar');
+  const legacy = parseKits(JSON.stringify([kit()])).rows[0]!;
+  assert.equal(legacy.selloutTarget, null); assert.equal(legacy.nextDate, null); assert.equal(legacy.moveNote, null);
+  assert.equal(legacy.nextAction, 'Check the sample');
+  for (const value of [null, 12, false, [], {}, '', ' \t\0 ']) {
+    const invalid = parseKits(JSON.stringify([{...kit(), sellout_target: value, next_date: value, move_note: value}])).rows[0]!;
+    assert.equal(invalid.selloutTarget, null); assert.equal(invalid.nextDate, null); assert.equal(invalid.moveNote, null);
+  }
+  for (const value of ['2032-02-30', '2031-02-29', '0000-01-01', '2032-9-14', '2032-09-14T12:00:00Z', '2032-09-14' + '0'.repeat(28)])
+    assert.equal(parseKits(JSON.stringify([{...kit(), sellout_target: value}])).rows[0]!.selloutTarget, null);
+  assert.equal(parseKits(JSON.stringify([{...kit(), sellout_target: '2032-02-29'}])).rows[0]!.selloutTarget, '2032-02-29');
 });
 
 test('malformed rows are counted, duplicate ids keep the first, and only the first bounded valid rows survive', () => {

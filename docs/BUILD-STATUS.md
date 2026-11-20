@@ -4,6 +4,7 @@ Updated in every pull request.
 
 | Stage | What | Code | Keys in Replit | Live check ("Done when") |
 |---|---|---|---|---|
+| Kits in plain words · A | Bounded optional sell-out date, next dated line and move note parsing | built on `kits-plain` from main `7b0b909`; parser version two; legacy rows remain valid | none | Not done: live persistence of the three fields needs new dedicated columns, forbidden by this task's no-migration rule; existing stored fields remain intact |
 | Issues intent · E | Narrow non-receipt wording to exclude correspondence, kit parts and counted items; use a count-neutral exclusion note | fix round on `issues-intent` in PR #57; all supplied phrases and later-rule fall-through tested; no new migration, Settings field or dependency | none | Deterministic wording remains an approximation; live agreement remains the deployment maintainer's check |
 | Issues intent · A | Managed AI Intent discovery, strict two-level storage and bounded intent-only backfill | built on `issues-intent`; additive migration 076 adds two nullable columns; no Settings change | none new | Confirm intent agreement in the live account after merge; discovery failure keeps the successful handover read and stored intent |
 | Issues intent · B | Tag, intent and keyword evidence ranking; questions and requests excluded before case joins, with monthly notes | built on `issues-intent`; Watch rules and Handover layout unchanged | none | Check reason agreement on stored live cases; missing/unknown intent retains keyword fallback |
@@ -184,6 +185,10 @@ Branch **home-handover-count**. Will asked for one number on Home: how many tick
 No migration, Setting, dependency, source read or outbound call; the Gorgias worker and GET-only client are untouched. Home fold budgets are unchanged (not raised); the Home markup pin is re-taken for the one added line. Validation: see DECISIONS, 18 Nov (Home handover count).
 
 ## Next step
+
+**Kits in plain words** is being built on `kits-plain`, from main `7b0b909`, in three checked and separately pushed parts. It changes Kits only; no migration, Settings value, dependency or secret is added.
+
+**Kits in plain words · Not done or known gaps:** the existing kit cache uses explicit columns and has no payload column. The new optional fields can be parsed, but cannot be retained for live display without a migration. They are not packed into unrelated fields or kept in a restart-sensitive side cache. Existing rows and wording continue to render with the display fallbacks. Live persistence needs a separately authorized additive schema change.
 
 **Issues intent** is on `issues-intent` in [PR #57](https://github.com/willpeirce/one-of-one-dashboard/pull/57), from main `b7f2758`. Parts A–D read and retain minimized managed intent, classify and exclude ticket evidence, extend one review wording rule, and update samples and records. Part E narrows that wording rule after review and replaces the exclusion note with wording that works for every count. Each part has its own checked commit and push. Typecheck, the full PostgreSQL test suite, build, the complete installed-Chromium browser suite and secret scanning pass at each boundary; counts are recorded in DECISIONS.
 

@@ -120,13 +120,13 @@ async function visibleControls(scope: Locator): Promise<Locator[]> {
 /** A separate sample budget for the one new chapter; existing chapter budgets stay unchanged. */
 export async function checkKitsBudget(page: Page, width: 390 | 1280): Promise<void> {
   const section = page.locator('#kits'), box = await section.boundingBox();
-  // Fixed sample measures 682.140625px at 390 and 321.75px at 1280; each cap has under 40px slack.
-  const maximum = width === 390 ? 710 : 340;
+  // Plain move boxes and the summary below the title: 855.484375px at 390 and 397.046875px at 1280; under 40px slack.
+  const maximum = width === 390 ? 880 : 420;
   assert.ok(box && box.height <= maximum, `${width}px #kits height ${box?.height} exceeds ${maximum}`);
   const all = await visibleControls(section), shown: Locator[] = [];
   const headingLink = section.locator('.kits-heading a[data-kits-all][href="/kits"]');
   assert.equal(await headingLink.count(), 1);
-  assert.equal(await headingLink.innerText(), 'All kits');
+  assert.equal(await headingLink.innerText(), 'All kits ›');
   assert.equal(await headingLink.isVisible(), true);
   for (const control of all) {
     if (!await control.evaluate(element => element.matches('.kits-heading a[data-kits-all][href="/kits"]'))) shown.push(control);

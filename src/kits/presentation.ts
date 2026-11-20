@@ -1,12 +1,12 @@
 import {dayCount, ukToday} from '../hero-range.js';
 import type {SourceMode} from '../sources.js';
 import type {KitFacts, KitOrderRow, KitRow} from './model.js';
-import {KIT_STEPS, type HomeKits, type KitCardView, type KitFoldedView, type KitSheet, type KitSheetOrder, type KitStatusView} from './presentation-types.js';
+import {KIT_STEPS, type HomeKits, type KitCardView, type KitFoldedView, type KitMoveView, type KitSheet, type KitSheetOrder, type KitStatusView} from './presentation-types.js';
 
-export function kitStatus(status: string): KitStatusView {
+export function kitStatus(status: string, gate = 0): KitStatusView {
   const tag = status.trim().toLowerCase();
-  if (tag.startsWith('live')) return {kind: 'live', label: 'Live'};
-  if (tag.startsWith('in flight')) return {kind: 'flight', label: 'In flight'};
+  if (tag.startsWith('live')) return {kind: 'live', label: 'On sale'};
+  if (tag.startsWith('in flight')) return {kind: 'flight', label: KIT_STEPS[gate]!};
   if (tag.startsWith('planned')) return {kind: 'planned', label: 'Planned'};
   if (tag.startsWith('proposed')) return {kind: 'proposed', label: 'Proposed'};
   if (tag.startsWith('optional')) return {kind: 'optional', label: 'Optional'};
@@ -22,33 +22,29 @@ export function kitLaunchDistance(date: string | null, today: string): string {
   const days = dayCount(today, date) - 1;
   return days < 0 ? '' : days === 0 ? 'Today' : days < 14 ? `${days} ${days === 1 ? 'day' : 'days'}` : `${Math.round(days / 7)} wks`;
 }
-/** Excludes the starting day, includes today; at most six iterations even for very old dates. */
-export function kitWorkingDays(since: string, today: string): number {
-  const days = Math.max(0, dayCount(since, today) - 1), weeks = Math.floor(days / 7);
-  const weekday = new Date(`${since}T12:00:00Z`).getUTCDay();
-  let count = weeks * 5;
-  for (let offset = 1; offset <= days % 7; offset++) {
-    const next = (weekday + offset) % 7;
-    if (next !== 0 && next !== 6) count++;
-  }
-  return count;
+const waitingDays = (since: string | null, today: string): number => since ? Math.max(0, dayCount(since, today) - 1) : 0;
+
+/** A move says whether the owner has anything to do; supplier age is never attached to their own move. */
+export function kitMove(row: KitRow, today: string): KitMoveView | null {
+  if (!row.nextAction.trim()) return null;
+  const yours = row.owner === 'Will', days = waitingDays(row.waitingSince, today);
+  return {yours, label: yours ? row.nextAction.trimEnd().endsWith('?') ? '◆ Your call' : '◆ Your move' : '○ Nothing for you right now',
+    action: row.nextAction, note: !yours && days > 0 ? `Waiting ${days} ${days === 1 ? 'day' : 'days'}` : row.moveNote || null};
 }
-export function kitWaitingChip(row: KitRow, today: string): string | null {
-  if (!row.with || !row.waitingSince || kitWorkingDays(row.waitingSince, today) < 3) return null;
-  return `${Math.max(0, dayCount(row.waitingSince, today) - 1)}d waiting`;
-}
-export function kitStepAside(row: Pick<KitRow, 'gate' | 'milestone'>): string {
+export function kitStepAside(row: Pick<KitRow, 'gate' | 'nextDate'>): string {
   if (row.gate === KIT_STEPS.length - 1) return '';
-  return row.milestone && Array.from(row.milestone).length <= 28 ? row.milestone : `${KIT_STEPS[row.gate + 1]} next`;
+  return row.nextDate || `Next: ${KIT_STEPS[row.gate + 1]!.toLowerCase()}`;
 }
 export function kitCard(row: KitRow, now: Date): KitCardView {
-  const today = ukToday(now);
-  return {id: row.id, name: row.name, series: row.series, status: kitStatus(row.status), gate: row.gate,
-    launch: row.launchLabel || kitDateLabel(row.launchTarget, today), distance: kitLaunchDistance(row.launchTarget, today),
-    stepAside: kitStepAside(row), nextAction: row.nextAction, owner: row.owner, waiting: kitWaitingChip(row, today)};
+  const today = ukToday(now), status = kitStatus(row.status, row.gate);
+  const sellout = status.kind === 'live' && row.selloutTarget && row.selloutTarget > today ? row.selloutTarget : null;
+  const target = sellout || (row.launchTarget && row.launchTarget > today ? row.launchTarget : null);
+  return {id: row.id, name: row.name, series: row.series, status, gate: row.gate,
+    launch: target ? `${sellout ? 'left on sale' : 'to launch'}: ${row.launchLabel || kitDateLabel(target, today)}` : row.launchLabel || '',
+    distance: kitLaunchDistance(target, today), stepAside: kitStepAside(row), move: kitMove(row, today)};
 }
 function foldedKit(row: KitRow, now: Date): KitFoldedView {
-  return {id: row.id, name: row.name, status: kitStatus(row.status), gate: row.gate,
+  return {id: row.id, name: row.name, status: kitStatus(row.status, row.gate), gate: row.gate,
     launchMonth: row.launchTarget ? new Intl.DateTimeFormat('en-GB', {timeZone: 'UTC', month: 'short', year: 'numeric'})
       .format(new Date(`${row.launchTarget}T12:00:00Z`)) : '', distance: kitLaunchDistance(row.launchTarget, ukToday(now))};
 }
@@ -69,7 +65,7 @@ export function homeKits(facts: KitFacts, dashboardMode: SourceMode, now: Date):
   const updated = file.updatedAt, at = updated || file.readAt!;
   const stale = updated !== null && now.getTime() - Date.parse(updated) > 36 * 60 * 60 * 1000;
   return {mode: facts.mode, ready: true,
-    summary: `${active.length} active · ${planned} planned · ${updated ? 'updated' : 'checked'} ${checkedLabel(at, ukToday(now))}`,
+    summary: `${active.length} on the go · ${planned} planned · ${updated ? 'updated' : 'checked'} ${checkedLabel(at, ukToday(now))}`,
     stale, notice: file.status === 'unavailable' ? '△ Last saved kits · source unavailable' : null,
     cards: cards.map(row => kitCard(row, now)), folded: file.rows.filter(row => !cardIds.has(row.id)).map(row => foldedKit(row, now))};
 }
@@ -84,9 +80,8 @@ export function kitSheet(facts: KitFacts, id: string, now: Date, options: {suppl
   if (!row) return null;
   const today = ukToday(now), name = row.name.trim().toLowerCase();
   return {id: row.id, name: row.name, series: row.series, mode: facts.mode, launch: row.launchLabel || kitDateLabel(row.launchTarget, today),
-    gate: row.gate, nextAction: row.nextAction, owner: row.owner, milestone: row.milestone,
-    brief: row.briefDue ? kitDateLabel(row.briefDue, today) : null,
-    waiting: row.with && row.waitingSince ? {days: Math.max(0, dayCount(row.waitingSince, today) - 1), with: row.with} : null,
+    gate: row.gate, move: kitMove(row, today), nextDate: row.nextDate || null, milestone: row.milestone,
+    waiting: row.owner !== 'Will' && row.with ? {days: row.waitingSince ? waitingDays(row.waitingSince, today) : null, with: row.with} : null,
     note: row.note, orders: facts.orders.rows.filter(order => order.kit.trim().toLowerCase() === name).map(order => kitOrder(order, now, options.suppliers)),
     ordersNotice: facts.orders.status === 'unavailable' ? '△ Last saved orders · source unavailable' : null};
 }

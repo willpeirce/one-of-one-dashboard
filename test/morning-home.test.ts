@@ -129,6 +129,11 @@ test('Home without Morning state performs one read, adds no property and retains
     // Part A: exact diff against main 188e728 adds only Kits, its stylesheet and chapter renumbering; see DECISIONS.
     // Part D: exact diff against c898723 adds only the All kits heading link and Kits account-menu link;
     // removing those links and A's additions restores main 188e728 byte for byte; see DECISIONS.
+    // Kits in plain words changes only this anchor in the empty chapter fixture.
+    // Assert its exact new markup, then restore that one literal to preserve every other pinned byte.
+    const allKits = '<a class="kits-all-link" href="/kits" data-kits-all>All kits ›</a>';
+    assert.equal(pinned.split(allKits).length, 2);
+    pinned = pinned.replace(allKits, allKits.replace('All kits ›', 'All kits'));
     assert.equal(createHash('sha256').update(pinned).digest('hex'),
       '9c0efec82583a714bf404af8dbdc44e62250a036863206b11da1167548ac82fa');
   });

@@ -56,4 +56,10 @@ test('sample Kits and Issues keep hourly stamps and UK daily dates through clock
   const afterMidnight = sampleKitFacts(new Date('2032-04-07T23:00:00Z'));
   assert.equal(beforeMidnight.kits.rows[1]!.launchTarget, '2032-06-30');
   assert.equal(afterMidnight.kits.rows[1]!.launchTarget, '2032-07-01');
+  assert.equal(beforeMidnight.kits.rows[0]!.selloutTarget, '2032-05-26');
+  assert.equal(afterMidnight.kits.rows[0]!.selloutTarget, '2032-05-27');
+  assert.equal(beforeMidnight.kits.rows[0]!.moveNote, 'Next check 14 Apr');
+  assert.equal(afterMidnight.kits.rows[0]!.moveNote, 'Next check 15 Apr');
+  assert.deepEqual(beforeMidnight.kits.rows.slice(0, 3).map(row => row.nextDate), ['Stock count 14 Apr', 'Sample due 14 Apr', 'Proof due 21 Apr']);
+  assert.deepEqual(afterMidnight.kits.rows.slice(0, 3).map(row => row.nextDate), ['Stock count 15 Apr', 'Sample due 15 Apr', 'Proof due 22 Apr']);
 });

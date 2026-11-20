@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import type { BrowserContext, Locator, Page } from 'playwright';
 import type { DashboardSnapshot } from '../src/dashboard-types.js';
 import { dashboardPage } from '../src/dashboard-view.js';
-import { homeKits } from '../src/kits/presentation.js';
+import { homeKits, kitSheet } from '../src/kits/presentation.js';
+import { kitSheetHtml } from '../src/kits/view.js';
 import { sampleKitFacts } from '../src/kits/sample.js';
 import { checkKitsBudget } from './home-compact-browser-check.js';
 
@@ -140,7 +141,16 @@ export async function checkKits(context: BrowserContext): Promise<void> {
       const boxC = cards.filter({hasText: 'Box C'});
       assert.equal(await boxC.locator('.kit-move-yours .kit-move-label').innerText(), '◆ Your move');
       assert.equal(await boxC.locator('.kit-action').innerText(), fixture.kits!.cards[2]!.move!.action);
-      assert.equal(await cards.first().locator('.kit-status').innerText(), '● On sale');
+      const boxA = cards.first();
+      assert.equal(await boxA.locator('.kit-status').innerText(), '● On sale');
+      assert.equal(await boxA.locator('.kit-launch strong').innerText(), '7 wks');
+      assert.equal(await boxA.locator('.kit-launch-caption').textContent(), 'left on sale: The first collection');
+      assert.equal(await boxA.locator('.kit-move-yours .kit-move-label').innerText(), '◆ Your call');
+      assert.equal(await boxA.locator('.kit-action').innerText(), 'Shall we keep this collection on sale for another month?');
+      assert.equal(await boxA.locator('.kit-move-note').innerText(), 'Next check 14 Apr');
+      assert.equal(await boxA.locator('.kit-next-step').innerText(), 'Stock count 14 Apr');
+      assert.equal(await boxB.locator('.kit-next-step').innerText(), 'Sample due 14 Apr');
+      assert.equal(await boxC.locator('.kit-next-step').innerText(), 'Proof due 21 Apr');
       await fold.click();
       assert.equal(await fold.getAttribute('aria-expanded'), 'true');
       assert.equal(await fold.innerText(), 'Hide planned');
@@ -168,8 +178,16 @@ export async function checkKits(context: BrowserContext): Promise<void> {
       assert.equal(await page.locator('#sheet .kit-move').evaluate(element =>
         !!(element.compareDocumentPosition(document.querySelector('#sheet .kit-checklist')!) & Node.DOCUMENT_POSITION_FOLLOWING)), true,
       'The shared move box comes before the sheet checklist');
-      if (process.env.PULSE_SCREENSHOT_DIR && (width === 390 || width === 1280))
-        await page.locator('#sheet').screenshot({path: `${process.env.PULSE_SCREENSHOT_DIR}/kits-sheet-${width}.png`});
+      if (process.env.PULSE_SCREENSHOT_DIR && (width === 390 || width === 1280)) {
+        // The real route was checked above. Only the capture uses the same invented clock as Home,
+        // including its order dates; restore the received markup before checking its controls.
+        const extra = page.locator('#sh-extra'), received = await extra.innerHTML();
+        try {
+          const fixed = kitSheetHtml(kitSheet(sampleKitFacts(now), 'box-b', now)!);
+          await extra.evaluate((element, html) => {element.innerHTML = html;}, fixed);
+          await page.locator('#sheet').screenshot({path: `${process.env.PULSE_SCREENSHOT_DIR}/kits-sheet-${width}.png`});
+        } finally {await extra.evaluate((element, html) => {element.innerHTML = html;}, received);}
+      }
       await page.locator('[data-kit-orders-toggle]').click();
       assert.equal(await page.locator('[data-kit-order]:visible').count(), 5);
       assert.equal(await page.locator('[data-kit-order-count]').innerText(), 'On order · 5 of 5');

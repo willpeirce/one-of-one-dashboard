@@ -2,11 +2,14 @@ import assert from 'node:assert/strict';
 import type { BrowserContext, Locator, Page } from 'playwright';
 import type { DashboardSnapshot } from '../src/dashboard-types.js';
 import { dashboardPage } from '../src/dashboard-view.js';
-import { homeKits } from '../src/kits/presentation.js';
+import { homeKits, kitSheet } from '../src/kits/presentation.js';
+import { kitSheetHtml } from '../src/kits/view.js';
 import { sampleKitFacts } from '../src/kits/sample.js';
 import { checkKitsBudget } from './home-compact-browser-check.js';
 
 const now = new Date('2032-04-07T12:00:00Z');
+const cardIds = ['box-a', 'box-b', 'box-c'];
+const foldedIds = ['box-d', 'box-e', 'box-f'];
 
 async function targets(scope: Locator): Promise<void> {
   for (const control of await scope.locator('button,a,summary').all()) {
@@ -19,6 +22,63 @@ async function targets(scope: Locator): Promise<void> {
 async function noOverflow(page: Page, width: number): Promise<void> {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true,
     `Kits has no sideways page scroll at ${width}px`);
+}
+
+async function plainHeading(page: Page): Promise<void> {
+  const heading = page.locator('#kits .kits-heading');
+  const summary = heading.locator('.chapter-copy .kits-summary'), link = heading.locator('[data-kits-all]');
+  assert.equal(await summary.count(), 1, 'The Kits summary sits inside the title copy, as Reviews does');
+  assert.match(await summary.innerText(), /^3 on the go · 3 planned · updated /);
+  assert.equal(await link.innerText(), 'All kits ›');
+  const geometry = await page.evaluate(() => {
+    const heading = document.querySelector('#kits .kits-heading')!.getBoundingClientRect();
+    const title = document.querySelector('#kits .chapter-title')!.getBoundingClientRect();
+    const summary = document.querySelector('#kits .kits-summary')!.getBoundingClientRect();
+    const link = document.querySelector('#kits [data-kits-all]')!.getBoundingClientRect();
+    const reviews = document.querySelector('#reviews .chapter-heading')!.getBoundingClientRect();
+    return {title: {x: title.x, bottom: title.bottom}, summary: {x: summary.x, top: summary.top},
+      heading: {top: heading.top, right: heading.right}, link: {top: link.top, right: link.right, x: link.x},
+      kitsGap: document.querySelector('#kits .kit-cards')!.getBoundingClientRect().top - heading.bottom,
+      reviewsGap: document.querySelector('#reviews .rvlist')!.getBoundingClientRect().top - reviews.bottom};
+  });
+  assert.ok(geometry.summary.top >= geometry.title.bottom, 'The summary has its own line below Kits');
+  assert.ok(Math.abs(geometry.summary.x - geometry.title.x) < 1, 'The summary aligns with the title');
+  assert.ok(geometry.link.x > geometry.title.x && Math.abs(geometry.link.right - geometry.heading.right) < 1,
+    'All kits is at the right of the heading');
+  assert.ok(Math.abs(geometry.link.top - geometry.heading.top) < 1, 'All kits remains at the top right');
+  assert.ok(geometry.kitsGap > 0 && Math.abs(geometry.kitsGap - geometry.reviewsGap) < 1,
+    'The gap below Kits matches the gap below the Reviews heading');
+}
+
+/** Cards retain the full move sentence; captions wrap on word boundaries within three lines. */
+export async function checkPlainKitCards(cards: Locator): Promise<void> {
+  for (const card of await cards.all()) {
+    assert.equal(await card.locator('.kit-waiting,.kit-next-move').count(), 0, 'The old waiting chip and one-line move are gone');
+    for (const action of await card.locator('.kit-action').all()) {
+      const measure = await action.evaluate(element => {
+        const style = getComputedStyle(element);
+        return {whiteSpace: style.whiteSpace, clamp: style.webkitLineClamp,
+          height: element.clientHeight, scrollHeight: element.scrollHeight,
+          width: element.clientWidth, scrollWidth: element.scrollWidth};
+      });
+      assert.equal(measure.whiteSpace, 'normal', 'Move sentences wrap normally');
+      assert.equal(measure.clamp, 'none', 'Move sentences have no line clamp');
+      assert.ok(measure.scrollHeight <= measure.height + 1 && measure.scrollWidth <= measure.width + 1,
+        'The whole move sentence fits its visible box');
+    }
+    const caption = card.locator('.kit-launch > span');
+    if (await caption.count()) {
+      const measure = await caption.evaluate(element => {
+        const style = getComputedStyle(element), box = element.getBoundingClientRect();
+        return {height: box.height, line: Number.parseFloat(style.lineHeight),
+          whiteSpace: style.whiteSpace, wordBreak: style.wordBreak, hyphens: style.hyphens};
+      });
+      assert.ok(measure.height <= 3 * measure.line + 1, 'Launch captions use no more than three lines');
+      assert.equal(measure.whiteSpace, 'normal', 'Launch captions wrap rather than staying on one line');
+      assert.equal(measure.wordBreak, 'normal', 'Launch captions do not break words in the middle');
+      assert.equal(measure.hyphens, 'none', 'Launch captions do not insert mid-word hyphens');
+    }
+  }
 }
 
 /** Invented fixed-clock cards; the real signed-in detail route is exercised when a sheet opens. */
@@ -43,6 +103,7 @@ export async function checkKits(context: BrowserContext): Promise<void> {
       await page.evaluate(async () => { await document.fonts.ready; });
       const kits = page.locator('#kits'), cards = kits.locator('.kit-card'), fold = kits.locator('[data-kits-fold]');
       assert.equal(await cards.count(), 3);
+      assert.deepEqual(await cards.evaluateAll(rows => rows.map(row => row.getAttribute('data-kit-open'))), cardIds);
       assert.match(await kits.innerText(), /Sample data/i);
       assert.equal(await fold.getAttribute('aria-expanded'), 'false');
       assert.equal(await fold.innerText(), '+3 planned · show');
@@ -53,9 +114,11 @@ export async function checkKits(context: BrowserContext): Promise<void> {
       assert.equal(await kits.innerHTML(), expected);
       if (width === 390 || width === 1280) {
         await checkKitsBudget(page, width);
+        await plainHeading(page);
         if (process.env.PULSE_SCREENSHOT_DIR) await kits.screenshot({path: `${process.env.PULSE_SCREENSHOT_DIR}/kits-${width}.png`});
       }
       await targets(kits); await noOverflow(page, width);
+      await checkPlainKitCards(cards);
       const boxes = await cards.evaluateAll(elements => elements.map(element => {
         const b = element.getBoundingClientRect(); return {x: b.x, y: b.y, width: b.width, bottom: b.bottom};
       }));
@@ -70,12 +133,29 @@ export async function checkKits(context: BrowserContext): Promise<void> {
       const boxB = cards.filter({hasText: 'Box B'});
       assert.equal(await boxB.locator('[data-kit-track]').getAttribute('role'), 'img');
       assert.equal(await boxB.locator('[data-kit-track]').getAttribute('aria-label'),
-        'Step 3 of 7, Compliance. Done: Theme, Design. To come: Manufacture, Inbound, Launch, Review.');
-      assert.match(await boxB.innerText(), /△ 6d waiting/);
+        'Stage 3 of 7, Safety tests. Done: Choosing the theme, Being designed. To come: Being made, Shipping to us, On sale, Sold out.');
+      assert.equal(await boxB.locator('.kit-status').innerText(), '◆ Safety tests');
+      assert.equal(await boxB.locator('.kit-move-label').innerText(), '○ Nothing for you right now');
+      assert.equal(await boxB.locator('.kit-move-note').innerText(), 'Waiting 6 days');
+      assert.equal(await boxB.locator('.kit-move-yours').count(), 0);
+      const boxC = cards.filter({hasText: 'Box C'});
+      assert.equal(await boxC.locator('.kit-move-yours .kit-move-label').innerText(), '◆ Your move');
+      assert.equal(await boxC.locator('.kit-action').innerText(), fixture.kits!.cards[2]!.move!.action);
+      const boxA = cards.first();
+      assert.equal(await boxA.locator('.kit-status').innerText(), '● On sale');
+      assert.equal(await boxA.locator('.kit-launch strong').innerText(), '7 wks');
+      assert.equal(await boxA.locator('.kit-launch-caption').textContent(), 'left on sale: The first collection');
+      assert.equal(await boxA.locator('.kit-move-yours .kit-move-label').innerText(), '◆ Your call');
+      assert.equal(await boxA.locator('.kit-action').innerText(), 'Shall we keep this collection on sale for another month?');
+      assert.equal(await boxA.locator('.kit-move-note').innerText(), 'Next check 14 Apr');
+      assert.equal(await boxA.locator('.kit-next-step').innerText(), 'Stock count 14 Apr');
+      assert.equal(await boxB.locator('.kit-next-step').innerText(), 'Sample due 14 Apr');
+      assert.equal(await boxC.locator('.kit-next-step').innerText(), 'Proof due 21 Apr');
       await fold.click();
       assert.equal(await fold.getAttribute('aria-expanded'), 'true');
       assert.equal(await fold.innerText(), 'Hide planned');
       assert.equal(await kits.locator('.kit-folded-row:visible').count(), 3);
+      assert.deepEqual(await kits.locator('.kit-folded-row').evaluateAll(rows => rows.map(row => row.getAttribute('data-kit-open'))), foldedIds);
       await targets(kits); await noOverflow(page, width);
       if (width === 1280) {
         const folded = await kits.locator('.kit-folded-row').evaluateAll(rows => rows.map(row => ({x: row.getBoundingClientRect().x, y: row.getBoundingClientRect().y})));
@@ -92,6 +172,22 @@ export async function checkKits(context: BrowserContext): Promise<void> {
       assert.equal(await page.locator('[data-kit-order]:visible').count(), 3);
       assert.equal(await page.locator('[data-kit-orders-toggle]').innerText(), '+2 more');
       assert.doesNotMatch(await page.locator('#sh-extra [data-kit-sheet]').innerText(), /a supplier/);
+      assert.equal(await page.locator('#sheet .kit-move-label').innerText(), '○ Nothing for you right now');
+      assert.equal(await page.locator('#sheet .kit-move-note').innerText(), 'Waiting 6 days');
+      assert.match(await page.locator('#sheet .kit-checklist').innerText(), /Safety tests now/);
+      assert.equal(await page.locator('#sheet .kit-move').evaluate(element =>
+        !!(element.compareDocumentPosition(document.querySelector('#sheet .kit-checklist')!) & Node.DOCUMENT_POSITION_FOLLOWING)), true,
+      'The shared move box comes before the sheet checklist');
+      if (process.env.PULSE_SCREENSHOT_DIR && (width === 390 || width === 1280)) {
+        // The real route was checked above. Only the capture uses the same invented clock as Home,
+        // including its order dates; restore the received markup before checking its controls.
+        const extra = page.locator('#sh-extra'), received = await extra.innerHTML();
+        try {
+          const fixed = kitSheetHtml(kitSheet(sampleKitFacts(now), 'box-b', now)!);
+          await extra.evaluate((element, html) => {element.innerHTML = html;}, fixed);
+          await page.locator('#sheet').screenshot({path: `${process.env.PULSE_SCREENSHOT_DIR}/kits-sheet-${width}.png`});
+        } finally {await extra.evaluate((element, html) => {element.innerHTML = html;}, received);}
+      }
       await page.locator('[data-kit-orders-toggle]').click();
       assert.equal(await page.locator('[data-kit-order]:visible').count(), 5);
       assert.equal(await page.locator('[data-kit-order-count]').innerText(), 'On order · 5 of 5');
@@ -109,6 +205,37 @@ export async function checkKits(context: BrowserContext): Promise<void> {
       assert.equal(await cards.first().locator('.kit-track-current').evaluate(el => getComputedStyle(el).animationName), 'none');
       await page.emulateMedia({reducedMotion: 'no-preference'});
     }
+    // Exercise a full bounded sentence separately from the ordinary sample and its height budget.
+    const originalKits = fixture.kits, longFacts = sampleKitFacts(now);
+    const longAction = 'Read the invented proof in full, check the border on every panel, and choose whether the kit maker should use the first design or prepare a second sample before the next production step.';
+    longFacts.kits.rows[2]!.nextAction = longAction;
+    const longCaptionWord = 'Extraordinarycollection'.repeat(2);
+    longFacts.kits.rows[0]!.launchLabel = longCaptionWord;
+    fixture.kits = homeKits(longFacts, 'sample', now);
+    await page.emulateMedia({reducedMotion: 'reduce'});
+    for (const width of [390, 1280]) {
+      await page.setViewportSize({width, height: 960}); await replay();
+      const cards = page.locator('#kits .kit-card');
+      const action = cards.filter({hasText: 'Box C'}).locator('.kit-action');
+      assert.equal(await action.innerText(), longAction, 'Every word of the move remains visible');
+      assert.ok(await action.evaluate(element => element.getBoundingClientRect().height > Number.parseFloat(getComputedStyle(element).lineHeight)),
+        'A long move actually wraps onto more than one line');
+      await checkPlainKitCards(cards); await noOverflow(page, width);
+      const caption = cards.first().locator('.kit-launch-caption');
+      const word = caption.locator('.kit-caption-word').filter({hasText: longCaptionWord});
+      assert.equal(await caption.getAttribute('title'), fixture.kits!.cards[0]!.launch,
+        'The complete caption remains available when a word is omitted');
+      assert.ok((await word.boundingBox())!.width > (await caption.boundingBox())!.width,
+        'The regression word is wider than the caption');
+      const painted = await caption.screenshot({animations: 'disabled'});
+      await word.evaluate(element => { (element as HTMLElement).style.opacity = '0'; });
+      assert.equal(await word.evaluate(element => getComputedStyle(element).opacity), '0');
+      assert.deepEqual(await caption.screenshot({animations: 'disabled'}), painted,
+        'Hiding the oversized word changes no pixels: it was wholly elided, never partly painted');
+      await word.evaluate(element => { (element as HTMLElement).style.removeProperty('opacity'); });
+    }
+    await page.emulateMedia({reducedMotion: 'no-preference'});
+    fixture.kits = originalKits; await replay();
     // A response received after closing the sheet must not replace a newly opened ordinary detail.
     const boxB = page.locator('#kits .kit-card').filter({hasText: 'Box B'}), id = await boxB.getAttribute('data-kit-open');
     assert.ok(id);

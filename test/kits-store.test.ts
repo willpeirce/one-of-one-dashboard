@@ -6,7 +6,7 @@ import type {Database} from '../src/db.js';
 import {HQClient, HQReadError, type HQTarget} from '../src/github-hq/client.js';
 import {beginHQRead, failHQRead, readHQSync, saveHQKits, saveHQKitsMissing, touchHQRead} from '../src/github-hq/store.js';
 import {HQWorker, HQ_HOURLY_MS} from '../src/github-hq/worker.js';
-import {KIT_BODY_LIMIT, parseKits, parseKitOrders} from '../src/kits/model.js';
+import {KIT_BODY_LIMIT, KIT_PARSER_VERSION, parseKits, parseKitOrders} from '../src/kits/model.js';
 import {readKitFacts} from '../src/kits/store.js';
 import {readSourceHealth, syncSourceHealth} from '../src/sources.js';
 import {createTestDatabase} from './helpers/database.js';
@@ -79,6 +79,41 @@ test('bad kit JSON retains good rows, missing clears only that file and never cl
   await assert.rejects(touchHQRead(db, {kind: 'kits'}, null, later), (e: unknown) => e instanceof HQReadError && e.code === 'invalid');
   await failHQRead(db, {kind: 'kits'}, new HQReadError('invalid', 304), later);
   await assert.rejects(touchHQRead(db, {kind: 'kits'}, null, later), (e: unknown) => e instanceof HQReadError && e.code === 'invalid');
+});
+
+test('the existing kit table retains legacy fields without repurposing them for optional presentation fields', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const parsed = parseKits(JSON.stringify([{id: 'box-a', name: 'Box A', gate: 2, launch_target: '2032-06-12',
+    next_action: 'Check the invented proof', note: 'Keep this original note', milestone: 'Review the proof',
+    sellout_target: '2032-09-14', next_date: 'Order due 3 Mar', move_note: 'Next check Tue 9 Mar'}]));
+  await saveHQKits(db, 'kits', parsed, '"invented-kits"', now);
+  const row = (await readKitFacts(db, 'live', now)).kits.rows[0]!;
+  assert.equal(row.launchTarget, '2032-06-12'); assert.equal(row.nextAction, 'Check the invented proof');
+  assert.equal(row.note, 'Keep this original note'); assert.equal(row.milestone, 'Review the proof');
+  // The no-migration build can parse these fields, but the existing columns cannot retain them.
+  assert.equal(row.selloutTarget ?? null, null); assert.equal(row.nextDate ?? null, null); assert.equal(row.moveNote ?? null, null);
+  assert.equal((await db.query(`SELECT 1 FROM information_schema.columns WHERE table_schema='pulse'
+    AND table_name='kit_board_kits' AND column_name IN ('sellout_target','next_date','move_note')`)).rowCount, 0);
+});
+
+test('the newer kit parser re-reads a cached earlier version without its old ETag', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  await saveHQKits(db, 'kits', parseKits(kits), '"invented-kits"', now);
+  await db.query("UPDATE pulse.github_hq_reads SET parser_version=$1 WHERE target_key='kits'", [KIT_PARSER_VERSION - 1]);
+  const later = new Date(+now + 60_000), seen: (string | null)[] = [];
+  const worker = new HQWorker(db, env(), {...quiet, clock: () => later, fetch: async (input, init) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith('/kits.json')) {
+      seen.push(new Headers(init?.headers).get('if-none-match'));
+      return new Response(kits, {headers: {etag: '"invented-kits"'}});
+    }
+    if (url.pathname.endsWith('/orders.json')) return new Response(orders);
+    return other(url);
+  }}); t.after(() => worker.stop());
+  await worker.tick();
+  assert.deepEqual(seen, [null]);
+  assert.equal((await sync(db, 'kits')).parserVersion, KIT_PARSER_VERSION);
+  assert.equal((await sync(db, 'kits')).lastSuccessAt, later.toISOString());
 });
 
 test('two kit files use hourly conditional GETs, share one run and keep healthy missing files', async t => {

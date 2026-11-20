@@ -8,6 +8,7 @@ import type {KitCardView} from '../src/kits/presentation-types.js';
 import {sampleKitFacts} from '../src/kits/sample.js';
 import {kitCardHtml} from '../src/kits/view.js';
 import {tapArea} from './tap-area.js';
+import {checkPlainKitCards} from './browser-kits.js';
 
 const now = new Date('2032-12-07T12:00:00Z');
 const ids = ['box-a', 'box-b', 'box-c', 'box-d', 'box-e', 'box-f'];
@@ -50,6 +51,18 @@ export async function checkKitsPage(context: BrowserContext): Promise<void> {
       assert.deepEqual(await cards.evaluateAll(rows => rows.map(row => row.getAttribute('data-kit-open'))), ids,
         'Every kit, including Home’s folded rows, is a card in file order');
       assert.equal(await page.locator('[data-kits-fold]').count(), 0);
+      await checkPlainKitCards(cards);
+      const boxA = cards.first(), call = homeCards.find(card => card.id === 'box-a')!;
+      assert.equal(await boxA.locator('.kit-status').innerText(), '● On sale');
+      assert.equal(await boxA.locator('.kit-launch strong').innerText(), '7 wks');
+      assert.equal(await boxA.locator('.kit-launch-caption').textContent(), 'left on sale: The first collection');
+      assert.equal(await boxA.locator('.kit-move-yours .kit-move-label').innerText(), '◆ Your call');
+      assert.equal(await boxA.locator('.kit-action').innerText(), 'Shall we keep this collection on sale for another month?');
+      assert.equal(await boxA.locator('.kit-move-note').innerText(), call.move!.note);
+      assert.match(call.move!.note!, /^Next check \d{1,2} [A-Z][a-z]{2}$/);
+      assert.equal(await cards.filter({hasText: 'Box B'}).locator('.kit-move-label').innerText(), '○ Nothing for you right now');
+      assert.equal(await cards.filter({hasText: 'Box B'}).locator('.kit-move-note').innerText(), 'Waiting 6 days');
+      assert.equal(await cards.filter({hasText: 'Box C'}).locator('.kit-move-yours .kit-move-label').innerText(), '◆ Your move');
       for (const card of homeCards) {
         const expected: string = await page.evaluate(html => new DOMParser().parseFromString(html, 'text/html').body.firstElementChild!.outerHTML, kitCardHtml(card));
         assert.equal(await page.locator(`[data-kits-page-cards] [data-kit-open="${card.id}"]`).evaluate(element => element.outerHTML), expected,
@@ -83,6 +96,9 @@ export async function checkKitsPage(context: BrowserContext): Promise<void> {
       await page.locator('#sheet[open] [data-kit-sheet="box-b"]').waitFor();
       assert.equal(await page.locator('#sh-title').innerText(), 'Box B');
       assert.match(await page.locator('#sh-extra [data-kit-sheet]').innerText(), /a supplier/);
+      assert.equal(await page.locator('#sheet .kit-move-label').innerText(), '○ Nothing for you right now');
+      assert.equal(await page.locator('#sheet .kit-move-note').innerText(), 'Waiting 6 days');
+      assert.match(await page.locator('#sheet .kit-checklist').innerText(), /Safety tests now/);
       assert.equal(await page.locator('#sheet [data-kit-order]:visible').count(), 3);
       await page.locator('[data-kit-orders-toggle]').click();
       assert.equal(await page.locator('#sheet [data-kit-order]:visible').count(), 5);
@@ -131,7 +147,7 @@ export async function checkKitsPage(context: BrowserContext): Promise<void> {
     await page.unroute('**/kits');
     await page.goto('/'); await page.locator('html[data-dashboard-ready="true"]').waitFor();
     const headingLink = page.locator('#kits .kits-heading a[data-kits-all][href="/kits"]');
-    assert.equal(await headingLink.innerText(), 'All kits');
+    assert.equal(await headingLink.innerText(), 'All kits ›');
     assert.equal(await page.locator('header.top a[href="/kits"]').evaluateAll(rows => rows.filter(row => !row.closest('#account-menu')).length), 0,
       'Kits adds no link or pill to the Home top bar');
     await headingLink.click(); await page.waitForURL('**/kits');

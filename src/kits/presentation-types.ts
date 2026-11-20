@@ -1,11 +1,12 @@
 import type {SourceMode} from '../sources.js';
 
-export const KIT_STEPS = ['Theme', 'Design', 'Compliance', 'Manufacture', 'Inbound', 'Launch', 'Review'] as const;
+export const KIT_STEPS = ['Choosing the theme', 'Being designed', 'Safety tests', 'Being made', 'Shipping to us', 'On sale', 'Sold out'] as const;
 export type KitStatusKind = 'live' | 'flight' | 'planned' | 'proposed' | 'optional' | 'other';
 export interface KitStatusView {kind: KitStatusKind; label: string}
+export interface KitMoveView {yours: boolean; label: string; action: string; note: string | null}
 export interface KitCardView {
   id: string; name: string; series: string; status: KitStatusView; gate: number;
-  launch: string; distance: string; stepAside: string; nextAction: string; owner: string; waiting: string | null;
+  launch: string; distance: string; stepAside: string; move: KitMoveView | null;
 }
 export interface KitFoldedView {
   id: string; name: string; status: KitStatusView; gate: number; launchMonth: string; distance: string;
@@ -20,6 +21,6 @@ export interface KitSheetOrder {
 }
 export interface KitSheet {
   id: string; name: string; series: string; mode: SourceMode; launch: string; gate: number;
-  nextAction: string; owner: string; milestone: string | null; brief: string | null;
-  waiting: {days: number; with: string} | null; note: string; orders: KitSheetOrder[]; ordersNotice: string | null;
+  move: KitMoveView | null; nextDate: string | null; milestone: string | null;
+  waiting: {days: number | null; with: string} | null; note: string; orders: KitSheetOrder[]; ordersNotice: string | null;
 }

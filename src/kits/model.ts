@@ -4,11 +4,12 @@ import type {SourceMode} from '../sources.js';
 export const KIT_BODY_LIMIT = 256 * 1024;
 export const KIT_ROW_LIMIT = 40;
 export const KIT_ORDER_LIMIT = 200;
-export const KIT_PARSER_VERSION = 1;
+export const KIT_PARSER_VERSION = 2;
 export type KitFileKind = 'kits' | 'kit-orders';
 export interface KitRow {
   id: string; name: string; series: string; status: string; gate: number;
   launchTarget: string | null; launchLabel: string | null; briefDue: string | null;
+  selloutTarget?: string | null; nextDate?: string | null; moveNote?: string | null;
   milestone: string | null; nextAction: string; owner: string; with: string;
   waitingSince: string | null; note: string;
 }
@@ -54,6 +55,7 @@ function kitRow(value: unknown): KitRow | null {
   if (!id || !name || !Number.isInteger(value.gate) || (value.gate as number) < 0 || (value.gate as number) > 6) return null;
   return {id, name, series: kitText(value.series, 80), status: kitText(value.status, 30), gate: value.gate as number,
     launchTarget: date(value.launch_target), launchLabel: nullableText(value.launch_label, 60), briefDue: date(value.brief_due),
+    selloutTarget: date(value.sellout_target), nextDate: nullableText(value.next_date, 28), moveNote: nullableText(value.move_note, 60),
     milestone: nullableText(value.milestone, 120), nextAction: kitText(value.next_action, 200), owner: kitText(value.owner, 20),
     with: kitText(value.with, 120), waitingSince: date(value.waiting_since), note: kitText(value.note, 300)};
 }

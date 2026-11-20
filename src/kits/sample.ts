@@ -5,15 +5,19 @@ import {parseKits, parseKitOrders, type KitFacts} from './model.js';
 export function sampleKitFacts(now: Date): KitFacts {
   // A rebuild is not a new sample read: unchanged SSE snapshots must stay equal within the hour.
   const today = ukToday(now), readAt = new Date(Math.floor(now.getTime() / 3_600_000) * 3_600_000).toISOString();
+  const dateLabel = (offset: number): string => new Intl.DateTimeFormat('en-GB', {timeZone: 'UTC', day: 'numeric', month: 'short'})
+    .format(new Date(`${addDays(today, offset)}T12:00:00Z`));
   const kits = parseKits(JSON.stringify({updated: readAt, rows: [
     {id: 'box-a', name: 'Box A', series: 'The first collection', status: 'live', gate: 5,
-      launch_target: addDays(today, -21), launch_label: 'Now available', next_action: 'Review the first month', owner: 'Will'},
+      launch_target: addDays(today, -21), sellout_target: addDays(today, 49), launch_label: 'The first collection',
+      next_action: 'Shall we keep this collection on sale for another month?', owner: 'Will',
+      next_date: `Stock count ${dateLabel(7)}`, move_note: `Next check ${dateLabel(7)}`},
     {id: 'box-b', name: 'Box B', series: 'The second collection', status: 'in flight', gate: 2,
-      launch_target: addDays(today, 84), launch_label: 'Spring launch', brief_due: addDays(today, 7), milestone: 'Compliance check',
-      next_action: 'Approve the printed sample', owner: 'the kit maker', with: 'the kit maker', waiting_since: addDays(today, -6),
+      launch_target: addDays(today, 84), launch_label: 'Spring launch', brief_due: addDays(today, 7), milestone: 'Safety tests start after the sample arrives.',
+      next_date: `Sample due ${dateLabel(7)}`, next_action: 'The kit maker is sending the printed sample for safety tests.', owner: 'the kit maker', with: 'the kit maker', waiting_since: addDays(today, -6),
       note: 'An invented sample kit. The full print proof is the next checkpoint.'},
     {id: 'box-c', name: 'Box C', series: 'A new collection', status: 'in flight', gate: 1,
-      launch_target: addDays(today, 112), milestone: 'Choose the design', next_action: 'Choose the artwork for the next proof', owner: 'Will'},
+      launch_target: addDays(today, 112), milestone: 'Choose the design', next_action: 'Choose the artwork for the next printed proof.', owner: 'Will', next_date: `Proof due ${dateLabel(14)}`},
     {id: 'box-d', name: 'Box D', series: 'A later collection', status: 'planned', gate: 0,
       launch_target: addDays(today, 168), next_action: 'Write the first brief', owner: 'Will'},
     {id: 'box-e', name: 'Box E', series: 'A possible collection', status: 'proposed', gate: 0,

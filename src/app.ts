@@ -92,6 +92,7 @@ import {buildIssueCosts} from './issues/costs.js';
 import {sampleIssueCosts} from './issues/costs-sample.js';
 import {issuesSectionHtml} from './issues/view.js';
 import {registerIssuesRoutes} from './issues/routes.js';
+import {registerCountdown} from './countdown/routes.js';
 
 declare module 'fastify' {
   interface FastifyInstance { startBackgroundWork(): Promise<void> }
@@ -506,6 +507,8 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   app.get('/sw.js', async (_request, reply) => reply.header('Cache-Control', 'no-store').type('text/javascript; charset=utf-8').send(
     await readFile(new URL('../dist/public/sw.js', import.meta.url)),
   ));
+  // Public by design: an email image anyone may load, with no session check and no cookie.
+  registerCountdown(app, localNow);
   registerTicker(app, db, auth, shopify.mode, localNow);
   auth.registerRoutes(app);
   const cleanup = setInterval(() => { void auth.cleanup().catch(() => {}); }, 60 * 60 * 1000);

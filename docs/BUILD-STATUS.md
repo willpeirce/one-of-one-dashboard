@@ -4,6 +4,7 @@ Updated in every pull request.
 
 | Stage | What | Code | Keys in Replit | Live check ("Done when") |
 |---|---|---|---|---|
+| Side feature: email countdown · 20 Nov (not a numbered stage) | Public `GET /e/bf26-countdown.gif?m=uk\|us` for the Black Friday email: live 60-second countdown to Fri 27 Nov 06:00 UK, Apple Mail still, "open" still after the deadline | built on `bf26-email-countdown` from main `9215fef`; own GIF encoder and committed glyph masks; no migration, Setting, dependency, source read or outbound call | none | After merge and Republish: open the live URL in a browser (UK and US) and in one test send to Gmail and Apple Mail before the real send |
 | Kits in plain words · C | Invented call, move, waiting and sell-out examples; fixed-clock phone/desktop screenshots and records | built on `kits-plain` in PR #58; no sample/live mixing; existing Home hash and non-Kits budgets retained | none | The three optional fields work in parser/sample projections but await separately authorized live storage; no deployment is performed |
 | Kits in plain words · B | Plain stages, launch captions, full move boxes, ordered sheet detail and a summary below the heading | built on `kits-plain`; one shared card/move/sheet path on Home and Kits; only the Kits height allowance changes | none | Existing stored rows use launch and next-stage fallbacks; the new optional live fields remain subject to A's storage gap |
 | Kits in plain words · A | Bounded optional sell-out date, next dated line and move note parsing | built on `kits-plain` from main `7b0b909`; parser version two; legacy rows remain valid | none | Not done: live persistence of the three fields needs new dedicated columns, forbidden by this task's no-migration rule; existing stored fields remain intact |
@@ -186,7 +187,22 @@ Branch **home-handover-count**. Will asked for one number on Home: how many tick
 
 No migration, Setting, dependency, source read or outbound call; the Gorgias worker and GET-only client are untouched. Home fold budgets are unchanged (not raised); the Home markup pin is re-taken for the one added line. Validation: see DECISIONS, 18 Nov (Home handover count).
 
+## Side feature: Email countdown GIF · 20 Nov
+
+Branch **bf26-email-countdown**. Not a numbered stage: a small public image for the Black Friday 2026 email, chosen by Will on 20 Nov. It sits in the email between the hero picture and the slab picture.
+
+1. **Route**: `GET /e/bf26-countdown.gif?m=uk|us` (default `uk`). Public by design: no session check, no cookie, nothing stored, nothing logged. Headers: `image/gif`, `Cache-Control: no-store, no-cache, must-revalidate, max-age=0`, `Expires: 0`.
+2. **Live**: "YOUR HEAD START ENDS IN" over `HH : MM : SS` (hours run to three digits days ahead) with HRS MIN SEC under the pairs. 60 frames, one a second from the request time, plays once (no loop extension); holds 00:00:00 if zero falls inside the minute.
+3. **Deadline**: Fri 27 Nov 2026 06:00 UK = 01:00 New York, Unix 1795759200, one constant for both markets. At and after it every client gets a still "BLACK FRIDAY IS OPEN".
+4. **Apple Mail**: Mail Privacy Protection prefetches and caches images, so an address in 17.0.0.0/8 (first X-Forwarded-For entry, else the socket) gets a still "YOUR HEAD START ENDS / FRIDAY 6AM" (`uk`) or "FRIDAY 1AM ET" (`us`). Gmail's proxy (user agent `GoogleImageProxy`) always gets the live timer.
+5. **Look**: 1200 x 280 (2x of 600), flat `#1a1a1d` edge to edge, Inter 700 eyebrow `#a9a9b1`, Anton digits `#52C5D1`, dimmer blue colons, Inter 700 labels `#85858d`.
+6. **Cost**: one render per variant per whole second (about 30-40 ms for the live minute), cached in a bounded in-memory map of eight; a burst of opens at send time costs one render a second. Live GIF about 59 KB, stills about 11-12 KB.
+
+No migration, Setting, dependency, secret, source read or outbound call. Sample and live behave the same (the image uses no source data). Validation: see DECISIONS, 20 Nov (Email countdown GIF).
+
 ## Next step
+
+**Email countdown GIF** is on `bf26-email-countdown`, from main `9215fef`, in its own pull request. After review, merge and Republish, the image is at `https://one-of-one-dashboard.replit.app/e/bf26-countdown.gif?m=uk` (and `?m=us`). Check it live, then in one test send to Gmail and to Apple Mail, before the real send. Will adds no key or Settings value. Kits in plain words (PR #58) is merged in that main.
 
 **Kits in plain words** is on `kits-plain`, from main `7b0b909`, in [PR #58](https://github.com/willpeirce/one-of-one-dashboard/pull/58). Three separately checked parts cover optional parsing, plain cards and sheets, and invented examples/screenshots/records. Only Kits changes on Home; no migration, Settings value, dependency, secret or source call is added. After review and merge, the maintainer uses the existing deployment procedure. The owner adds no key or Settings value.
 

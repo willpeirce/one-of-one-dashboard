@@ -66,6 +66,18 @@ Cards use plain stage names, show the full move sentence, and distinguish **Your
 
 **All kits** in the chapter heading and **Kits** in the account menu open `/kits`. It uses the same cards and sheets, shows every kit, and adds supplier names to its order details. The launch line runs from this UK month to the last target month; it scrolls inside its own box on a phone, with every date also listed in text. Very long ranges retain their dates while spacing out tick labels. The page groups orders in kit-file order, preserving order-file rows and putting unmatched orders under **Other**. Home's sheets still omit suppliers.
 
+## Email countdown (Black Friday 2026)
+
+`GET /e/bf26-countdown.gif?m=uk|us` is a public image for the Black Friday email: no sign-in, no cookie, nothing stored or logged. It counts down to Fri 27 Nov 2026 06:00 UK (01:00 New York) as a 60-frame, play-once GIF drawn at 1200 x 280 on the email's `#1a1a1d`; at and after the deadline it is a still "BLACK FRIDAY IS OPEN". Apple Mail's prefetching proxy (17.0.0.0/8) gets a still "YOUR HEAD START ENDS FRIDAY 6AM" (`m=uk`) or "FRIDAY 1AM ET" (`m=us`). Code: `src/countdown/` (own GIF encoder, no new dependency).
+
+The text is drawn from pre-rendered masks in `src/countdown/glyphs.generated.ts`. To change a word or size, edit `src/countdown/glyph-specs.ts` and regenerate (needs network for Google Fonts and a Chromium):
+
+```sh
+npm run countdown:glyphs
+# or with an installed Chrome:
+PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" npm run countdown:glyphs
+```
+
 ## Waiting on others
 
 Signed-in **Handover → Waiting on others** reads `ops/waiting-on/latest.md` from the configured HQ repository's `main` branch using the existing optional `GITHUB_HQ_TOKEN`. After migration **073**, the existing background worker checks it hourly and reuses ETags. A missing file says **Not set up yet** and does not fail source health. Failed reads retain the last good rows with a source warning. This app does not create or edit the routine or the file.

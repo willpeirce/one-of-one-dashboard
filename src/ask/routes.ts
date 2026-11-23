@@ -8,7 +8,7 @@ import { askQuestion, parseAskQuestion } from './store.js';
 import { dashboardAskTool, type AskToolContext } from './tools.js';
 import { askPage } from './view.js';
 
-export function registerAsk(app: FastifyInstance, db: Database, auth: Auth, mode: 'sample' | 'live',
+export function registerAsk(app: FastifyInstance, db: Database, auth: Pick<Auth, 'session'>, mode: 'sample' | 'live',
   env: NodeJS.ProcessEnv, clock: () => Date, readDashboard?: AskToolContext['readDashboard'], client?: AskClient): void {
   app.get('/ask', async (request, reply) => {
     if (!await auth.session(request)) return reply.redirect('/login');
@@ -29,7 +29,9 @@ export function registerAsk(app: FastifyInstance, db: Database, auth: Auth, mode
         return askQuestion({ db, settings, mode, now, question, startedAt, apiKey: env.ANTHROPIC_API_KEY, client,
           tool: dashboardAskTool({ db, settings, env, now, readDashboard }) });
       };
-      return await Promise.race([run(), deadline]);
+      const result = await Promise.race([run(), deadline]);
+      const answer = result.answer.replace(/\*\*|__/g, '').replace(/^([ \t]*)#{1,6}(?:[ \t]+|(?=\r?$))/gm, '$1');
+      return { ...result, answer };
     } catch (error) {
       console.warn(`Ask failed (${askErrorType(error)}).`);
       return unavailable;

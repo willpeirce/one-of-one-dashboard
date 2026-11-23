@@ -189,7 +189,7 @@ test('fallback maps island and EU countries to UK, only US to US, preserves expl
 
 test('exact kit-product ShopifyQL fixture counts a Duo as two and excludes accessories', async () => {
   const query = seriesPaceQuery('2026-09-28', '2026-09-29');
-  assert.equal(query, "FROM sales SHOW net_items_sold WHERE product_title = 'ONE OF ONE' GROUP BY shipping_country TIMESERIES day SINCE 2026-09-28 UNTIL 2026-09-29");
+  assert.equal(query, "FROM sales SHOW net_items_sold WHERE product_variant_sku = 'oneofone1' GROUP BY shipping_country TIMESERIES day SINCE 2026-09-28 UNTIL 2026-09-29");
   const rows = parseSeriesPaceSales(await new SampleShopify().report(query), '2026-09-28', '2026-09-29');
   assert.equal(rows.find(row => row.market === 'UK')!.sold, 2);
   assert.equal(rows.filter(row => row.market === 'US').reduce((sum, row) => sum + row.sold, 0), 2);
@@ -236,4 +236,56 @@ test('complete usable snapshot window needs no report; missing successful report
   await saveSeriesPaceSales(db, table([['2026-09-29', 'GB', 4]]), '2026-09-23', '2026-09-29', now);
   const facts = await readSeriesPaceFacts(db, now);
   assert.deepEqual(facts.UK.days, [{ day: '2026-09-29', sold: 4, source: 'shopifyql' }]); assert.deepEqual(facts.US.days, []);
+});
+
+test('two configured SKUs capture independent observations and fallback sales on the same UK day', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const { readSettings, saveSettings, SettingsValidationError } = await import('../src/settings.js');
+  const settings = await readSettings(db);
+  const sku = 'invented-kit-02';
+  const first = settings.values.series[0]!;
+  await saveSettings(db, { version: settings.version, values: { ...settings.values, series: [
+    first, { ...first, key: 'invented-2', name: 'Invented Second Series', sku },
+  ] } }, randomUUID());
+  const secondStock = stock(44, 89).map(row => ({ ...row, sku, productId: 'gid://shopify/Product/990002',
+    variantId: 'gid://shopify/ProductVariant/990002', inventoryItemId: 'gid://shopify/InventoryItem/990002' }));
+  class TwoSkuReader extends PaceReader {
+    override async inventory(requested?: string) {
+      if (requested === sku) { this.stockCalls.push(requested); return secondStock; }
+      return super.inventory(requested);
+    }
+  }
+  const reader = new TwoSkuReader();
+  const clock = () => new Date('2026-10-01T00:05:00+01:00');
+  const worker = new ShopifyWorker(db, env(), 'https://pulse.example.test', { reader, clock });
+  await worker.initialize();
+  await db.query("UPDATE pulse.shopify_jobs SET next_run_at = CASE WHEN name = 'stock_snapshot' THEN '2026-09-30T23:05:00Z'::timestamptz ELSE '9999-01-01'::timestamptz END");
+  await worker.tick();
+  assert.deepEqual(reader.stockCalls, [first.sku, sku]);
+  const [base, extra] = await Promise.all([readSeriesPaceFacts(db, clock()), readSeriesPaceFacts(db, clock(), sku)]);
+  assert.deepEqual([base.UK.snapshots[0]?.available, extra.UK.snapshots[0]?.available], [130, 44]);
+  assert.deepEqual([base.US.snapshots[0]?.day, extra.US.snapshots[0]?.day], ['2026-10-01', '2026-10-01']);
+  const from = '2026-09-30';
+  await saveSeriesPaceSales(db, table([[from, 'GB', 6]]), from, from, clock(), sku);
+  assert.deepEqual((await readSeriesPaceFacts(db, clock(), sku)).UK.days, [{ day: from, sold: 6, source: 'shopifyql' }]);
+  assert.deepEqual((await readSeriesPaceFacts(db, clock())).UK.days, []);
+  assert.match(seriesPaceQuery(from, from, sku), /product_variant_sku = 'invented-kit-02'/);
+  const configured = await readSettings(db);
+  await assert.rejects(saveSettings(db, { version: configured.version, values: { ...configured.values, series: [first] } }, randomUUID()), error => error instanceof SettingsValidationError && error.fields.includes('series'));
+  assert.deepEqual(await readSettings(db), configured);
+});
+
+test('a sold-out series drops seven days after two evidenced complete days and stays out through a missing snapshot', async () => {
+  const { retiredSeriesInMarket } = await import('../src/series-pace/store.js');
+  const launch = '2026-10-01';
+  const snapshots = [launch, '2026-10-02', '2026-10-03'].map(day => ({
+    day, locationId: 'invented-location', inventoryItemId: 'invented-item', available: 0, takenAt: `${day}T00:05:00Z`, late: false,
+  }));
+  const facts = { stock: 0, days: [], snapshots };
+  assert.equal(retiredSeriesInMarket(facts, launch, '2026-10-09'), false);
+  assert.equal(retiredSeriesInMarket(facts, launch, '2026-10-10'), true);
+  assert.equal(retiredSeriesInMarket(facts, launch, '2026-10-27'), true);
+  assert.equal(retiredSeriesInMarket({ ...facts, stock: 30 }, launch, '2026-10-10'), false);
+  assert.equal(retiredSeriesInMarket({ ...facts, snapshots: snapshots.slice(0, 2) }, launch, '2026-10-10'), false);
+  assert.equal(retiredSeriesInMarket(facts, '2026-10-02', '2026-10-10'), false);
 });

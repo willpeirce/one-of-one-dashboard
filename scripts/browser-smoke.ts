@@ -531,7 +531,7 @@ async function checkSeriesPace(context: BrowserContext): Promise<void> {
       const settings = await (await context.request.get('/api/settings')).json() as SettingsSnapshot;
       for (const market of ['UK', 'US'] as const) {
         const model = widget.value.markets[market];
-        const override = settings.values[market === 'UK' ? 'series1UkTargetDate' : 'series1UsTargetDate'];
+        const override = settings.values.series[0]![market === 'UK' ? 'UKTargetDate' : 'USTargetDate'];
         widget.value.markets[market] = { ...model, ...calculateSeriesPace({ ...model, targetDate: override || model.landingDate }), targetOverride: override || null };
       }
       return fixture;
@@ -561,7 +561,7 @@ async function checkSeriesPace(context: BrowserContext): Promise<void> {
       assert.match(await page.locator('.pace-snapshots').innerText(), /\d{2}:\d{2}/);
       assert.equal(await page.locator('#series-target-date').isDisabled(), false);
       const before = await (await context.request.get('/api/settings')).json() as SettingsSnapshot;
-      const key = market === 'UK' ? 'series1UkTargetDate' : 'series1UsTargetDate';
+      const key = market === 'UK' ? 'UKTargetDate' : 'USTargetDate';
       const target = addDays(widget.value.markets[market].today, 45);
       await page.locator('#series-target-date').fill(target);
       const saved = page.waitForResponse(response => new URL(response.url()).pathname === '/api/settings' && response.request().method() === 'POST');
@@ -571,7 +571,7 @@ async function checkSeriesPace(context: BrowserContext): Promise<void> {
       assert.match(await page.locator('[data-series-date-in-force]').innerText(), /your date/);
       const after = await (await context.request.get('/api/settings')).json() as SettingsSnapshot;
       assert.equal(after.version, before.version + 1);
-      assert.deepEqual(after.values, { ...before.values, [key]: target }, 'The sheet changes only its market target through the normal Settings save');
+      assert.deepEqual(after.values, { ...before.values, series: [{ ...before.values.series[0]!, [key]: target }] }, 'The sheet changes only its market target through the normal Settings save');
       await page.locator('#sh-x').click();
       assert.ok((await dial.innerText()).includes(`${paceNumber(widget.value.markets[market].stock! / 45)} needed`));
       assert.match(await dial.innerText(), /your date/);
@@ -612,7 +612,7 @@ async function checkSeriesPace(context: BrowserContext): Promise<void> {
         assert.equal((await saved).status(), 200);
         await page.waitForFunction(date => document.querySelector('[data-model-id="w017"] [data-series-market="UK"]')?.textContent?.includes(date), paceDate(submitted));
         const stored = await (await context.request.get('/api/settings')).json() as SettingsSnapshot;
-        assert.equal(stored.values.series1UkTargetDate, submitted);
+        assert.equal(stored.values.series[0]!.UKTargetDate, submitted);
         assert.equal(await page.locator('#sh-title').innerText(), `Series 1 sell-out pace · ${draftMarket}`);
         assert.equal(await page.locator('#series-target-date').inputValue(), draft);
         assert.equal(await page.locator('#series-target-status').innerText(), draftStatus,
@@ -627,7 +627,7 @@ async function checkSeriesPace(context: BrowserContext): Promise<void> {
       } finally { release(); await page.unroute('**/api/settings'); }
     }
     await page.goto('/audit');
-    for (const key of ['series1UkTargetDate', 'series1UsTargetDate']) assert.ok((await page.locator('#audit-log').innerText()).includes(key));
+    for (const key of ['UKTargetDate', 'USTargetDate']) assert.ok((await page.locator('#audit-log').innerText()).includes(`series.0.${key}`));
   } finally { await page.close(); }
 }
 
@@ -635,10 +635,10 @@ async function checkSeriesPaceSettings(page: Page, context: BrowserContext): Pro
   const scope = step;
   const before = await (await context.request.get('/api/settings')).json() as SettingsSnapshot;
   const dashboardBefore = await (await context.request.get('/api/dashboard')).json() as FullDashboardSnapshot;
-  const keys = ['series1OrderDate', 'series1UkLandingOffsetDays', 'series1UsLandingOffsetDays', 'series1UkTargetDate', 'series1UsTargetDate'] as const;
-  const input = (key: typeof keys[number]) => page.locator(`[data-setting-path="${key}"]`);
+  const keys = ['UKOrderDate', 'USOrderDate', 'UKLandingOffsetDays', 'USLandingOffsetDays', 'UKTargetDate', 'USTargetDate'] as const;
+  const input = (key: typeof keys[number]) => page.locator(`[data-setting-path="series.0.${key}"]`);
   const openGroup = async () => {
-    const summary = page.locator('summary').filter({ hasText: 'Series 1 sell-out pace' });
+    const summary = page.locator('summary').filter({ hasText: 'Series sell-out pace' });
     if (await summary.locator('..').getAttribute('open') === null) await summary.click();
   };
   const save = async () => {
@@ -648,37 +648,38 @@ async function checkSeriesPaceSettings(page: Page, context: BrowserContext): Pro
     await page.waitForFunction(() => document.querySelector('#settings-message')?.textContent === 'Settings saved.');
   };
   await openGroup();
-  for (const key of keys) assert.equal(await input(key).inputValue(), String(before.values[key]));
-  for (const key of ['series1OrderDate', 'series1UkTargetDate', 'series1UsTargetDate'] as const) assert.equal(await input(key).getAttribute('type'), 'date');
-  for (const key of ['series1UkLandingOffsetDays', 'series1UsLandingOffsetDays'] as const) {
+  for (const key of keys) assert.equal(await input(key).inputValue(), String(before.values.series[0]![key]));
+  for (const key of ['UKOrderDate', 'USOrderDate', 'UKTargetDate', 'USTargetDate'] as const) assert.equal(await input(key).getAttribute('type'), 'date');
+  for (const key of ['UKLandingOffsetDays', 'USLandingOffsetDays'] as const) {
     assert.equal(await input(key).getAttribute('min'), '0');
     assert.equal(await input(key).getAttribute('max'), '365');
     assert.equal(await input(key).getAttribute('step'), '1');
   }
-  await input('series1OrderDate').fill('2027-01-05');
-  await input('series1UkLandingOffsetDays').fill('20');
-  await input('series1UsLandingOffsetDays').fill('30');
-  await input('series1UkTargetDate').fill('2027-02-18');
-  await input('series1UsTargetDate').fill('');
+  await input('UKOrderDate').fill('2027-01-05');
+  await input('USOrderDate').fill('2027-01-05');
+  await input('UKLandingOffsetDays').fill('20');
+  await input('USLandingOffsetDays').fill('30');
+  await input('UKTargetDate').fill('2027-02-18');
+  await input('USTargetDate').fill('');
   for (const viewport of viewports) {
     step = `${scope}: derived landing and target dates at ${viewport.width}px`;
     await page.setViewportSize(viewport);
-    assert.equal(await page.locator('[data-series-pace-dates="Uk"]').innerText(), 'Landing date: 25 Jan 2027 · Target date: 18 Feb 2027 (your date)');
-    assert.equal(await page.locator('[data-series-pace-dates="Us"]').innerText(), 'Landing date: 4 Feb 2027 · Target date: 4 Feb 2027 (landing date)');
+    assert.equal(await page.locator('[data-series-pace-dates="UK"]').innerText(), 'Landing date: 25 Jan 2027 · Target date: 18 Feb 2027 (your date)');
+    assert.equal(await page.locator('[data-series-pace-dates="US"]').innerText(), 'Landing date: 4 Feb 2027 · Target date: 4 Feb 2027 (landing date)');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   }
   await save();
   const after = await (await context.request.get('/api/settings')).json() as SettingsSnapshot;
   assert.equal(after.version, before.version + 1);
-  assert.deepEqual(after.values, { ...before.values, series1OrderDate: '2027-01-05', series1UkLandingOffsetDays: 20,
-    series1UsLandingOffsetDays: 30, series1UkTargetDate: '2027-02-18', series1UsTargetDate: '' });
+  assert.deepEqual(after.values, { ...before.values, series: [{ ...before.values.series[0]!, UKOrderDate: '2027-01-05', USOrderDate: '2027-01-05', UKLandingOffsetDays: 20,
+    USLandingOffsetDays: 30, UKTargetDate: '2027-02-18', USTargetDate: '' }] });
   const dashboardAfter = await (await context.request.get('/api/dashboard')).json() as FullDashboardSnapshot;
   assert.deepEqual(dashboardAfter.widgets.w017, dashboardBefore.widgets.w017, 'Invented sample pace remains independent of saved Settings');
   await page.reload();
   await openGroup();
-  assert.equal(await input('series1UkTargetDate').inputValue(), '2027-02-18');
-  assert.match(await page.locator('[data-series-pace-dates="Uk"]').innerText(), /18 Feb 2027 \(your date\)/);
-  for (const key of keys) await input(key).fill(String(before.values[key]));
+  assert.equal(await input('UKTargetDate').inputValue(), '2027-02-18');
+  assert.match(await page.locator('[data-series-pace-dates="UK"]').innerText(), /18 Feb 2027 \(your date\)/);
+  for (const key of keys) await input(key).fill(String(before.values.series[0]![key]));
   await save();
   assert.deepEqual((await (await context.request.get('/api/settings')).json() as SettingsSnapshot).values, before.values);
 }

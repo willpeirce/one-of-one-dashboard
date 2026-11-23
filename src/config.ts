@@ -32,7 +32,7 @@ export const appConfig = {
     },
     // Only these products supply stock; TikTok duplicates supply orders only.
     stockProducts: [
-      { name: 'ONE OF ONE', id: '10476514214222', sku: 'oneofone1' },
+      { name: 'ONE OF ONE', id: '10476514214222', sku: 'oneofone1', originalSeries: true },
       { name: 'STARTER', id: '10896499933518', bundle: true },
       { name: 'ULTIMATE', id: '10896502063438', bundle: true },
       { name: 'DUO PACK', id: '10476910543182', bundle: true },

@@ -26,7 +26,8 @@ test('Series 1 replaces only the Meta spend dial and keeps both markets and Goog
 });
 
 test('sample pace ignores Settings and presents exact invented targets and daily correction', () => {
-  const changed = { ...defaultSettings(), series1UkTargetDate: '2030-01-01', series1OrderDate: '2030-01-01' };
+  const defaults = defaultSettings();
+  const changed = { ...defaults, series: [{ ...defaults.series[0]!, UKTargetDate: '2030-01-01', UKOrderDate: '2030-01-01' }] };
   assert.deepEqual(getSampleDashboard(changed).widgets.w017, getSampleDashboard().widgets.w017);
   const card = sampleSeriesPaceCard('2026-09-30T06:41:00Z');
   const uk = seriesPaceFacts(card.markets.UK), us = seriesPaceFacts(card.markets.US);

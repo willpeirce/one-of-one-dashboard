@@ -1,3 +1,4 @@
+import { snapshotSkus } from './series-pace/store.js';
 import { registerTicker } from './ticker/routes.js';
 import { readTicker } from './ticker/store.js';
 import { registerMorning } from './morning/routes.js';
@@ -438,6 +439,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     const [dashboard, imports, costs, settings] = await Promise.all([snapshot(), shopify.store.summary(sourceNow()), shopify.store.costSummary(), readSettings(db)]);
     return reply.type('text/html; charset=utf-8').send(sourceHealthPage(dashboard.sourceHealth ?? [], imports, costs, await spendHealth(db, sourceEnv, settings.values, sourceNow()), {
       orderCleanupIncomplete: shopify.orderCleanupIncomplete,
+      series: settings.values.series,
       channelExclusions: await shopify.store.channelExclusions(),
       google: googleHealth(await readGoogleFacts(db,settings.values,sourceEnv,googleAt),googleAt),
       mailchimp: await readMailchimpFacts(db,mailchimp.mode,mailchimpAt),
@@ -456,7 +458,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     const settings = await readSettings(db);
     const metaLive = !!settings.values.metaAdAccountId && getSourceStates(sourceEnv).some(source => source.source === 'meta' && source.mode === 'live');
     const actors = metaLive ? activityActors(await readActivity(db, settings.values.metaAdAccountId, settings.values, creativeNow())) : undefined;
-    return reply.type('text/html; charset=utf-8').send(settingsPage(settings, await shopify.store.latestCosts(), shopify.mode, new Date(), await readMetaCampaigns(db, settings.values, sourceEnv), await readCampaignSync(db, settings.values, sourceEnv), creativeFeatureFlags(sourceEnv), actors));
+    return reply.type('text/html; charset=utf-8').send(settingsPage(settings, await shopify.store.latestCosts(), shopify.mode, new Date(), await readMetaCampaigns(db, settings.values, sourceEnv), await readCampaignSync(db, settings.values, sourceEnv), creativeFeatureFlags(sourceEnv), actors, [...new Set([...appConfig.shopify.stockProducts.map(product => product.name), ...settings.values.series.map(series => series.name)])], await snapshotSkus(db)));
   });
   app.get('/api/settings', async (request, reply) => {
     if (!await auth.session(request)) return reply.code(401).send({ error: 'Sign in to continue.' });

@@ -112,6 +112,16 @@ export class ShopifyClient implements ShopifyReader {
   }
   async inventory(sku?: string): Promise<any[]> {
     const result: any[] = [];
+    if (sku && !appConfig.shopify.stockProducts.some(product => 'sku' in product && product.sku === sku)) {
+      if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(sku)) throw new ShopifyError('invalid');
+      const data = await this.#graphql(`query PulseStockBySku($query: String!) {
+        productVariants(first: 20, query: $query) { nodes { id sku product { id } inventoryItem { id unitCost { amount currencyCode } } } ${page} }
+      }`, { query: `sku:"${sku}"` });
+      if (data.productVariants.pageInfo.hasNextPage) throw new ShopifyError('invalid');
+      const exact = data.productVariants.nodes.filter((variant: { sku: string }) => variant.sku === sku);
+      if (exact.length > 1) throw new ShopifyError('invalid');
+      return exact.length ? this.#inventoryLevels(exact[0].product.id, exact[0]) : [];
+    }
     // Variants and levels paginate independently; only configured products/locations are retained.
     for (const product of appConfig.shopify.stockProducts) {
       if (sku && (!('sku' in product) || product.sku !== sku)) continue;
@@ -121,23 +131,28 @@ export class ShopifyClient implements ShopifyReader {
         if (!data.product) break;
         for (const variant of data.product.variants.nodes) {
           if (sku && variant.sku !== sku) continue;
-          const metadata = { productId: data.product.id, variantId: variant.id, sku: variant.sku, inventoryItemId: variant.inventoryItem.id, unitCost: variant.inventoryItem.unitCost };
-          let hasLevels = false;
-          let levelsAfter: string | null = null;
-          do {
-            const levels = await this.#graphql(`query PulseLevels($id: ID!, $after: String) { inventoryItem(id: $id) { id inventoryLevels(first: 100, after: $after) { nodes { id location { id } quantities(names: ["available", "on_hand", "committed"]) { name quantity } } ${page} } } }`, { id: variant.inventoryItem.id, after: levelsAfter });
-            for (const level of levels.inventoryItem.inventoryLevels.nodes) { result.push({ ...metadata, ...level }); hasLevels = true; }
-            const next = nextCursor(levels.inventoryItem.inventoryLevels);
-            if (next && next === levelsAfter) throw new ShopifyError('invalid');
-            levelsAfter = next;
-          } while (levelsAfter);
-          if (!hasLevels) result.push({ ...metadata, location: null });
+          result.push(...await this.#inventoryLevels(data.product.id, variant));
         }
         const next = nextCursor(data.product.variants);
         if (next && next === after) throw new ShopifyError('invalid');
         after = next;
       } while (after);
     }
+    return result;
+  }
+  async #inventoryLevels(productId: string, variant: any): Promise<any[]> {
+    const result: any[] = [];
+    const metadata = { productId: productId, variantId: variant.id, sku: variant.sku, inventoryItemId: variant.inventoryItem.id, unitCost: variant.inventoryItem.unitCost };
+    let hasLevels = false;
+    let levelsAfter: string | null = null;
+    do {
+      const levels = await this.#graphql(`query PulseLevels($id: ID!, $after: String) { inventoryItem(id: $id) { id inventoryLevels(first: 100, after: $after) { nodes { id location { id } quantities(names: ["available", "on_hand", "committed"]) { name quantity } } ${page} } } }`, { id: variant.inventoryItem.id, after: levelsAfter });
+      for (const level of levels.inventoryItem.inventoryLevels.nodes) { result.push({ ...metadata, ...level }); hasLevels = true; }
+      const next = nextCursor(levels.inventoryItem.inventoryLevels);
+      if (next && next === levelsAfter) throw new ShopifyError('invalid');
+      levelsAfter = next;
+    } while (levelsAfter);
+    if (!hasLevels) result.push({ ...metadata, location: null });
     return result;
   }
   async report(query: string): Promise<any> {

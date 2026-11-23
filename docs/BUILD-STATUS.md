@@ -478,3 +478,9 @@ Review-fix local validation: typecheck, all 132 tests on PGlite, production buil
 ## Fulfilment service/cadence fix
 
 Sample and live imports recognise USPS GroundAdvantage and DPD V2 Parcel Two Day; service comparisons and learned grouping ignore spaces and case while parcels keep the export spelling. Unknown services have null rate baselines and only service/centre/destination review checks. Startup refreshes every stored mode after migrations. Complete-period declarations use the file's despatch endpoints and migration 008's coverage dates. Confirmed complete uploads together must cover the previous month to clear the first-working-day 09:00 UK reminder. Sample exports retain an invented unknown service and add the recognised USPS spelling; no live figures or order numbers are added. Validation: typecheck, all 136 tests on PGlite, production build, Chromium phone/desktop checks (including the checkbox text from the fixture range) and secret scanning pass locally. CI checks the pushed revision against real PostgreSQL. No live data validation is claimed.
+
+### Large build 5
+
+Part A adds a versioned series list, per-SKU inventory and fallback reporting, and per-market pace from launch. Migration 078 keeps the legacy settings document and original SKU histories readable. Live acceptance is to add the next series when it launches and confirm both warehouses against Shopify. Sample Home keeps its original fixture.
+
+**Not done or known gaps:** The existing single-series sample remains the production sample. The two-series example is an invented test fixture. Live Shopify agreement, including the SKU-filtered report, remains to be checked after merge. No supplier imports are included.

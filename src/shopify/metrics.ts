@@ -1,3 +1,4 @@
+import { originalSeriesProductId, originalSeriesSku } from '../series-pace/series.js';
 import { afterTaxMetric } from '../after-tax.js';
 import { formatUkTime } from '../uk-time.js';
 import { applySpend, placedSpendRows, usableSpendSources, type AdHeroInputs } from '../ad-spend/metrics.js';
@@ -15,8 +16,9 @@ export { paidOrder } from './model.js';
 import { isFreeOrder, orderTotalPence, paidOrder } from './model.js';
 import { decimalMicros } from '../ad-spend/model.js';
 export const ratio = (n: number, d: number): number | null => d > 0 ? n / d : null;
-export const kitIds = appConfig.shopify.stockProducts.slice(0, 4).map(p => `gid://shopify/Product/${p.id}`);
-export const isKit = (o: Order): boolean => o.lines.some(l => kitIds.includes(l.productId ?? '') || appConfig.shopify.tiktokOrderOnlyProductIds.some(id => l.productId === `gid://shopify/Product/${id}`));
+const bundleIds = appConfig.shopify.stockProducts.filter(product => 'bundle' in product && product.bundle).map(product => `gid://shopify/Product/${product.id}`);
+export const kitIds = [originalSeriesProductId, ...bundleIds];
+export const isKit = (o: Order, seriesSkus: readonly string[] = [originalSeriesSku]): boolean => o.lines.some(l => seriesSkus.includes(l.sku ?? '') || kitIds.includes(l.productId ?? '') || appConfig.shopify.tiktokOrderOnlyProductIds.some(id => l.productId === `gid://shopify/Product/${id}`));
 export const isUpgrade = (o: Order): boolean => o.lines.some(l => kitIds.slice(1).includes(l.productId ?? ''));
 export const isRefill = (o: Order): boolean => o.lines.some(l => l.sku === 'REFILL' || l.productId === 'gid://shopify/Product/16062800658766');
 export { isTikTok } from './order-market.js';
@@ -134,7 +136,7 @@ function marketHero(facts: Facts, today: string, from: string, to: string, setti
   const lastWorked = facts.jobs.find(j => j.name === 'poll')?.last_success_at;
   const lastLabel = lastWorked ? `Last order poll ${formatUkTime(lastWorked)}` : 'First sync pending';
   for (const metric of [hero.net, hero.orders, hero.cr]) metric.d.src += ` · ${lastLabel}`;
-  const kitOrders = orders.filter(isKit);
+  const kitOrders = orders.filter(order => isKit(order, facts.mode === 'live' ? settings.series.map(series => series.sku) : undefined));
   hero.orders.d.extra = [...(hero.orders.d.extra ?? []), ['Orders by market', breakdown], ['Average order', ratio(hero.net.n, hero.orders.n) === null ? 'No paid orders' : formatPounds(hero.net.n / hero.orders.n)], ['Upgrade rate', kitOrders.length ? `${formatNumber(100 * orders.filter(isUpgrade).length / kitOrders.length, 1)}% · tiers from ordered products` : 'No kit orders'], ['Markets', 'EU and other orders, including unknown and TikTok, show under All only; UK plus US does not add up to All.'], ['Free orders', `${formatNumber(freeCount)} in this period. Free orders (replacements and marketing send-outs at £0) are left out.${marketOrders.some(o => o.tags === undefined) ? ' Some earlier replacement tags are still being refreshed; £0 orders are excluded immediately.' : ''}`], ['Coverage', `Order details from ${data.from}. Earlier sales are store-wide ShopifyQL only; no invented market split.`]];
   const orderLabel = `${formatNumber(hero.orders.n)} ${hero.orders.n === 1 ? 'order' : 'orders'}`;
   if (from === today && to === today) {
@@ -206,7 +208,7 @@ export function shopifyHero(facts: Facts, today: string, from: string, to: strin
   return { ...all, markets: { all, uk, us } };
 }
 
-export interface StockCover { market: 'uk' | 'us'; product: string; productId: string; locationId: string; name: string; available: number | null; required: number | null; dailyRate: number | null; cover: number | null; runOut: string | null; basis: string }
+export interface StockCover { market: 'uk' | 'us'; product: string; productId: string; locationId: string; name: string; available: number | null; required: number | null; dailyRate: number | null; cover: number | null; runOut: string | null; basis: string; kit?: boolean }
 export function stockMarket(value: string): StockCover['market'] {
   if (value !== 'uk' && value !== 'us') throw new Error('Invalid configured stock market');
   return value;
@@ -216,25 +218,33 @@ export function stockCover(facts: Facts, today: string, settings: Settings): Sto
   const start = addDays(today, -60), end = addDays(today, -1);
   const complete = ready && from <= start;
   const rows: StockCover[] = [];
-  for (const [market, location] of Object.entries(appConfig.shopify.locations)) for (const product of appConfig.shopify.stockProducts) {
-    const productId = `gid://shopify/Product/${product.id}`;
-    const levels = inventory.filter(i => i.productId === productId && i.locationId === location.id);
+  const series = facts.mode === 'live' ? settings.series : settings.series.filter(row => row.sku === originalSeriesSku);
+  const products = [
+    ...appConfig.shopify.stockProducts.map(product => ({ name: product.name, productId: `gid://shopify/Product/${product.id}`, sku: undefined as string | undefined, kit: 'originalSeries' in product || 'bundle' in product })),
+    ...series.filter(row => row.sku !== originalSeriesSku).map(row => ({
+      name: row.name, productId: inventory.find(level => level.sku === row.sku)?.productId ?? `sku:${row.sku}`, sku: row.sku, kit: true,
+    })),
+  ];
+  const extraSkus = series.filter(row => row.sku !== originalSeriesSku).map(row => row.sku);
+  for (const [market, location] of Object.entries(appConfig.shopify.locations)) for (const product of products) {
+    const { productId } = product;
+    const levels = inventory.filter(i => i.locationId === location.id && (product.sku ? i.sku === product.sku : i.productId === productId && !extraSkus.includes(i.sku ?? '')));
     const known = levels.length > 0 && levels.every(l => l.quantities.some(q => q.name === 'available'));
     const available = known ? levels.reduce((n, l) => n + l.quantities.find(q => q.name === 'available')!.quantity, 0) : null;
     // Unfulfilled orders have no authoritative warehouse allocation: do not guess from market.
     const sold = orders.filter(o => o.day >= start && o.day <= end && o.fulfillments.some(f => f.status === 'SUCCESS' && f.locationId === location.id));
-    const allocatedQuantity = (o: Order, ids: string[]): number => o.fulfillments.filter(f => f.status === 'SUCCESS' && f.locationId === location.id).reduce((n, f) => n + (f.lines ?? []).filter(l => o.lines.some(item => item.id === l.lineId && ids.includes(item.productId ?? ''))).reduce((sum, l) => sum + l.quantity, 0), 0);
+    const allocatedQuantity = (o: Order, ids: string[], skus: readonly string[] = []): number => o.fulfillments.filter(f => f.status === 'SUCCESS' && f.locationId === location.id).reduce((n, f) => n + (f.lines ?? []).filter(l => o.lines.some(item => item.id === l.lineId && (ids.includes(item.productId ?? '') && !extraSkus.includes(item.sku ?? '') || skus.includes(item.sku ?? '')))).reduce((sum, l) => sum + l.quantity, 0), 0);
     const allocationComplete = sold.every(o => o.fulfillments.every(f => f.status !== 'SUCCESS' || f.lines !== null));
-    const quantity = sold.reduce((n, o) => n + allocatedQuantity(o, [productId]), 0);
+    const quantity = sold.reduce((n, o) => n + allocatedQuantity(o, product.sku ? [] : [productId], product.sku ? [product.sku] : []), 0);
     const rate = complete && allocationComplete && settings.seasonalMultiplier !== null ? quantity / 60 * settings.seasonalMultiplier : null;
-    const kits = kitIds.includes(productId);
-    const remainingKits = inventory.filter(i => kitIds.includes(i.productId) && i.locationId === location.id).reduce((n, i) => n + (i.quantities.find(q => q.name === 'available')?.quantity ?? 0), 0);
-    const kitQuantity = sold.reduce((n, o) => n + allocatedQuantity(o, kitIds), 0);
+    const kits = product.kit;
+    const remainingKits = inventory.filter(i => (kitIds.includes(i.productId) || extraSkus.includes(i.sku ?? '')) && i.locationId === location.id).reduce((n, i) => n + (i.quantities.find(q => q.name === 'available')?.quantity ?? 0), 0);
+    const kitQuantity = sold.reduce((n, o) => n + allocatedQuantity(o, kitIds, extraSkus), 0);
     const required = !kits && complete && allocationComplete && kitQuantity > 0 ? quantity / kitQuantity * remainingKits : null;
     const cover = kits && available !== null && rate !== null && rate > 0 ? available / rate : null;
-    rows.push({ market: stockMarket(market), product: product.name, productId, locationId: location.id, name: `${product.name} · ${location.name}`, available, required, dailyRate: rate, cover,
+    rows.push({ ...(product.sku ? { kit: true } : {}), market: stockMarket(market), product: product.name, productId, locationId: location.id, name: `${product.name} · ${location.name}`, available, required, dailyRate: rate, cover,
       runOut: cover !== null ? addDays(today, Math.floor(cover)) : null,
-      basis: kits ? '60 complete UK days × seasonal multiplier; fulfilled warehouse orders only. Series 1: run-out, no restock.' : `Attach rate × remaining kits: ${required === null ? 'unknown' : formatNumber(Math.ceil(required)) + ' needed'}. Accessories have no daily-rate cover.` });
+      basis: kits ? `60 complete UK days × seasonal multiplier; fulfilled warehouse orders only. ${product.sku ? product.name : 'Series 1'}: run-out, no restock.` : `Attach rate × remaining kits: ${required === null ? 'unknown' : formatNumber(Math.ceil(required)) + ' needed'}. Accessories have no daily-rate cover.` });
   }
   return rows;
 }

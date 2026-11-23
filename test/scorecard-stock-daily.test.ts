@@ -100,10 +100,16 @@ test('daily and kit stock snapshot failures cannot fail one another or the main 
     await syncSourceHealth(db,credentials);
     await db.query("UPDATE pulse.source_health SET status='healthy' WHERE source='shopify'");
     await inventory(db,'live',now,0);
-    const wrapped:Database={...db,query:async <Row extends Record<string,unknown>>(sql:string,values?:unknown[])=>{
-      if(sql.includes(`INSERT INTO pulse.${failed} `)||sql.includes(`INSERT INTO pulse.${failed}\n`))throw new Error('invented-private-database-error');
-      return db.query<Row>(sql,values);
-    }};
+    const withFailure = (connection: Database): Database => ({
+      ...connection,
+      async query<Row extends Record<string,unknown>>(sql: string, values?: unknown[]) {
+        if (sql.includes(`INSERT INTO pulse.${failed} `) || sql.includes(`INSERT INTO pulse.${failed}\n`))
+          throw new Error('invented-private-database-error');
+        return connection.query<Row>(sql, values);
+      },
+      transaction: fn => connection.transaction(tx => fn(withFailure(tx))),
+    });
+    const wrapped = withFailure(db);
     class KitReader extends SampleShopify {
       override async inventory(){return Object.values(appConfig.shopify.locations).map(location=>({
         productId:`gid://shopify/Product/${appConfig.shopify.stockProducts[0]!.id}`,variantId:'gid://shopify/ProductVariant/989501',

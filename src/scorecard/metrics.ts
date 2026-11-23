@@ -1,3 +1,4 @@
+import { originalSeriesSku } from '../series-pace/series.js';
 import { addDays, spikeMarkets, ukToday } from '../hero-range.js';
 import { adNames, adSources, decimalMicros, type AdSource } from '../ad-spend/model.js';
 import { spendMarket } from '../ad-spend/placement.js';
@@ -113,11 +114,12 @@ function customerPeriod(orders: readonly Order[], from: string, to: string, avai
 }
 
 function stockPeriod(input: ScorecardInput, productId: string, from: string, to: string): StockPeriod {
+  const extraSkus = new Set(input.mode === 'live' ? input.settings.series.filter(row => row.sku !== originalSeriesSku).map(row => row.sku) : []);
   const locations = new Set(input.locations.filter(location => input.market === 'all' || location.market === input.market).map(location => location.locationId));
   const expectedItems = new Map<string, Set<string>>();
   const byDay = new Map<string, Map<string, Map<string, number>>>();
   for (const row of input.stockDaily) {
-    if (row.mode !== input.mode || row.productId !== productId || !locations.has(row.locationId)) continue;
+    if (row.mode !== input.mode || (row.sku && extraSkus.has(row.sku) ? `sku:${row.sku}` : row.productId) !== productId || !locations.has(row.locationId)) continue;
     // Observations cannot tell us when a variant began or ended. A missing known
     // item therefore makes that location unknown, rather than proving a sell-out.
     const expected = expectedItems.get(row.locationId) ?? new Set<string>();
@@ -151,13 +153,15 @@ function productMovers(input: ScorecardInput, orders: readonly Order[], window: 
   const available = coveredPeriod(input.orderCoverage, window.previousFrom, window.to);
   const note = 'Ordered units from counted paid orders; line-level money and returned units are not available. Stock dates without a daily snapshot remain unknown.';
   if (!available) return { available, up: [], down: [], note };
+  const series = new Map(input.mode === 'live' ? input.settings.series.filter(row => row.sku !== originalSeriesSku).map(row => [row.sku, row.name]) : []);
   const products = new Map<string, { label: string; current: number; previous: number }>();
   for (const order of orders) {
     if (isFreeOrder(order) || !inPeriod(order.day, window.previousFrom, window.to)) continue;
     for (const line of order.lines) {
       if (!Number.isFinite(line.quantity) || line.quantity <= 0) continue;
-      const id = line.productId ?? (line.sku ? `sku:${line.sku}` : 'unknown-product');
-      const product = products.get(id) ?? { label: input.productLabels[id] ?? (line.sku ? `SKU ${line.sku}` : 'Product title unavailable'), current: 0, previous: 0 };
+      const name = line.sku ? series.get(line.sku) : undefined;
+      const id = name ? `sku:${line.sku}` : line.productId ?? (line.sku ? `sku:${line.sku}` : 'unknown-product');
+      const product = products.get(id) ?? { label: name ?? input.productLabels[id] ?? (line.sku ? `SKU ${line.sku}` : 'Product title unavailable'), current: 0, previous: 0 };
       if (order.day >= window.from) product.current += line.quantity; else product.previous += line.quantity;
       products.set(id, product);
     }

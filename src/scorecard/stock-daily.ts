@@ -9,6 +9,7 @@ export interface StockDailyRow {
   locationId: string;
   inventoryItemId: string;
   productId: string;
+  sku?: string;
   available: number;
   takenAt: string;
   fetchedAt: string;
@@ -31,23 +32,23 @@ export async function takeStockDaily(db: Database, mode: SourceMode, now: Date):
   });
   if (!stocks.length) return { day, freshRows: 0, inserted: 0 };
   const result = await db.query(`INSERT INTO pulse.stock_daily
-      (mode,day,location_id,inventory_item_id,product_id,available,taken_at,fetched_at,source_id)
-    SELECT $1,$2::date,location,item,product,available,$3,fetched,source_id
-    FROM unnest($4::text[],$5::text[],$6::text[],$7::int[],$8::timestamptz[],$9::text[])
-      AS r(location,item,product,available,fetched,source_id)
+      (mode,day,location_id,inventory_item_id,product_id,available,taken_at,fetched_at,source_id,sku)
+    SELECT $1,$2::date,location,item,product,available,$3,fetched,source_id,sku
+    FROM unnest($4::text[],$5::text[],$6::text[],$7::int[],$8::timestamptz[],$9::text[],$10::text[])
+      AS r(location,item,product,available,fetched,source_id,sku)
     ON CONFLICT (mode,day,location_id,inventory_item_id) DO NOTHING`,
   [mode,day,now,stocks.map(row=>row.data.locationId),stocks.map(row=>row.data.inventoryItemId),stocks.map(row=>row.data.productId),
-    stocks.map(row=>row.available),stocks.map(row=>row.fetched_at),stocks.map(row=>row.source_id)]);
+    stocks.map(row=>row.available),stocks.map(row=>row.fetched_at),stocks.map(row=>row.source_id),stocks.map(row=>row.data.sku ?? null)]);
   return { day, freshRows: stocks.length, inserted: result.rowCount };
 }
 
 /** No interpolation or zero filling: callers distinguish absent dates from observed stock. */
 export async function readStockDaily(db: Database, mode: SourceMode, from: string, to: string): Promise<StockDailyRow[]> {
   const rows = await db.query<{ mode: SourceMode; day: string; location_id: string; inventory_item_id: string; product_id: string;
-    available: number; taken_at: Date; fetched_at: Date; source: 'shopify'; source_id: string; brand: 'one-of-one' }>(
-    `SELECT mode,day::text,location_id,inventory_item_id,product_id,available,taken_at,fetched_at,source,source_id,brand
+    sku: string | null; available: number; taken_at: Date; fetched_at: Date; source: 'shopify'; source_id: string; brand: 'one-of-one' }>(
+    `SELECT mode,day::text,location_id,inventory_item_id,product_id,available,taken_at,fetched_at,source,source_id,brand,sku
       FROM pulse.stock_daily WHERE mode=$1 AND day BETWEEN $2::date AND $3::date ORDER BY day,product_id,location_id,inventory_item_id`, [mode,from,to]);
   return rows.rows.map(row=>({ mode:row.mode,day:row.day,locationId:row.location_id,inventoryItemId:row.inventory_item_id,
     productId:row.product_id,available:row.available,takenAt:new Date(row.taken_at).toISOString(),fetchedAt:new Date(row.fetched_at).toISOString(),
-    source:row.source,sourceId:row.source_id,brand:row.brand }));
+    ...(row.sku ? { sku: row.sku } : {}), source:row.source,sourceId:row.source_id,brand:row.brand }));
 }

@@ -409,7 +409,7 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
         "extra": [
           [
             "Needs",
-            "Both cuts rendered and approved. Runs after the retargeting test (day 14 is Sun 18 Oct), or first if Will picks it: one test at a time in the ads lane."
+            "Both cuts rendered and approved. Runs after the retargeting test (day 14 is Sun 18 Oct), or first if you pick it: one test at a time in the ads lane."
           ],
           [
             "How sure is worked out",
@@ -1185,7 +1185,7 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
         ],
         "d": {
           "why": "31% of kit orders took a higher tier or the duo. No bar set.",
-          "rule": "Grey until Will sets a bar.",
+          "rule": "Grey until you set a bar.",
           "src": "Shopify orders by variant",
           "hist": [
             28,
@@ -1436,11 +1436,11 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       ],
       "mode": "sample",
       "value": {
-        "v": 66,
+        "v": 63,
         "max": 120,
-        "t": "66 d",
+        "t": "63 d",
         "l": "UK kits",
-        "s": "3,007 at J&J",
+        "s": "2,835 at Invented Transit",
         "z": [
           [
             0,
@@ -1459,9 +1459,9 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
           ]
         ],
         "d": {
-          "why": "3,007 kits at the UK rate, Q4 ceiling 3× September.",
+          "why": "2,835 kits at the UK rate of 45 a day, Q4 ceiling 3× September.",
           "rule": "Amber under 45 days, red under 21.",
-          "src": "Shopify inventory, J&J, ÷ 7-day sales rate"
+          "src": "Shopify inventory, Invented Transit, ÷ 7-day sales rate"
         }
       }
     },
@@ -1472,9 +1472,9 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       ],
       "mode": "sample",
       "value": {
-        "v": 14,
+        "v": 18,
         "max": 120,
-        "t": "14 d",
+        "t": "18 d",
         "l": "US Slabs & Label",
         "s": "row 1",
         "z": [
@@ -1495,7 +1495,7 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
           ]
         ],
         "d": {
-          "why": "US Slabs & Label pack runs dry about 14 Oct. Helen is away until 8 Oct.",
+          "why": "US Slabs & Label pack runs dry about 18 Oct. Nell Quill returns on 12 Oct.",
           "rule": "Red under 21 days. This is the only alarm on the page today.",
           "src": "Shopify inventory, Ohio"
         }
@@ -1508,16 +1508,16 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       ],
       "mode": "sample",
       "value": {
-        "v": 47,
+        "v": 43,
         "max": 60,
-        "t": "47 d",
+        "t": "43 d",
         "l": "Black Label lands",
-        "s": "16 Nov · 333 sets",
+        "s": "12 Nov · 276 sets",
         "state": "info",
         "d": {
-          "why": "H-26013 raised to 333 sets (US 233 / UK 100), by air, due 16 Nov.",
-          "rule": "Countdown. Amber if Helen’s schedule slips past 20 Nov.",
-          "src": "Supplier order H-26013"
+          "why": "Sample order Q-814 covers 276 sets (US 168 / UK 108), due by air on 12 Nov.",
+          "rule": "Countdown. Amber if Nell Quill’s schedule slips past 17 Nov.",
+          "src": "Supplier order Q-814"
         }
       }
     },
@@ -1548,14 +1548,14 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       ],
       "mode": "sample",
       "value": {
-        "v": 8,
+        "v": 12,
         "max": 30,
-        "t": "8 d",
-        "l": "Helen back",
-        "s": "8 Oct · 3 items waiting",
+        "t": "12 d",
+        "l": "Nell Quill back",
+        "s": "12 Oct · 2 items waiting",
         "state": "info",
         "d": {
-          "why": "Helen is away 1-7 Oct. Waiting: price and schedule for the Black Label air, slab address, the 1,000 label numbers.",
+          "why": "Nell Quill is away 4–11 Oct. Waiting for the air shipment quote and the 840 label numbers.",
           "rule": "Countdown.",
           "src": "Supplier notes"
         }
@@ -1569,7 +1569,7 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       ],
       "mode": "sample",
       "value": {
-        "why": "Penny colour order rerouted to the US: 300 by air.",
+        "why": "Invented Inks is sending 184 colour sets to the US by air.",
         "rule": "Trend only.",
         "src": "Supplier notes"
       }
@@ -1582,7 +1582,7 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       ],
       "mode": "sample",
       "value": {
-        "why": "Hedy dispatch before the 1-7 Oct holiday not yet confirmed.",
+        "why": "Invented Fold has yet to confirm dispatch before the 4–11 Oct break.",
         "rule": "Grey until confirmed.",
         "src": "Supplier notes"
       }
@@ -1778,7 +1778,7 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       "mode": "sample"
     },
     "t0033": {
-      "value": "Morning, Will.",
+      "value": "Morning, Nell.",
       "source": [
         "github-hq"
       ],
@@ -2701,7 +2701,7 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       "mode": "sample"
     },
     "t0286": {
-      "value": "Penny colour",
+      "value": "Invented Inks colour",
       "source": [
         "shopify",
         "github-hq"
@@ -2709,7 +2709,7 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       "mode": "sample"
     },
     "t0287": {
-      "value": "300",
+      "value": "184",
       "source": [
         "shopify",
         "github-hq"
@@ -2725,7 +2725,7 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       "mode": "sample"
     },
     "t0289": {
-      "value": "Hedy",
+      "value": "Invented Fold",
       "source": [
         "shopify",
         "github-hq"
@@ -3085,21 +3085,21 @@ const fixture: Omit<DashboardSnapshot, 'generatedAt' | 'sourceHealth' | 'bounds'
       "mode": "sample"
     },
     "t0350": {
-      "value": "thatgrlmaja · UK",
+      "value": "Invented Kite · UK",
       "source": [
         "meta"
       ],
       "mode": "sample"
     },
     "t0351": {
-      "value": "£25",
+      "value": "£23",
       "source": [
         "meta"
       ],
       "mode": "sample"
     },
     "t0352": {
-      "value": "7d £17.80",
+      "value": "7d £16.40",
       "source": [
         "meta"
       ],

@@ -695,3 +695,19 @@ test('Settings renders the freelancer label escaped beside the initial', () => {
   assert.doesNotMatch(html.match(/<input[^>]*name="freelancerLabel"[^>]*>/)![0], / required/);
   assert.ok(html.indexOf('name="creativeFreelancerInitial"') < html.indexOf('name="freelancerLabel"'));
 });
+
+test('fresh Settings use the invented suppliers and stored supplier rows keep their own values', async t => {
+  const db = await createTestDatabase();
+  t.after(() => db.close());
+  const initial = await readSettings(db);
+  assert.deepEqual(initial.values.supplierLeadTimes, [
+    { supplier: 'Invented Works', days: 26 }, { supplier: 'Invented Fold', days: 9 },
+    { supplier: 'Invented Inks', days: null }, { supplier: 'Invented Transit', days: null },
+  ]);
+  const stored = { ...initial.values, supplierLeadTimes: [{ supplier: 'Invented Copper', days: 13 }] };
+  await db.query('UPDATE pulse.settings SET version = 8, values = $1', [JSON.stringify(stored)]);
+  const before = (await db.query('SELECT * FROM pulse.settings')).rows;
+  assert.deepEqual(await readSettings(db), { version: 8, values: stored });
+  assert.deepEqual((await db.query('SELECT * FROM pulse.settings')).rows, before);
+  assert.equal((await db.query('SELECT 1 FROM pulse.settings_changes')).rowCount, 0);
+});

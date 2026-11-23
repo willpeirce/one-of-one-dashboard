@@ -158,8 +158,8 @@ export function defaultSettings(): Settings {
     dispatchCutoffUk: appConfig.fulfilment.uk.dispatchCutoff,
     dispatchCutoffUs: appConfig.fulfilment.us.dispatchCutoff,
     supplierLeadTimes: [
-      { supplier: 'Rising Games', days: 35 }, { supplier: 'Hedy', days: 2 },
-      { supplier: 'Shanghai Joan', days: null }, { supplier: 'Freight forwarder', days: null },
+      { supplier: 'Invented Works', days: 26 }, { supplier: 'Invented Fold', days: 9 },
+      { supplier: 'Invented Inks', days: null }, { supplier: 'Invented Transit', days: null },
     ],
     inboundStock: [],
     keyDates: [],

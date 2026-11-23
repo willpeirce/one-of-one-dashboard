@@ -593,9 +593,16 @@ async function ensureSettings(db: Database): Promise<void> {
 
 export async function readSettings(db: Database, options: { seed?: boolean } = {}): Promise<SettingsSnapshot> {
   if (options.seed !== false) await ensureSettings(db);
-  const source = await hasSeriesStorage(db) ? 'series FROM pulse.settings LEFT JOIN pulse.configured_series USING (singleton)' : 'NULL AS series FROM pulse.settings';
-  const { rows } = await db.query<{ version: number; values: Settings; series: Series[] | null }>(
-    `SELECT version, values, ${source} WHERE singleton = true`);
+  type Row = { version: number; values: Settings; series: Series[] | null };
+  let rows: Row[];
+  try {
+    ({ rows } = await db.query<Row>(`SELECT version, values, series FROM pulse.settings
+      LEFT JOIN pulse.configured_series USING (singleton) WHERE singleton = true`));
+  } catch (error) {
+    // Historical databases can be inspected before migration 078 has run.
+    if ((error as { code?: string })?.code !== '42P01') throw error;
+    ({ rows } = await db.query<Row>('SELECT version, values, NULL AS series FROM pulse.settings WHERE singleton = true'));
+  }
   if (!rows[0] && options.seed === false) return { version: 0, values: defaultSettings() };
   if (!rows[0]) throw new Error('Settings are unavailable');
   return { version: rows[0].version, values: mergeSeries(rows[0]) };

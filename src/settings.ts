@@ -304,7 +304,7 @@ function parseSeries(value: unknown): Series[] {
       result[`${market}LaunchDate`] = seriesDate(input[`${market}LaunchDate`], field('LaunchDate'));
       result[`${market}OrderDate`] = seriesDate(input[`${market}OrderDate`], field('OrderDate'));
       result[`${market}LandingOffsetDays`] = requiredNumber(input[`${market}LandingOffsetDays`], field('LandingOffsetDays'), 365, true);
-      const target = `${market}TargetDate`;
+      const target = `${market}TargetDate` as const;
       result[target] = seriesDate(Object.hasOwn(input, target) ? input[target] : '', field('TargetDate'), true);
       const dates = seriesMarket(result, market);
       if (!seriesPaceDates(dates.orderDate, dates.landingOffsetDays, dates.targetDate)) invalid(field('OrderDate'));

@@ -1,4 +1,4 @@
-import { originalSeriesKey, originalSeriesProductId, seriesMarket, seriesMarkets } from '../series-pace/series.js';
+import { originalSeriesKey, originalSeriesProductId, originalSeriesSku, seriesMarket, seriesMarkets } from '../series-pace/series.js';
 import { attributionDial } from '../ad-spend/attribution.js';
 import { googleRisks, metaRisks } from '../ad-spend/risks.js';
 import { spendNeeds, type AdHeroInputs } from '../ad-spend/metrics.js';
@@ -93,7 +93,7 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
         const facts = paceFacts[market];
         if (retiredSeriesInMarket(facts, launchDate, today)) continue;
         const dates = seriesPaceDates(orderDate, landingOffsetDays, targetDate)!;
-        const named = settings.series.length > 1 || series.key !== originalSeriesKey || series.name !== 'Series 1';
+        const named = settings.series.length > 1 || series.key !== originalSeriesKey || series.sku !== originalSeriesSku || series.name !== 'Series 1';
         entries.push({ market, launchDate, model: {
           ...calculateSeriesPace({ today, targetDate: dates.targetDate, stock: facts.stock, days: facts.days.filter(row => row.day >= launchDate) }),
           ...(named ? { seriesKey: series.key, seriesName: series.name } : {}),

@@ -1,0 +1,26 @@
+.ask-form, .ask-result {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 20px;
+  overflow-wrap: anywhere;
+}
+.ask-result[hidden] { display: none; }
+.ask-form label, .ask-result h2 { font: 600 18px var(--disp); }
+.ask-form textarea {
+  width: 100%;
+  min-height: 104px;
+  resize: vertical;
+  padding: 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: var(--well);
+  color: var(--ink);
+  font: 400 16px/1.5 var(--font);
+}
+.ask-form :focus-visible { outline: 3px solid var(--decide); outline-offset: 3px; }
+.ask-form > button { justify-self: start; min-width: 72px; }
+.ask-examples { display: flex; align-items: start; flex-wrap: wrap; gap: 8px; }
+.ask-examples button { white-space: normal; text-align: left; }
+#ask-answer { white-space: pre-wrap; line-height: 1.65; }
+#ask-sources, #ask-hint, #ask-status { color: var(--ink-2); font-size: 13px; }

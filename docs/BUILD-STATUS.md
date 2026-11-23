@@ -488,3 +488,7 @@ Part A adds a versioned series list, per-SKU inventory and fallback reporting, a
 Part B adds the signed-in Stock planner with UK and US warehouse rows, 28 complete UK days of observed stock changes, month-by-month run-out and supplier-direct order dates. It uses Settings supplier lead times. Accessory cover pairs kit and pack observations over the same days. Migration 079 stores the planner settings under the same Settings version and audit.
 
 **Not done or known gaps:** Supplier imports and landed-order lead-time medians remain pending. Live planner agreement requires configured suppliers, lead times and enough daily snapshots to measure a rate.
+
+Part C adds signed-in Ask with nine dashboard tools, a fixed sample reply for each example, the existing Anthropic key for live mode, per-UK-day spend accounting and 90-day log expiry. Migration 080 adds Ask Settings and the usage log.
+
+**Not done or known gaps:** Exact free-form questions and generated answer text are omitted from persistent logs because they can contain customer details. Waiting-on responses provide counts, dates and ages without subject or contact text. Reviews cover the existing waiting-review list. Ask enforces read-only transactions for fixed tools. Provisioning a separate PostgreSQL login role is deferred. Live Anthropic acceptance stays with the owner.

@@ -1,3 +1,4 @@
+import { checkAsk } from './browser-ask.js';
 import { checkStockPlanner } from './browser-stock.js';
 import { checkMetaAttribution } from './browser-meta-attribution.js';
 import { checkHourly } from './browser-hourly.js';
@@ -1830,6 +1831,8 @@ async function run(): Promise<void> {
     await checkScorecard(context);
     step = "stock planner and account navigation at phone and desktop widths";
     await checkStockPlanner(context);
+    step = "Ask samples, sources and escaped answer at phone and desktop widths";
+    await checkAsk(context);
     step = 'check the signed-in Handover shell at phone and desktop widths';
     await checkHandoverBase(context);
     step = 'check stored Customer service tickets, private fields and safe links on Handover';

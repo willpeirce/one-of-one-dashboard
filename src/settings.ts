@@ -1,3 +1,4 @@
+import { askDefaults, askModels, type AskSettings } from './ask/protocol.js';
 import { plannerDefaults, type PlannerSettings } from './stock/planner.js';
 import { defaultCorporationTaxPercent } from './after-tax.js';
 import { adRulesDefaults, type AdRules } from './meta-adsets/settings.js';
@@ -16,7 +17,7 @@ import {ISSUE_REASONS, ISSUE_TAG_LIMIT, ISSUE_TAG_TEXT_LIMIT, type IssueTagRule}
 export const SETTINGS_KEY_NAMES = Object.freeze(sourceDefinitions.flatMap((source) => [...source.requiredKeys]));
 type KeyName = (typeof SETTINGS_KEY_NAMES)[number];
 
-export interface Settings extends PlannerSettings {
+export interface Settings extends PlannerSettings, AskSettings {
   adRules: AdRules;
   goalOrdersPerDay: number;
   goalNetMarginPercent: number;
@@ -167,6 +168,7 @@ export function defaultSettings(): Settings {
     markersPerKit: null,
     pencilsPerKit: null,
     ...plannerDefaults(),
+    ...askDefaults(),
     series: [originalSeries()],
     ...creativeSettingsDefaults(),
     freelancerLabel: 'Freelancer',
@@ -392,6 +394,8 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
       const parsed = object(row, ['product', 'supplier'], path);
       return { product: text(parsed.product, `${path}.product`), supplier: businessText(parsed.supplier, `${path}.supplier`) };
     }, row => row.product.toLowerCase()),
+    askModel: choice(value.askModel, 'askModel', askModels),
+    askDailyCapGbp: requiredNumber(value.askDailyCapGbp, 'askDailyCapGbp', 100),
     series: parseSeries(value.series),
     metaAdAccountId: accountId(value.metaAdAccountId, 'metaAdAccountId'),
     creativeDefaultWindow: choice(value.creativeDefaultWindow, 'creativeDefaultWindow', ['24h', '3d', '7d'] as const),
@@ -553,6 +557,7 @@ function storedSettings(input: unknown): Settings {
   const stored: Record<string, unknown> = {
     ...creativeSettingsDefaults(),
     ...plannerDefaults(),
+    ...askDefaults(),
     adRules: adRulesDefaults(),
     metaSources: defaults.metaSources,
     ourActors: defaults.ourActors,
@@ -607,29 +612,35 @@ async function hasPlannerStorage(db: Database): Promise<boolean> {
   return (await db.query<{ present: boolean }>("SELECT to_regclass('pulse.stock_planner_settings') IS NOT NULL AS present")).rows[0]?.present === true;
 }
 
+async function hasAskStorage(db: Database): Promise<boolean> {
+  return (await db.query<{ present: boolean }>("SELECT to_regclass('pulse.ask_settings') IS NOT NULL AS present")).rows[0]?.present === true;
+}
+
 async function ensureSettings(db: Database): Promise<void> {
-  const { series: _series, seasonalMultipliers: _months, reorderSafetyWeeks: _weeks, productSuppliers: _suppliers, ...values } = defaultSettings();
+  const { series: _series, seasonalMultipliers: _months, reorderSafetyWeeks: _weeks, productSuppliers: _suppliers, askModel: _model, askDailyCapGbp: _cap, ...values } = defaultSettings();
   await db.query('INSERT INTO pulse.settings (values) VALUES ($1) ON CONFLICT (singleton) DO NOTHING', [JSON.stringify(values)]);
 }
 
 export async function readSettings(db: Database, options: { seed?: boolean } = {}): Promise<SettingsSnapshot> {
   if (options.seed !== false) await ensureSettings(db);
-  type Row = { version: number; values: Settings; series: Series[] | null; planner: PlannerSettings | null };
-  const select = (series: boolean, planner: boolean) => db.query<Row>(`
+  type Row = { version: number; values: Settings; series: Series[] | null; planner: PlannerSettings | null; ask: AskSettings | null };
+  const select = (series: boolean, planner: boolean, ask: boolean) => db.query<Row>(`
     SELECT settings.version, settings.values, ${series ? 'configured_series.series' : 'NULL'} AS series,
-      ${planner ? 'stock_planner_settings.values' : 'NULL'} AS planner FROM pulse.settings
+      ${planner ? 'stock_planner_settings.values' : 'NULL'} AS planner,
+      ${ask ? 'ask_settings.values' : 'NULL'} AS ask FROM pulse.settings
       ${series ? 'LEFT JOIN pulse.configured_series USING (singleton)' : ''}
-      ${planner ? 'LEFT JOIN pulse.stock_planner_settings USING (singleton)' : ''} WHERE singleton = true`);
+      ${planner ? 'LEFT JOIN pulse.stock_planner_settings USING (singleton)' : ''}
+      ${ask ? 'LEFT JOIN pulse.ask_settings USING (singleton)' : ''} WHERE singleton = true`);
   let rows: Row[];
   try {
-    ({ rows } = await select(true, true));
+    ({ rows } = await select(true, true, true));
   } catch (error) {
     if ((error as { code?: string })?.code !== '42P01') throw error;
-    ({ rows } = await select(await hasSeriesStorage(db), await hasPlannerStorage(db)));
+    ({ rows } = await select(await hasSeriesStorage(db), await hasPlannerStorage(db), await hasAskStorage(db)));
   }
   if (!rows[0] && options.seed === false) return { version: 0, values: defaultSettings() };
   if (!rows[0]) throw new Error('Settings are unavailable');
-  return { version: rows[0].version, values: mergeSeries({ ...rows[0], values: { ...rows[0].values, ...rows[0].planner } }) };
+  return { version: rows[0].version, values: mergeSeries({ ...rows[0], values: { ...rows[0].values, ...rows[0].planner, ...rows[0].ask } }) };
 }
 
 export async function saveSettings(db: Database, input: unknown, credentialId: string): Promise<SettingsSaveResult> {
@@ -650,7 +661,10 @@ export async function saveSettings(db: Database, input: unknown, credentialId: s
     const planner = await hasPlannerStorage(transaction)
       ? (await transaction.query<{ values: PlannerSettings }>('SELECT values FROM pulse.stock_planner_settings')).rows[0]?.values
       : undefined;
-    const previous = mergeSeries({ values: { ...row.values, ...planner }, series: configured ?? null });
+    const ask = await hasAskStorage(transaction)
+      ? (await transaction.query<{ values: AskSettings }>('SELECT values FROM pulse.ask_settings')).rows[0]?.values
+      : undefined;
+    const previous = mergeSeries({ values: { ...row.values, ...planner, ...ask }, series: configured ?? null });
     const deleted = previous.series.filter(series => !values.series.some(next => next.key === series.key && next.sku === series.sku));
     if (deleted.length) {
       const protectedSkus = await snapshotSkus(transaction);
@@ -658,7 +672,7 @@ export async function saveSettings(db: Database, input: unknown, credentialId: s
     }
     const fields = changedFields(previous, values);
     if (fields.length === 0) return { version, values, changedFields: [] };
-    const { series, seasonalMultipliers, reorderSafetyWeeks, productSuppliers, ...base } = values;
+    const { series, seasonalMultipliers, reorderSafetyWeeks, productSuppliers, askModel, askDailyCapGbp, ...base } = values;
     const legacy = Object.fromEntries(Object.entries(row.values).filter(([key]) => legacySeriesKeys.includes(key)));
     await transaction.query('UPDATE pulse.settings SET values = $1, version = version + 1, updated_at = now() WHERE singleton = true', [JSON.stringify({ ...base, ...legacy })]);
     if (fields.some(field => field === 'series' || field.startsWith('series.'))) {
@@ -668,6 +682,10 @@ export async function saveSettings(db: Database, input: unknown, credentialId: s
     if (fields.some(field => ['seasonalMultipliers', 'reorderSafetyWeeks', 'productSuppliers'].includes(field.split('.')[0]!))) {
       await transaction.query(`INSERT INTO pulse.stock_planner_settings (values) VALUES ($1)
         ON CONFLICT (singleton) DO UPDATE SET values = EXCLUDED.values`, [JSON.stringify({ seasonalMultipliers, reorderSafetyWeeks, productSuppliers })]);
+    }
+    if (fields.includes('askModel') || fields.includes('askDailyCapGbp')) {
+      await transaction.query(`INSERT INTO pulse.ask_settings (values) VALUES ($1)
+        ON CONFLICT (singleton) DO UPDATE SET values = EXCLUDED.values`, [JSON.stringify({ askModel, askDailyCapGbp })]);
     }
     for (const field of fields) {
       await transaction.query(`

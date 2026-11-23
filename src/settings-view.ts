@@ -1,3 +1,4 @@
+import { askModels } from './ask/protocol.js';
 import { seriesPaceDates } from './series-pace/dates.js';
 import { paceDate } from './series-pace/model.js';
 import { seriesMarkets } from './series-pace/series.js';
@@ -192,6 +193,10 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
         const dates = seriesPaceDates(String(row[`${market}OrderDate`] ?? ''), Number(row[`${market}LandingOffsetDays`]), String(row[`${market}TargetDate`] ?? ''));
         return `<p class="setting-help" data-series-pace-dates="${market}" aria-live="polite">${dates ? `Landing date: ${paceDate(dates.landingDate)} · Target date: ${paceDate(dates.targetDate)} (${dates.targetKind})` : ''}</p>`;
       }).join('') }));
+  const ask = section('Ask', 'Model and daily spend limit.', `<div class="settings-grid">${fields([
+    { key: 'askModel', label: 'Ask model', options: askModels.map(model => ({ value: model, label: model })) },
+    number('askDailyCapGbp', 'Ask daily cap (£)', { max: 100 }),
+  ], values)}</div>`);
   const creativeControls = `<section class="setting-collection" aria-labelledby="creative-settings-heading"><h3 id="creative-settings-heading">Meta creatives</h3><p class="setting-help">Rankings use Meta’s purchase claims. Targets are local rules; saving never changes an ad.</p><div class="settings-grid">${fields([
     { key: 'creativeDefaultWindow', label: 'Top creatives default window', options: [{ value: '24h', label: '24h' }, { value: '3d', label: '3 days' }, { value: '7d', label: '7 days' }], hint: '24h means the last complete UK day plus today so far.' },
     number('creativeSpendFloorGbp', 'Panel spend floor (£)', { max: 100_000 }),
@@ -313,7 +318,7 @@ ${tickerHead()}</head>
     <form id="settings-form" data-version="${snapshot.version}" method="post" action="/api/settings">
       <input type="hidden" id="saved-meta-owner-rules" value="${escapeHtml(JSON.stringify(values.metaOwners))}">
       <input type="hidden" id="saved-gorgias-issue-tags" value="${escapeHtml(JSON.stringify(values.gorgiasIssueTags))}">
-      <fieldset id="settings-fields"><legend class="settings-sr-only">Business settings</legend>${goals}${advertising}${costs}${stock}${pace}${campaigns}${email}${handover}${waiting}${creators}${keyDates}${dates}${preferences}</fieldset>
+      <fieldset id="settings-fields"><legend class="settings-sr-only">Business settings</legend>${goals}${advertising}${costs}${stock}${pace}${ask}${campaigns}${email}${handover}${waiting}${creators}${keyDates}${dates}${preferences}</fieldset>
       <div class="settings-savebar glass"><div><p id="settings-message" role="status" aria-live="polite">Choose Save settings for these fields, or Save beside a campaign owner.</p><p class="setting-help">Unknown costs can stay blank. Saving adds an audit entry.</p></div><button class="btn settings-save" id="settings-save" type="submit" disabled>Save settings</button></div>
     </form>
     <p id="auth-message" role="status" aria-live="polite"></p>

@@ -1383,3 +1383,11 @@ Use the existing daily stock snapshots from the scorecard. A rate uses up to 28 
 Apply the seasonality factor for each calendar month until stock runs out, with a listed landing counted only while stock remains. Kits stop at run-out. Accessory order dates subtract the configured supplier lead time and safety interval. Accessory cover compares pack and kit stock changes on matching days, then applies the resulting rate to remaining and inbound kits in the same warehouse. Settings supplies lead times until supplier imports exist.
 
 The Stock link is added when the account menu script loads. This keeps the server-rendered Home markup hash intact.
+
+### Part C · Ask
+
+Use the official SDK only for Ask. Haiku is the default. Sonnet sends the server-side fallback beta with the default fallback chain. The system prompt and tool definitions are stable across calls. Each turn returns one message containing all requested tool results, with a six-request and sixty-second bound. Only successful tool reads supply the Sources line. Sample replies use fixed invented data without contacting the provider.
+
+Tools enter a PostgreSQL read-only transaction and project fixed fields from existing dashboard readers. The model has no SQL facility. A separate database login role would require deployment provisioning, so this build uses the existing connection with transaction-level enforcement. Review and ticket text, waiting subjects and contact names are left out. The log retains predefined example questions, fixed failure responses, validated tool inputs and usage figures. Arbitrary questions and generated answers stay out of storage because free text can contain customer details.
+
+A transaction lock guards the rolling hourly limit and the balance for the current UK day. Only one request can hold a pending reservation. The answer returns at the request deadline even if a tool takes longer to finish its read. The creative scan already takes prices in pounds per million tokens, so Ask converts its supplied dollar prices using the existing pound-per-dollar Setting. The hourly cleanup removes rows older than 90 days.

@@ -34,6 +34,13 @@ if (scorecardLink) {
   scorecardLink.after(stockLink);
 }
 
+if (scorecardLink) {
+  const askLink = document.createElement('a');
+  askLink.href = '/ask';
+  askLink.textContent = 'Ask';
+  (document.querySelector('.account-links a[href="/stock"]') ?? scorecardLink).after(askLink);
+}
+
 const passkeysAvailable = window.isSecureContext && typeof window.PublicKeyCredential !== 'undefined';
 
 function setMessage(text: string): void {

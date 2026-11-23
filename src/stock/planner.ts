@@ -1,4 +1,5 @@
 import { addDays, dayCount } from '../hero-range.js';
+import type { SupplierLeadTime } from '../settings.js';
 import type { InboundStock } from '../shopify/stock-gap.js';
 import type { State } from '../dashboard-types.js';
 
@@ -95,7 +96,7 @@ function dailyUsage(product: PlannerProduct, today: string, inbound: readonly In
 
 export function planStock(products: readonly PlannerProduct[], today: string, settings: PlannerSettings & {
   inboundStock: readonly InboundStock[];
-  supplierLeadTimes: readonly { supplier: string; days: number | null }[];
+  supplierLeadTimes: readonly SupplierLeadTime[];
 }): PlannerRow[] {
   const prepared = products.map(product => {
     const matches = (value: string) => normalise(value) === normalise(product.name) || !!product.sku && normalise(value) === normalise(product.sku);
@@ -103,7 +104,8 @@ export function planStock(products: readonly PlannerProduct[], today: string, se
     const inbound = landings.filter(row => row.expectedDate >= today).sort((a, b) => a.expectedDate.localeCompare(b.expectedDate));
     const usage = dailyUsage(product, today, landings);
     const supplier = settings.productSuppliers.find(row => matches(row.product))?.supplier;
-    const lead = settings.supplierLeadTimes.find(row => row.supplier === supplier)?.days ?? null;
+    const timing = settings.supplierLeadTimes.find(row => row.supplier === supplier);
+    const lead = timing?.[product.market === 'uk' ? 'ukDays' : 'usDays'] ?? timing?.days ?? null;
     const observedDays = usage.size;
     const rate = observedDays ? [...usage.values()].reduce((sum, value) => sum + value, 0) / observedDays : null;
     const forecast = forecastStock(today, product.available, rate, settings.seasonalMultipliers, inbound);

@@ -34,3 +34,15 @@
 .settings-page #push-device-message:empty,.settings-page #push-device-help:empty{display:none}
 /* Four header buttons keep one row on the narrowest phones. */
 @media(max-width:389px){.settings-nav{gap:4px}.settings-nav .btn{padding:6px 7px}}
+
+@media (min-width: 761px) {
+  [data-settings-list="supplierLeadTimes"] .setting-row-fields {
+    grid-template-columns: minmax(0, 2fr) repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  [data-settings-list="supplierLeadTimes"] .setting-row-fields {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  [data-settings-list="supplierLeadTimes"] .setting-field:first-child { grid-column: 1 / -1; }
+}

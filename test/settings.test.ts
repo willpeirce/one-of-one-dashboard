@@ -293,6 +293,8 @@ test('the database audit CHECK covers every Settings key plus named retired keys
   assert.equal((await insert('startingCogs.0.unitCostGbp')).rowCount, 1);
   assert.equal((await insert('inboundStock.0.expectedDate')).rowCount, 1);
   assert.equal((await insert('series.0.UKLaunchDate')).rowCount, 1);
+  assert.equal((await insert('supplierLeadTimes.0.ukDays')).rowCount, 1);
+  assert.equal((await insert('supplierLeadTimes.0.usDays')).rowCount, 1);
   assert.equal((await insert(`brand.${'a'.repeat(154)}`)).rowCount, 1);
   const auditCount = (await db.query('SELECT * FROM pulse.audit_log')).rowCount;
   for (const field of [
@@ -581,7 +583,7 @@ const originalStoredSettingsKeys: readonly string[] = Object.freeze([
   'deadlines', 'keyExpiryDates', 'morningSummaryEnabled', 'brand',
 ]);
 
-test('every Settings key added beyond the frozen stored schema gets its default on read', async (t) => {
+test('every Settings key added beyond the frozen stored schema gets its default and optional supplier days stay absent', async (t) => {
   const db = await createTestDatabase();
   t.after(() => db.close());
   const defaults = defaultSettings();
@@ -593,6 +595,9 @@ test('every Settings key added beyond the frozen stored schema gets its default 
     await db.query('UPDATE pulse.settings SET values = $1', [JSON.stringify(stored)]);
     const snapshot = await readSettings(db);
     assert.deepEqual(snapshot.values[key], defaults[key], `${key} must default on read`);
+    for (const supplier of snapshot.values.supplierLeadTimes) {
+      assert.deepEqual(Object.keys(supplier).sort(), ['days', 'supplier']);
+    }
   }
 });
 
@@ -710,4 +715,37 @@ test('fresh Settings use the invented suppliers and stored supplier rows keep th
   assert.deepEqual(await readSettings(db), { version: 8, values: stored });
   assert.deepEqual((await db.query('SELECT * FROM pulse.settings')).rows, before);
   assert.equal((await db.query('SELECT 1 FROM pulse.settings_changes')).rowCount, 0);
+});
+
+test('supplier warehouse days validate as optional whole days and save through the existing Settings audit', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const supplier = { supplier: 'Invented Paper', days: 11 };
+  const older = { ...defaultSettings(), supplierLeadTimes: [supplier] };
+  await db.query('INSERT INTO pulse.settings (version, values) VALUES (4, $1)', [JSON.stringify(older)]);
+  const before = (await db.query('SELECT * FROM pulse.settings')).rows;
+  const snapshot = await readSettings(db, { seed: false });
+  assert.deepEqual(snapshot, { version: 4, values: older });
+  const request = (row: object, version = 4) => ({ version, values: { ...older, supplierLeadTimes: [row] } });
+  const device = randomUUID();
+  assert.deepEqual(await saveSettings(db, request({ ...supplier, ukDays: null, usDays: null }), device),
+    { ...snapshot, changedFields: [] });
+  assert.deepEqual((await db.query('SELECT * FROM pulse.settings')).rows, before);
+  assert.equal((await db.query('SELECT 1 FROM pulse.audit_log')).rowCount, 0);
+  for (const key of ['ukDays', 'usDays']) {
+    for (const invalid of [-1, 1.25, 731, '12']) {
+      assert.throws(() => validateSettings(request({ ...supplier, [key]: invalid }).values),
+        (error: unknown) => error instanceof SettingsValidationError && error.fields.includes(`supplierLeadTimes.0.${key}`));
+    }
+  }
+  const saved = await saveSettings(db, request({ ...supplier, ukDays: 0, usDays: 730 }), device);
+  assert.deepEqual(saved.changedFields.sort(), ['supplierLeadTimes.0.ukDays', 'supplierLeadTimes.0.usDays']);
+  assert.deepEqual((await readSettings(db)).values.supplierLeadTimes, [{ ...supplier, ukDays: 0, usDays: 730 }]);
+  const cleared = await saveSettings(db, request({ ...supplier, ukDays: null, usDays: 15 }, saved.version), device);
+  assert.deepEqual(cleared.values.supplierLeadTimes, [{ ...supplier, usDays: 15 }]);
+  const html = settingsPage(snapshot);
+  assert.match(html, /Blank uses Days/);
+  for (const [key, label] of [['ukDays', 'UK days'], ['usDays', 'US days']]) {
+    assert.ok(html.includes(`>${label}</label>`));
+    assert.match(html, new RegExp(`name="supplierLeadTimes.0.${key}"[^>]*value=""[^>]*min="0" step="1" max="730"`));
+  }
 });

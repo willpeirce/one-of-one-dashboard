@@ -161,3 +161,17 @@ test('accessory cover counts arrivals through the last launched kit run-out in i
   assert.deepEqual(rows[2]!.gaps, [{ from: '2031-02-03', to: '2031-02-06', days: 3 }]);
   assert.deepEqual(rows[0]!.coverage, { kits: 75, covered: 60, shortfall: 3 });
 });
+
+test('order-by uses each warehouse override and otherwise falls back to the supplier days', () => {
+  const pack = product('Invented Pack', false, 120, 4);
+  const products = [pack, { ...pack, market: 'us' as const }];
+  for (const [overrides, expected] of [
+    [{}, ['2031-02-22', '2031-02-22']],
+    [{ ukDays: 9 }, ['2031-02-18', '2031-02-22']],
+    [{ usDays: 0 }, ['2031-02-22', '2031-02-27']],
+  ] as const) {
+    const rows = planStock(products, today, { ...config, reorderSafetyWeeks: 0,
+      supplierLeadTimes: [{ ...config.supplierLeadTimes[0]!, ...overrides }] });
+    assert.deepEqual(rows.map(row => row.orderBy), expected);
+  }
+});

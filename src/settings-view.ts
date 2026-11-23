@@ -161,8 +161,10 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     number('pencilsPerKit', 'Pencils per kit', { nullable: true, integer: true }),
   ], values)}</div><h3>Monthly reorder multipliers</h3><div class="settings-grid">${values.seasonalMultipliers.map((multiplier, index) => field(number(String(index),
     new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', month: 'short' }).format(new Date(Date.UTC(2000, index, 1))), { min: 0.2, max: 5, step: 'any' }), multiplier, 'seasonalMultipliers')).join('')}</div>${collection('supplierLeadTimes', 'Supplier lead time', [
-    { key: 'supplier', label: 'Supplier business' }, number('days', 'Lead time (days)', { nullable: true, integer: true }),
-  ], values.supplierLeadTimes, 'Starting supplier lead times. With no arrival listed, cover below the shortest known lead time raises a warning; no arrival date is assumed.')}${collection('productSuppliers', 'Product supplier', [
+    { key: 'supplier', label: 'Supplier business' }, number('days', 'Days', { nullable: true, integer: true, max: 730 }),
+    number('ukDays', 'UK days', { nullable: true, integer: true, max: 730 }),
+    number('usDays', 'US days', { nullable: true, integer: true, max: 730 }),
+  ], values.supplierLeadTimes, 'UK and US lead times apply to the stock planner. Blank uses Days. Home warns when cover falls below the shortest Days value and no arrival is listed. On Home, no arrival date is assumed.')}${collection('productSuppliers', 'Product supplier', [
     { key: 'product', label: 'Product or SKU', list: 'inbound-stock-products' },
     { key: 'supplier', label: 'Supplier business', list: 'stock-suppliers' },
   ], values.productSuppliers, 'Match each accessory to a business from Supplier lead time.', undefined, {

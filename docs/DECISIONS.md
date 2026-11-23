@@ -1395,3 +1395,7 @@ A transaction lock guards the rolling hourly limit and the balance for the curre
 ### Part D · Week against last year
 
 Use the scorecard's existing daily coverage and spend rules on each seven-day window. The earlier window starts exactly 364 days before the selected one. The monthly year comparison additionally requires continuous intervening history. The requested weekly card compares just the two selected windows, so a missing day between them cannot hide a complete side. Fully covered markets with no paid orders show zero.
+
+### Part E · Records
+
+The account menu links come from the signed-in browser shell. The server-rendered Home hash and its existing counts and budgets stay pinned. The eight screenshots use invented figures at 390 and 1280 px. The public countdown retains its existing route and headers.

@@ -120,8 +120,8 @@ Updated in every pull request.
 | 3 | Google Ads | spend, campaigns, networks, conversions, changes and read-only needs built | three existing Google keys + account Settings | live GMT/UK spend and conversion comparison pending |
 | 4 | Mailchimp | standalone client, probe, audience/billing and Shopify view built; per-flow figures/funnel stay sample | optional MAILCHIMP_API_KEY | probe and audience acceptance pending |
 | 5 | Workflow side (Handover) | customer service and Waiting on others built; Discord and the UGC tab not built | optional Gorgias keys and existing GITHUB_HQ_TOKEN | Gorgias probe, ticket links and HQ waiting-file agreement pending |
-| 6 | Costs, uploads, planning | unit costs, fulfilment imports, estimates and Issues without the model built, now with managed intent classification; supplier imports and planner not built | no new key for Issues; optional empty-default tag map | existing cost/import and Issues source agreement remain for Claude to check |
-| 7 | Alerts and Ask | push delivery, morning summary, watchdog trip/recovery and monthly upload pushes built; Ask not built | no new key; Alerts starts off per device | installed-phone delivery and replacement behavior pending |
+| 6 | Costs, uploads, planning | unit costs, fulfilment imports, estimates and Issues without the model built, now with managed intent classification; Stock planner uses daily stock and Settings lead times; supplier imports still pending | no new keys; add accessory suppliers and lead times in Settings | existing cost/import and Issues source agreement, plus warehouse planner checks |
+| 7 | Alerts and Ask | push delivery, morning summary, watchdog trip/recovery and monthly upload pushes built; Ask uses fixed read-only dashboard tools and logs usage | existing Anthropic key for live Ask; Alerts starts off per device | installed-phone delivery and live Ask model acceptance pending |
 
 ## Small change: Morning in every header · 10 Nov
 
@@ -496,3 +496,5 @@ Part C adds signed-in Ask with nine dashboard tools, a fixed sample reply for ea
 Part D adds the Scorecard week comparison for UK and US net sales, counted orders and ad spend by platform. The default ends yesterday in the UK. Any earlier completed week can be selected by its end date. The comparison uses the same weekdays 364 days earlier.
 
 **Not done or known gaps:** Each metric shows no history for a side missing any of its seven days. Existing coverage can limit older windows, especially market splits and individual ad platforms.
+
+Part E records setup in the README and includes eight sample screenshots at 390 and 1280 px. Parts A and B passed 1,489 and 1,495 PostgreSQL tests respectively. The existing Home hash, pins, budgets and count checks remain in effect. The public countdown route stays at its original registration.

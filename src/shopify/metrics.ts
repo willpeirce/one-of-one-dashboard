@@ -1,4 +1,4 @@
-import { originalSeriesProductId, originalSeriesSku } from '../series-pace/series.js';
+import { originalSeriesProductId, originalSeriesSku, seriesMarket } from '../series-pace/series.js';
 import { afterTaxMetric } from '../after-tax.js';
 import { formatUkTime } from '../uk-time.js';
 import { applySpend, placedSpendRows, usableSpendSources, type AdHeroInputs } from '../ad-spend/metrics.js';
@@ -228,6 +228,12 @@ export function stockCover(facts: Facts, today: string, settings: Settings): Sto
   const extraSkus = series.filter(row => row.sku !== originalSeriesSku).map(row => row.sku);
   for (const [market, location] of Object.entries(appConfig.shopify.locations)) for (const product of products) {
     const { productId } = product;
+    const marketCode = market === 'uk' ? 'UK' : 'US';
+    const activeSeries = series.filter(row => seriesMarket(row, marketCode).launchDate <= today);
+    const activeExtras = activeSeries.filter(row => row.sku !== originalSeriesSku).map(row => row.sku);
+    const originalActive = facts.mode === 'sample' || activeSeries.some(row => row.sku === originalSeriesSku);
+    if (product.sku && !activeExtras.includes(product.sku) || productId === originalSeriesProductId && !product.sku && !originalActive) continue;
+    const activeKitIds = originalActive ? kitIds : activeExtras.length ? bundleIds : [];
     const levels = inventory.filter(i => i.locationId === location.id && (product.sku ? i.sku === product.sku : i.productId === productId && !extraSkus.includes(i.sku ?? '')));
     const known = levels.length > 0 && levels.every(l => l.quantities.some(q => q.name === 'available'));
     const available = known ? levels.reduce((n, l) => n + l.quantities.find(q => q.name === 'available')!.quantity, 0) : null;
@@ -238,8 +244,8 @@ export function stockCover(facts: Facts, today: string, settings: Settings): Sto
     const quantity = sold.reduce((n, o) => n + allocatedQuantity(o, product.sku ? [] : [productId], product.sku ? [product.sku] : []), 0);
     const rate = complete && allocationComplete && settings.seasonalMultiplier !== null ? quantity / 60 * settings.seasonalMultiplier : null;
     const kits = product.kit;
-    const remainingKits = inventory.filter(i => (kitIds.includes(i.productId) || extraSkus.includes(i.sku ?? '')) && i.locationId === location.id).reduce((n, i) => n + (i.quantities.find(q => q.name === 'available')?.quantity ?? 0), 0);
-    const kitQuantity = sold.reduce((n, o) => n + allocatedQuantity(o, kitIds, extraSkus), 0);
+    const remainingKits = inventory.filter(i => (activeKitIds.includes(i.productId) && !extraSkus.includes(i.sku ?? '') || activeExtras.includes(i.sku ?? '')) && i.locationId === location.id).reduce((n, i) => n + (i.quantities.find(q => q.name === 'available')?.quantity ?? 0), 0);
+    const kitQuantity = sold.reduce((n, o) => n + allocatedQuantity(o, activeKitIds, activeExtras), 0);
     const required = !kits && complete && allocationComplete && kitQuantity > 0 ? quantity / kitQuantity * remainingKits : null;
     const cover = kits && available !== null && rate !== null && rate > 0 ? available / rate : null;
     rows.push({ ...(product.sku ? { kit: true } : {}), market: stockMarket(market), product: product.name, productId, locationId: location.id, name: `${product.name} · ${location.name}`, available, required, dailyRate: rate, cover,

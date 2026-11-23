@@ -103,3 +103,26 @@ test('Settings renders the pace group with bounded offsets, optional targets and
   assert.match(html, /data-series-pace-dates="UK"[^>]*>Landing date: 16 Feb 2027 · Target date: 16 Feb 2027 \(landing date\)/);
   assert.match(html, /data-series-pace-dates="US"[^>]*>Landing date: 17 Jan 2027 · Target date: 3 Feb 2027 \(your date\)/);
 });
+
+test('a target can be omitted and an unstocked series can be removed until its first daily observation', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const current = await readSettings(db);
+  const first = current.values.series[0]!;
+  const { UKTargetDate: _uk, USTargetDate: _us, ...dates } = first;
+  const extra = { ...dates, key: 'invented-drop-3', sku: 'invented-drop-3', name: 'Invented Drop Three' };
+  const saving = { ...current.values, series: [first, extra] };
+  const credential = randomUUID();
+  const saved = await saveSettings(db, { version: current.version, values: saving }, credential);
+  assert.equal(saved.values.series[1]!.UKTargetDate, '');
+  assert.equal(saved.values.series[1]!.USTargetDate, '');
+  const removed = await saveSettings(db, { version: saved.version, values: current.values }, credential);
+  assert.deepEqual(removed.values.series, [first]);
+  const restored = await saveSettings(db, { version: removed.version, values: saving }, credential);
+  const now = new Date('2032-03-02T00:05:00Z');
+  await db.query(`INSERT INTO pulse.stock_daily(mode,day,location_id,inventory_item_id,product_id,sku,available,taken_at,fetched_at,source_id)
+    VALUES('live','2032-03-02','invented-location','invented-inventory','invented-product',$1,31,$2,$2,'invented-daily-observation')`,
+  [extra.sku, now]);
+  await assert.rejects(saveSettings(db, { version: restored.version, values: current.values }, credential),
+    error => error instanceof SettingsValidationError && error.fields.includes('series'));
+  assert.deepEqual(await readSettings(db), { version: restored.version, values: restored.values });
+});

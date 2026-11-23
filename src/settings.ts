@@ -286,7 +286,9 @@ function accountId(value: unknown, field: string, google = false): string {
 
 function parseSeries(value: unknown): Series[] {
   const rows = list(value, 'series', (row, path) => {
-    const input = object(row, Object.keys(originalSeries()), path);
+    if (!row || typeof row !== 'object') return invalid(path);
+    const allowed = Object.keys(originalSeries()).filter(key => !key.endsWith('TargetDate') || Object.hasOwn(row, key));
+    const input = object(row, allowed, path);
     const identifier = (key: 'key' | 'sku', pattern: RegExp): string => {
       const value = input[key];
       if (typeof value !== 'string' || !pattern.test(value)) return invalid(`${path}.${key}`);
@@ -302,7 +304,8 @@ function parseSeries(value: unknown): Series[] {
       result[`${market}LaunchDate`] = seriesDate(input[`${market}LaunchDate`], field('LaunchDate'));
       result[`${market}OrderDate`] = seriesDate(input[`${market}OrderDate`], field('OrderDate'));
       result[`${market}LandingOffsetDays`] = requiredNumber(input[`${market}LandingOffsetDays`], field('LandingOffsetDays'), 365, true);
-      result[`${market}TargetDate`] = seriesDate(input[`${market}TargetDate`], field('TargetDate'), true);
+      const target = `${market}TargetDate`;
+      result[target] = seriesDate(Object.hasOwn(input, target) ? input[target] : '', field('TargetDate'), true);
       const dates = seriesMarket(result, market);
       if (!seriesPaceDates(dates.orderDate, dates.landingOffsetDays, dates.targetDate)) invalid(field('OrderDate'));
     }

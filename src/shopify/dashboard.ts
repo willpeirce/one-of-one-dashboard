@@ -173,7 +173,9 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
   stockDetails.push(['Upcoming inbound', inbound.length ? 'Confirmed arrivals from Settings. Pack rows are listed but cannot raise a gap until packs have a cover.' : 'No arrival listed.']);
   for (const row of inbound) stockDetails.push([`${row.product} · ${row.market.toUpperCase()}`, `${formatNumber(row.quantity)} units · expected ${row.expectedDate}`]);
   for (const [key, productId, location] of [['w046', originalSeriesProductId, appConfig.shopify.locations.us.id], ['w047', originalSeriesProductId, appConfig.shopify.locations.uk.id], ['w048', 'gid://shopify/Product/10892913574222', appConfig.shopify.locations.us.id]] as const) {
-    const row = stock.find(s => s.productId === productId && s.locationId === location && !s.kit)!;
+    const row = stock.find(s => s.productId === productId && s.locationId === location && !s.kit)
+      ?? (productId === originalSeriesProductId ? stock.find(s => s.locationId === location && s.kit) : undefined)
+      ?? { name: 'Kit stock', available: null, cover: null, runOut: null, basis: 'No active series stock in this market.' };
     snapshot.widgets[key] = { source: ['shopify'], mode: facts.mode, kind: 'ring', value: { v: row.cover ?? 0, max: 180,
       t: row.cover === null ? 'No data' : `${formatNumber(Math.floor(row.cover))} d`, l: row.name, s: row.cover === null ? `Available ${row.available === null ? 'unknown' : formatNumber(row.available)} · cover unknown` : `Run-out ${row.runOut}`,
       state: row.cover === null || (facts.jobs.find(j => j.name === 'inventory')?.failures ?? 0) >= 2 || !facts.jobs.find(j => j.name === 'inventory')?.last_success_at || now.getTime() - new Date(facts.jobs.find(j => j.name === 'inventory')!.last_success_at!).getTime() > 900_000 ? 'info' : row.cover < 21 ? 'alarm' : row.cover < 60 ? 'warn' : 'good',

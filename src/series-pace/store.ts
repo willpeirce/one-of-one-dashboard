@@ -137,7 +137,10 @@ export async function missingSeriesPaceWindow(db: Database, now: Date, after: st
 
 export async function snapshotSkus(db: Database): Promise<Set<string>> {
   const stocks = await db.query<{ sku: string }>(`SELECT DISTINCT sku FROM pulse.series_stock_snapshots
-    UNION ALL SELECT $1::text WHERE EXISTS (SELECT 1 FROM pulse.stock_snapshots)`, [originalSeriesSku]);
+    UNION SELECT DISTINCT sku FROM pulse.stock_daily WHERE mode = 'live' AND sku IS NOT NULL
+    UNION SELECT $1::text WHERE EXISTS (SELECT 1 FROM pulse.stock_snapshots)
+      OR EXISTS (SELECT 1 FROM pulse.stock_daily WHERE mode = 'live' AND sku IS NULL AND product_id = $2)`,
+    [originalSeriesSku, originalSeriesProductId]);
   return new Set(stocks.rows.map(row => row.sku));
 }
 

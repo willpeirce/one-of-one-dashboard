@@ -335,7 +335,7 @@ export class ShopifyWorker {
     }
     if (name === 'stock_snapshot') {
       if (this.mode !== 'live') return { skipped: 'sample_mode' };
-      const { values } = await readSettings(this.db, { seed: false });
+      const { values } = await readSettings(this.db);
       let failure: unknown;
       for (const series of values.series) {
         try {

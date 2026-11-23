@@ -115,6 +115,15 @@ test('max tokens, a refusal and a transport error return fixed status and safe l
   assert.ok(logs.every(entry => !entry.includes('private value')));
 });
 
+test('a costly tool turn cannot start another model request once the remaining budget is used', async () => {
+  const fake = requestLog([reply('tool_use', [use('kits-1', 'kits', {})])]);
+  const result = await runAsk('Question?', today, model, fake.client, read, () => {}, 60_000, usage => usage.output < 50);
+  assert.equal(fake.requests.length, 1);
+  assert.equal(result.result.outcome, 'capped');
+  assert.equal(result.result.answer, askCapped);
+  assert.deepEqual(result.result.sources.map(source => source.name), ['Invented source']);
+});
+
 test('the whole question ends at 60 seconds even if the client ignores cancellation', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   let signal: AbortSignal | undefined;

@@ -48,10 +48,11 @@ export async function askQuestion({ db, settings, tool, mode, now, question, api
     const status = rows[0]!;
     if (status.recent >= hourlyLimit) return 'hourly';
     if (status.active) return 'busy';
-    const capped = Number(status.spent) >= settings.askDailyCapGbp * 100;
+    const remainingPence = settings.askDailyCapGbp * 100 - Number(status.spent);
+    const capped = remainingPence <= 0;
     await tx.query('INSERT INTO pulse.ask_log (id, question, model, outcome, asked_at, pending) VALUES ($1,$2,$3,$4,$5,$6)',
       [id, logQuestion, settings.askModel, capped ? 'capped' : 'unavailable', now, !capped]);
-    return capped ? 'capped' : 'allowed';
+    return capped ? 'capped' : { remainingPence };
   });
   if (access === 'capped') return answer(askCapped, 'capped');
   if (access === 'hourly') return answer(askHourlyMessage);
@@ -59,11 +60,13 @@ export async function askQuestion({ db, settings, tool, mode, now, question, api
   const remaining = askDeadlineMs - (performance.now() - startedAt);
   const allowed = !/[@]|https?:\/\/|\b\d[\d ().-]{6,}\d\b/i.test(question);
   const activeClient = allowed && remaining > 0 ? client ?? (apiKey?.trim() ? createAskClient(apiKey.trim(), settings.askModel) : undefined) : undefined;
-  const run = activeClient ? await runAsk(question, at, settings.askModel, activeClient, tool, undefined, remaining) : null;
+  const run = activeClient ? await runAsk(question, at, settings.askModel, activeClient, tool, undefined, remaining,
+    usage => askCostPence(settings.askModel, usage, settings.jjGbpPerUsd) < access.remainingPence) : null;
   const result = run?.result ?? answer(allowed ? askUnavailable : 'Ask about dashboard figures without including contact details');
   const usage = run?.usage;
   // Retain fixed status messages and token/tool accounting. Model answer text can echo arbitrary user input.
-  const logAnswer = result.outcome === 'refused' ? 'Ask can’t answer that one' : result.outcome === 'unavailable' ? askUnavailable : null;
+  const logAnswer = result.outcome === 'refused' ? 'Ask can’t answer that one'
+    : result.outcome === 'unavailable' ? askUnavailable : result.outcome === 'capped' ? askCapped : null;
   await db.query(`UPDATE pulse.ask_log SET answer=$2, tools=$3, input_tokens=$4, output_tokens=$5, cache_write_tokens=$6,
       cache_read_tokens=$7, cost_pence=$8, duration_ms=$9, outcome=$10, pending=false WHERE id=$1`,
   [id, logAnswer, JSON.stringify(run?.calls ?? []), usage?.input ?? 0, usage?.output ?? 0, usage?.cacheWrite ?? 0, usage?.cacheRead ?? 0,

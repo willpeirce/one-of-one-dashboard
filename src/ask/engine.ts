@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { BetaMessage, MessageCreateParamsNonStreaming, BetaMessageParam } from '@anthropic-ai/sdk/resources/beta/messages/messages';
 import {
-  askDeadlineMs, askSystem, askToolSchema, askUnavailable, validateAskTool,
+  askCapped, askDeadlineMs, askSystem, askToolSchema, askUnavailable, validateAskTool,
   type AskAnswer, type AskModel, type AskSource, type AskTool,
 } from './protocol.js';
 
@@ -35,7 +35,7 @@ type Log = (line: string) => void;
 export const askErrorType = (error: unknown) => error instanceof Error && /^[A-Za-z0-9_]{1,64}$/.test(error.name) ? error.name : 'Error';
 
 export async function runAsk(question: string, ukDate: string, model: AskModel, client: AskClient, tool: AskTool,
-  log: Log = line => console.warn(line), timeoutMs = askDeadlineMs): Promise<AskRun> {
+  log: Log = line => console.warn(line), timeoutMs = askDeadlineMs, withinBudget: (spent: AskUsage) => boolean = () => true): Promise<AskRun> {
   const usage = newAskUsage(), calls: AskCall[] = [], sources = new Map<string, AskSource>();
   const abort = new AbortController();
   const deadline = setTimeout(() => abort.abort(), timeoutMs);
@@ -45,6 +45,7 @@ export async function runAsk(question: string, ukDate: string, model: AskModel, 
     let text = '';
     for (let round = 0; round < 6; round++) {
       abort.signal.throwIfAborted();
+      if (!withinBudget(usage)) return { answer: askCapped, outcome: 'capped', sources: [...sources.values()] };
       const response = await client({
         model, system: askSystem, messages, max_tokens: 4000,
         output_config: { effort: 'low' }, tool_choice: { type: 'auto' }, tools: askToolSchema,

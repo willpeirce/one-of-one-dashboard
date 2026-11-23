@@ -1,18 +1,21 @@
 import { adNames } from '../ad-spend/model.js';
-import { spendFacts } from '../ad-spend/store.js';
+import { sampleSpend, spendFacts } from '../ad-spend/store.js';
 import { appConfig } from '../config.js';
 import type { Database } from '../db.js';
 import { readEstimates } from '../fulfilment/store.js';
 import { addDays, ukToday } from '../hero-range.js';
-import { readSettings } from '../settings.js';
+import { defaultSettings, readSettings } from '../settings.js';
 import { dailyRows, dataset, type Facts } from '../shopify/metrics.js';
 import type { Order } from '../shopify/model.js';
 import type { ShopifyStore } from '../shopify/store.js';
-import { buildScorecard, scorecardMonth, type ScorecardInput, type ScorecardModel } from './metrics.js';
+import { buildScorecard, compareScorecardWeeks, scorecardMonth, scorecardWeek, type ScorecardInput, type ScorecardModel, type ScorecardWeek } from './metrics.js';
 import { sampleScorecardInput } from './sample.js';
 import { readStockDaily } from './stock-daily.js';
 
-export interface ScorecardView { scorecard: ScorecardModel; latestMonth: string; sourceNotes: string[] }
+export interface ScorecardView {
+  scorecard: ScorecardModel; latestMonth: string; sourceNotes: string[];
+  week?: { window: ScorecardWeek; markets: ReturnType<typeof compareScorecardWeeks> };
+}
 
 function completedPollUntil(poll: Facts['jobs'][number] | undefined): number {
   if (!poll?.last_success_at || poll.state.continuing) return NaN;
@@ -48,12 +51,38 @@ export function scorecardCoverage(facts: Facts, from: string, to: string, market
   return { salesCoverage, orderCoverage };
 }
 
-export async function readScorecard(db: Database, store: ShopifyStore, env: NodeJS.ProcessEnv, month: string, market: ScorecardInput['market'], now: Date): Promise<ScorecardView> {
+export async function readScorecard(db: Database, store: ShopifyStore, env: NodeJS.ProcessEnv, month: string, market: ScorecardInput['market'], now: Date, weekEnding?: string): Promise<ScorecardView> {
   const window = scorecardMonth(month, now), latestMonth = scorecardMonth('', now).month;
-  if (store.mode === 'sample') return { scorecard: buildScorecard(await sampleScorecardInput(window.month, market, now)), latestMonth, sourceNotes: ['Sample data · all figures, product names and stock history on this page are invented.'] };
+  const weekWindow = scorecardWeek(weekEnding, now);
+  const markets = ['uk', 'us'] as const;
+  if (store.mode === 'sample') {
+    const dates = [weekWindow.earlierFrom, weekWindow.from].flatMap(from => Array.from({ length: 7 }, (_, i) => addDays(from, i)));
+    const spend = sampleSpend(weekWindow.earlierFrom, weekWindow.to, defaultSettings());
+    const weeks = markets.map((market, index) => ({
+      mode: 'sample' as const, market, spend, salesCoverage: dates, orderCoverage: dates,
+      dailySales: dates.map((day, i) => ({ day, netSales: 142 + i * 8 + index * 25 })),
+      dailyOrders: dates.map((day, i) => ({ day, orders: 12 + i + 3 * index })),
+    }));
+    return { scorecard: buildScorecard(await sampleScorecardInput(window.month, market, now)), latestMonth,
+      week: { window: weekWindow, markets: compareScorecardWeeks(weekWindow, weeks) },
+      sourceNotes: ['Sample data · all figures, product names and stock history on this page are invented.'] };
+  }
   const settings = (await readSettings(db)).values;
   const facts = await store.facts(now), today = ukToday(now), data = dataset(facts, today);
-  const spend = await spendFacts(db, settings, env, 'live', window.yearFrom, window.to, now);
+  const [spend, weeklySpend] = await Promise.all([
+    spendFacts(db, settings, env, 'live', window.yearFrom, window.to, now),
+    weekWindow.earlierFrom >= window.yearFrom && weekWindow.to <= window.to ? null
+      : spendFacts(db, settings, env, 'live', weekWindow.earlierFrom, weekWindow.to, now),
+  ]);
+  const weeks = markets.map(market => {
+    const rows = dailyRows(facts, today, market);
+    return {
+      mode: 'live' as const, market, spend: weeklySpend ?? spend,
+      ...scorecardCoverage(facts, weekWindow.earlierFrom, weekWindow.to, market),
+      dailySales: rows.map(row => ({ day: row.date, netSales: row.net })),
+      dailyOrders: rows.map(row => ({ day: row.date, orders: row.o })),
+    };
+  });
   const costs = await store.costHistory(), estimates = await readEstimates(db, 'live');
   const stockDaily = await readStockDaily(db, 'live', window.previousFrom, window.to);
   const input: ScorecardInput = { mode: 'live', month: window.month, market, now,
@@ -62,7 +91,7 @@ export async function readScorecard(db: Database, store: ShopifyStore, env: Node
     ...scorecardCoverage(facts, window.yearFrom, window.to, market), spend, costs, estimates, settings, stockDaily,
     locations: (['uk', 'us'] as const).map(m => ({ market: m, locationId: appConfig.shopify.locations[m].id })),
     productLabels: Object.fromEntries(appConfig.shopify.stockProducts.map(product => [`gid://shopify/Product/${product.id}`, product.name])) };
-  return { scorecard: buildScorecard(input), latestMonth, sourceNotes: ['Live Shopify net sales; refunds reduce sales on their refund UK day. Shipping and tax are excluded.',
+  return { scorecard: buildScorecard(input), latestMonth, week: { window: weekWindow, markets: compareScorecardWeeks(weekWindow, weeks) }, sourceNotes: ['Live Shopify net sales; refunds reduce sales on their refund UK day. Shipping and tax are excluded.',
     ...spend.sources.map(source => `${adNames[source.source]}: ${source.live ? source.status : 'waiting for keys'}${source.fetchedAt ? ` · last fetched ${source.fetchedAt}` : ''}`),
     'Product stock history starts when daily captures begin. Earlier stock is not reconstructed.'] };
 }

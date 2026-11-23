@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import type { BrowserContext } from 'playwright';
-import { scorecardMonth } from '../src/scorecard/metrics.js';
+import { addDays } from '../src/hero-range.js';
+import { scorecardMonth, scorecardWeek } from '../src/scorecard/metrics.js';
 
 export async function checkScorecard(context: BrowserContext): Promise<void> {
-  const monthWindow = scorecardMonth('', new Date());
+  const now = new Date(), monthWindow = scorecardMonth('', now), week = scorecardWeek('', now);
   for (const width of [390, 1280]) {
     const page = await context.newPage();
     try {
@@ -42,6 +43,15 @@ export async function checkScorecard(context: BrowserContext): Promise<void> {
       await page.getByRole('button', { name: 'Show month' }).click();
       await page.waitForURL(`**/scorecard?month=${monthWindow.previousFrom.slice(0, 7)}&market=uk`);
       assert.equal(await page.locator('#score-month').inputValue(), monthWindow.previousFrom.slice(0, 7));
+      assert.equal(await overflow(), false);
+      assert.equal(await page.locator('#score-week').inputValue(), week.to);
+      const earlier = addDays(week.to, -14);
+      await page.locator('#score-week').fill(earlier);
+      await page.getByRole('button', { name: 'Show week', exact: true }).click();
+      await page.waitForURL(url => url.searchParams.get('week') === earlier);
+      assert.equal(await page.locator('#score-market').inputValue(), 'uk');
+      assert.equal(await page.locator('#score-week').inputValue(), earlier);
+      assert.match(await page.locator('.score-week').innerText(), /UK[\s\S]*Net sales[\s\S]*US[\s\S]*Net sales/);
       assert.equal(await overflow(), false);
     } finally { await page.close(); }
   }

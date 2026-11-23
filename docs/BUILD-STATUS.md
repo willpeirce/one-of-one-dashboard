@@ -492,3 +492,7 @@ Part B adds the signed-in Stock planner with UK and US warehouse rows, 28 comple
 Part C adds signed-in Ask with nine dashboard tools, a fixed sample reply for each example, the existing Anthropic key for live mode, per-UK-day spend accounting and 90-day log expiry. Migration 080 adds Ask Settings and the usage log.
 
 **Not done or known gaps:** Exact free-form questions and generated answer text are omitted from persistent logs because they can contain customer details. Waiting-on responses provide counts, dates and ages without subject or contact text. Reviews cover the existing waiting-review list. Ask enforces read-only transactions for fixed tools. Provisioning a separate PostgreSQL login role is deferred. Live Anthropic acceptance stays with the owner.
+
+Part D adds the Scorecard week comparison for UK and US net sales, counted orders and ad spend by platform. The default ends yesterday in the UK. Any earlier completed week can be selected by its end date. The comparison uses the same weekdays 364 days earlier.
+
+**Not done or known gaps:** Each metric shows no history for a side missing any of its seven days. Existing coverage can limit older windows, especially market splits and individual ad platforms.

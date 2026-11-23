@@ -1391,3 +1391,7 @@ Use the official SDK only for Ask. Haiku is the default. Sonnet sends the server
 Tools enter a PostgreSQL read-only transaction and project fixed fields from existing dashboard readers. The model has no SQL facility. A separate database login role would require deployment provisioning, so this build uses the existing connection with transaction-level enforcement. Review and ticket text, waiting subjects and contact names are left out. The log retains predefined example questions, fixed failure responses, validated tool inputs and usage figures. Arbitrary questions and generated answers stay out of storage because free text can contain customer details.
 
 A transaction lock guards the rolling hourly limit and the balance for the current UK day. Only one request can hold a pending reservation. The answer returns at the request deadline even if a tool takes longer to finish its read. The creative scan already takes prices in pounds per million tokens, so Ask converts its supplied dollar prices using the existing pound-per-dollar Setting. The hourly cleanup removes rows older than 90 days.
+
+### Part D · Week against last year
+
+Use the scorecard's existing daily coverage and spend rules on each seven-day window. The earlier window starts exactly 364 days before the selected one. The monthly year comparison additionally requires continuous intervening history. The requested weekly card compares just the two selected windows, so a missing day between them cannot hide a complete side. Fully covered markets with no paid orders show zero.

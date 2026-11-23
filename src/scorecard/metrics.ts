@@ -38,6 +38,18 @@ export function scorecardMonth(month: string | undefined, now = new Date()): Sco
     label: new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${selected}-15T12:00:00Z`)) };
 }
 
+export interface ScorecardWeek {
+  from: string; to: string; earlierFrom: string; earlierTo: string; latest: string;
+}
+export function scorecardWeek(ending: string | undefined, now: Date): ScorecardWeek {
+  const latest = addDays(ukToday(now), -1), to = ending || latest;
+  const timestamp = Date.parse(`${to}T00:00:00Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(to) || !Number.isFinite(timestamp)
+      || new Date(timestamp).toISOString().slice(0, 10) !== to || to < '0002-01-08' || to > latest)
+    throw Object.assign(new Error('Choose the final date of a completed seven-day window.'), { statusCode: 400 });
+  return { from: addDays(to, -6), to, earlierFrom: addDays(to, -370), earlierTo: addDays(to, -364), latest };
+}
+
 export interface ScorecardInput {
   mode: SourceMode; month: string; market: HeroMarket; now: Date; orders: readonly Order[];
   dailySales: readonly { day: string; netSales: number }[];
@@ -84,11 +96,11 @@ export function coveredPeriod(coverage: readonly string[], from: string, to: str
 }
 const inPeriod = (day: string, from: string, to: string) => day >= from && day <= to;
 const pounds = (value: number): number => Math.round(value * 100) / 100;
-const sumSales = (input: ScorecardInput, from: string, to: string): number | null =>
+const sumSales = (input: Pick<ScorecardInput, 'dailySales' | 'salesCoverage'>, from: string, to: string): number | null =>
   coveredPeriod(input.salesCoverage, from, to)
     ? pounds(input.dailySales.filter(row => inPeriod(row.day, from, to)).reduce((sum, row) => sum + row.netSales, 0)) : null;
 
-function spendTotal(input: ScorecardInput, from: string, to: string, platform?: AdSource): number | null {
+function spendTotal(input: Pick<ScorecardInput, 'mode' | 'spend' | 'market'>, from: string, to: string, platform?: AdSource): number | null {
   if (input.spend.mode !== input.mode) return null;
   const sources = input.spend.sources.filter(source => (input.mode === 'sample' || source.live) && (!platform || source.source === platform));
   if (!sources.length || sources.some(source => !source.ready || input.mode === 'live' && (source.stale || (source.failures ?? 0) > 0
@@ -99,6 +111,22 @@ function spendTotal(input: ScorecardInput, from: string, to: string, platform?: 
     && (input.market === 'all' || spendMarket(row) === input.market));
   if (rows.some(row => row.currency !== 'GBP')) return null;
   return Number(rows.reduce((sum, row) => sum + decimalMicros(row.amount), 0n)) / 1_000_000;
+}
+
+export interface WeekMarketInput extends Pick<ScorecardInput, 'mode' | 'market' | 'dailySales' | 'salesCoverage' | 'orderCoverage' | 'spend'> {
+  dailyOrders: readonly { day: string; orders: number }[];
+}
+
+export function compareScorecardWeeks(window: ScorecardWeek, markets: readonly WeekMarketInput[]) {
+  return markets.map(input => {
+    const read = (from: string, to: string) => ({
+      netSales: sumSales(input, from, to),
+      orders: coveredPeriod(input.orderCoverage, from, to)
+        ? input.dailyOrders.filter(row => inPeriod(row.day, from, to)).reduce((sum, row) => sum + row.orders, 0) : null,
+      spend: adSources.map(source => ({ source, label: adNames[source], amount: spendTotal(input, from, to, source) })),
+    });
+    return { market: input.market, current: read(window.from, window.to), earlier: read(window.earlierFrom, window.earlierTo) };
+  });
 }
 
 const cohortKey = (order: Order): CustomerSlice['key'] => order.firstOrder === 'first' || order.firstOrder === 'repeat' ? order.firstOrder : 'unknown';

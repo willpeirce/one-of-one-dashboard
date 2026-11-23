@@ -1,3 +1,4 @@
+import { sharedSeriesSkus } from '../series-pace/series.js';
 import { appConfig } from '../config.js';
 import type { Database } from '../db.js';
 import { addDays, ukToday } from '../hero-range.js';
@@ -17,7 +18,7 @@ export interface StockPlannerView {
 const markets = ['uk', 'us'] as const;
 const originalKit = appConfig.shopify.stockProducts.find(product => 'sku' in product)!;
 
-type SeriesStockSettings = { sku: string; name: string; UKLaunchDate?: string; USLaunchDate?: string };
+type SeriesStockSettings = { sku: string; name: string; productId?: string; UKLaunchDate?: string; USLaunchDate?: string };
 
 
 function sampleStockPlanner(today: string, now: Date): StockPlannerView {
@@ -47,6 +48,7 @@ export async function readStockPlanner(db: Database, store: ShopifyStore, now: D
   const inventory = dataset(facts, today).inventory;
   // Earlier releases have one kit in config. The planner still works if series editing is rolled back.
   const series = (values as { series?: SeriesStockSettings[] }).series ?? [{ sku: originalKit.sku, name: originalKit.name }];
+  const shared = new Set(sharedSeriesSkus(facts.jobs.find(job => job.name === 'inventory')?.state));
   const skus = new Set(series.map(row => row.sku));
   const packs = appConfig.shopify.stockProducts.filter(product => !('bundle' in product) && product.id !== originalKit.id);
   const products = markets.flatMap(market => {
@@ -55,14 +57,16 @@ export async function readStockPlanner(db: Database, store: ShopifyStore, now: D
       ...series.map(row => ({
         name: row.sku === originalKit.sku ? originalKit.name : row.name,
         sku: row.sku, kit: true, launch: market === 'uk' ? row.UKLaunchDate : row.USLaunchDate,
-        productId: row.sku === originalKit.sku ? `gid://shopify/Product/${originalKit.id}` : undefined,
+        productId: row.sku === originalKit.sku ? `gid://shopify/Product/${originalKit.id}` : row.productId ? `gid://shopify/Product/${row.productId}` : undefined,
       })),
       ...packs.map(row => ({ name: row.name, sku: 'sku' in row ? row.sku : undefined, kit: false, launch: undefined, productId: `gid://shopify/Product/${row.id}` })),
     ].filter(row => row.kit || !row.sku || !skus.has(row.sku));
 
     return tracked.map(({ productId, ...product }): PlannerProduct => {
       const matches = (row: { locationId: string; productId: string; sku?: string | null }): boolean =>
-        row.locationId === location && (product.kit && row.sku ? row.sku === product.sku : productId === row.productId && (product.kit || !skus.has(row.sku ?? '')));
+        row.locationId === location && (product.kit && row.sku
+          ? row.sku === product.sku && (productId ? row.productId === productId : !shared.has(row.sku))
+          : productId === row.productId && (product.kit || !skus.has(row.sku ?? '')));
       const current = inventory.filter(matches);
       const available = current.map(row => row.quantities.find(quantity => quantity.name === 'available')?.quantity);
       const observations = history.filter(matches);

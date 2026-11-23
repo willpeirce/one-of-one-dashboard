@@ -1,4 +1,4 @@
-import { originalSeriesProductId, originalSeriesSku, seriesMarket } from '../series-pace/series.js';
+import { originalSeriesProductId, originalSeriesSku, seriesMarket, sharedSeriesSkus } from '../series-pace/series.js';
 import { afterTaxMetric } from '../after-tax.js';
 import { formatUkTime } from '../uk-time.js';
 import { applySpend, placedSpendRows, usableSpendSources, type AdHeroInputs } from '../ad-spend/metrics.js';
@@ -214,11 +214,17 @@ export function stockMarket(value: string): StockCover['market'] {
   return value;
 }
 export function stockCover(facts: Facts, today: string, settings: Settings): StockCover[] {
-  const { orders, inventory, from, ready } = dataset(facts, today);
+  const { orders, inventory: levels, from, ready } = dataset(facts, today);
   const start = addDays(today, -60), end = addDays(today, -1);
   const complete = ready && from <= start;
   const rows: StockCover[] = [];
   const series = facts.mode === 'live' ? settings.series : settings.series.filter(row => row.sku === originalSeriesSku);
+  const shared = new Set(sharedSeriesSkus(facts.jobs.find(job => job.name === 'inventory')?.state));
+  const extraSeries = new Map(series.filter(row => row.sku !== originalSeriesSku).map(row => [row.sku, row]));
+  const inventory = levels.filter(level => {
+    const row = extraSeries.get(level.sku ?? '');
+    return !row || (row.productId ? level.productId === `gid://shopify/Product/${row.productId}` : !shared.has(row.sku));
+  });
   const products = [
     ...appConfig.shopify.stockProducts.map(product => ({ name: product.name, productId: `gid://shopify/Product/${product.id}`, sku: undefined as string | undefined, kit: 'originalSeries' in product || 'bundle' in product })),
     ...series.filter(row => row.sku !== originalSeriesSku).map(row => ({

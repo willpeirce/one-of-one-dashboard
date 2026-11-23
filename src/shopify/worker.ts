@@ -8,7 +8,7 @@ import { appConfig } from '../config.js';
 import type { Database } from '../db.js';
 import { addDays, dayCount, ukToday } from '../hero-range.js';
 import type { SourceMode } from '../sources.js';
-import { nextCursor, ShopifyClient, type ShopifyReader } from './client.js';
+import { nextCursor, SharedSeriesSkuError, ShopifyClient, type ShopifyReader } from './client.js';
 import { ShopifyError, Transport, type TransportOptions } from './http.js';
 import { SampleShopify } from './sample.js';
 import { ShopifyStore } from './store.js';
@@ -339,15 +339,15 @@ export class ShopifyWorker {
       let failure: unknown;
       for (const series of values.series) {
         try {
-          const rows = await this.client.inventory(series.sku);
+          const rows = await this.client.inventory(series.sku, series.productId);
           if (!rows.some(row => row.location) && series.sku !== originalSeriesSku) continue;
           await this.db.transaction(async tx => {
             await tx.query('SELECT singleton FROM pulse.settings WHERE singleton = true FOR UPDATE');
             const current = await readSettings(tx, { seed: false });
-            if (current.values.series.some(value => value.sku === series.sku))
+            if (current.values.series.some(value => value.sku === series.sku && value.productId === series.productId))
               await takeStockSnapshot(tx, rows, this.clock(), state.caughtUp === true, series.sku);
           });
-        } catch (error) { failure ??= error; }
+        } catch (error) { if (!(error instanceof SharedSeriesSkuError)) failure ??= error; }
       }
       if (failure) throw failure;
       return {};
@@ -367,7 +367,17 @@ export class ShopifyWorker {
         nextState = { ...nextState, lastAttemptedSku: selected.sku, lastAttemptedTo: missing.to, cursors: { ...cursors, [selected.sku]: missing.to } };
         // Advance before I/O so one failed report cannot starve another SKU.
         await this.db.query(`UPDATE pulse.shopify_jobs SET next_run_at = $1, state = $2 WHERE mode = 'live' AND name = 'series_pace'`, [new Date(this.clock().getTime() + intervals.series_pace), JSON.stringify(nextState)]);
-        await saveSeriesPaceSales(this.db, await this.client.report(seriesPaceQuery(missing.from, missing.to, selected.sku)), missing.from, missing.to, this.clock(), selected.sku);
+        let productGid: string | undefined;
+        if (selected.sku !== originalSeriesSku) {
+          try {
+            const inventory = await this.client.inventory(selected.sku, selected.productId);
+            productGid = inventory[0]?.productId;
+          } catch (error) {
+            if (!(error instanceof SharedSeriesSkuError)) throw error;
+          }
+          if (!productGid) break;
+        }
+        await saveSeriesPaceSales(this.db, await this.client.report(seriesPaceQuery(missing.from, missing.to, selected.sku, productGid)), missing.from, missing.to, this.clock(), selected.sku);
         break;
       }
       return nextState;
@@ -477,11 +487,17 @@ export class ShopifyWorker {
       }
       const { values } = await readSettings(this.db, { seed: false });
       const rows = await this.client.inventory();
-      for (const { sku } of values.series) {
-        if (!appConfig.shopify.stockProducts.some(product => 'sku' in product && product.sku === sku))
-          rows.push(...await this.client.inventory(sku));
+      const sharedSeriesSkus: string[] = [];
+      for (const { sku, productId } of values.series) {
+        if (sku === originalSeriesSku) continue;
+        try { rows.push(...await this.client.inventory(sku, productId)); }
+        catch (error) {
+          if (!(error instanceof SharedSeriesSkuError)) throw error;
+          sharedSeriesSkus.push(sku);
+        }
       }
-      await this.store.inventory(rows, now, values.series.map(series => series.sku)); return { costSeeded: true };
+      await this.store.inventory(rows, now, values.series.map(series => series.sku));
+      return { costSeeded: true, sharedSeriesSkus };
     }
     if (name === 'sessions') {
       // Re-read yesterday too: late report corrections and geo guard updates must replace previous totals.

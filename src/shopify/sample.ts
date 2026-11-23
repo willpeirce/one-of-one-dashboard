@@ -1,4 +1,3 @@
-import { originalSeriesSku } from '../series-pace/series.js';
 import { readFile } from 'node:fs/promises';
 import type { Page, ShopifyReader } from './client.js';
 import { appConfig } from '../config.js';
@@ -24,9 +23,9 @@ export class SampleShopify implements ShopifyReader {
     if (!address) delete order.shippingAddress;
     return order.id === id ? order : null;
   }
-  async inventory(sku?: string): Promise<any[]> {
+  async inventory(sku?: string, productId?: string): Promise<any[]> {
     const rows = await this.inventoryFixture(this.cardHistory ? 'product-costs' : 'product');
-    return sku ? rows.filter(row => row.sku === sku) : rows;
+    return sku ? rows.filter(row => row.sku === sku && (!productId || row.productId === `gid://shopify/Product/${productId}`)) : rows;
   }
   private async inventoryFixture(name: string): Promise<any[]> {
     const product = (await fixture(name)).data.product;
@@ -40,7 +39,7 @@ export class SampleShopify implements ShopifyReader {
     return this.cardHistory ? { rows: await this.inventoryFixture('product-costs-before'), at: new Date('2026-09-28T12:00:00Z') } : null;
   }
   async report(query: string): Promise<any> {
-    if (query.includes(`WHERE product_variant_sku = '${originalSeriesSku}'`)) return sampleKitSales(query);
+    if (query.includes("WHERE product_title = 'ONE OF ONE'")) return sampleKitSales(query);
     const table = (await fixture(query.includes('sales_channel') ? this.cardHistory ? 'card-channels' : 'channels' : query.startsWith('FROM sales') ? 'sales' : this.cardHistory ? 'card-sessions' : 'sessions')).data.shopifyqlQuery.tableData;
     const from = /SINCE (\d{4}-\d{2}-\d{2})/.exec(query)?.[1];
     const to = /UNTIL (\d{4}-\d{2}-\d{2})/.exec(query)?.[1] ?? appConfig.shopify.sampleNow.slice(0, 10);

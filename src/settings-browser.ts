@@ -1,3 +1,4 @@
+import { sharedSeriesSkuWarning } from './series-pace/series.js';
 import { seriesPaceDates } from './series-pace/dates.js';
 import { paceDate } from './series-pace/model.js';
 import { ukToday } from './hero-range.js';
@@ -135,6 +136,10 @@ function initializeSettings(form: HTMLFormElement): void {
       for (const row of Array.from(seriesList.querySelectorAll<HTMLElement>('[data-list-rows] > .setting-row'))) {
         const sku = row.querySelector<HTMLInputElement>('[data-setting-path$=".sku"]')!;
         const locked = protectedSkus.has(sku.value);
+        const warning = row.querySelector<HTMLElement>('[data-shared-series-skus]')!;
+        const product = row.querySelector<HTMLInputElement>('[data-setting-path$=".productId"]')!;
+        warning.hidden = !!product.value || !(JSON.parse(warning.dataset.sharedSeriesSkus!) as string[]).includes(sku.value);
+        warning.textContent = warning.hidden ? '' : sharedSeriesSkuWarning(sku.value);
         for (const summary of Array.from(row.querySelectorAll<HTMLElement>('[data-series-pace-dates]'))) {
           const market = summary.dataset.seriesPaceDates!;
           const input = (field: string) => row.querySelector<HTMLInputElement>(`[data-setting-path$=".${market}${field}"]`)!;

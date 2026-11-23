@@ -500,3 +500,7 @@ Part D adds the Scorecard week comparison for UK and US net sales, counted order
 Part E records setup in the README and includes eight sample screenshots at 390 and 1280 px. Parts A and B passed 1,489 and 1,495 PostgreSQL tests respectively. The existing Home hash, pins, budgets and count checks remain in effect. The public countdown route stays at its original registration.
 
 Validation on invented fixtures covers the 1,509-test PostgreSQL suite, typecheck, production build and the complete Chromium browser suite. The migration replay check applied 078, 079 and 080 twice each and found no public table grants. The eight screenshots include the Settings series list, a two-series pace fixture, Stock and Ask.
+
+### Part F · Review fixes
+
+Series 1 uses its original exact ShopifyQL query. Other series use the product selected by inventory, and a shared SKU without a Shopify product ID stays unresolved with a warning in Settings and Sources. Retirement accepts zero and negative availability. Ask allows ISO dates while continuing to reject phone-like digit runs, emails and links. Tests use invented values and fake source responses. Live Shopify agreement remains a post-merge check.

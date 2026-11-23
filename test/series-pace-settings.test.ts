@@ -126,3 +126,21 @@ test('a target can be omitted and an unstocked series can be removed until its f
     error => error instanceof SettingsValidationError && error.fields.includes('series'));
   assert.deepEqual(await readSettings(db), { version: restored.version, values: restored.values });
 });
+
+test('old series JSON keeps its shape and a new optional product ID accepts digits only', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const current = await readSettings(db);
+  const row = { ...current.values.series[0]!, key: 'invented-third', name: 'Invented Series', sku: 'invented-series' };
+  const values = { ...current.values, series: [row] };
+  await db.query('INSERT INTO pulse.configured_series (series) VALUES ($1)', [JSON.stringify([row])]);
+  assert.deepEqual(await readSettings(db), { ...current, values });
+  assert.deepEqual((await db.query('SELECT series FROM pulse.configured_series')).rows, [{ series: [row] }]);
+  const untouched = await saveSettings(db, { ...current, values: { ...values, series: [{ ...row, productId: '' }] } }, randomUUID());
+  assert.deepEqual(untouched.changedFields, []);
+  for (const productId of ['998-test', 998711, null, '-998711']) {
+    assert.throws(() => validateSettings({ ...values, series: [{ ...row, productId }] }), SettingsValidationError);
+  }
+  const saved = await saveSettings(db, { ...current, values: { ...values, series: [{ ...row, productId: '998711' }] } }, randomUUID());
+  assert.equal(saved.values.series[0]!.productId, '998711');
+  assert.match(settingsPage(saved), /name="series.0.productId"[^>]+value="998711"/);
+});

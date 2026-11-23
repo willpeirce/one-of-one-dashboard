@@ -1,4 +1,5 @@
 import { firstOrderFlag, type FirstOrder } from './first-order.js';
+import { originalSeriesProduct, originalSeriesSku } from '../series-pace/series.js';
 import { appConfig } from '../config.js';
 import { ShopifyError, Transport } from './http.js';
 import { TokenManager } from './token.js';
@@ -28,11 +29,15 @@ export interface ShopifyReader {
   scopes(): Promise<string[]>;
   orders(query: string, after: string | null, address: boolean): Promise<Page>;
   order(id: string, address: boolean): Promise<any>;
-  inventory(sku?: string): Promise<any[]>;
+  inventory(sku?: string, productId?: string): Promise<any[]>;
   report(query: string): Promise<any>;
   subscriptions(after: string | null): Promise<Page>;
   subscribe(topic: string, uri: string): Promise<void>;
 }
+export class SharedSeriesSkuError extends ShopifyError {
+  constructor() { super('invalid'); }
+}
+
 // No general query/mutation entry point is exposed. Only owned subscription creation can write.
 export class ShopifyClient implements ShopifyReader {
   private readonly tokens: TokenManager;
@@ -110,21 +115,22 @@ export class ShopifyClient implements ShopifyReader {
       }
     }
   }
-  async inventory(sku?: string): Promise<any[]> {
+  async inventory(sku?: string, productId?: string): Promise<any[]> {
     const result: any[] = [];
-    if (sku && !appConfig.shopify.stockProducts.some(product => 'sku' in product && product.sku === sku)) {
+    if (productId !== undefined && !/^\d+$/.test(productId)) throw new ShopifyError('invalid');
+    const selectedId = sku === originalSeriesSku ? originalSeriesProduct.id : productId;
+    if (sku && !selectedId) {
       if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(sku)) throw new ShopifyError('invalid');
       const data = await this.#graphql(`query PulseStockBySku($query: String!) {
         productVariants(first: 20, query: $query) { nodes { id sku product { id } inventoryItem { id unitCost { amount currencyCode } } } ${page} }
       }`, { query: `sku:"${sku}"` });
-      if (data.productVariants.pageInfo.hasNextPage) throw new ShopifyError('invalid');
       const exact = data.productVariants.nodes.filter((variant: { sku: string }) => variant.sku === sku);
-      if (exact.length > 1) throw new ShopifyError('invalid');
+      if (new Set(exact.map((variant: { product: { id: string } }) => variant.product.id)).size > 1) throw new SharedSeriesSkuError();
+      if (data.productVariants.pageInfo.hasNextPage || exact.length > 1) throw new ShopifyError('invalid');
       return exact.length ? this.#inventoryLevels(exact[0].product.id, exact[0]) : [];
     }
     // Variants and levels paginate independently; only configured products/locations are retained.
-    for (const product of appConfig.shopify.stockProducts) {
-      if (sku && (!('sku' in product) || product.sku !== sku)) continue;
+    for (const product of selectedId ? [{ id: selectedId }] : appConfig.shopify.stockProducts) {
       let after: string | null = null;
       do {
         const data = await this.#graphql(`query PulseStock($id: ID!, $after: String) { product(id: $id) { id variants(first: 100, after: $after) { nodes { id sku inventoryItem { id unitCost { amount currencyCode } } } ${page} } } }`, { id: `gid://shopify/Product/${product.id}`, after });

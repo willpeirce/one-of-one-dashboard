@@ -1,7 +1,7 @@
 import { askModels } from './ask/protocol.js';
 import { seriesPaceDates } from './series-pace/dates.js';
 import { paceDate } from './series-pace/model.js';
-import { seriesMarkets } from './series-pace/series.js';
+import { seriesMarkets, sharedSeriesSkuWarning } from './series-pace/series.js';
 import { tickerHead, tickerHtml } from './ticker/view.js';
 import { SETTINGS_KEY_NAMES, type SettingsSnapshot, type Settings } from './settings.js';
 import type { ShopifyCost } from './shopify/costs.js';
@@ -106,7 +106,7 @@ function actorPicker(values: Settings, choices?: ActorChoices): string {
   return collection('ourActors', 'Our actors', [{ key: 'actorId', label: 'Actor ID', list: 'recent-meta-actors' }], values.ourActors, 'Choose a recent actor or enter an ID. An empty list treats every change as not ours. Choose Save settings to keep edits.', undefined, { footer, rowHint: hint });
 }
 
-export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly ShopifyCost[] = [], mode: 'sample' | 'live' = 'sample', now = new Date(), metaCampaigns: readonly MetaCampaignView[] = [], campaignSync: CampaignSyncState = { state: 'pending', at: null }, creativeFlags = creativeFeatureFlags(), actorChoices?: ActorChoices, stockProductNames: readonly string[] = appConfig.shopify.stockProducts.map(product => product.name), protectedSkus: ReadonlySet<string> = new Set()): string {
+export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly ShopifyCost[] = [], mode: 'sample' | 'live' = 'sample', now = new Date(), metaCampaigns: readonly MetaCampaignView[] = [], campaignSync: CampaignSyncState = { state: 'pending', at: null }, creativeFlags = creativeFeatureFlags(), actorChoices?: ActorChoices, stockProductNames: readonly string[] = appConfig.shopify.stockProducts.map(product => product.name), protectedSkus: ReadonlySet<string> = new Set(), sharedSkus: readonly string[] = []): string {
   const values = snapshot.values;
   const costLabels: Record<string, string> = Object.create(null);
   for (const c of shopifyCosts) if (c.sku) {
@@ -180,6 +180,7 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     { key: 'key', label: 'Series key', maxlength: 20, hint: 'Short lowercase slug, for example invented-2.' },
     { key: 'name', label: 'Display name', maxlength: 80 },
     { key: 'sku', label: 'Inventory SKU', maxlength: 64 },
+    { key: 'productId', label: 'Shopify product ID', optional: true, hint: 'Digits only. Required if multiple products share the SKU.' },
     ...seriesMarkets.flatMap((market): Field[] => [
       { key: `${market}LaunchDate`, label: `${market} launch date`, type: 'date' },
       { key: `${market}OrderDate`, label: `${market} order date`, type: 'date' },
@@ -189,7 +190,7 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
   ];
   const pace = section('Series sell-out pace', 'Configure the stocked kit SKU and dates for each market.',
     collection('series', 'Series', seriesFields, values.series, 'A series appears in each market on its launch day. A series with snapshots keeps its key and SKU.', undefined,
-      { maxRows: 6, reorder: true, protectedSkus, rowExtra: row => seriesMarkets.map(market => {
+      { maxRows: 6, reorder: true, protectedSkus, rowExtra: row => `<p class="setting-help setting-warning" data-shared-series-skus="${escapeHtml(JSON.stringify(sharedSkus))}"${!row.productId && sharedSkus.includes(String(row.sku)) ? '' : ' hidden'}>${!row.productId && sharedSkus.includes(String(row.sku)) ? escapeHtml(sharedSeriesSkuWarning(String(row.sku))) : ''}</p>` + seriesMarkets.map(market => {
         const dates = seriesPaceDates(String(row[`${market}OrderDate`] ?? ''), Number(row[`${market}LandingOffsetDays`]), String(row[`${market}TargetDate`] ?? ''));
         return `<p class="setting-help" data-series-pace-dates="${market}" aria-live="polite">${dates ? `Landing date: ${paceDate(dates.landingDate)} · Target date: ${paceDate(dates.targetDate)} (${dates.targetKind})` : ''}</p>`;
       }).join('') }));

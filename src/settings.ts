@@ -8,7 +8,7 @@ import type { Database } from './db.js';
 import type { OverheadItem } from './overheads.js';
 import { sourceDefinitions } from './sources.js';
 import { snapshotSkus } from './series-pace/store.js';
-import { originalSeries, seriesMarket, seriesMarkets, type Series } from './series-pace/series.js';
+import { originalSeries, originalSeriesProduct, originalSeriesSku, seriesMarket, seriesMarkets, type Series } from './series-pace/series.js';
 import { isSeriesDate, seriesPaceDates } from './series-pace/dates.js';
 import type { InboundStock } from './shopify/stock-gap.js';
 import { tickerEventKey, tickerKinds, type KeyDate } from './ticker/model.js';
@@ -288,7 +288,7 @@ function parseSeries(value: unknown): Series[] {
   const rows = list(value, 'series', (row, path) => {
     if (!row || typeof row !== 'object') return invalid(path);
     const allowed = Object.keys(originalSeries()).filter(key => !key.endsWith('TargetDate') || Object.hasOwn(row, key));
-    const input = object(row, allowed, path);
+    const input = object(row, Object.hasOwn(row, 'productId') ? [...allowed, 'productId'] : allowed, path);
     const identifier = (key: 'key' | 'sku', pattern: RegExp): string => {
       const value = input[key];
       if (typeof value !== 'string' || !pattern.test(value)) return invalid(`${path}.${key}`);
@@ -299,6 +299,11 @@ function parseSeries(value: unknown): Series[] {
       name: businessText(input.name, `${path}.name`),
       sku: identifier('sku', /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/),
     } as Series;
+    if (Object.hasOwn(input, 'productId') && input.productId !== '') {
+      if (typeof input.productId !== 'string' || !/^\d+$/.test(input.productId)) invalid(`${path}.productId`);
+      if (result.sku === originalSeriesSku && input.productId !== originalSeriesProduct.id) invalid(`${path}.productId`);
+      result.productId = input.productId;
+    }
     for (const market of seriesMarkets) {
       const field = (suffix: string) => `${path}.${market}${suffix}`;
       result[`${market}LaunchDate`] = seriesDate(input[`${market}LaunchDate`], field('LaunchDate'));

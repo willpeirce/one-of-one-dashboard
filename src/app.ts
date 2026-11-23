@@ -1,3 +1,4 @@
+import { sharedSeriesSkus } from './series-pace/series.js';
 import { registerAsk } from './ask/routes.js';
 import { cleanupAsk, readAskStatus } from './ask/store.js';
 import { registerStockPlanner } from './stock/planner-routes.js';
@@ -446,6 +447,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     return reply.type('text/html; charset=utf-8').send(sourceHealthPage(dashboard.sourceHealth ?? [], imports, costs, await spendHealth(db, sourceEnv, settings.values, sourceNow()), {
       orderCleanupIncomplete: shopify.orderCleanupIncomplete,
       series: settings.values.series,
+      sharedSkus: sharedSeriesSkus(imports.jobs.find(job => job.name === 'inventory')?.state),
       ask: await readAskStatus(db, settings.values, localNow()),
       channelExclusions: await shopify.store.channelExclusions(),
       google: googleHealth(await readGoogleFacts(db,settings.values,sourceEnv,googleAt),googleAt),
@@ -465,7 +467,8 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     const settings = await readSettings(db);
     const metaLive = !!settings.values.metaAdAccountId && getSourceStates(sourceEnv).some(source => source.source === 'meta' && source.mode === 'live');
     const actors = metaLive ? activityActors(await readActivity(db, settings.values.metaAdAccountId, settings.values, creativeNow())) : undefined;
-    return reply.type('text/html; charset=utf-8').send(settingsPage(settings, await shopify.store.latestCosts(), shopify.mode, new Date(), await readMetaCampaigns(db, settings.values, sourceEnv), await readCampaignSync(db, settings.values, sourceEnv), creativeFeatureFlags(sourceEnv), actors, [...new Set([...appConfig.shopify.stockProducts.map(product => product.name), ...settings.values.series.map(series => series.name)])], await snapshotSkus(db)));
+    const sharedSkus = await shopify.store.unresolvedSeriesSkus();
+    return reply.type('text/html; charset=utf-8').send(settingsPage(settings, await shopify.store.latestCosts(), shopify.mode, new Date(), await readMetaCampaigns(db, settings.values, sourceEnv), await readCampaignSync(db, settings.values, sourceEnv), creativeFeatureFlags(sourceEnv), actors, [...new Set([...appConfig.shopify.stockProducts.map(product => product.name), ...settings.values.series.map(series => series.name)])], await snapshotSkus(db), sharedSkus));
   });
   app.get('/api/settings', async (request, reply) => {
     if (!await auth.session(request)) return reply.code(401).send({ error: 'Sign in to continue.' });

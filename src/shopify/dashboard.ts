@@ -86,7 +86,7 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
     const entries: (SeriesPaceEntry & { launchDate: string })[] = [];
     for (const series of settings.series) {
       if (seriesMarkets.every(market => seriesMarket(series, market).launchDate > today)) continue;
-      const paceFacts = await readSeriesPaceFacts(db, now, series.sku);
+      const paceFacts = await readSeriesPaceFacts(db, now, series.sku, series.productId);
       for (const market of seriesMarkets) {
         const { orderDate, landingOffsetDays, targetDate, launchDate } = seriesMarket(series, market);
         if (launchDate > today) continue;

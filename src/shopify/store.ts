@@ -1,3 +1,4 @@
+import { sharedSeriesSkus } from '../series-pace/series.js';
 import { refreshFulfilment } from '../fulfilment/store.js';
 import type { Database } from '../db.js';
 import { addDays, ukToday } from '../hero-range.js';
@@ -106,6 +107,12 @@ export class ShopifyStore {
     const notices = await this.db.query<{detail:{channel:string;excludedOrderNumbers?:string[]}}>(
       "SELECT detail FROM pulse.shopify_notices WHERE mode='live' AND kind='channel_short'");
     return notices.rows.flatMap(({detail}) => detail.excludedOrderNumbers?.length ? [{channel:detail.channel,orderNumbers:detail.excludedOrderNumbers}] : []);
+  }
+  async unresolvedSeriesSkus(): Promise<string[]> {
+    if (this.mode !== 'live') return [];
+    const { rows } = await this.db.query<{ state: { sharedSeriesSkus?: unknown } }>(
+      "SELECT state FROM pulse.shopify_jobs WHERE mode = 'live' AND name = 'inventory'");
+    return sharedSeriesSkus(rows[0]?.state);
   }
   async summary(now = this.mode === 'sample' ? new Date(appConfig.shopify.sampleNow) : new Date()) {
     const counts = await this.db.query<{ kind: string; count: string }>('SELECT kind, count(*)::text AS count FROM pulse.shopify_records WHERE mode = $1 GROUP BY kind', [this.mode]);

@@ -58,7 +58,8 @@ export async function askQuestion({ db, settings, tool, mode, now, question, api
   if (access === 'hourly') return answer(askHourlyMessage);
   if (access === 'busy') return answer('Ask is already answering a question');
   const remaining = askDeadlineMs - (performance.now() - startedAt);
-  const allowed = !/[@]|https?:\/\/|\b\d[\d ().-]{6,}\d\b/i.test(question);
+  const digitRuns = question.match(/\b\d[\d ().-]{6,}\d\b/g) ?? [];
+  const allowed = !/[@]|https?:\/\//i.test(question) && digitRuns.every(run => /^\d{4}-\d{2}-\d{2}$/.test(run));
   const activeClient = allowed && remaining > 0 ? client ?? (apiKey?.trim() ? createAskClient(apiKey.trim(), settings.askModel) : undefined) : undefined;
   const run = activeClient ? await runAsk(question, at, settings.askModel, activeClient, tool, undefined, remaining,
     usage => askCostPence(settings.askModel, usage, settings.jjGbpPerUsd) < access.remainingPence) : null;

@@ -189,7 +189,7 @@ test('fallback maps island and EU countries to UK, only US to US, preserves expl
 
 test('exact kit-product ShopifyQL fixture counts a Duo as two and excludes accessories', async () => {
   const query = seriesPaceQuery('2026-09-28', '2026-09-29');
-  assert.equal(query, "FROM sales SHOW net_items_sold WHERE product_variant_sku = 'oneofone1' GROUP BY shipping_country TIMESERIES day SINCE 2026-09-28 UNTIL 2026-09-29");
+  assert.equal(query, "FROM sales SHOW net_items_sold WHERE product_title = 'ONE OF ONE' GROUP BY shipping_country TIMESERIES day SINCE 2026-09-28 UNTIL 2026-09-29");
   const rows = parseSeriesPaceSales(await new SampleShopify().report(query), '2026-09-28', '2026-09-29');
   assert.equal(rows.find(row => row.market === 'UK')!.sold, 2);
   assert.equal(rows.filter(row => row.market === 'US').reduce((sum, row) => sum + row.sold, 0), 2);
@@ -269,7 +269,7 @@ test('two configured SKUs capture independent observations and fallback sales on
   await saveSeriesPaceSales(db, table([[from, 'GB', 6]]), from, from, clock(), sku);
   assert.deepEqual((await readSeriesPaceFacts(db, clock(), sku)).UK.days, [{ day: from, sold: 6, source: 'shopifyql' }]);
   assert.deepEqual((await readSeriesPaceFacts(db, clock())).UK.days, []);
-  assert.match(seriesPaceQuery(from, from, sku), /product_variant_sku = 'invented-kit-02'/);
+  assert.match(seriesPaceQuery(from, from, sku, secondStock[0]!.productId), /product_variant_sku = 'invented-kit-02' AND product_id = 990002/);
   const configured = await readSettings(db);
   await assert.rejects(saveSettings(db, { version: configured.version, values: { ...configured.values, series: [first] } }, randomUUID()), error => error instanceof SettingsValidationError && error.fields.includes('series'));
   assert.deepEqual(await readSettings(db), configured);
@@ -288,4 +288,86 @@ test('a sold-out series drops seven days after two evidenced complete days and s
   assert.equal(retiredSeriesInMarket({ ...facts, stock: 30 }, launch, '2026-10-10'), false);
   assert.equal(retiredSeriesInMarket({ ...facts, snapshots: snapshots.slice(0, 2) }, launch, '2026-10-10'), false);
   assert.equal(retiredSeriesInMarket(facts, '2026-10-02', '2026-10-10'), false);
+});
+
+test('negative availability counts as sold out for both the current level and its history', async () => {
+  const { retiredSeriesInMarket } = await import('../src/series-pace/store.js');
+  const start = '2032-05-01';
+  const snapshots = [0, 1, 2].map(i => ({ day: addDays(start, i), available: -2,
+    locationId: 'invented-warehouse', inventoryItemId: 'invented-item', takenAt: '2032-05-01T00:05:00Z', late: false }));
+  const facts = { stock: -2, days: [], snapshots };
+  assert.equal(retiredSeriesInMarket(facts, start, addDays(start, 8)), false);
+  assert.equal(retiredSeriesInMarket(facts, start, addDays(start, 9)), true);
+});
+
+test('a shared SKU asks for a product ID and then scopes snapshots and fallback sales to that product', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const { readSettings, saveSettings } = await import('../src/settings.js');
+  const { ShopifyClient } = await import('../src/shopify/client.js');
+  const { Transport } = await import('../src/shopify/http.js');
+  const { fixture } = await import('../src/shopify/sample.js');
+  const { sharedSeriesSkus } = await import('../src/series-pace/series.js');
+  const { settingsPage } = await import('../src/settings-view.js');
+  const { sourceHealthPage } = await import('../src/views.js');
+  const sku = 'invented-twin-kit';
+  const product = 'gid://shopify/Product/998421', other = 'gid://shopify/Product/998422';
+  const skuVariant = (productId: string, number: string) => ({
+    id: `gid://shopify/ProductVariant/${number}`, sku, product: { id: productId },
+    inventoryItem: { id: `gid://shopify/InventoryItem/${number}`, unitCost: null },
+  });
+  const variants = [skuVariant(product, '998431'), skuVariant(other, '998432')];
+  const levels: string[] = [], reports: string[] = [];
+  const pageInfo = { hasNextPage: false, endCursor: null };
+  const credentials = env(), origin = 'https://pulse.example.test';
+  const client = new ShopifyClient(new Transport({ sleep: async () => {}, fetch: async (url, init) => {
+    if (String(url).endsWith('access_token')) return Response.json({ ...await fixture('token'), access_token: randomUUID() });
+    const { query, variables } = JSON.parse(String(init?.body));
+    if (query.includes('PulseStockBySku')) return Response.json({ data: { productVariants: { nodes: variants, pageInfo } } });
+    if (query.includes('PulseStock')) {
+      const nodes = variants.filter(variant => variant.product.id === variables.id);
+      return Response.json({ data: { product: nodes.length ? { id: variables.id, variants: { nodes, pageInfo } } : null } });
+    }
+    if (query.includes('PulseLevels')) {
+      levels.push(variables.id);
+      const quantities = [{ name: 'available', quantity: variables.id.endsWith('998431') ? 37 : 90 }];
+      return Response.json({ data: { inventoryItem: { inventoryLevels: {
+        nodes: [{ location: { id: appConfig.shopify.locations.uk.id }, quantities }], pageInfo,
+      } } } });
+    }
+    assert.match(query, /PulseReport/);
+    reports.push(variables.query);
+    const sold = (variables.query.includes('AND product_id = 998421') ? [7] : [7, 41]).map(quantity => ['2032-05-10', 'GB', quantity]);
+    return Response.json({ data: { shopifyqlQuery: { parseErrors: [], tableData: table(sold) } } });
+  } }), credentials, origin);
+  let clock = new Date('2032-05-11T00:05:00+01:00');
+  const worker = new ShopifyWorker(db, credentials, origin, { reader: client, clock: () => clock });
+  await worker.initialize();
+  const first = await readSettings(db);
+  const series = { ...first.values.series[0]!, key: 'invented-twin', name: 'Invented Twin', sku,
+    UKLaunchDate: '2032-05-10', USLaunchDate: '2032-05-10' };
+  const saved = await saveSettings(db, { ...first, values: { ...first.values, series: [series] } }, randomUUID());
+  const due = () => db.query("UPDATE pulse.shopify_jobs SET next_run_at = CASE WHEN name IN ('inventory','stock_snapshot','series_pace') THEN $1::timestamptz ELSE '9999-01-01'::timestamptz END", [clock]);
+  await due(); await worker.tick();
+  const summary = await worker.store.summary(clock);
+  const shared = sharedSeriesSkus(summary.jobs.find(job => job.name === 'inventory')?.state);
+  assert.deepEqual(shared, [sku]);
+  assert.deepEqual(levels, []);
+  assert.deepEqual(reports, []);
+  const sources = { summary: 'Invented stock', checkedAt: clock.toISOString(), series: [series], sharedSkus: shared,
+    shopify: { mode: 'live' as const, checks: [], stock: [], needs: [], live: { lastOrder: '', dispatch: '', carts: '' }, detail: {} } };
+  const warning = /SKU invented-twin-kit is shared by multiple Shopify products\. Enter the Shopify product ID/;
+  assert.match(settingsPage(saved, [], 'live', clock, undefined, undefined, undefined, undefined, [], new Set(), shared), warning);
+  assert.match(sourceHealthPage([], summary, undefined, undefined, sources), warning);
+  const chosen = { ...series, productId: '998421' };
+  await saveSettings(db, { version: saved.version, values: { ...saved.values, series: [chosen] } }, randomUUID());
+  clock = new Date('2032-05-11T00:10:00+01:00');
+  await due(); await worker.tick();
+  const facts = await readSeriesPaceFacts(db, clock, sku, chosen.productId);
+  assert.equal(facts.UK.stock, 37);
+  assert.equal(facts.UK.snapshots[0]?.inventoryItemId, variants[0]!.inventoryItem.id);
+  assert.deepEqual(facts.UK.days, [{ day: '2032-05-10', sold: 7, source: 'shopifyql' }]);
+  assert.ok(levels.length >= 2 && levels.every(id => id === variants[0]!.inventoryItem.id));
+  assert.equal(reports.length, 1);
+  assert.match(reports[0]!, /product_variant_sku = 'invented-twin-kit' AND product_id = 998421/);
+  assert.doesNotMatch(sourceHealthPage([], summary, undefined, undefined, { ...sources, series: [chosen] }), warning);
 });

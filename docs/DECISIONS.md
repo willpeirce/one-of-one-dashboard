@@ -1401,3 +1401,7 @@ Use the scorecard's existing daily coverage and spend rules on each seven-day wi
 The account menu links come from the signed-in browser shell. The server-rendered Home hash and its existing counts and budgets stay pinned. The eight screenshots use invented figures at 390 and 1280 px. The public countdown retains its existing route and headers.
 
 Retain migrations 078–080 on rollback because startup checks the migration ledger. A series rollback can preserve the planner's default kit and Ask can read the legacy pace widget. A Stock rollback can keep the shared Scorecard shell and remove the planner reader; Ask then reports unavailable stock data while keeping its fixed tool schema. Shared Settings and route integration may require conflict resolution when reverting individual commits.
+
+### Part F · Review fixes
+
+A shared series SKU requires an optional digits-only Shopify product ID in Settings. Inventory reads that product and the additional-series ShopifyQL fallback filters by both SKU and the product ID returned by the inventory lookup. Series 1 keeps its pinned title query. Older Settings omit the new field until it is set. The inventory poll records unresolved shared SKUs for Settings and Sources without a migration.

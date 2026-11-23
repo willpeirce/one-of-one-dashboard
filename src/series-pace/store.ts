@@ -13,9 +13,11 @@ export interface SeriesPaceMarketFacts { stock: number | null; days: SeriesPaceD
 export type SeriesPaceFacts = Record<SeriesPaceMarket, SeriesPaceMarketFacts>;
 const markets = ['UK', 'US'] as const;
 const locations = { UK: appConfig.shopify.locations.uk.id, US: appConfig.shopify.locations.us.id };
-export function seriesPaceQuery(from: string, to: string, sku = originalSeriesSku): string {
-  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(sku)) throw new ShopifyError('invalid');
-  return `FROM sales SHOW net_items_sold WHERE product_variant_sku = '${sku}' GROUP BY shipping_country TIMESERIES day SINCE ${from} UNTIL ${to}`;
+export function seriesPaceQuery(from: string, to: string, sku = originalSeriesSku, productGid?: string): string {
+  if (sku === originalSeriesSku) return `FROM sales SHOW net_items_sold WHERE product_title = 'ONE OF ONE' GROUP BY shipping_country TIMESERIES day SINCE ${from} UNTIL ${to}`;
+  const productId = /^gid:\/\/shopify\/Product\/(\d+)$/.exec(productGid ?? '')?.[1];
+  if (!productId || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(sku)) throw new ShopifyError('invalid');
+  return `FROM sales SHOW net_items_sold WHERE product_variant_sku = '${sku}' AND product_id = ${productId} GROUP BY shipping_country TIMESERIES day SINCE ${from} UNTIL ${to}`;
 }
 const countryNames = new Intl.DisplayNames(['en'], { type: 'region' });
 const ukCountries = ['GB', 'JE', 'GG', 'IM', ...appConfig.shopify.euCountries];
@@ -84,12 +86,15 @@ export async function takeStockSnapshot(db: Database, rows: any[], now: Date, ca
     ON CONFLICT (location_id, day) DO NOTHING`,
   [day, snapshots.map(row => row.locationId), snapshots.map(row => row.inventoryItemId), snapshots.map(row => row.available), now, late]);
 }
-export async function readSeriesPaceFacts(db: Database, now: Date, sku = originalSeriesSku): Promise<SeriesPaceFacts> {
+export async function readSeriesPaceFacts(db: Database, now: Date, sku = originalSeriesSku, productId?: string): Promise<SeriesPaceFacts> {
   const today = ukToday(now), from = addDays(today, -7), to = addDays(today, -1);
   // Keep these sequential: callers may supply a transaction connection.
   // Older records without a SKU stay unknown until the next inventory poll.
-  const inventory = await db.query<{ data: Inventory }>(`SELECT data FROM pulse.shopify_records WHERE mode = 'live' AND kind = 'inventory' AND data->>'sku' = $1`, [sku]);
-  const zeroStock = inventory.rows.some(row => row.data.quantities.some(quantity => quantity.name === 'available' && quantity.quantity === 0));
+  const productGid = sku === originalSeriesSku ? originalSeriesProductId : productId ? `gid://shopify/Product/${productId}` : null;
+  const inventory = await db.query<{ data: Inventory }>(`SELECT data FROM pulse.shopify_records WHERE mode = 'live' AND kind = 'inventory' AND data->>'sku' = $1 AND ($2::text IS NULL OR data->>'productId' = $2)
+    AND ($2 IS NOT NULL OR NOT EXISTS (SELECT 1 FROM pulse.shopify_jobs
+      WHERE mode = 'live' AND name = 'inventory' AND (state->'sharedSeriesSkus') ? $1))`, [sku, productGid]);
+  const zeroStock = inventory.rows.some(row => row.data.quantities.some(quantity => quantity.name === 'available' && quantity.quantity <= 0));
   const snapshotFrom = zeroStock ? '0001-01-01' : from;
   const snapshots = await db.query<{ day: string; location_id: string; inventory_item_id: string; available: number; taken_at: Date; late: boolean }>(
     `SELECT day::text, location_id, inventory_item_id, available, taken_at, late FROM ${sku === originalSeriesSku ? 'pulse.stock_snapshots' : 'pulse.series_stock_snapshots'}
@@ -115,7 +120,7 @@ export async function readSeriesPaceFacts(db: Database, now: Date, sku = origina
   return result;
 }
 export async function missingSeriesPaceWindow(db: Database, now: Date, after: string | null = null, series?: Series): Promise<{ from: string; to: string } | null> {
-  const facts = await readSeriesPaceFacts(db, now, series?.sku), today = ukToday(now);
+  const facts = await readSeriesPaceFacts(db, now, series?.sku, series?.productId), today = ukToday(now);
   // A cached report day is immutable even when the other market was unreported.
   // Rotate contiguous gaps so an empty or failed report cannot starve newer days.
   const sku = series?.sku ?? originalSeriesSku;
@@ -146,14 +151,14 @@ export async function snapshotSkus(db: Database): Promise<Set<string>> {
 
 /** Two complete zero-stock days require on-time observations at both ends of each day. */
 export function retiredSeriesInMarket(facts: SeriesPaceMarketFacts, launch: string, today: string): boolean {
-  if (facts.stock !== 0) return false;
+  if (facts.stock === null || facts.stock > 0) return false;
   let start: string | null = null;
   let previous: string | null = null;
   let confirmed: string | null = null;
   for (const snapshot of facts.snapshots) {
     if (snapshot.day < launch || snapshot.day > today) continue;
-    if (snapshot.available !== 0) confirmed = null;
-    if (snapshot.late || snapshot.available !== 0) {
+    if (snapshot.available > 0) confirmed = null;
+    if (snapshot.late || snapshot.available > 0) {
       start = previous = null;
       continue;
     }

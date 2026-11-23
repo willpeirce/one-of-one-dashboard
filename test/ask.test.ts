@@ -229,3 +229,19 @@ test('all Ask tool outputs use explicit projections and keep review and handover
     if (definition.name === 'waiting') assert.match(JSON.stringify(result), /2032-08-05/);
   }
 });
+
+test('Ask accepts ISO dates and blocks phone-like runs, emails and links before the provider', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const calls: string[] = [];
+  const client: AskClient = async request => {
+    calls.push(String(request.messages[0]!.content));
+    return reply('end_turn', [text('Invented result')]);
+  };
+  const options = { db, settings: defaultSettings(), tool: read, mode: 'live' as const, now, client };
+  assert.equal((await askQuestion({ ...options, question: 'What sold on 2032-08-12?' })).outcome, 'answered');
+  for (const question of ['Use 020 7946 0991', 'Use 123 2032-08-12', 'Use fixture@example.test', 'See https://example.test/2032-08-12']) {
+    assert.match((await askQuestion({ ...options, question })).answer, /without including contact details/);
+  }
+  assert.equal(calls.length, 1);
+  assert.match(calls[0]!, /What sold on 2032-08-12/);
+});

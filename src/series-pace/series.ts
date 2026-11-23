@@ -5,6 +5,7 @@ export interface Series {
   key: string;
   name: string;
   sku: string;
+  productId?: string;
   UKLaunchDate: string;
   UKOrderDate: string;
   UKLandingOffsetDays: number;
@@ -41,4 +42,13 @@ export function originalSeries(legacy: Record<string, unknown> = {}): Series {
     UKTargetDate: (legacy.series1UkTargetDate ?? '') as string,
     USTargetDate: (legacy.series1UsTargetDate ?? '') as string,
   };
+}
+
+export function sharedSeriesSkus(state: { sharedSeriesSkus?: unknown } | undefined): string[] {
+  const skus = state?.sharedSeriesSkus;
+  return Array.isArray(skus) ? skus.filter((sku): sku is string => typeof sku === 'string') : [];
+}
+
+export function sharedSeriesSkuWarning(sku: string): string {
+  return `SKU ${sku} is shared by multiple Shopify products. Enter the Shopify product ID.`;
 }

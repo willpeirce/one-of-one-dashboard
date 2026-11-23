@@ -701,7 +701,7 @@ test('fresh Settings use the invented suppliers and stored supplier rows keep th
   t.after(() => db.close());
   const initial = await readSettings(db);
   assert.deepEqual(initial.values.supplierLeadTimes, [
-    { supplier: 'Invented Works', days: 26 }, { supplier: 'Invented Fold', days: 9 },
+    { supplier: 'Invented Cinder', days: 26 }, { supplier: 'Invented Fold', days: 9 },
     { supplier: 'Invented Inks', days: null }, { supplier: 'Invented Transit', days: null },
   ]);
   const stored = { ...initial.values, supplierLeadTimes: [{ supplier: 'Invented Copper', days: 13 }] };

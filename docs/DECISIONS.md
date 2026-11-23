@@ -1399,3 +1399,5 @@ Use the scorecard's existing daily coverage and spend rules on each seven-day wi
 ### Part E · Records
 
 The account menu links come from the signed-in browser shell. The server-rendered Home hash and its existing counts and budgets stay pinned. The eight screenshots use invented figures at 390 and 1280 px. The public countdown retains its existing route and headers.
+
+Retain migrations 078–080 on rollback because startup checks the migration ledger. A series rollback can preserve the planner's default kit and Ask can read the legacy pace widget. A Stock rollback can keep the shared Scorecard shell and remove the planner reader; Ask then reports unavailable stock data while keeping its fixed tool schema. Shared Settings and route integration may require conflict resolution when reverting individual commits.

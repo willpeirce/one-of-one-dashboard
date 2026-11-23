@@ -21,7 +21,7 @@ export async function checkAsk(context: BrowserContext): Promise<void> {
       assert.match(await page.locator('#ask-answer').innerText(), /24 kit units/);
       assert.match(await page.locator('#ask-sources').innerText(), /^Sources · Shopify sample · as of /);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-      if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/ask-${width}.png` });
+      if (process.env.PULSE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.PULSE_SCREENSHOT_DIR}/ask-${width}.png`, fullPage: true });
     }
     const harmfulMarkup = '<script>window.askInjected = true</script>\nExample second line';
     await page.route('**/api/ask', route => route.fulfill({ json: {

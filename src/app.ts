@@ -1,3 +1,4 @@
+import { registerStockPlanner } from './stock/planner-routes.js';
 import { snapshotSkus } from './series-pace/store.js';
 import { registerTicker } from './ticker/routes.js';
 import { readTicker } from './ticker/store.js';
@@ -367,6 +368,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   registerAlertLinks(app,db,auth,shopify.mode);
   registerAdSets(app, db, auth, sourceEnv, creativeNow, adOptions, async () => publishObservations());
   registerReviewRoutes(app, db, auth, publishObservations);
+  registerStockPlanner(app, db, auth, shopify.store, sourceNow);
   registerScorecard(app, db, auth, shopify.store, sourceEnv, () => shopifyOptions.clock?.() ?? new Date());
   const handover = new HandoverSections();
   registerHandover(app,auth,handover);
@@ -492,7 +494,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     ['issues.css', 'text/css; charset=utf-8'] as const,
     ['kits.css', 'text/css; charset=utf-8'] as const,
     ...['browser.js', 'dashboard.js', 'settings.js', 'fulfilment.js', 'creatives.js', 'adsets.js', 'ticker.js', 'morning.js', 'handover.js'].map(name => [name, 'text/javascript; charset=utf-8'] as const),
-    ...['styles.css', 'dashboard.css', 'settings.css', 'fulfilment.css', 'creatives.css', 'fonts.css', 'pull-refresh.css', 'adsets.css', 'scorecard.css', 'home-compact.css', 'home-panels.css', 'decisions.css', 'ticker.css', 'morning.css', 'handover.css', 'waiting-on.css'].map(name => [name, 'text/css; charset=utf-8'] as const),
+    ...['styles.css', 'dashboard.css', 'settings.css', 'fulfilment.css', 'creatives.css', 'fonts.css', 'pull-refresh.css', 'adsets.css', 'scorecard.css', 'stock-planner.css', 'home-compact.css', 'home-panels.css', 'decisions.css', 'ticker.css', 'morning.css', 'handover.css', 'waiting-on.css'].map(name => [name, 'text/css; charset=utf-8'] as const),
     ...['logo.png', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'].map(name => [name, 'image/png'] as const),
     ...['outfit', 'plus-jakarta-sans'].flatMap(name => [
       [`fonts/${name}-latin-wght-normal.woff2`, 'font/woff2'] as const,

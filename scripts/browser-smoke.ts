@@ -1,3 +1,4 @@
+import { checkStockPlanner } from './browser-stock.js';
 import { checkMetaAttribution } from './browser-meta-attribution.js';
 import { checkHourly } from './browser-hourly.js';
 import {checkAdSets} from './browser-adsets.js';
@@ -1827,6 +1828,8 @@ async function run(): Promise<void> {
     }
     step = 'check monthly scorecard, source labels and market controls at phone and desktop widths';
     await checkScorecard(context);
+    step = "stock planner and account navigation at phone and desktop widths";
+    await checkStockPlanner(context);
     step = 'check the signed-in Handover shell at phone and desktop widths';
     await checkHandoverBase(context);
     step = 'check stored Customer service tickets, private fields and safe links on Handover';

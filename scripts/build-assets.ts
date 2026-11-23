@@ -45,6 +45,7 @@ const assets = [
   ['src/creatives/style.css', 'creatives.css'],
   ['src/meta-adsets/style.css', 'adsets.css'],
   ['src/scorecard/style.css', 'scorecard.css'],
+  ['src/stock/planner.css', 'stock-planner.css'],
   ['src/handover/style.css', 'handover.css'],
   ['src/waiting-on/style.css', 'waiting-on.css'],
   ['src/issues/style.css', 'issues.css'],

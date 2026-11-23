@@ -49,7 +49,7 @@ test('hero range API protects sessions, validates fixed errors and serves labell
   const faultDb: Database = {
     ...db,
     query: (sql, values) => {
-      if (failSettingsRead && /^SELECT version, values, .* FROM pulse\.settings\b/.test(sql)) {
+      if (failSettingsRead && /\bSELECT\b[\s\S]*\bFROM pulse\.settings\b/.test(sql)) {
         throw new Error(`Private SQL connection diagnostic ${privateMarker}`);
       }
       return db.query(sql, values);

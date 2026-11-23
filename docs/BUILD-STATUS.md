@@ -484,3 +484,7 @@ Sample and live imports recognise USPS GroundAdvantage and DPD V2 Parcel Two Day
 Part A adds a versioned series list, per-SKU inventory and fallback reporting, and per-market pace from launch. Migration 078 keeps the legacy settings document and original SKU histories readable. Live acceptance is to add the next series when it launches and confirm both warehouses against Shopify. Sample Home keeps its original fixture.
 
 **Not done or known gaps:** The existing single-series sample remains the production sample. The two-series example is an invented test fixture. Live Shopify agreement, including the SKU-filtered report, remains to be checked after merge. No supplier imports are included.
+
+Part B adds the signed-in Stock planner with UK and US warehouse rows, 28 complete UK days of observed stock changes, month-by-month run-out and supplier-direct order dates. It uses Settings supplier lead times. Accessory cover pairs kit and pack observations over the same days. Migration 079 stores the planner settings under the same Settings version and audit.
+
+**Not done or known gaps:** Supplier imports and landed-order lead-time medians remain pending. Live planner agreement requires configured suppliers, lead times and enough daily snapshots to measure a rate.

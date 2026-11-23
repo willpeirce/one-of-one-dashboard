@@ -1375,3 +1375,11 @@ Keep the ordered series list in its own singleton extension to Settings. The mai
 Migration 078 leaves original stock and sales history in place. Additional kit observations and ShopifyQL results are keyed by SKU. The worker rotates missing report periods across configured SKUs under the existing hourly limit. The report filters on variant SKU so similar product titles cannot combine two series. Daily scorecard observations keep the SKU where available. A missing inventory row stays unknown. A saved series may be deleted until its first pace snapshot. Retain applied migrations when reverting application code so the migration checksums stay valid.
 
 The live card renders by UK date, newest launch first, with one entry per active series and market. Two complete zero-stock days need on-time snapshots at the start and end of each day. Seven days after the second day completes, the market entry drops while recorded stock is still zero. Home uses the existing single-series markup and its unchanged sample fixture.
+
+### Part B · Stock and reorders
+
+Use the existing daily stock snapshots from the scorecard. A rate uses up to 28 complete UK days with observations at both ends and the same set of stock items. Known landing dates and stock increases make an interval unusable because the snapshots cannot identify units sold across the change. A short history shows its rate with a label. A missing history leaves the rate and forecast unavailable.
+
+Apply the seasonality factor for each calendar month until stock runs out, with a listed landing counted only while stock remains. Kits stop at run-out. Accessory order dates subtract the configured supplier lead time and safety interval. Accessory cover compares pack and kit stock changes on matching days, then applies the resulting rate to remaining and inbound kits in the same warehouse. Settings supplies lead times until supplier imports exist.
+
+The Stock link is added when the account menu script loads. This keeps the server-rendered Home markup hash intact.

@@ -276,7 +276,7 @@ function initializeSettings(form: HTMLFormElement): void {
     // Only each campaign's Save confirms its owner. Keep rules for missing campaigns too.
     // Retain a saved map when the optional Issues editor is absent after a feature rollback.
     const issueTags = form.querySelector<HTMLInputElement>('#saved-gorgias-issue-tags');
-    const values: JsonObject = { metaOwners: structuredClone(savedMetaOwners),
+    const values: JsonObject = { seasonalMultipliers: [], metaOwners: structuredClone(savedMetaOwners),
       gorgiasIssueTags: JSON.parse(issueTags?.value ?? '[]') };
     form.querySelectorAll<SettingInput>('[data-setting-path]').forEach((input) => {
       if (!input.closest('[data-settings-list]')) setPath(values, input.dataset.settingPath!, inputValue(input));

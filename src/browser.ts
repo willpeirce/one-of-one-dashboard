@@ -25,6 +25,15 @@ const signIn = document.querySelector<HTMLButtonElement>('#sign-in');
 const register = document.querySelector<HTMLFormElement>('#register-device');
 const registerButton = document.querySelector<HTMLButtonElement>('#register-button');
 const signOut = document.querySelector<HTMLButtonElement>('#sign-out');
+// The Account menu enhancement leaves the server-rendered Home layout and its pinned markup intact.
+const scorecardLink = document.querySelector<HTMLAnchorElement>('.account-links a[href="/scorecard"]');
+if (scorecardLink) {
+  const stockLink = document.createElement('a');
+  stockLink.href = '/stock';
+  stockLink.textContent = 'Stock';
+  scorecardLink.after(stockLink);
+}
+
 const passkeysAvailable = window.isSecureContext && typeof window.PublicKeyCredential !== 'undefined';
 
 function setMessage(text: string): void {

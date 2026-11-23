@@ -153,13 +153,20 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     { key: 'sku', label: 'SKU' }, number('unitCostGbp', 'Starting unit cost (£)', { nullable: true }),
   ], values.startingCogs, "Shopify’s cost per item comes first. These rows are the fallback for a SKU with no Shopify cost. Blank means unknown, never zero.", costLabels)}`);
   const stock = section('Stock planning', 'Supplier timing and components per kit.', `<div class="settings-grid">${fields([
+    number('reorderSafetyWeeks', 'Reorder planner safety (weeks)', { max: 104 }),
     number('safetyWeeks', 'Safety stock (weeks)'),
     number('seasonalMultiplier', 'Seasonal multiplier', { nullable: true, min: 0.01 }),
     number('markersPerKit', 'Markers per kit', { nullable: true, integer: true }),
     number('pencilsPerKit', 'Pencils per kit', { nullable: true, integer: true }),
-  ], values)}</div>${collection('supplierLeadTimes', 'Supplier lead time', [
+  ], values)}</div><h3>Monthly reorder multipliers</h3><div class="settings-grid">${values.seasonalMultipliers.map((multiplier, index) => field(number(String(index),
+    new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', month: 'short' }).format(new Date(Date.UTC(2000, index, 1))), { min: 0.2, max: 5, step: 'any' }), multiplier, 'seasonalMultipliers')).join('')}</div>${collection('supplierLeadTimes', 'Supplier lead time', [
     { key: 'supplier', label: 'Supplier business' }, number('days', 'Lead time (days)', { nullable: true, integer: true }),
-  ], values.supplierLeadTimes, 'Starting supplier lead times. With no arrival listed, cover below the shortest known lead time raises a warning; no arrival date is assumed.')}${collection('inboundStock', 'Inbound stock', [
+  ], values.supplierLeadTimes, 'Starting supplier lead times. With no arrival listed, cover below the shortest known lead time raises a warning; no arrival date is assumed.')}${collection('productSuppliers', 'Product supplier', [
+    { key: 'product', label: 'Product or SKU', list: 'inbound-stock-products' },
+    { key: 'supplier', label: 'Supplier business', list: 'stock-suppliers' },
+  ], values.productSuppliers, 'Match each accessory to a business from Supplier lead time.', undefined, {
+    footer: `<datalist id="stock-suppliers">${values.supplierLeadTimes.map(row => `<option value="${escapeHtml(row.supplier)}"></option>`).join('')}</datalist>`,
+  })}${collection('inboundStock', 'Inbound stock', [
     { key: 'product', label: 'Product', list: 'inbound-stock-products', hint: 'Use the product name shown in Stock and cover.' },
     { key: 'market', label: 'Market', options: [{ value: 'uk', label: 'UK' }, { value: 'us', label: 'US' }] },
     number('quantity', 'Quantity', { integer: true, min: 1, max: 1_000_000 }),

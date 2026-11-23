@@ -23,9 +23,9 @@ export class SampleShopify implements ShopifyReader {
     if (!address) delete order.shippingAddress;
     return order.id === id ? order : null;
   }
-  async inventory(sku?: string): Promise<any[]> {
+  async inventory(sku?: string, productId?: string): Promise<any[]> {
     const rows = await this.inventoryFixture(this.cardHistory ? 'product-costs' : 'product');
-    return sku ? rows.filter(row => row.sku === sku) : rows;
+    return sku ? rows.filter(row => row.sku === sku && (!productId || row.productId === `gid://shopify/Product/${productId}`)) : rows;
   }
   private async inventoryFixture(name: string): Promise<any[]> {
     const product = (await fixture(name)).data.product;

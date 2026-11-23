@@ -276,7 +276,10 @@ test('the database audit CHECK covers every Settings key plus named retired keys
   const allowedKeys = [...checks.rows[0]!.definition.matchAll(/'([a-zA-Z][a-zA-Z0-9]*)'/g)]
     .map((match) => match[1]!);
   const settingsKeys = Object.keys(defaultSettings()).sort();
-  const retiredSettingsKeys = ['monthlyOverheadsGbp', 'creativeLiftWindowDays'];
+  const retiredSettingsKeys = [
+    'monthlyOverheadsGbp', 'creativeLiftWindowDays',
+    'series1OrderDate', 'series1UkLandingOffsetDays', 'series1UsLandingOffsetDays', 'series1UkTargetDate', 'series1UsTargetDate',
+  ];
   assert.deepEqual(allowedKeys.sort(), [...settingsKeys, ...retiredSettingsKeys].sort());
 
   const insert = (field: string) => db.query(`
@@ -289,6 +292,7 @@ test('the database audit CHECK covers every Settings key plus named retired keys
   assert.equal((await insert('overheads.0.monthlyGbp')).rowCount, 1);
   assert.equal((await insert('startingCogs.0.unitCostGbp')).rowCount, 1);
   assert.equal((await insert('inboundStock.0.expectedDate')).rowCount, 1);
+  assert.equal((await insert('series.0.UKLaunchDate')).rowCount, 1);
   assert.equal((await insert(`brand.${'a'.repeat(154)}`)).rowCount, 1);
   const auditCount = (await db.query('SELECT * FROM pulse.audit_log')).rowCount;
   for (const field of [

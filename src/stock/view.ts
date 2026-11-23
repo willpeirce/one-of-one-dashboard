@@ -1,4 +1,5 @@
 import type { ShopifyDashboard } from '../shopify/dashboard.js';
+import { originalSeriesProduct } from '../series-pace/series.js';
 import { appConfig } from '../config.js';
 import { formatNumber } from '../money.js';
 
@@ -9,9 +10,9 @@ const glyph: Record<CellState, string> = { alarm: '✕', warn: '△', good: '✓
 const word: Record<CellState, string> = { alarm: 'Alarm', warn: 'Watch', good: 'Good', info: 'Info' };
 
 /** Kits show in the sell-out dials above. Starter, Ultimate and Duo are bundles with no stock of their own (Will, 12 Nov 2026). */
-const kitProduct = appConfig.shopify.stockProducts[0].name;
+
 const untracked = new Set<string>(appConfig.shopify.stockProducts.filter(product => 'bundle' in product && product.bundle).map(product => product.name));
-export const stockPackRows = (rows: readonly Row[]): Row[] => rows.filter(row => row.product !== kitProduct && !untracked.has(row.product));
+export const stockPackRows = (rows: readonly Row[]): Row[] => rows.filter(row => !row.kit && row.product !== originalSeriesProduct.name && !untracked.has(row.product));
 
 /** "SLABS & LABEL PACK" reads "Slabs & Label". */
 export function packName(product: string): string {

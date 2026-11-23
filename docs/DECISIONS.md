@@ -1365,3 +1365,43 @@ Will chose (20 Nov) a live countdown image for the Black Friday 2026 email, unde
 - **Cache.** One render per variant key (`live:<seconds left>`, `still:uk`, `still:us`, `open`) in a Map capped at eight entries, oldest dropped first. Both markets share the live picture. A live minute renders in about 30-40 ms locally; a burst of opens in one second costs one render.
 - **Tests** (`test/countdown.test.ts`, 10): HH:MM:SS incl. three-digit hours, zero and negatives; deadline in both zones; variant choice incl. Apple after the deadline; Apple address parsing and forwarded-header order, Gmail override, market parsing; GIF structure (header, 60 frames live / 1 still, delays, disposal, no loop extension, trailer, first frame full-size, later frames small); first, second and last composited frames equal the expected pixels (decoded by an independent test-only reader, `test/helpers/gif-decode.ts`), with spot checks at corners and on a solid digit pixel; the hold at zero and the 100-to-99-hour width change; flat background on every edge of every variant; LZW through dictionary resets on noise; the route's headers, Apple stills by market, Gmail, per-second cache and its bound; and the full app's public route with no cookie.
 - **Validation:** typecheck clean; all 1,485 tests pass on PGlite (the 1,475 on main plus 10 new in `test/countdown.test.ts`); production build; secret scan clean on the working tree and full history. After merging main `eb5b6e0` (PR #59, migration 077) into the branch: typecheck, all 1,486 tests and the build pass again. Independently decoded by macOS `sips` and by Chrome (first frames inspected beside the email's hero and slab pictures at 600 px). Browser suite not run: nothing on a signed-in page changed.
+
+## Large build 5
+
+### Part A · Configured series
+
+Keep the ordered series list in its own singleton extension to Settings. The main Settings version and audit still advance in the same transaction. A read of an older document uses its original order date, offsets and target overrides without writing them. The original series takes an already-launched default in both markets because the old document has no launch field. The audit allowlist retains the retired date keys so historical audits remain valid. The frozen audit-key test names them explicitly and checks the new series paths against the same length and character rules.
+
+Migration 078 leaves original stock and sales history in place. Additional kit observations and ShopifyQL results are keyed by SKU. The worker rotates missing report periods across configured SKUs under the existing hourly limit. The report filters on variant SKU so similar product titles cannot combine two series. Daily scorecard observations keep the SKU where available. A missing inventory row stays unknown. A saved series may be deleted until its first pace or daily stock observation. Retain applied migrations when reverting application code so the migration checksums stay valid.
+
+The live card renders by UK date, newest launch first, with one entry per active series and market. Two complete zero-stock days need on-time snapshots at the start and end of each day. Seven days after the second day completes, the market entry drops while recorded stock is still zero. Home uses the existing single-series markup and its unchanged sample fixture.
+
+### Part B · Stock and reorders
+
+Use the existing daily stock snapshots from the scorecard. A rate uses up to 28 complete UK days with observations at both ends and the same set of stock items. Known landing dates and stock increases make an interval unusable because the snapshots cannot identify units sold across the change. A short history shows its rate with a label. A missing history leaves the rate and forecast unavailable.
+
+Apply the seasonality factor for each calendar month until stock runs out, with a listed landing counted only while stock remains. Kits stop at run-out. Accessory order dates subtract the configured supplier lead time and safety interval. Accessory cover compares pack and kit stock changes on matching days, then applies the resulting rate to remaining and inbound kits in the same warehouse. Settings supplies lead times until supplier imports exist.
+
+The Stock link is added when the account menu script loads. This keeps the server-rendered Home markup hash intact.
+
+### Part C · Ask
+
+Use the official SDK only for Ask. Haiku is the default. Sonnet sends the server-side fallback beta with the default fallback chain. The system prompt and tool definitions are stable across calls. Each turn returns one message containing all requested tool results, with a six-request and sixty-second bound. Only successful tool reads supply the Sources line. Sample replies use fixed invented data without contacting the provider.
+
+Tools enter a PostgreSQL read-only transaction and project fixed fields from existing dashboard readers. The model has no SQL facility. A separate database login role would require deployment provisioning, so this build uses the existing connection with transaction-level enforcement. Review and ticket text, waiting subjects and contact names are left out. The log retains predefined example questions, fixed failure responses, validated tool inputs and usage figures. Arbitrary questions and generated answers stay out of storage because free text can contain customer details.
+
+A transaction lock guards the rolling hourly limit and the balance for the current UK day. Only one request can hold a pending reservation. The answer returns at the request deadline even if a tool takes longer to finish its read. The creative scan already takes prices in pounds per million tokens, so Ask converts its supplied dollar prices using the existing pound-per-dollar Setting. The hourly cleanup removes rows older than 90 days.
+
+### Part D · Week against last year
+
+Use the scorecard's existing daily coverage and spend rules on each seven-day window. The earlier window starts exactly 364 days before the selected one. The monthly year comparison additionally requires continuous intervening history. The requested weekly card compares just the two selected windows, so a missing day between them cannot hide a complete side. Fully covered markets with no paid orders show zero.
+
+### Part E · Records
+
+The account menu links come from the signed-in browser shell. The server-rendered Home hash and its existing counts and budgets stay pinned. The eight screenshots use invented figures at 390 and 1280 px. The public countdown retains its existing route and headers.
+
+Retain migrations 078–080 on rollback because startup checks the migration ledger. A series rollback can preserve the planner's default kit and Ask can read the legacy pace widget. A Stock rollback can keep the shared Scorecard shell and remove the planner reader; Ask then reports unavailable stock data while keeping its fixed tool schema. Shared Settings and route integration may require conflict resolution when reverting individual commits.
+
+### Part F · Review fixes
+
+A shared series SKU requires an optional digits-only Shopify product ID in Settings. Inventory reads that product and the additional-series ShopifyQL fallback filters by both SKU and the product ID returned by the inventory lookup. Series 1 keeps its pinned title query. Older Settings omit the new field until it is set. The inventory poll records unresolved shared SKUs for Settings and Sources without a migration.

@@ -1,3 +1,5 @@
+import { askDefaults, askModels, type AskSettings } from './ask/protocol.js';
+import { plannerDefaults, type PlannerSettings } from './stock/planner.js';
 import { defaultCorporationTaxPercent } from './after-tax.js';
 import { adRulesDefaults, type AdRules } from './meta-adsets/settings.js';
 import { appConfig } from './config.js';
@@ -5,6 +7,8 @@ import { invalidateMetaCampaigns } from './ad-spend/campaign-cache.js';
 import type { Database } from './db.js';
 import type { OverheadItem } from './overheads.js';
 import { sourceDefinitions } from './sources.js';
+import { snapshotSkus } from './series-pace/store.js';
+import { originalSeries, originalSeriesProduct, originalSeriesSku, seriesMarket, seriesMarkets, type Series } from './series-pace/series.js';
 import { isSeriesDate, seriesPaceDates } from './series-pace/dates.js';
 import type { InboundStock } from './shopify/stock-gap.js';
 import { tickerEventKey, tickerKinds, type KeyDate } from './ticker/model.js';
@@ -13,7 +17,7 @@ import {ISSUE_REASONS, ISSUE_TAG_LIMIT, ISSUE_TAG_TEXT_LIMIT, type IssueTagRule}
 export const SETTINGS_KEY_NAMES = Object.freeze(sourceDefinitions.flatMap((source) => [...source.requiredKeys]));
 type KeyName = (typeof SETTINGS_KEY_NAMES)[number];
 
-export interface Settings {
+export interface Settings extends PlannerSettings, AskSettings {
   adRules: AdRules;
   goalOrdersPerDay: number;
   goalNetMarginPercent: number;
@@ -37,11 +41,7 @@ export interface Settings {
   seasonalMultiplier: number | null;
   markersPerKit: number | null;
   pencilsPerKit: number | null;
-  series1OrderDate: string;
-  series1UkLandingOffsetDays: number;
-  series1UsLandingOffsetDays: number;
-  series1UkTargetDate: string;
-  series1UsTargetDate: string;
+  series: Series[];
   metaAdAccountId: string;
   creativeDefaultWindow: '24h' | '3d' | '7d';
   creativeSpendFloorGbp: number;
@@ -167,11 +167,9 @@ export function defaultSettings(): Settings {
     seasonalMultiplier: null,
     markersPerKit: null,
     pencilsPerKit: null,
-    series1OrderDate: '2026-11-04',
-    series1UkLandingOffsetDays: 104,
-    series1UsLandingOffsetDays: 74,
-    series1UkTargetDate: '',
-    series1UsTargetDate: '',
+    ...plannerDefaults(),
+    ...askDefaults(),
+    series: [originalSeries()],
     ...creativeSettingsDefaults(),
     freelancerLabel: 'Freelancer',
     metaAdAccountId: '', googleCustomerId: '', googleLoginCustomerId: '', tiktokAdvertiserId: '',
@@ -286,6 +284,42 @@ function accountId(value: unknown, field: string, google = false): string {
   return id;
 }
 
+function parseSeries(value: unknown): Series[] {
+  const rows = list(value, 'series', (row, path) => {
+    if (!row || typeof row !== 'object') return invalid(path);
+    const allowed = Object.keys(originalSeries()).filter(key => !key.endsWith('TargetDate') || Object.hasOwn(row, key));
+    const input = object(row, Object.hasOwn(row, 'productId') ? [...allowed, 'productId'] : allowed, path);
+    const identifier = (key: 'key' | 'sku', pattern: RegExp): string => {
+      const value = input[key];
+      if (typeof value !== 'string' || !pattern.test(value)) return invalid(`${path}.${key}`);
+      return value;
+    };
+    const result = {
+      key: identifier('key', /^[a-z0-9][a-z0-9-]{0,19}$/),
+      name: businessText(input.name, `${path}.name`),
+      sku: identifier('sku', /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/),
+    } as Series;
+    if (Object.hasOwn(input, 'productId') && input.productId !== '') {
+      if (typeof input.productId !== 'string' || !/^\d+$/.test(input.productId)) invalid(`${path}.productId`);
+      if (result.sku === originalSeriesSku && input.productId !== originalSeriesProduct.id) invalid(`${path}.productId`);
+      result.productId = input.productId;
+    }
+    for (const market of seriesMarkets) {
+      const field = (suffix: string) => `${path}.${market}${suffix}`;
+      result[`${market}LaunchDate`] = seriesDate(input[`${market}LaunchDate`], field('LaunchDate'));
+      result[`${market}OrderDate`] = seriesDate(input[`${market}OrderDate`], field('OrderDate'));
+      result[`${market}LandingOffsetDays`] = requiredNumber(input[`${market}LandingOffsetDays`], field('LandingOffsetDays'), 365, true);
+      const target = `${market}TargetDate` as const;
+      result[target] = seriesDate(Object.hasOwn(input, target) ? input[target] : '', field('TargetDate'), true);
+      const dates = seriesMarket(result, market);
+      if (!seriesPaceDates(dates.orderDate, dates.landingOffsetDays, dates.targetDate)) invalid(field('OrderDate'));
+    }
+    return result;
+  }, row => row.key, 6);
+  if (new Set(rows.map(row => row.sku.toLowerCase())).size !== rows.length) invalid('series');
+  return rows;
+}
+
 function validatedSettings(input: unknown, legacyOverhead = false): Settings {
   const defaults = defaultSettings();
   const value = object(input, Object.keys(defaults), '');
@@ -357,11 +391,20 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
     seasonalMultiplier: number(value.seasonalMultiplier, 'seasonalMultiplier', 100, true, false, 0.01),
     markersPerKit: number(value.markersPerKit, 'markersPerKit', 1_000, true, true),
     pencilsPerKit: number(value.pencilsPerKit, 'pencilsPerKit', 1_000, true, true),
-    series1OrderDate: seriesDate(value.series1OrderDate, 'series1OrderDate'),
-    series1UkLandingOffsetDays: requiredNumber(value.series1UkLandingOffsetDays, 'series1UkLandingOffsetDays', 365, true),
-    series1UsLandingOffsetDays: requiredNumber(value.series1UsLandingOffsetDays, 'series1UsLandingOffsetDays', 365, true),
-    series1UkTargetDate: seriesDate(value.series1UkTargetDate, 'series1UkTargetDate', true),
-    series1UsTargetDate: seriesDate(value.series1UsTargetDate, 'series1UsTargetDate', true),
+    seasonalMultipliers: Array.isArray(value.seasonalMultipliers) && value.seasonalMultipliers.length === 12
+      ? Array.from(value.seasonalMultipliers, (factor, month) => {
+        if (typeof factor !== 'number' || !Number.isFinite(factor) || factor < 0.2 || factor > 5) invalid(`seasonalMultipliers.${month}`);
+        return factor;
+      })
+      : invalid('seasonalMultipliers'),
+    reorderSafetyWeeks: requiredNumber(value.reorderSafetyWeeks, 'reorderSafetyWeeks', 104),
+    productSuppliers: list(value.productSuppliers, 'productSuppliers', (row, path) => {
+      const parsed = object(row, ['product', 'supplier'], path);
+      return { product: text(parsed.product, `${path}.product`), supplier: businessText(parsed.supplier, `${path}.supplier`) };
+    }, row => row.product.toLowerCase()),
+    askModel: choice(value.askModel, 'askModel', askModels),
+    askDailyCapGbp: requiredNumber(value.askDailyCapGbp, 'askDailyCapGbp', 100),
+    series: parseSeries(value.series),
     metaAdAccountId: accountId(value.metaAdAccountId, 'metaAdAccountId'),
     creativeDefaultWindow: choice(value.creativeDefaultWindow, 'creativeDefaultWindow', ['24h', '3d', '7d'] as const),
     creativeSpendFloorGbp: requiredNumber(value.creativeSpendFloorGbp, 'creativeSpendFloorGbp', 100_000),
@@ -483,8 +526,9 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
     morningOpensFirst: bool(value.morningOpensFirst, 'morningOpensFirst'),
     brand: choice(value.brand, 'brand', ['one-of-one'] as const),
   };
-  if (!seriesPaceDates(settings.series1OrderDate, settings.series1UkLandingOffsetDays)
-    || !seriesPaceDates(settings.series1OrderDate, settings.series1UsLandingOffsetDays)) invalid('series1OrderDate');
+  settings.productSuppliers.forEach((row, index) => {
+    if (!settings.supplierLeadTimes.some(lead => lead.supplier === row.supplier)) invalid(`productSuppliers.${index}.supplier`);
+  });
   if (settings.cppUkTargetGbp > settings.cppUkBreakEvenGbp) invalid('cppUkTargetGbp');
   if (settings.cppUsTargetGbp > settings.cppUsBreakEvenGbp) invalid('cppUsTargetGbp');
   if (Math.abs(settings.creatorRules.briefPaymentPercent + settings.creatorRules.deliveryPaymentPercent - 100) > 0.000001) {
@@ -499,6 +543,7 @@ export function validateSettings(input: unknown): Settings {
 
 function changedFields(previous: unknown, next: unknown, path = ''): string[] {
   if (JSON.stringify(previous) === JSON.stringify(next)) return [];
+  if (['series', 'productSuppliers'].includes(path) && Array.isArray(previous) && Array.isArray(next) && previous.length !== next.length) return [path];
   if (path === 'overheads' && Array.isArray(previous) && Array.isArray(next) && previous.length !== next.length) return [path];
   if ((previous && typeof previous === 'object') || (next && typeof next === 'object')) {
     const before = (previous ?? {}) as Record<string, unknown>;
@@ -509,6 +554,9 @@ function changedFields(previous: unknown, next: unknown, path = ''): string[] {
   return [path];
 }
 
+const legacySeriesKeys = ['series1OrderDate', 'series1UkLandingOffsetDays', 'series1UsLandingOffsetDays', 'series1UkTargetDate', 'series1UsTargetDate'];
+const mergeSeries = (row: { values: Settings; series: Series[] | null }): Settings => storedSettings(row.series === null ? row.values : { ...row.values, series: row.series });
+
 function storedSettings(input: unknown): Settings {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return validateSettings(input);
   const defaults = defaultSettings();
@@ -516,12 +564,9 @@ function storedSettings(input: unknown): Settings {
   // version or creating an audit entry; the next ordinary save persists them.
   const stored: Record<string, unknown> = {
     ...creativeSettingsDefaults(),
+    ...plannerDefaults(),
+    ...askDefaults(),
     adRules: adRulesDefaults(),
-    series1OrderDate: defaults.series1OrderDate,
-    series1UkLandingOffsetDays: defaults.series1UkLandingOffsetDays,
-    series1UsLandingOffsetDays: defaults.series1UsLandingOffsetDays,
-    series1UkTargetDate: defaults.series1UkTargetDate,
-    series1UsTargetDate: defaults.series1UsTargetDate,
     metaSources: defaults.metaSources,
     ourActors: defaults.ourActors,
     freelancerLabel: defaults.freelancerLabel,
@@ -547,6 +592,8 @@ function storedSettings(input: unknown): Settings {
     waitingOnDays: defaults.waitingOnDays,
     ...input as Record<string, unknown>,
   };
+  if (!Object.hasOwn(stored, 'series')) stored.series = [originalSeries(stored)];
+  for (const key of legacySeriesKeys) delete stored[key];
   if (stored.adRules && typeof stored.adRules === 'object' && !Array.isArray(stored.adRules)
     && [Object.prototype, null].includes(Object.getPrototypeOf(stored.adRules))
     && !Object.hasOwn(stored.adRules, 'flatJudgeGbp')) {
@@ -565,16 +612,43 @@ function storedSettings(input: unknown): Settings {
   return validatedSettings({ ...values, overheads }, legacyOverhead);
 }
 
+async function hasSeriesStorage(db: Database): Promise<boolean> {
+  return (await db.query<{ present: boolean }>("SELECT to_regclass('pulse.configured_series') IS NOT NULL AS present")).rows[0]?.present === true;
+}
+
+async function hasPlannerStorage(db: Database): Promise<boolean> {
+  return (await db.query<{ present: boolean }>("SELECT to_regclass('pulse.stock_planner_settings') IS NOT NULL AS present")).rows[0]?.present === true;
+}
+
+async function hasAskStorage(db: Database): Promise<boolean> {
+  return (await db.query<{ present: boolean }>("SELECT to_regclass('pulse.ask_settings') IS NOT NULL AS present")).rows[0]?.present === true;
+}
+
 async function ensureSettings(db: Database): Promise<void> {
-  await db.query('INSERT INTO pulse.settings (values) VALUES ($1) ON CONFLICT (singleton) DO NOTHING', [JSON.stringify(defaultSettings())]);
+  const { series: _series, seasonalMultipliers: _months, reorderSafetyWeeks: _weeks, productSuppliers: _suppliers, askModel: _model, askDailyCapGbp: _cap, ...values } = defaultSettings();
+  await db.query('INSERT INTO pulse.settings (values) VALUES ($1) ON CONFLICT (singleton) DO NOTHING', [JSON.stringify(values)]);
 }
 
 export async function readSettings(db: Database, options: { seed?: boolean } = {}): Promise<SettingsSnapshot> {
   if (options.seed !== false) await ensureSettings(db);
-  const { rows } = await db.query<{ version: number; values: Settings }>('SELECT version, values FROM pulse.settings WHERE singleton = true');
+  type Row = { version: number; values: Settings; series: Series[] | null; planner: PlannerSettings | null; ask: AskSettings | null };
+  const select = (series: boolean, planner: boolean, ask: boolean) => db.query<Row>(`
+    SELECT settings.version, settings.values, ${series ? 'configured_series.series' : 'NULL'} AS series,
+      ${planner ? 'stock_planner_settings.values' : 'NULL'} AS planner,
+      ${ask ? 'ask_settings.values' : 'NULL'} AS ask FROM pulse.settings
+      ${series ? 'LEFT JOIN pulse.configured_series USING (singleton)' : ''}
+      ${planner ? 'LEFT JOIN pulse.stock_planner_settings USING (singleton)' : ''}
+      ${ask ? 'LEFT JOIN pulse.ask_settings USING (singleton)' : ''} WHERE singleton = true`);
+  let rows: Row[];
+  try {
+    ({ rows } = await select(true, true, true));
+  } catch (error) {
+    if ((error as { code?: string })?.code !== '42P01') throw error;
+    ({ rows } = await select(await hasSeriesStorage(db), await hasPlannerStorage(db), await hasAskStorage(db)));
+  }
   if (!rows[0] && options.seed === false) return { version: 0, values: defaultSettings() };
   if (!rows[0]) throw new Error('Settings are unavailable');
-  return { version: rows[0].version, values: storedSettings(rows[0].values) };
+  return { version: rows[0].version, values: mergeSeries({ ...rows[0], values: { ...rows[0].values, ...rows[0].planner, ...rows[0].ask } }) };
 }
 
 export async function saveSettings(db: Database, input: unknown, credentialId: string): Promise<SettingsSaveResult> {
@@ -589,9 +663,38 @@ export async function saveSettings(db: Database, input: unknown, credentialId: s
     const row = current.rows[0];
     if (!row) throw new Error('Settings are unavailable');
     if (row.version !== version) throw new SettingsConflictError();
-    const fields = changedFields(storedSettings(row.values), values);
+    const configured = await hasSeriesStorage(transaction)
+      ? (await transaction.query<{ series: Series[] }>('SELECT series FROM pulse.configured_series')).rows[0]?.series
+      : undefined;
+    const planner = await hasPlannerStorage(transaction)
+      ? (await transaction.query<{ values: PlannerSettings }>('SELECT values FROM pulse.stock_planner_settings')).rows[0]?.values
+      : undefined;
+    const ask = await hasAskStorage(transaction)
+      ? (await transaction.query<{ values: AskSettings }>('SELECT values FROM pulse.ask_settings')).rows[0]?.values
+      : undefined;
+    const previous = mergeSeries({ values: { ...row.values, ...planner, ...ask }, series: configured ?? null });
+    const deleted = previous.series.filter(series => !values.series.some(next => next.key === series.key && next.sku === series.sku));
+    if (deleted.length) {
+      const protectedSkus = await snapshotSkus(transaction);
+      if (deleted.some(series => protectedSkus.has(series.sku))) invalid('series');
+    }
+    const fields = changedFields(previous, values);
     if (fields.length === 0) return { version, values, changedFields: [] };
-    await transaction.query('UPDATE pulse.settings SET values = $1, version = version + 1, updated_at = now() WHERE singleton = true', [JSON.stringify(values)]);
+    const { series, seasonalMultipliers, reorderSafetyWeeks, productSuppliers, askModel, askDailyCapGbp, ...base } = values;
+    const legacy = Object.fromEntries(Object.entries(row.values).filter(([key]) => legacySeriesKeys.includes(key)));
+    await transaction.query('UPDATE pulse.settings SET values = $1, version = version + 1, updated_at = now() WHERE singleton = true', [JSON.stringify({ ...base, ...legacy })]);
+    if (fields.some(field => field === 'series' || field.startsWith('series.'))) {
+      await transaction.query(`INSERT INTO pulse.configured_series (series) VALUES ($1)
+        ON CONFLICT (singleton) DO UPDATE SET series = EXCLUDED.series`, [JSON.stringify(series)]);
+    }
+    if (fields.some(field => ['seasonalMultipliers', 'reorderSafetyWeeks', 'productSuppliers'].includes(field.split('.')[0]!))) {
+      await transaction.query(`INSERT INTO pulse.stock_planner_settings (values) VALUES ($1)
+        ON CONFLICT (singleton) DO UPDATE SET values = EXCLUDED.values`, [JSON.stringify({ seasonalMultipliers, reorderSafetyWeeks, productSuppliers })]);
+    }
+    if (fields.includes('askModel') || fields.includes('askDailyCapGbp')) {
+      await transaction.query(`INSERT INTO pulse.ask_settings (values) VALUES ($1)
+        ON CONFLICT (singleton) DO UPDATE SET values = EXCLUDED.values`, [JSON.stringify({ askModel, askDailyCapGbp })]);
+    }
     for (const field of fields) {
       await transaction.query(`
         WITH entry AS (

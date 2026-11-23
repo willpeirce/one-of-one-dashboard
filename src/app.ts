@@ -1,3 +1,8 @@
+import { sharedSeriesSkus } from './series-pace/series.js';
+import { registerAsk } from './ask/routes.js';
+import { cleanupAsk, readAskStatus } from './ask/store.js';
+import { registerStockPlanner } from './stock/planner-routes.js';
+import { snapshotSkus } from './series-pace/store.js';
 import { registerTicker } from './ticker/routes.js';
 import { readTicker } from './ticker/store.js';
 import { registerMorning } from './morning/routes.js';
@@ -105,6 +110,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   const auth = await Auth.create(db, config);
   const localNow = localOptions.clock ?? (() => new Date());
   await auth.cleanup();
+  await cleanupAsk(db, localNow()).catch(() => console.warn('Ask log cleanup failed.'));
   await syncSourceHealth(db, sourceEnv);
   const hq = new HQWorker(db, sourceEnv, {clock: localNow, onWrite: () => publishObservations()});
   const gorgias = new GorgiasWorker(db, sourceEnv, {clock: localNow, onWrite: () => publishObservations()});
@@ -366,6 +372,8 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   registerAlertLinks(app,db,auth,shopify.mode);
   registerAdSets(app, db, auth, sourceEnv, creativeNow, adOptions, async () => publishObservations());
   registerReviewRoutes(app, db, auth, publishObservations);
+  registerStockPlanner(app, db, auth, shopify.store, sourceNow);
+  registerAsk(app, db, auth, shopify.mode, sourceEnv, localNow, async () => (await snapshotCache.read()).dashboard);
   registerScorecard(app, db, auth, shopify.store, sourceEnv, () => shopifyOptions.clock?.() ?? new Date());
   const handover = new HandoverSections();
   registerHandover(app,auth,handover);
@@ -438,6 +446,9 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     const [dashboard, imports, costs, settings] = await Promise.all([snapshot(), shopify.store.summary(sourceNow()), shopify.store.costSummary(), readSettings(db)]);
     return reply.type('text/html; charset=utf-8').send(sourceHealthPage(dashboard.sourceHealth ?? [], imports, costs, await spendHealth(db, sourceEnv, settings.values, sourceNow()), {
       orderCleanupIncomplete: shopify.orderCleanupIncomplete,
+      series: settings.values.series,
+      sharedSkus: sharedSeriesSkus(imports.jobs.find(job => job.name === 'inventory')?.state),
+      ask: await readAskStatus(db, settings.values, localNow()),
       channelExclusions: await shopify.store.channelExclusions(),
       google: googleHealth(await readGoogleFacts(db,settings.values,sourceEnv,googleAt),googleAt),
       mailchimp: await readMailchimpFacts(db,mailchimp.mode,mailchimpAt),
@@ -456,7 +467,8 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
     const settings = await readSettings(db);
     const metaLive = !!settings.values.metaAdAccountId && getSourceStates(sourceEnv).some(source => source.source === 'meta' && source.mode === 'live');
     const actors = metaLive ? activityActors(await readActivity(db, settings.values.metaAdAccountId, settings.values, creativeNow())) : undefined;
-    return reply.type('text/html; charset=utf-8').send(settingsPage(settings, await shopify.store.latestCosts(), shopify.mode, new Date(), await readMetaCampaigns(db, settings.values, sourceEnv), await readCampaignSync(db, settings.values, sourceEnv), creativeFeatureFlags(sourceEnv), actors));
+    const sharedSkus = await shopify.store.unresolvedSeriesSkus();
+    return reply.type('text/html; charset=utf-8').send(settingsPage(settings, await shopify.store.latestCosts(), shopify.mode, new Date(), await readMetaCampaigns(db, settings.values, sourceEnv), await readCampaignSync(db, settings.values, sourceEnv), creativeFeatureFlags(sourceEnv), actors, [...new Set([...appConfig.shopify.stockProducts.map(product => product.name), ...settings.values.series.map(series => series.name)])], await snapshotSkus(db), sharedSkus));
   });
   app.get('/api/settings', async (request, reply) => {
     if (!await auth.session(request)) return reply.code(401).send({ error: 'Sign in to continue.' });
@@ -485,12 +497,13 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   });
   // Fixed paths only; the server never exposes repository or environment files.
   const assets = [
+    ['ask.js', 'text/javascript; charset=utf-8'] as const,
     ['kits-page.js', 'text/javascript; charset=utf-8'] as const,
     ['kits-page.css', 'text/css; charset=utf-8'] as const,
     ['issues.css', 'text/css; charset=utf-8'] as const,
     ['kits.css', 'text/css; charset=utf-8'] as const,
     ...['browser.js', 'dashboard.js', 'settings.js', 'fulfilment.js', 'creatives.js', 'adsets.js', 'ticker.js', 'morning.js', 'handover.js'].map(name => [name, 'text/javascript; charset=utf-8'] as const),
-    ...['styles.css', 'dashboard.css', 'settings.css', 'fulfilment.css', 'creatives.css', 'fonts.css', 'pull-refresh.css', 'adsets.css', 'scorecard.css', 'home-compact.css', 'home-panels.css', 'decisions.css', 'ticker.css', 'morning.css', 'handover.css', 'waiting-on.css'].map(name => [name, 'text/css; charset=utf-8'] as const),
+    ...['styles.css', 'dashboard.css', 'settings.css', 'fulfilment.css', 'creatives.css', 'fonts.css', 'pull-refresh.css', 'adsets.css', 'scorecard.css', 'stock-planner.css', 'ask.css', 'home-compact.css', 'home-panels.css', 'decisions.css', 'ticker.css', 'morning.css', 'handover.css', 'waiting-on.css'].map(name => [name, 'text/css; charset=utf-8'] as const),
     ...['logo.png', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'].map(name => [name, 'image/png'] as const),
     ...['outfit', 'plus-jakarta-sans'].flatMap(name => [
       [`fonts/${name}-latin-wght-normal.woff2`, 'font/woff2'] as const,
@@ -511,7 +524,10 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   registerCountdown(app, localNow);
   registerTicker(app, db, auth, shopify.mode, localNow);
   auth.registerRoutes(app);
-  const cleanup = setInterval(() => { void auth.cleanup().catch(() => {}); }, 60 * 60 * 1000);
+  const cleanup = setInterval(() => {
+    void auth.cleanup().catch(() => {});
+    void cleanupAsk(db, localNow()).catch(() => console.warn('Ask log cleanup failed.'));
+  }, 60 * 60 * 1000);
   cleanup.unref();
   app.addHook('onClose', async () => { clearInterval(cleanup); });
   app.decorate('startBackgroundWork', startBackgroundWork);

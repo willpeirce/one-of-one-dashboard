@@ -1,3 +1,4 @@
+import { originalSeriesKey, type Series } from './series-pace/series.js';
 import { stockPacksHtml } from './stock/view.js';
 import { updateHomeTests } from './github-hq/browser.js';
 import { releaseKitSheet, updateHomeKits } from './kits/browser.js';
@@ -16,7 +17,7 @@ import { rangeLabel } from './hero-range.js';
 import { installPullToRefresh } from './pull-refresh.js';
 import { greetingAt } from './greeting.js';
 import { formatLike, formatMetricNumber, formatNumber, formatPounds } from './money.js';
-import { paceState, seriesPaceCardHtml, seriesPaceDial, seriesPaceSummary, seriesPaceSheetHtml, type SeriesPaceCard } from './series-pace/presentation.js';
+import { paceEntries, paceTitle, paceState, seriesPaceCardHtml, seriesPaceDial, seriesPaceSummary, seriesPaceSheetHtml, type SeriesPaceCard } from './series-pace/presentation.js';
 import type { SeriesPaceMarket } from './series-pace/model.js';
 import { reviewProductTitle, reviewsFlagLabel, reviewsGreeting, reviewsPanelHtml, reviewSheetHtml } from './judgeme/presentation.js';
 import { handoverFlagHtml } from './gorgias/home-count.js';
@@ -98,15 +99,22 @@ function renderDial(element: HTMLElement, data: DialModel, mode: 'sample' | 'liv
 }
 
 function renderSeriesPace(element: HTMLElement, card: SeriesPaceCard, mode: 'sample' | 'live'): void {
-  if (!element.querySelector('[data-series-market]')) element.innerHTML = seriesPaceCardHtml(card, mode);
-  element.dataset.state = Object.values(card.markets).some(model => model.state === 'warn') ? 'warn' : Object.values(card.markets).every(model => model.state === 'good') ? 'good' : 'info';
+  const entries = paceEntries(card);
+  const selector = '[data-series-market]';
+  const buttons = () => Array.from(element.querySelectorAll<HTMLButtonElement>(selector));
+  const identity = entries.map(({ market, model }) => `${market}:${model.seriesKey ?? ''}`).join('|');
+  // Keep the single-series buttons mounted across updates.
+  if (!element.querySelector('.series-pace-markets') || buttons().map(button => `${button.dataset.seriesMarket}:${button.dataset.seriesKey ?? ''}`).join('|') !== identity)
+    element.innerHTML = seriesPaceCardHtml(card, mode);
+  const models = entries.map(row => row.model);
+  element.dataset.state = models.some(model => model.state === 'warn') ? 'warn' : models.length && models.every(model => model.state === 'good') ? 'good' : 'info';
   element.querySelectorAll(':scope > .sample-label').forEach(label => label.remove());
   if (mode === 'sample') element.insertAdjacentHTML('beforeend', '<small class="sample-label">Sample data</small>');
-  for (const market of ['UK', 'US'] as const) {
-    const button = get(`[data-series-market="${market}"]`, element), model = card.markets[market];
+  for (const [index, button] of buttons().entries()) {
+    const { market, model } = entries[index]!;
     renderDial(button, seriesPaceDial(market, model), mode);
     button.insertAdjacentHTML('beforeend', seriesPaceSummary(model));
-    button.setAttribute('aria-label', `Series 1 sell-out pace · ${market}: ${model.verdict}`);
+    button.setAttribute('aria-label', `${paceTitle(market, model)}: ${model.verdict}`);
     button.querySelector('.well')?.insertAdjacentHTML('afterend', '<span class="pace-scale" aria-hidden="true"><span>Too slow</span><span>On pace</span><span>Too fast</span></span>');
   }
 }
@@ -119,8 +127,10 @@ function showSeriesPaceDetail(element: HTMLElement, market: SeriesPaceMarket, re
   // A heartbeat may update the dial, but it must never replace an unsaved date.
   if (!reopen && document.querySelector<HTMLFormElement>('#series-target-form')?.dataset.dirty === 'true') return;
   openDetail = element; openTemplateId = undefined;
-  const model = widget.value.markets[market], dial = seriesPaceDial(market, model), state = paceState(model);
-  get('#sh-title').textContent = `Series 1 sell-out pace · ${market}`;
+  const model = paceEntries(widget.value).find(row => row.market === market && row.model.seriesKey === element.dataset.seriesKey)?.model;
+  if (!model) return;
+  const dial = seriesPaceDial(market, model), state = paceState(model);
+  get('#sh-title').textContent = paceTitle(market, model);
   get('#sh-dot').className = `dot ${state}`; get('#sh-dot').textContent = states[state][1];
   get('#sh-dl').hidden = false;
   get('#sh-why').textContent = dial.d.why;
@@ -136,7 +146,8 @@ async function saveSeriesTarget(value: string): Promise<void> {
   const form = document.querySelector<HTMLFormElement>('#series-target-form'), widget = snapshot.widgets.w017;
   if (!form || form.dataset.pending === 'true' || widget?.kind !== 'series-pace' || widget.mode === 'sample') return;
   const market = form.dataset.market === 'US' ? 'US' : 'UK', generation = seriesSheetGeneration;
-  const targetKey = market === 'UK' ? 'series1UkTargetDate' : 'series1UsTargetDate';
+  const seriesKey = form.dataset.seriesKey ?? originalSeriesKey;
+  const targetKey = `${market}TargetDate` as const;
   form.dataset.pending = 'true'; form.dataset.dirty = 'true';
   get<HTMLFieldSetElement>('fieldset', form).disabled = true;
   const status = get('#series-target-status', form);
@@ -146,9 +157,11 @@ async function saveSeriesTarget(value: string): Promise<void> {
     // Read the latest version and preserve every unrelated Settings field.
     const currentResponse = await fetch('/api/settings', { credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' } });
     if (!currentResponse.ok) throw new Error('settings-read');
-    const current = await currentResponse.json() as { version: number; values: Record<string, unknown> };
+    const current = await currentResponse.json() as { version: number; values: { series: Series[] } };
+    const series = current.values.series.map(row => row.key === seriesKey ? { ...row, [targetKey]: value } : row);
+    if (!series.some(row => row.key === seriesKey)) throw new Error('series-missing');
     const response = await fetch('/api/settings', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ version: current.version, values: { ...current.values, [targetKey]: value } }) });
+      body: JSON.stringify({ version: current.version, values: { ...current.values, series } }) });
     if (response.status === 409) { status.textContent = 'Settings changed on another device. Your date is still here. Try Save again to use the latest settings.'; return; }
     if (response.status === 400) { status.textContent = 'Enter a real target date, or use the landing date.'; return; }
     if (response.status === 401) { status.textContent = 'Your session has ended. Sign in again before saving.'; return; }
@@ -157,7 +170,7 @@ async function saveSeriesTarget(value: string): Promise<void> {
     await refreshDashboard(new AbortController().signal);
     // A delayed save must never claim that another sheet or a newer draft was saved.
     const activeForm = document.querySelector<HTMLFormElement>('#series-target-form');
-    if (generation === seriesSheetGeneration && activeForm?.dataset.market === market
+    if (generation === seriesSheetGeneration && activeForm?.dataset.market === market && (activeForm.dataset.seriesKey ?? originalSeriesKey) === seriesKey
       && activeForm.dataset.dirty !== 'true' && get<HTMLDialogElement>('#sheet').open
       && get<HTMLInputElement>('#series-target-date', activeForm).value === value) {
       get('#series-target-status', activeForm).textContent = value ? 'Target date saved.' : 'Using the landing date.';

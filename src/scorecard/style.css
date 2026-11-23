@@ -2,3 +2,17 @@
 .scorecard-page .settings-wordmark{min-width:44px}.scorecard-page .btn{min-height:44px}
 
 .score-direction{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;vertical-align:-3px;margin-right:3px}
+
+.score-week table {
+  width: 100%;
+  margin-top: 10px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.score-week th, .score-week td {
+  padding: 9px 4px;
+  border-bottom: 1px solid var(--line);
+  text-align: end;
+}
+.score-week th:first-child { text-align: start; }
+.score-week thead { color: var(--muted); }

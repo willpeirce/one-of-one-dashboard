@@ -1,4 +1,5 @@
 import { firstOrderFlag, type FirstOrder } from './first-order.js';
+import { originalSeriesProduct, originalSeriesSku } from '../series-pace/series.js';
 import { appConfig } from '../config.js';
 import { ShopifyError, Transport } from './http.js';
 import { TokenManager } from './token.js';
@@ -28,11 +29,15 @@ export interface ShopifyReader {
   scopes(): Promise<string[]>;
   orders(query: string, after: string | null, address: boolean): Promise<Page>;
   order(id: string, address: boolean): Promise<any>;
-  inventory(sku?: string): Promise<any[]>;
+  inventory(sku?: string, productId?: string): Promise<any[]>;
   report(query: string): Promise<any>;
   subscriptions(after: string | null): Promise<Page>;
   subscribe(topic: string, uri: string): Promise<void>;
 }
+export class SharedSeriesSkuError extends ShopifyError {
+  constructor() { super('invalid'); }
+}
+
 // No general query/mutation entry point is exposed. Only owned subscription creation can write.
 export class ShopifyClient implements ShopifyReader {
   private readonly tokens: TokenManager;
@@ -110,34 +115,50 @@ export class ShopifyClient implements ShopifyReader {
       }
     }
   }
-  async inventory(sku?: string): Promise<any[]> {
+  async inventory(sku?: string, productId?: string): Promise<any[]> {
     const result: any[] = [];
+    if (productId !== undefined && !/^\d+$/.test(productId)) throw new ShopifyError('invalid');
+    const selectedId = sku === originalSeriesSku ? originalSeriesProduct.id : productId;
+    if (sku && !selectedId) {
+      if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(sku)) throw new ShopifyError('invalid');
+      const data = await this.#graphql(`query PulseStockBySku($query: String!) {
+        productVariants(first: 20, query: $query) { nodes { id sku product { id } inventoryItem { id unitCost { amount currencyCode } } } ${page} }
+      }`, { query: `sku:"${sku}"` });
+      const exact = data.productVariants.nodes.filter((variant: { sku: string }) => variant.sku === sku);
+      if (new Set(exact.map((variant: { product: { id: string } }) => variant.product.id)).size > 1) throw new SharedSeriesSkuError();
+      if (data.productVariants.pageInfo.hasNextPage || exact.length > 1) throw new ShopifyError('invalid');
+      return exact.length ? this.#inventoryLevels(exact[0].product.id, exact[0]) : [];
+    }
     // Variants and levels paginate independently; only configured products/locations are retained.
-    for (const product of appConfig.shopify.stockProducts) {
-      if (sku && (!('sku' in product) || product.sku !== sku)) continue;
+    for (const product of selectedId ? [{ id: selectedId }] : appConfig.shopify.stockProducts) {
       let after: string | null = null;
       do {
         const data = await this.#graphql(`query PulseStock($id: ID!, $after: String) { product(id: $id) { id variants(first: 100, after: $after) { nodes { id sku inventoryItem { id unitCost { amount currencyCode } } } ${page} } } }`, { id: `gid://shopify/Product/${product.id}`, after });
         if (!data.product) break;
         for (const variant of data.product.variants.nodes) {
           if (sku && variant.sku !== sku) continue;
-          const metadata = { productId: data.product.id, variantId: variant.id, sku: variant.sku, inventoryItemId: variant.inventoryItem.id, unitCost: variant.inventoryItem.unitCost };
-          let hasLevels = false;
-          let levelsAfter: string | null = null;
-          do {
-            const levels = await this.#graphql(`query PulseLevels($id: ID!, $after: String) { inventoryItem(id: $id) { id inventoryLevels(first: 100, after: $after) { nodes { id location { id } quantities(names: ["available", "on_hand", "committed"]) { name quantity } } ${page} } } }`, { id: variant.inventoryItem.id, after: levelsAfter });
-            for (const level of levels.inventoryItem.inventoryLevels.nodes) { result.push({ ...metadata, ...level }); hasLevels = true; }
-            const next = nextCursor(levels.inventoryItem.inventoryLevels);
-            if (next && next === levelsAfter) throw new ShopifyError('invalid');
-            levelsAfter = next;
-          } while (levelsAfter);
-          if (!hasLevels) result.push({ ...metadata, location: null });
+          result.push(...await this.#inventoryLevels(data.product.id, variant));
         }
         const next = nextCursor(data.product.variants);
         if (next && next === after) throw new ShopifyError('invalid');
         after = next;
       } while (after);
     }
+    return result;
+  }
+  async #inventoryLevels(productId: string, variant: any): Promise<any[]> {
+    const result: any[] = [];
+    const metadata = { productId: productId, variantId: variant.id, sku: variant.sku, inventoryItemId: variant.inventoryItem.id, unitCost: variant.inventoryItem.unitCost };
+    let hasLevels = false;
+    let levelsAfter: string | null = null;
+    do {
+      const levels = await this.#graphql(`query PulseLevels($id: ID!, $after: String) { inventoryItem(id: $id) { id inventoryLevels(first: 100, after: $after) { nodes { id location { id } quantities(names: ["available", "on_hand", "committed"]) { name quantity } } ${page} } } }`, { id: variant.inventoryItem.id, after: levelsAfter });
+      for (const level of levels.inventoryItem.inventoryLevels.nodes) { result.push({ ...metadata, ...level }); hasLevels = true; }
+      const next = nextCursor(levels.inventoryItem.inventoryLevels);
+      if (next && next === levelsAfter) throw new ShopifyError('invalid');
+      levelsAfter = next;
+    } while (levelsAfter);
+    if (!hasLevels) result.push({ ...metadata, location: null });
     return result;
   }
   async report(query: string): Promise<any> {

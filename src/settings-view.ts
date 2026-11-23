@@ -1,3 +1,7 @@
+import { askModels } from './ask/protocol.js';
+import { seriesPaceDates } from './series-pace/dates.js';
+import { paceDate } from './series-pace/model.js';
+import { seriesMarkets, sharedSeriesSkuWarning } from './series-pace/series.js';
 import { tickerHead, tickerHtml } from './ticker/view.js';
 import { SETTINGS_KEY_NAMES, type SettingsSnapshot, type Settings } from './settings.js';
 import type { ShopifyCost } from './shopify/costs.js';
@@ -7,8 +11,6 @@ import type { MetaCampaignView } from './ad-spend/model.js';
 import type { CampaignSyncState } from './ad-spend/campaign-cache.js';
 import { campaignSyncText } from './ad-spend/campaign-status.js';
 import { formatNumber, formatPounds } from './money.js';
-import { seriesPaceDates } from './series-pace/dates.js';
-import { paceDate } from './series-pace/model.js';
 import { creativeFeatureFlags } from './creatives/config.js';
 import type { ActorChoices } from './meta-adsets/activity.js';
 import { appConfig } from './config.js';
@@ -58,9 +60,9 @@ function fields(definitions: readonly Field[], values: object, prefix = ''): str
   return definitions.map((definition) => field(definition, (values as Record<string, unknown>)[definition.key], prefix)).join('');
 }
 
-function collection(key: string, label: string, definitions: readonly Field[], rows: readonly object[], note: string, costs?: Record<string, string>, options: { maxRows?: number; footer?: string; heading?: string; rowHint?: (value: Record<string, unknown>) => string } = {}): string {
-  const row = (value: Record<string, unknown>, index: number | string) => `<fieldset class="setting-row"><legend>${escapeHtml(label)} <span data-row-number>${typeof index === 'number' ? index + 1 : ''}</span></legend><div class="setting-row-fields">${fields(definitions, value, `${key}.${index}`)}${options.rowHint ? `<p class="setting-help setting-warning" data-row-hint${options.rowHint(value) ? '' : ' hidden'}>${escapeHtml(options.rowHint(value))}</p>` : ''}</div>${costs ? `<p class="setting-help" data-shopify-cost>${escapeHtml(costs[String(value.sku)] ?? 'Not in Shopify')}</p>` : ''}<button class="btn setting-remove" type="button" data-remove-row aria-label="Remove ${escapeHtml(label.toLowerCase())}">Remove</button></fieldset>`;
-  return `<section class="setting-collection" data-settings-list="${key}"${options.maxRows === undefined ? '' : ` data-list-max="${options.maxRows}"`} aria-labelledby="${key}-heading">
+function collection(key: string, label: string, definitions: readonly Field[], rows: readonly object[], note: string, costs?: Record<string, string>, options: { maxRows?: number; footer?: string; heading?: string; rowExtra?: (value: Record<string, unknown>) => string; rowHint?: (value: Record<string, unknown>) => string; reorder?: boolean; protectedSkus?: ReadonlySet<string> } = {}): string {
+  const row = (value: Record<string, unknown>, index: number | string) => `<fieldset class="setting-row"><legend>${escapeHtml(label)} <span data-row-number>${typeof index === 'number' ? index + 1 : ''}</span></legend><div class="setting-row-fields">${fields(definitions, value, `${key}.${index}`)}${options.rowHint ? `<p class="setting-help setting-warning" data-row-hint${options.rowHint(value) ? '' : ' hidden'}>${escapeHtml(options.rowHint(value))}</p>` : ''}</div>${options.rowExtra?.(value) ?? ''}${costs ? `<p class="setting-help" data-shopify-cost>${escapeHtml(costs[String(value.sku)] ?? 'Not in Shopify')}</p>` : ''}<button class="btn setting-remove" type="button" data-remove-row${options.protectedSkus?.has(String(value.sku)) ? ' disabled title="This SKU has snapshots"' : ''} aria-label="Remove ${escapeHtml(label.toLowerCase())}">Remove</button>${options.reorder ? '<button class="btn" type="button" data-move-row="up">Move up</button><button class="btn" type="button" data-move-row="down">Move down</button>' : ''}</fieldset>`;
+  return `<section class="setting-collection" data-settings-list="${key}"${options.protectedSkus ? ` data-protected-skus="${escapeHtml(JSON.stringify([...options.protectedSkus]))}"` : ''}${options.maxRows === undefined ? '' : ` data-list-max="${options.maxRows}"`} aria-labelledby="${key}-heading">
     <h3 id="${key}-heading">${escapeHtml(options.heading ?? label)} <span class="setting-count" data-list-count>${formatNumber(rows.length)}</span></h3>
     <p class="setting-help">${escapeHtml(note)}</p>
     <div data-list-rows${costs ? ` data-shopify-cost-map="${escapeHtml(JSON.stringify(costs))}"` : ''}>${rows.map((value, index) => row(value as Record<string, unknown>, index)).join('')}</div>
@@ -104,7 +106,7 @@ function actorPicker(values: Settings, choices?: ActorChoices): string {
   return collection('ourActors', 'Our actors', [{ key: 'actorId', label: 'Actor ID', list: 'recent-meta-actors' }], values.ourActors, 'Choose a recent actor or enter an ID. An empty list treats every change as not ours. Choose Save settings to keep edits.', undefined, { footer, rowHint: hint });
 }
 
-export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly ShopifyCost[] = [], mode: 'sample' | 'live' = 'sample', now = new Date(), metaCampaigns: readonly MetaCampaignView[] = [], campaignSync: CampaignSyncState = { state: 'pending', at: null }, creativeFlags = creativeFeatureFlags(), actorChoices?: ActorChoices, stockProductNames: readonly string[] = appConfig.shopify.stockProducts.map(product => product.name)): string {
+export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly ShopifyCost[] = [], mode: 'sample' | 'live' = 'sample', now = new Date(), metaCampaigns: readonly MetaCampaignView[] = [], campaignSync: CampaignSyncState = { state: 'pending', at: null }, creativeFlags = creativeFeatureFlags(), actorChoices?: ActorChoices, stockProductNames: readonly string[] = appConfig.shopify.stockProducts.map(product => product.name), protectedSkus: ReadonlySet<string> = new Set(), sharedSkus: readonly string[] = []): string {
   const values = snapshot.values;
   const costLabels: Record<string, string> = Object.create(null);
   for (const c of shopifyCosts) if (c.sku) {
@@ -152,13 +154,20 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     { key: 'sku', label: 'SKU' }, number('unitCostGbp', 'Starting unit cost (£)', { nullable: true }),
   ], values.startingCogs, "Shopify’s cost per item comes first. These rows are the fallback for a SKU with no Shopify cost. Blank means unknown, never zero.", costLabels)}`);
   const stock = section('Stock planning', 'Supplier timing and components per kit.', `<div class="settings-grid">${fields([
+    number('reorderSafetyWeeks', 'Reorder planner safety (weeks)', { max: 104 }),
     number('safetyWeeks', 'Safety stock (weeks)'),
     number('seasonalMultiplier', 'Seasonal multiplier', { nullable: true, min: 0.01 }),
     number('markersPerKit', 'Markers per kit', { nullable: true, integer: true }),
     number('pencilsPerKit', 'Pencils per kit', { nullable: true, integer: true }),
-  ], values)}</div>${collection('supplierLeadTimes', 'Supplier lead time', [
+  ], values)}</div><h3>Monthly reorder multipliers</h3><div class="settings-grid">${values.seasonalMultipliers.map((multiplier, index) => field(number(String(index),
+    new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', month: 'short' }).format(new Date(Date.UTC(2000, index, 1))), { min: 0.2, max: 5, step: 'any' }), multiplier, 'seasonalMultipliers')).join('')}</div>${collection('supplierLeadTimes', 'Supplier lead time', [
     { key: 'supplier', label: 'Supplier business' }, number('days', 'Lead time (days)', { nullable: true, integer: true }),
-  ], values.supplierLeadTimes, 'Starting supplier lead times. With no arrival listed, cover below the shortest known lead time raises a warning; no arrival date is assumed.')}${collection('inboundStock', 'Inbound stock', [
+  ], values.supplierLeadTimes, 'Starting supplier lead times. With no arrival listed, cover below the shortest known lead time raises a warning; no arrival date is assumed.')}${collection('productSuppliers', 'Product supplier', [
+    { key: 'product', label: 'Product or SKU', list: 'inbound-stock-products' },
+    { key: 'supplier', label: 'Supplier business', list: 'stock-suppliers' },
+  ], values.productSuppliers, 'Match each accessory to a business from Supplier lead time.', undefined, {
+    footer: `<datalist id="stock-suppliers">${values.supplierLeadTimes.map(row => `<option value="${escapeHtml(row.supplier)}"></option>`).join('')}</datalist>`,
+  })}${collection('inboundStock', 'Inbound stock', [
     { key: 'product', label: 'Product', list: 'inbound-stock-products', hint: 'Use the product name shown in Stock and cover.' },
     { key: 'market', label: 'Market', options: [{ value: 'uk', label: 'UK' }, { value: 'us', label: 'US' }] },
     number('quantity', 'Quantity', { integer: true, min: 1, max: 1_000_000 }),
@@ -167,17 +176,28 @@ export function settingsPage(snapshot: SettingsSnapshot, shopifyCosts: readonly 
     rowHint: row => inboundProductWarning(row.product, stockProductNames),
     footer: `<datalist id="inbound-stock-products">${stockProductNames.map(product => `<option value="${escapeHtml(product)}"></option>`).join('')}</datalist>`,
   })}`);
-  const paceMarket = (market: 'UK' | 'US') => {
-    const suffix = market === 'UK' ? 'Uk' : 'Us';
-    const dates = seriesPaceDates(values.series1OrderDate, values[`series1${suffix}LandingOffsetDays`], values[`series1${suffix}TargetDate`])!;
-    return `<section aria-labelledby="series-pace-${market}-heading"><h3 id="series-pace-${market}-heading">${market} · ${market === 'UK' ? 'Northampton' : 'Ohio'}</h3><div class="settings-grid">${fields([
-      number(`series1${suffix}LandingOffsetDays`, `${market} landing offset (days)`, { integer: true, min: 0, max: 365 }),
-      { key: `series1${suffix}TargetDate`, label: `${market} target sell-out date (optional)`, type: 'date', optional: true, hint: 'Leave blank to use the landing date.' },
-    ], values)}</div><p class="setting-help" data-series-pace-dates="${suffix}" aria-live="polite">Landing date: ${paceDate(dates.landingDate)} · Target date: ${paceDate(dates.targetDate)} (${dates.targetKind})</p></section>`;
-  };
-  const pace = section('Series 1 sell-out pace', 'Sell out when Series 2 lands, or choose your own target.', `<div class="settings-grid">${fields([
-    { key: 'series1OrderDate', label: 'Drop 1 order date', type: 'date' },
-  ], values)}</div>${paceMarket('UK')}${paceMarket('US')}`);
+  const seriesFields: Field[] = [
+    { key: 'key', label: 'Series key', maxlength: 20, hint: 'Short lowercase slug, for example invented-2.' },
+    { key: 'name', label: 'Display name', maxlength: 80 },
+    { key: 'sku', label: 'Inventory SKU', maxlength: 64 },
+    { key: 'productId', label: 'Shopify product ID', optional: true, hint: 'Digits only. Required if multiple products share the SKU.' },
+    ...seriesMarkets.flatMap((market): Field[] => [
+      { key: `${market}LaunchDate`, label: `${market} launch date`, type: 'date' },
+      { key: `${market}OrderDate`, label: `${market} order date`, type: 'date' },
+      number(`${market}LandingOffsetDays`, `${market} landing offset (days)`, { integer: true, min: 0, max: 365 }),
+      { key: `${market}TargetDate`, label: `${market} target sell-out date (optional)`, type: 'date', optional: true, hint: 'Leave blank to use the landing date.' },
+    ]),
+  ];
+  const pace = section('Series sell-out pace', 'Configure the stocked kit SKU and dates for each market.',
+    collection('series', 'Series', seriesFields, values.series, 'A series appears in each market on its launch day. A series with snapshots keeps its key and SKU.', undefined,
+      { maxRows: 6, reorder: true, protectedSkus, rowExtra: row => `<p class="setting-help setting-warning" data-shared-series-skus="${escapeHtml(JSON.stringify(sharedSkus))}"${!row.productId && sharedSkus.includes(String(row.sku)) ? '' : ' hidden'}>${!row.productId && sharedSkus.includes(String(row.sku)) ? escapeHtml(sharedSeriesSkuWarning(String(row.sku))) : ''}</p>` + seriesMarkets.map(market => {
+        const dates = seriesPaceDates(String(row[`${market}OrderDate`] ?? ''), Number(row[`${market}LandingOffsetDays`]), String(row[`${market}TargetDate`] ?? ''));
+        return `<p class="setting-help" data-series-pace-dates="${market}" aria-live="polite">${dates ? `Landing date: ${paceDate(dates.landingDate)} · Target date: ${paceDate(dates.targetDate)} (${dates.targetKind})` : ''}</p>`;
+      }).join('') }));
+  const ask = section('Ask', 'Model and daily spend limit.', `<div class="settings-grid">${fields([
+    { key: 'askModel', label: 'Ask model', options: askModels.map(model => ({ value: model, label: model })) },
+    number('askDailyCapGbp', 'Ask daily cap (£)', { max: 100 }),
+  ], values)}</div>`);
   const creativeControls = `<section class="setting-collection" aria-labelledby="creative-settings-heading"><h3 id="creative-settings-heading">Meta creatives</h3><p class="setting-help">Rankings use Meta’s purchase claims. Targets are local rules; saving never changes an ad.</p><div class="settings-grid">${fields([
     { key: 'creativeDefaultWindow', label: 'Top creatives default window', options: [{ value: '24h', label: '24h' }, { value: '3d', label: '3 days' }, { value: '7d', label: '7 days' }], hint: '24h means the last complete UK day plus today so far.' },
     number('creativeSpendFloorGbp', 'Panel spend floor (£)', { max: 100_000 }),
@@ -299,7 +319,7 @@ ${tickerHead()}</head>
     <form id="settings-form" data-version="${snapshot.version}" method="post" action="/api/settings">
       <input type="hidden" id="saved-meta-owner-rules" value="${escapeHtml(JSON.stringify(values.metaOwners))}">
       <input type="hidden" id="saved-gorgias-issue-tags" value="${escapeHtml(JSON.stringify(values.gorgiasIssueTags))}">
-      <fieldset id="settings-fields"><legend class="settings-sr-only">Business settings</legend>${goals}${advertising}${costs}${stock}${pace}${campaigns}${email}${handover}${waiting}${creators}${keyDates}${dates}${preferences}</fieldset>
+      <fieldset id="settings-fields"><legend class="settings-sr-only">Business settings</legend>${goals}${advertising}${costs}${stock}${pace}${ask}${campaigns}${email}${handover}${waiting}${creators}${keyDates}${dates}${preferences}</fieldset>
       <div class="settings-savebar glass"><div><p id="settings-message" role="status" aria-live="polite">Choose Save settings for these fields, or Save beside a campaign owner.</p><p class="setting-help">Unknown costs can stay blank. Saving adds an audit entry.</p></div><button class="btn settings-save" id="settings-save" type="submit" disabled>Save settings</button></div>
     </form>
     <p id="auth-message" role="status" aria-live="polite"></p>

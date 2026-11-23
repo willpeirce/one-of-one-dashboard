@@ -1,3 +1,5 @@
+import { readSettings } from '../settings.js';
+import { originalSeriesSku } from '../series-pace/series.js';
 import { backfillFirstOrders, cleanLegacyOrders } from './first-order.js';
 import { missingSeriesPaceWindow, saveSeriesPaceSales, seriesPaceQuery, takeStockSnapshot } from '../series-pace/store.js';
 import { takeStockDaily } from '../scorecard/stock-daily.js';
@@ -6,7 +8,7 @@ import { appConfig } from '../config.js';
 import type { Database } from '../db.js';
 import { addDays, dayCount, ukToday } from '../hero-range.js';
 import type { SourceMode } from '../sources.js';
-import { nextCursor, ShopifyClient, type ShopifyReader } from './client.js';
+import { nextCursor, SharedSeriesSkuError, ShopifyClient, type ShopifyReader } from './client.js';
 import { ShopifyError, Transport, type TransportOptions } from './http.js';
 import { SampleShopify } from './sample.js';
 import { ShopifyStore } from './store.js';
@@ -333,17 +335,50 @@ export class ShopifyWorker {
     }
     if (name === 'stock_snapshot') {
       if (this.mode !== 'live') return { skipped: 'sample_mode' };
-      await takeStockSnapshot(this.db, await this.client.inventory('oneofone1'), this.clock(), state.caughtUp === true);
+      const { values } = await readSettings(this.db);
+      let failure: unknown;
+      for (const series of values.series) {
+        try {
+          const rows = await this.client.inventory(series.sku, series.productId);
+          if (!rows.some(row => row.location) && series.sku !== originalSeriesSku) continue;
+          await this.db.transaction(async tx => {
+            await tx.query('SELECT singleton FROM pulse.settings WHERE singleton = true FOR UPDATE');
+            const current = await readSettings(tx, { seed: false });
+            if (current.values.series.some(value => value.sku === series.sku && value.productId === series.productId))
+              await takeStockSnapshot(tx, rows, this.clock(), state.caughtUp === true, series.sku);
+          });
+        } catch (error) { if (!(error instanceof SharedSeriesSkuError)) failure ??= error; }
+      }
+      if (failure) throw failure;
       return {};
     }
     if (name === 'series_pace') {
       if (this.mode !== 'live') return { skipped: 'sample_mode' };
-      const missing = await missingSeriesPaceWindow(this.db, now, state.lastAttemptedTo ?? null);
-      const nextState = { ...state, checkedAt: now.toISOString(), ...(missing ? { lastAttemptedTo: missing.to } : {}) };
-      if (missing) {
-        // Advance before I/O, preserving rotation and the hourly gate across failures/restarts.
+      const { values } = await readSettings(this.db, { seed: false });
+      const series = values.series;
+      const last = series.findIndex(row => row.sku === state.lastAttemptedSku);
+      let nextState = { ...state, checkedAt: now.toISOString() };
+      for (let i = 1; i <= series.length; i++) {
+        const selected = series[(last + i) % series.length]!;
+        const cursors = state.cursors ?? {};
+        const after = cursors[selected.sku] ?? (selected.sku === originalSeriesSku ? state.lastAttemptedTo : null) ?? null;
+        const missing = await missingSeriesPaceWindow(this.db, now, after, selected);
+        if (!missing) continue;
+        nextState = { ...nextState, lastAttemptedSku: selected.sku, lastAttemptedTo: missing.to, cursors: { ...cursors, [selected.sku]: missing.to } };
+        // Advance before I/O so one failed report cannot starve another SKU.
         await this.db.query(`UPDATE pulse.shopify_jobs SET next_run_at = $1, state = $2 WHERE mode = 'live' AND name = 'series_pace'`, [new Date(this.clock().getTime() + intervals.series_pace), JSON.stringify(nextState)]);
-        await saveSeriesPaceSales(this.db, await this.client.report(seriesPaceQuery(missing.from, missing.to)), missing.from, missing.to, this.clock());
+        let productGid: string | undefined;
+        if (selected.sku !== originalSeriesSku) {
+          try {
+            const inventory = await this.client.inventory(selected.sku, selected.productId);
+            productGid = inventory[0]?.productId;
+          } catch (error) {
+            if (!(error instanceof SharedSeriesSkuError)) throw error;
+          }
+          if (!productGid) break;
+        }
+        await saveSeriesPaceSales(this.db, await this.client.report(seriesPaceQuery(missing.from, missing.to, selected.sku, productGid)), missing.from, missing.to, this.clock(), selected.sku);
+        break;
       }
       return nextState;
     }
@@ -450,7 +485,19 @@ export class ShopifyWorker {
         const baseline = await this.client.costBaseline();
         if (baseline) await this.store.inventory(baseline.rows, baseline.at);
       }
-      await this.store.inventory(await this.client.inventory(), now); return { costSeeded: true };
+      const { values } = await readSettings(this.db, { seed: false });
+      const rows = await this.client.inventory();
+      const sharedSeriesSkus: string[] = [];
+      for (const { sku, productId } of values.series) {
+        if (sku === originalSeriesSku) continue;
+        try { rows.push(...await this.client.inventory(sku, productId)); }
+        catch (error) {
+          if (!(error instanceof SharedSeriesSkuError)) throw error;
+          sharedSeriesSkus.push(sku);
+        }
+      }
+      await this.store.inventory(rows, now, values.series.map(series => series.sku));
+      return { costSeeded: true, sharedSeriesSkus };
     }
     if (name === 'sessions') {
       // Re-read yesterday too: late report corrections and geo guard updates must replace previous totals.

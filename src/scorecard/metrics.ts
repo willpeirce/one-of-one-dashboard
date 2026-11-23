@@ -1,3 +1,4 @@
+import { originalSeriesSku } from '../series-pace/series.js';
 import { addDays, spikeMarkets, ukToday } from '../hero-range.js';
 import { adNames, adSources, decimalMicros, type AdSource } from '../ad-spend/model.js';
 import { spendMarket } from '../ad-spend/placement.js';
@@ -35,6 +36,18 @@ export function scorecardMonth(month: string | undefined, now = new Date()): Sco
   return { month: selected, from: `${selected}-01`, to: monthEnd(selected),
     previousFrom: `${previous}-01`, previousTo: monthEnd(previous), yearFrom: `${year}-01`, yearTo: monthEnd(year),
     label: new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${selected}-15T12:00:00Z`)) };
+}
+
+export interface ScorecardWeek {
+  from: string; to: string; earlierFrom: string; earlierTo: string; latest: string;
+}
+export function scorecardWeek(ending: string | undefined, now: Date): ScorecardWeek {
+  const latest = addDays(ukToday(now), -1), to = ending || latest;
+  const timestamp = Date.parse(`${to}T00:00:00Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(to) || !Number.isFinite(timestamp)
+      || new Date(timestamp).toISOString().slice(0, 10) !== to || to < '0002-01-08' || to > latest)
+    throw Object.assign(new Error('Choose the final date of a completed seven-day window.'), { statusCode: 400 });
+  return { from: addDays(to, -6), to, earlierFrom: addDays(to, -370), earlierTo: addDays(to, -364), latest };
 }
 
 export interface ScorecardInput {
@@ -83,11 +96,11 @@ export function coveredPeriod(coverage: readonly string[], from: string, to: str
 }
 const inPeriod = (day: string, from: string, to: string) => day >= from && day <= to;
 const pounds = (value: number): number => Math.round(value * 100) / 100;
-const sumSales = (input: ScorecardInput, from: string, to: string): number | null =>
+const sumSales = (input: Pick<ScorecardInput, 'dailySales' | 'salesCoverage'>, from: string, to: string): number | null =>
   coveredPeriod(input.salesCoverage, from, to)
     ? pounds(input.dailySales.filter(row => inPeriod(row.day, from, to)).reduce((sum, row) => sum + row.netSales, 0)) : null;
 
-function spendTotal(input: ScorecardInput, from: string, to: string, platform?: AdSource): number | null {
+function spendTotal(input: Pick<ScorecardInput, 'mode' | 'spend' | 'market'>, from: string, to: string, platform?: AdSource): number | null {
   if (input.spend.mode !== input.mode) return null;
   const sources = input.spend.sources.filter(source => (input.mode === 'sample' || source.live) && (!platform || source.source === platform));
   if (!sources.length || sources.some(source => !source.ready || input.mode === 'live' && (source.stale || (source.failures ?? 0) > 0
@@ -98,6 +111,22 @@ function spendTotal(input: ScorecardInput, from: string, to: string, platform?: 
     && (input.market === 'all' || spendMarket(row) === input.market));
   if (rows.some(row => row.currency !== 'GBP')) return null;
   return Number(rows.reduce((sum, row) => sum + decimalMicros(row.amount), 0n)) / 1_000_000;
+}
+
+export interface WeekMarketInput extends Pick<ScorecardInput, 'mode' | 'market' | 'dailySales' | 'salesCoverage' | 'orderCoverage' | 'spend'> {
+  dailyOrders: readonly { day: string; orders: number }[];
+}
+
+export function compareScorecardWeeks(window: ScorecardWeek, markets: readonly WeekMarketInput[]) {
+  return markets.map(input => {
+    const read = (from: string, to: string) => ({
+      netSales: sumSales(input, from, to),
+      orders: coveredPeriod(input.orderCoverage, from, to)
+        ? input.dailyOrders.filter(row => inPeriod(row.day, from, to)).reduce((sum, row) => sum + row.orders, 0) : null,
+      spend: adSources.map(source => ({ source, label: adNames[source], amount: spendTotal(input, from, to, source) })),
+    });
+    return { market: input.market, current: read(window.from, window.to), earlier: read(window.earlierFrom, window.earlierTo) };
+  });
 }
 
 const cohortKey = (order: Order): CustomerSlice['key'] => order.firstOrder === 'first' || order.firstOrder === 'repeat' ? order.firstOrder : 'unknown';
@@ -113,11 +142,12 @@ function customerPeriod(orders: readonly Order[], from: string, to: string, avai
 }
 
 function stockPeriod(input: ScorecardInput, productId: string, from: string, to: string): StockPeriod {
+  const extraSkus = new Set(input.mode === 'live' ? input.settings.series.filter(row => row.sku !== originalSeriesSku).map(row => row.sku) : []);
   const locations = new Set(input.locations.filter(location => input.market === 'all' || location.market === input.market).map(location => location.locationId));
   const expectedItems = new Map<string, Set<string>>();
   const byDay = new Map<string, Map<string, Map<string, number>>>();
   for (const row of input.stockDaily) {
-    if (row.mode !== input.mode || row.productId !== productId || !locations.has(row.locationId)) continue;
+    if (row.mode !== input.mode || (row.sku && extraSkus.has(row.sku) ? `sku:${row.sku}` : row.productId) !== productId || !locations.has(row.locationId)) continue;
     // Observations cannot tell us when a variant began or ended. A missing known
     // item therefore makes that location unknown, rather than proving a sell-out.
     const expected = expectedItems.get(row.locationId) ?? new Set<string>();
@@ -151,13 +181,15 @@ function productMovers(input: ScorecardInput, orders: readonly Order[], window: 
   const available = coveredPeriod(input.orderCoverage, window.previousFrom, window.to);
   const note = 'Ordered units from counted paid orders; line-level money and returned units are not available. Stock dates without a daily snapshot remain unknown.';
   if (!available) return { available, up: [], down: [], note };
+  const series = new Map(input.mode === 'live' ? input.settings.series.filter(row => row.sku !== originalSeriesSku).map(row => [row.sku, row.name]) : []);
   const products = new Map<string, { label: string; current: number; previous: number }>();
   for (const order of orders) {
     if (isFreeOrder(order) || !inPeriod(order.day, window.previousFrom, window.to)) continue;
     for (const line of order.lines) {
       if (!Number.isFinite(line.quantity) || line.quantity <= 0) continue;
-      const id = line.productId ?? (line.sku ? `sku:${line.sku}` : 'unknown-product');
-      const product = products.get(id) ?? { label: input.productLabels[id] ?? (line.sku ? `SKU ${line.sku}` : 'Product title unavailable'), current: 0, previous: 0 };
+      const name = line.sku ? series.get(line.sku) : undefined;
+      const id = name ? `sku:${line.sku}` : line.productId ?? (line.sku ? `sku:${line.sku}` : 'unknown-product');
+      const product = products.get(id) ?? { label: name ?? input.productLabels[id] ?? (line.sku ? `SKU ${line.sku}` : 'Product title unavailable'), current: 0, previous: 0 };
       if (order.day >= window.from) product.current += line.quantity; else product.previous += line.quantity;
       products.set(id, product);
     }

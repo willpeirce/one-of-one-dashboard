@@ -1,3 +1,4 @@
+import { originalSeriesKey, originalSeriesProductId, originalSeriesSku, seriesMarket, seriesMarkets } from '../series-pace/series.js';
 import { attributionDial } from '../ad-spend/attribution.js';
 import { googleRisks, metaRisks } from '../ad-spend/risks.js';
 import { spendNeeds, type AdHeroInputs } from '../ad-spend/metrics.js';
@@ -10,10 +11,10 @@ import { appConfig } from '../config.js';
 import { greetingAt } from '../greeting.js';
 import { calculateSeriesPace } from '../series-pace/model.js';
 import { seriesPaceDates } from '../series-pace/dates.js';
-import { readSeriesPaceFacts } from '../series-pace/store.js';
-import { sampleSeriesPaceCard, type SeriesPaceCard, type SeriesPaceMarketView } from '../series-pace/presentation.js';
+import { readSeriesPaceFacts, retiredSeriesInMarket } from '../series-pace/store.js';
+import { sampleSeriesPaceCard, type SeriesPaceEntry } from '../series-pace/presentation.js';
 import { formatNumber, formatMetricNumber, formatPounds } from '../money.js';
-import { dailyRows, dataset, emailFlow, isLastVisitEmail, isRefill, isUpgrade, isKit, kitIds, orderNet, ratio, shopifyHero, stockCover, type Facts, type StockCover } from './metrics.js';
+import { dailyRows, dataset, emailFlow, isLastVisitEmail, isRefill, isUpgrade, isKit, orderNet, ratio, shopifyHero, stockCover, type Facts, type StockCover } from './metrics.js';
 import { blankObservation, evaluateWatchdogs, type AdsCheckContext, type Check, type Observation } from './watchdogs.js';
 import { isFreeOrder } from './model.js';
 import { emailCoverageKnown } from './email-coverage.js';
@@ -82,16 +83,37 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
   snapshot.widgets.w002 = { source: initial.uscpo.source, mode: initial.uscpo.mode, kind: 'dial', value: initial.uscpo };
   let pace = sampleSeriesPaceCard(appConfig.shopify.sampleNow);
   if (facts.mode === 'live') {
-    const paceFacts = await readSeriesPaceFacts(db, now);
-    const marketView = (market: 'UK' | 'US'): SeriesPaceMarketView => {
-      const offset = market === 'UK' ? settings.series1UkLandingOffsetDays : settings.series1UsLandingOffsetDays;
-      const target = market === 'UK' ? settings.series1UkTargetDate : settings.series1UsTargetDate;
-      const dates = seriesPaceDates(settings.series1OrderDate, offset, target)!;
-      return { ...calculateSeriesPace({ today, targetDate: dates.targetDate, ...paceFacts[market] }),
-        landingDate: dates.landingDate, orderDate: settings.series1OrderDate,
-        landingOffsetDays: offset, targetOverride: target || null, snapshots: paceFacts[market].snapshots };
-    };
-    pace = { markets: { UK: marketView('UK'), US: marketView('US') } } satisfies SeriesPaceCard;
+    const entries: (SeriesPaceEntry & { launchDate: string })[] = [];
+    for (const series of settings.series) {
+      if (seriesMarkets.every(market => seriesMarket(series, market).launchDate > today)) continue;
+      const paceFacts = await readSeriesPaceFacts(db, now, series.sku, series.productId);
+      for (const market of seriesMarkets) {
+        const { orderDate, landingOffsetDays, targetDate, launchDate } = seriesMarket(series, market);
+        if (launchDate > today) continue;
+        const facts = paceFacts[market];
+        if (retiredSeriesInMarket(facts, launchDate, today)) continue;
+        const dates = seriesPaceDates(orderDate, landingOffsetDays, targetDate)!;
+        const named = settings.series.length > 1 || series.key !== originalSeriesKey || series.sku !== originalSeriesSku || series.name !== 'Series 1';
+        entries.push({ market, launchDate, model: {
+          ...calculateSeriesPace({ today, targetDate: dates.targetDate, stock: facts.stock, days: facts.days.filter(row => row.day >= launchDate) }),
+          ...(named ? { seriesKey: series.key, seriesName: series.name } : {}),
+          ...(named ? { sku: series.sku } : {}),
+          landingDate: dates.landingDate, orderDate, landingOffsetDays, targetOverride: targetDate || null,
+          snapshots: facts.snapshots.filter(row => row.day >= launchDate && row.day >= addDays(today, -7)),
+        } });
+      }
+    }
+    if (entries.length === 2 && entries[0]?.market === 'UK' && entries[1]?.market === 'US' && entries.every(row => !row.model.seriesKey)) {
+      pace = { markets: { UK: entries[0].model, US: entries[1].model } };
+    } else {
+      entries.sort((a, b) => b.launchDate.localeCompare(a.launchDate));
+      // Legacy clients expect the market map. Live rendering uses entries when present.
+      const marketViews = Object.fromEntries(seriesMarkets.flatMap(market => {
+        const first = entries.find(row => row.market === market);
+        return first ? [[market, first.model]] : [];
+      })) as typeof pace.markets;
+      pace = { markets: marketViews, entries: entries.map(({ market, model }) => ({ market, model })) };
+    }
   }
   snapshot.widgets.w017 = { source: ['shopify'], mode: facts.mode, kind: 'series-pace', value: pace };
   if(facts.mode==='live'&&adInputs?.spend.sources.some(s=>s.source==='meta'&&s.live)) {
@@ -120,7 +142,7 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
   const refundPence = data.orders.reduce((n, o) => n + o.refunds.filter(r => ukToday(new Date(r.createdAt)) >= weekFrom && ukToday(new Date(r.createdAt)) <= today).reduce((sum, r) => sum + r.itemsPence, 0), 0);
   dial('w031', 'Refunds 7d', data.ready && data.from <= weekFrom ? percentage(refundPence, net) : null, '%', 'Net item refunds ÷ net sales, 7 UK dates including today so far; over 3% trips.', 'Refund event date, excluding item tax and shipping.', 10, [[0, 3, 'good'], [3, 10, 'warn']]);
   dial('w033', 'Missouri share', session ? percentage(session.missouri, session.us) : null, '%', 'Over 10% marks market conversion unreliable.', 'Clean US sessions only; the precise phantom pattern is excluded.', 100, [[0, 10, 'good'], [10, 100, 'warn']]);
-  dial('w034', 'Upgrade rate', data.ready ? percentage(weekly.filter(isUpgrade).length, weekly.filter(isKit).length) : null, '%', 'Orders containing Starter, Ultimate or Duo ÷ kit orders. TikTok duplicate kit orders count.', 'Last seven UK dates, today so far; tier comes from ordered products, never components.');
+  dial('w034', 'Upgrade rate', data.ready ? percentage(weekly.filter(isUpgrade).length, weekly.filter(order => isKit(order, facts.mode === 'live' ? settings.series.map(series => series.sku) : undefined)).length) : null, '%', 'Orders containing Starter, Ultimate or Duo ÷ kit orders. TikTok duplicate kit orders count.', 'Last seven UK dates, today so far; tier comes from ordered products, never components.');
   // The prototype site ping is not an ingested Shopify metric.
   dial('w032', 'Site response', null, 'ms', 'Storefront probe deferred.', 'No storefront response measurement has been built.');
   const refill = data.orders.filter(isRefill), refillSince = refill.filter(o => o.day >= '2026-09-11');
@@ -150,8 +172,10 @@ export async function applyShopifyDashboard(snapshot: DashboardSnapshot, db: Dat
     .sort((a, b) => a.expectedDate.localeCompare(b.expectedDate) || a.product.localeCompare(b.product) || a.market.localeCompare(b.market));
   stockDetails.push(['Upcoming inbound', inbound.length ? 'Confirmed arrivals from Settings. Pack rows are listed but cannot raise a gap until packs have a cover.' : 'No arrival listed.']);
   for (const row of inbound) stockDetails.push([`${row.product} · ${row.market.toUpperCase()}`, `${formatNumber(row.quantity)} units · expected ${row.expectedDate}`]);
-  for (const [key, productId, location] of [['w046', kitIds[0], appConfig.shopify.locations.us.id], ['w047', kitIds[0], appConfig.shopify.locations.uk.id], ['w048', 'gid://shopify/Product/10892913574222', appConfig.shopify.locations.us.id]] as const) {
-    const row = stock.find(s => s.productId === productId && s.locationId === location)!;
+  for (const [key, productId, location] of [['w046', originalSeriesProductId, appConfig.shopify.locations.us.id], ['w047', originalSeriesProductId, appConfig.shopify.locations.uk.id], ['w048', 'gid://shopify/Product/10892913574222', appConfig.shopify.locations.us.id]] as const) {
+    const row = stock.find(s => s.productId === productId && s.locationId === location && !s.kit)
+      ?? (productId === originalSeriesProductId ? stock.find(s => s.locationId === location && s.kit) : undefined)
+      ?? { name: 'Kit stock', available: null, cover: null, runOut: null, basis: 'No active series stock in this market.' };
     snapshot.widgets[key] = { source: ['shopify'], mode: facts.mode, kind: 'ring', value: { v: row.cover ?? 0, max: 180,
       t: row.cover === null ? 'No data' : `${formatNumber(Math.floor(row.cover))} d`, l: row.name, s: row.cover === null ? `Available ${row.available === null ? 'unknown' : formatNumber(row.available)} · cover unknown` : `Run-out ${row.runOut}`,
       state: row.cover === null || (facts.jobs.find(j => j.name === 'inventory')?.failures ?? 0) >= 2 || !facts.jobs.find(j => j.name === 'inventory')?.last_success_at || now.getTime() - new Date(facts.jobs.find(j => j.name === 'inventory')!.last_success_at!).getTime() > 900_000 ? 'info' : row.cover < 21 ? 'alarm' : row.cover < 60 ? 'warn' : 'good',

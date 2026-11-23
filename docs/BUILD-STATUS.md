@@ -120,8 +120,8 @@ Updated in every pull request.
 | 3 | Google Ads | spend, campaigns, networks, conversions, changes and read-only needs built | three existing Google keys + account Settings | live GMT/UK spend and conversion comparison pending |
 | 4 | Mailchimp | standalone client, probe, audience/billing and Shopify view built; per-flow figures/funnel stay sample | optional MAILCHIMP_API_KEY | probe and audience acceptance pending |
 | 5 | Workflow side (Handover) | customer service and Waiting on others built; Discord and the UGC tab not built | optional Gorgias keys and existing GITHUB_HQ_TOKEN | Gorgias probe, ticket links and HQ waiting-file agreement pending |
-| 6 | Costs, uploads, planning | unit costs, fulfilment imports, estimates and Issues without the model built, now with managed intent classification; supplier imports and planner not built | no new key for Issues; optional empty-default tag map | existing cost/import and Issues source agreement remain for Claude to check |
-| 7 | Alerts and Ask | push delivery, morning summary, watchdog trip/recovery and monthly upload pushes built; Ask not built | no new key; Alerts starts off per device | installed-phone delivery and replacement behavior pending |
+| 6 | Costs, uploads, planning | unit costs, fulfilment imports, estimates and Issues without the model built, now with managed intent classification; Stock planner uses daily stock and Settings lead times; supplier imports still pending | no new keys; add accessory suppliers and lead times in Settings | existing cost/import and Issues source agreement, plus warehouse planner checks |
+| 7 | Alerts and Ask | push delivery, morning summary, watchdog trip/recovery and monthly upload pushes built; Ask uses fixed read-only dashboard tools and logs usage | existing Anthropic key for live Ask; Alerts starts off per device | installed-phone delivery and live Ask model acceptance pending |
 
 ## Small change: Morning in every header · 10 Nov
 
@@ -478,3 +478,29 @@ Review-fix local validation: typecheck, all 132 tests on PGlite, production buil
 ## Fulfilment service/cadence fix
 
 Sample and live imports recognise USPS GroundAdvantage and DPD V2 Parcel Two Day; service comparisons and learned grouping ignore spaces and case while parcels keep the export spelling. Unknown services have null rate baselines and only service/centre/destination review checks. Startup refreshes every stored mode after migrations. Complete-period declarations use the file's despatch endpoints and migration 008's coverage dates. Confirmed complete uploads together must cover the previous month to clear the first-working-day 09:00 UK reminder. Sample exports retain an invented unknown service and add the recognised USPS spelling; no live figures or order numbers are added. Validation: typecheck, all 136 tests on PGlite, production build, Chromium phone/desktop checks (including the checkbox text from the fixture range) and secret scanning pass locally. CI checks the pushed revision against real PostgreSQL. No live data validation is claimed.
+
+### Large build 5
+
+Part A adds a versioned series list, per-SKU inventory and fallback reporting, and per-market pace from launch. Migration 078 keeps the legacy settings document and original SKU histories readable. Live acceptance is to add the next series when it launches and confirm both warehouses against Shopify. Sample Home keeps its original fixture.
+
+**Not done or known gaps:** The existing single-series sample remains the production sample. The two-series example is an invented test fixture. Live Shopify agreement, including the SKU-filtered report, remains to be checked after merge. No supplier imports are included.
+
+Part B adds the signed-in Stock planner with UK and US warehouse rows, 28 complete UK days of observed stock changes, month-by-month run-out and supplier-direct order dates. It uses Settings supplier lead times. Accessory cover pairs kit and pack observations over the same days. Migration 079 stores the planner settings under the same Settings version and audit.
+
+**Not done or known gaps:** Supplier imports and landed-order lead-time medians remain pending. Live planner agreement requires configured suppliers, lead times and enough daily snapshots to measure a rate.
+
+Part C adds signed-in Ask with nine dashboard tools, a fixed sample reply for each example, the existing Anthropic key for live mode, per-UK-day spend accounting and 90-day log expiry. Migration 080 adds Ask Settings and the usage log.
+
+**Not done or known gaps:** Exact free-form questions and generated answer text are omitted from persistent logs because they can contain customer details. Waiting-on responses provide counts, dates and ages without subject or contact text. Reviews cover the existing waiting-review list. Ask enforces read-only transactions for fixed tools. Provisioning a separate PostgreSQL login role is deferred. Live Anthropic acceptance stays with the owner.
+
+Part D adds the Scorecard week comparison for UK and US net sales, counted orders and ad spend by platform. The default ends yesterday in the UK. Any earlier completed week can be selected by its end date. The comparison uses the same weekdays 364 days earlier.
+
+**Not done or known gaps:** Each metric shows no history for a side missing any of its seven days. Existing coverage can limit older windows, especially market splits and individual ad platforms.
+
+Part E records setup in the README and includes eight sample screenshots at 390 and 1280 px. Parts A and B passed 1,489 and 1,495 PostgreSQL tests respectively. The existing Home hash, pins, budgets and count checks remain in effect. The public countdown route stays at its original registration.
+
+Validation on invented fixtures covers the 1,509-test PostgreSQL suite, typecheck, production build and the complete Chromium browser suite. The migration replay check applied 078, 079 and 080 twice each and found no public table grants. The eight screenshots include the Settings series list, a two-series pace fixture, Stock and Ask.
+
+### Part F · Review fixes
+
+Series 1 uses its original exact ShopifyQL query. Other series use the product selected by inventory, and a shared SKU without a Shopify product ID stays unresolved with a warning in Settings and Sources. Retirement accepts zero and negative availability. Ask allows ISO dates while continuing to reject phone-like digit runs, emails and links. Tests use invented values and fake source responses. Live Shopify agreement remains a post-merge check.

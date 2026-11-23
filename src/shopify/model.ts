@@ -88,7 +88,7 @@ export function cleanOrder(raw: any) {
     market, marketBasis: country ? 'country' : 'currency_and_warehouse', country,
     region: typeof raw.shippingAddress?.provinceCode === 'string' && /^[A-Z0-9-]{1,10}$/.test(raw.shippingAddress.provinceCode) ? raw.shippingAddress.provinceCode : null,
     postcodeArea: postcode(raw.shippingAddress?.zip),
-    lines: raw.lineItems.nodes.map((l: any) => ({ id: gid('LineItem', l.id), variantId: l.variant ? gid('ProductVariant', l.variant.id) : null, productId: l.product ? gid('Product', l.product.id) : null, sku: /^[\w-]{1,80}$/.test(l.sku ?? '') ? l.sku : null, quantity: l.quantity })),
+    lines: raw.lineItems.nodes.map((l: any) => ({ id: gid('LineItem', l.id), variantId: l.variant ? gid('ProductVariant', l.variant.id) : null, productId: l.product ? gid('Product', l.product.id) : null, sku: /^[\w.-]{1,80}$/.test(l.sku ?? '') ? l.sku : null, quantity: l.quantity })),
     // Theme test attributes only. Arbitrary note attributes are not stored.
     giftTest: ['A', 'B'].includes(raw.customAttributes?.find((a: any) => a.key === '__gift_test')?.value) ? raw.customAttributes.find((a: any) => a.key === '__gift_test').value : null,
     refunds,
@@ -96,11 +96,11 @@ export function cleanOrder(raw: any) {
     firstVisit: journey(raw.customerJourneySummary?.firstVisit), lastVisit: journey(raw.customerJourneySummary?.lastVisit),
   };
 }
-export function cleanInventory(raw: any) {
+export function cleanInventory(raw: any, configuredSkus: readonly string[] = []) {
   const productId = gid('Product', raw.productId), locationId = gid('Location', raw.location.id);
-  if (!appConfig.shopify.stockProducts.some(p => `gid://shopify/Product/${p.id}` === productId) || !Object.values(appConfig.shopify.locations).some(l => l.id === locationId)) return null;
+  if (!(appConfig.shopify.stockProducts.some(p => `gid://shopify/Product/${p.id}` === productId) || configuredSkus.includes(raw.sku)) || !Object.values(appConfig.shopify.locations).some(l => l.id === locationId)) return null;
   return { productId, variantId: gid('ProductVariant', raw.variantId), inventoryItemId: gid('InventoryItem', raw.inventoryItemId), locationId,
-    sku: typeof raw.sku === 'string' && /^[\w-]{1,80}$/.test(raw.sku) ? raw.sku : null,
+    sku: typeof raw.sku === 'string' && /^[\w.-]{1,80}$/.test(raw.sku) ? raw.sku : null,
     quantities: raw.quantities.filter((q: any) => ['available', 'on_hand', 'committed'].includes(q.name)).map((q: any) => {
       if (!Number.isInteger(q.quantity)) throw new ShopifyError('invalid');
       return { name: q.name, quantity: q.quantity };

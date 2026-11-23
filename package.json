@@ -22,6 +22,7 @@
     "secret-scan": "bash scripts/secret-scan.sh"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "1.12.0",
     "@fastify/cookie": "11.1.2",
     "@simplewebauthn/browser": "14.0.0",
     "@simplewebauthn/server": "14.0.3",

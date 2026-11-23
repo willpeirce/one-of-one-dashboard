@@ -1,9 +1,10 @@
+import { sharedSeriesSkuWarning } from './series-pace/series.js';
+import { seriesPaceDates } from './series-pace/dates.js';
+import { paceDate } from './series-pace/model.js';
 import { ukToday } from './hero-range.js';
 import { formatNumber, formatPounds } from './money.js';
 import { monthlyOverheadTotal, type OverheadItem } from './overheads.js';
 import { installPullToRefresh, reloadPageForRefresh } from './pull-refresh.js';
-import { seriesPaceDates } from './series-pace/dates.js';
-import { paceDate } from './series-pace/model.js';
 import { inboundProductWarning } from './shopify/stock-gap.js';
 import { initializePushDevice } from './push/browser.js';
 
@@ -129,14 +130,28 @@ function initializeSettings(form: HTMLFormElement): void {
   }
 
   function showSeriesPaceDates(): void {
-    const input = (key: string) => form.querySelector<HTMLInputElement>(`[data-setting-path="${key}"]`)!;
-    const orderDate = input('series1OrderDate').value;
-    for (const summary of Array.from(form.querySelectorAll<HTMLElement>('[data-series-pace-dates]'))) {
-      const suffix = summary.dataset.seriesPaceDates!;
-      const dates = seriesPaceDates(orderDate, input(`series1${suffix}LandingOffsetDays`).valueAsNumber, input(`series1${suffix}TargetDate`).value);
-      summary.textContent = dates
-        ? `Landing date: ${paceDate(dates.landingDate)} · Target date: ${paceDate(dates.targetDate)} (${dates.targetKind})`
-        : 'Enter a valid order date, landing offset and optional target date to see the dates.';
+    const seriesList = form.querySelector<HTMLElement>('[data-settings-list="series"]');
+    if (seriesList) {
+      const protectedSkus = new Set<string>(JSON.parse(seriesList.dataset.protectedSkus ?? '[]'));
+      for (const row of Array.from(seriesList.querySelectorAll<HTMLElement>('[data-list-rows] > .setting-row'))) {
+        const sku = row.querySelector<HTMLInputElement>('[data-setting-path$=".sku"]')!;
+        const locked = protectedSkus.has(sku.value);
+        const warning = row.querySelector<HTMLElement>('[data-shared-series-skus]')!;
+        const product = row.querySelector<HTMLInputElement>('[data-setting-path$=".productId"]')!;
+        warning.hidden = !!product.value || !(JSON.parse(warning.dataset.sharedSeriesSkus!) as string[]).includes(sku.value);
+        warning.textContent = warning.hidden ? '' : sharedSeriesSkuWarning(sku.value);
+        for (const summary of Array.from(row.querySelectorAll<HTMLElement>('[data-series-pace-dates]'))) {
+          const market = summary.dataset.seriesPaceDates!;
+          const input = (field: string) => row.querySelector<HTMLInputElement>(`[data-setting-path$=".${market}${field}"]`)!;
+          const dates = seriesPaceDates(input('OrderDate').value, input('LandingOffsetDays').valueAsNumber, input('TargetDate').value);
+          summary.textContent = dates
+            ? `Landing date: ${paceDate(dates.landingDate)} · Target date: ${paceDate(dates.targetDate)} (${dates.targetKind})`
+            : 'Enter a valid order date, landing offset and optional target date to see the dates.';
+        }
+        sku.readOnly = locked;
+        row.querySelector<HTMLInputElement>('[data-setting-path$=".key"]')!.readOnly = locked;
+        row.querySelector<HTMLButtonElement>('[data-remove-row]')!.disabled = locked;
+      }
     }
   }
 
@@ -149,11 +164,11 @@ function initializeSettings(form: HTMLFormElement): void {
       if (tick.disabled) tick.checked=false;
     }
     updateDirty();
+    showSeriesPaceDates();
     showShopifyCosts();
     showActorWarnings();
     showInboundWarnings();
     showOverheadsTotal();
-    showSeriesPaceDates();
     message.textContent = dirty ? 'You have unsaved changes.' : 'All changes saved.';
     message.removeAttribute('data-error');
   }
@@ -172,6 +187,10 @@ function initializeSettings(form: HTMLFormElement): void {
         input.id = `setting-${path.replaceAll('.', '-')}`;
         row.querySelector<HTMLLabelElement>(`label[for="${oldId}"]`)?.setAttribute('for', input.id);
       });
+      const up = row.querySelector<HTMLButtonElement>('[data-move-row="up"]');
+      const down = row.querySelector<HTMLButtonElement>('[data-move-row="down"]');
+      if (up) up.disabled = index === 0;
+      if (down) down.disabled = index === rows.length - 1;
       enhanceMonthInputs(row);
     });
     list.querySelector('[data-list-count]')!.textContent = formatNumber(rows.length);
@@ -193,6 +212,7 @@ function initializeSettings(form: HTMLFormElement): void {
     const target = event.target;
     if (!(target instanceof Element)) return;
     const add = target.closest<HTMLButtonElement>('[data-add-row]');
+    const move = target.closest<HTMLButtonElement>('[data-move-row]');
     const remove = target.closest<HTMLButtonElement>('[data-remove-row]');
     const campaignSave = target.closest<HTMLButtonElement>('[data-save-campaign]');
     const pickActor = target.closest<HTMLButtonElement>('[data-pick-actor]');
@@ -230,6 +250,16 @@ function initializeSettings(form: HTMLFormElement): void {
       if (!addRow(list)) return;
       list.querySelector<HTMLElement>('[data-list-rows] > .setting-row:last-child input, [data-list-rows] > .setting-row:last-child select')?.focus();
       markDirty();
+    } else if (move) {
+      const list = move.closest<HTMLElement>('[data-settings-list]')!;
+      const row = move.closest('.setting-row')!;
+      const sibling = move.dataset.moveRow === 'up' ? row.previousElementSibling : row.nextElementSibling;
+      if (!sibling) return;
+      if (move.dataset.moveRow === 'up') sibling.before(row);
+      else sibling.after(row);
+      numberRows(list);
+      move.focus();
+      markDirty();
     } else if (remove) {
       const list = remove.closest<HTMLElement>('[data-settings-list]')!;
       remove.closest('.setting-row')!.remove();
@@ -251,7 +281,7 @@ function initializeSettings(form: HTMLFormElement): void {
     // Only each campaign's Save confirms its owner. Keep rules for missing campaigns too.
     // Retain a saved map when the optional Issues editor is absent after a feature rollback.
     const issueTags = form.querySelector<HTMLInputElement>('#saved-gorgias-issue-tags');
-    const values: JsonObject = { metaOwners: structuredClone(savedMetaOwners),
+    const values: JsonObject = { seasonalMultipliers: [], metaOwners: structuredClone(savedMetaOwners),
       gorgiasIssueTags: JSON.parse(issueTags?.value ?? '[]') };
     form.querySelectorAll<SettingInput>('[data-setting-path]').forEach((input) => {
       if (!input.closest('[data-settings-list]')) setPath(values, input.dataset.settingPath!, inputValue(input));
@@ -288,11 +318,11 @@ function initializeSettings(form: HTMLFormElement): void {
       const notice=form.querySelector<HTMLElement>(`[data-ad-override="${market}"]`);
       if(notice) notice.textContent=until ? `${until < ukToday() ? 'Expired' : 'override to'} ${until}` : 'No dated override';
     }
+    showSeriesPaceDates();
     showShopifyCosts();
     showActorWarnings();
     showInboundWarnings();
     showOverheadsTotal();
-    showSeriesPaceDates();
   }
 
   function saveValues(values: JsonObject, campaign?: HTMLElement): void {

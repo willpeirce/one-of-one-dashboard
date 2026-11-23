@@ -50,9 +50,9 @@ test('dial target saves through authenticated Settings and recalculates the live
   for (const target of ['2026-11-18', '']) {
     const settings = (await app.inject({ url: '/api/settings', headers })).json();
     const saved = await app.inject({ method: 'POST', url: '/api/settings', headers,
-      payload: { version: settings.version, values: { ...settings.values, series1UkTargetDate: target } } });
+      payload: { version: settings.version, values: { ...settings.values, series: [{ ...settings.values.series[0], UKTargetDate: target }] } } });
     assert.equal(saved.statusCode, 200);
-    assert.deepEqual(saved.json().changedFields, ['series1UkTargetDate']);
+    assert.deepEqual(saved.json().changedFields, ['series.0.UKTargetDate']);
     const after = await card();
     assert.equal(after.markets.UK.targetDate, target || before.markets.UK.landingDate);
     assert.equal(after.markets.UK.targetOverride, target || null);
@@ -65,5 +65,45 @@ test('dial target saves through authenticated Settings and recalculates the live
     } else assert.deepEqual(after, before);
   }
   const audit = await db.query<{ field: string }>('SELECT field FROM pulse.settings_changes ORDER BY audit_id');
-  assert.deepEqual(audit.rows.map(row => row.field), ['series1UkTargetDate', 'series1UkTargetDate']);
+  assert.deepEqual(audit.rows.map(row => row.field), ['series.0.UKTargetDate', 'series.0.UKTargetDate']);
+});
+
+test('a second series enters each market on its own UK launch day, newest first even with no inventory', async t => {
+  const db = await createTestDatabase();
+  let clock = new Date('2026-10-02T12:00:00Z');
+  const reader = new SampleShopify();
+  t.mock.method(ShopifyWorker.prototype, 'start', () => {});
+  const config = readRuntime({ DATABASE_URL: 'postgresql://localhost/pulse_test', APP_ORIGIN: 'https://pulse.example.test' });
+  const app = await createApp(db, config, { SHOPIFY_CLIENT_ID: randomUUID(), SHOPIFY_CLIENT_SECRET: randomUUID() }, { reader, clock: () => clock });
+  t.after(async () => { await app.close(); await db.close(); });
+  const { readSettings, saveSettings } = await import('../src/settings.js');
+  const unset = await readSettings(db);
+  const first = unset.values.series[0]!;
+  const second = { ...first, key: 'invented-2', name: 'Invented Second Series', sku: 'invented-kit-02',
+    UKLaunchDate: '2026-10-03', USLaunchDate: '2026-10-05' };
+  await saveSettings(db, { version: unset.version, values: { ...unset.values, series: [first, second] } }, randomUUID());
+  const secret = (await db.query<{ value: Uint8Array }>("SELECT value FROM pulse_private.app_secrets WHERE name = 'session_hmac'")).rows[0]!;
+  const token = randomBytes(32).toString('base64url'), credential = randomBytes(32).toString('base64url');
+  await db.query('INSERT INTO pulse_private.credentials(id, public_key) VALUES ($1, $2)', [credential, randomBytes(32)]);
+  await db.query("INSERT INTO pulse_private.sessions(token_hash, credential_id, expires_at) VALUES ($1, $2, now() + interval '30 days')",
+    [createHmac('sha256', Buffer.from(secret.value)).update(token).digest('hex'), credential]);
+  const headers = { cookie: `__Host-pulse_session=${token}`, origin: config.origin, 'content-type': 'application/json' };
+  for (const [date, markets] of [['02', []], ['03', ['UK']], ['04', ['UK']], ['05', ['US','UK']], ['06', ['US','UK']]] as const) {
+    clock = new Date(`2026-10-${date}T12:00:00Z`);
+    const current = await readSettings(db);
+    const refresh = await app.inject({ method: 'POST', url: '/api/settings', headers,
+      payload: { version: current.version, values: { ...current.values, goalOrdersPerDay: 140 + Number(date) } } });
+    assert.equal(refresh.statusCode, 200);
+    const response = await app.inject({ url: '/api/dashboard', headers });
+    assert.equal(response.statusCode, 200);
+    const value = response.json<DashboardSnapshot>().widgets.w017!.value as SeriesPaceCard;
+    assert.deepEqual(value.entries?.map(row => [row.model.seriesKey, row.market]), [
+      ...markets.map(market => [second.key, market]), [first.key, 'UK'], [first.key, 'US'],
+    ]);
+    for (const entry of value.entries!.filter(row => row.model.seriesKey === second.key)) {
+      assert.equal(entry.model.stock, null);
+      assert.equal(entry.model.average, null);
+      assert.equal(entry.model.sku, second.sku);
+    }
+  }
 });

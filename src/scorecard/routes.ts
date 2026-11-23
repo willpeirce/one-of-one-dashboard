@@ -10,9 +10,11 @@ export function registerScorecard(app: FastifyInstance, db: Database, auth: Auth
   app.get('/scorecard', async (request, reply) => {
     if (!await auth.session(request)) return reply.redirect('/login');
     const query = request.query as Record<string, unknown>;
-    if (Object.keys(query).some(key => !['month', 'market'].includes(key)) || query.month !== undefined && typeof query.month !== 'string') throw new HeroRangeError();
+    if (Object.keys(query).some(key => !['month', 'market', 'week'].includes(key))
+      || query.month !== undefined && typeof query.month !== 'string'
+      || query.week !== undefined && typeof query.week !== 'string') throw new HeroRangeError();
     const market = query.market ?? 'all';
     if (market !== 'all' && market !== 'uk' && market !== 'us') throw new HeroRangeError();
-    return reply.type('text/html; charset=utf-8').send(scorecardPage(await readScorecard(db, store, env, query.month as string | undefined ?? '', market, clock())));
+    return reply.type('text/html; charset=utf-8').send(scorecardPage(await readScorecard(db, store, env, query.month as string | undefined ?? '', market, clock(), query.week as string | undefined)));
   });
 }

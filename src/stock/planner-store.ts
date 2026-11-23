@@ -34,7 +34,7 @@ function sampleStockPlanner(today: string, now: Date): StockPlannerView {
     ...plannerDefaults(),
     supplierLeadTimes: [{ supplier: 'Invented Works', days: 21 }],
     productSuppliers: [{ product: 'Invented Orbit Sleeves', supplier: 'Invented Works' }, { product: 'Invented Prism Case', supplier: 'Invented Works' }],
-    inboundStock: [{ product: 'Invented Orbit Sleeves', market: 'us' as const, quantity: 96, expectedDate: addDays(today, 8) }],
+    inboundStock: [{ product: 'Invented Orbit Sleeves', market: 'us' as const, quantity: 96, expectedDate: addDays(today, 23) }],
   };
   return { mode: 'sample', today, asOf: now.toISOString(), rows: planStock(products, today, sample) };
 }

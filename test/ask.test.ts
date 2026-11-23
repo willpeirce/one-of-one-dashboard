@@ -245,3 +245,18 @@ test('Ask accepts ISO dates and blocks phone-like runs, emails and links before 
   assert.equal(calls.length, 1);
   assert.match(calls[0]!, /What sold on 2032-08-12/);
 });
+
+test('Ask stock includes the planner’s gap dates and day count', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const tool = dashboardAskTool({
+    db, settings: defaultSettings(), now, env: {},
+    readStock: async () => ({ mode: 'live', asOf: now.toISOString(), rows: [{
+      name: 'Invented Comet', market: 'uk', kit: true, available: 12, rate: 3, observedDays: 9,
+      inbound: [{ expectedDate: '2032-09-20', quantity: 21 }],
+      gaps: [{ from: '2032-09-16', to: '2032-09-20', days: 4 }],
+      runOut: '2032-09-27', orderBy: null, setSupplier: false, coverage: null,
+    }] }),
+  });
+  const { data } = await tool('stock', { market: 'uk' });
+  assert.deepEqual((data as { gaps: unknown }[])[0]!.gaps, [{ from: '2032-09-16', to: '2032-09-20', days: 4 }]);
+});

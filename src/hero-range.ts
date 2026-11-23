@@ -88,7 +88,7 @@ const integer = (value: number): string => formatNumber(Math.round(value), 0);
 const money = (value: number): string => formatPounds(value, integer);
 const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const shortDate = (date: string): string => `${Number(date.slice(-2))} ${months[Number(date.slice(5, 7)) - 1]}`;
+export const shortDate = (date: string): string => `${Number(date.slice(-2))} ${months[Number(date.slice(5, 7)) - 1]}`;
 export const weekdayDate = (date: string): string => `${weekdays[new Date(`${date}T00:00:00Z`).getUTCDay()]} ${shortDate(date)}`;
 export function rangeLabel(from: string, to: string): string {
   if (from === to) return shortDate(from);

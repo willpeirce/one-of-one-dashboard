@@ -5,7 +5,8 @@ import { test } from 'node:test';
 import { addDays } from '../src/hero-range.js';
 import { defaultSettings, readSettings, saveSettings, SettingsValidationError, validateSettings } from '../src/settings.js';
 import type { InboundStock } from '../src/shopify/stock-gap.js';
-import { orderState, plannerDefaults, planStock, runOutDate, type PlannerProduct } from '../src/stock/planner.js';
+import { stockPlannerPage } from '../src/stock/planner-view.js';
+import { orderState, plannerDefaults, planStock, forecastStock, type PlannerProduct } from '../src/stock/planner.js';
 import { createTestDatabase } from './helpers/database.js';
 
 const today = '2031-01-28';
@@ -25,14 +26,16 @@ const config = {
 
 test('run-out uses stock arriving before exhaustion and applies each month’s multiplier', () => {
   const factors = config.seasonalMultipliers;
-  assert.equal(runOutDate(today, 40, 4, factors, []), '2031-02-07');
-  assert.equal(runOutDate(today, 40, 4, factors, [arrival('2031-02-01', 12)]), '2031-02-10');
-  assert.equal(runOutDate(today, 40, 4, factors, [arrival('2031-02-07', 12)]), '2031-02-07');
-  assert.equal(runOutDate(today, 40, 4, factors, [arrival('2031-02-08', 12)]), '2031-02-07');
+  assert.deepEqual(forecastStock(today, 40, 4, factors, []), { runOut: '2031-02-07', gaps: [] });
+  assert.deepEqual(forecastStock(today, 40, 4, factors, [arrival('2031-02-01', 12)]), { runOut: '2031-02-10', gaps: [] });
+  assert.deepEqual(forecastStock(today, 40, 4, factors, [arrival('2031-02-07', 12)]), { runOut: '2031-02-10', gaps: [] });
+  assert.deepEqual(forecastStock(today, 40, 4, factors, [arrival('2031-02-08', 12)]), {
+    runOut: '2031-02-11', gaps: [{ from: '2031-02-07', to: '2031-02-08', days: 1 }],
+  });
   const seasonal = [...factors]; seasonal[1] = 2;
-  assert.equal(runOutDate(today, 40, 4, seasonal, []), '2031-02-04');
-  assert.equal(runOutDate(today, 40, 4, seasonal, [arrival('2031-02-01', 16)]), '2031-02-06');
-  assert.equal(runOutDate(today, 40, 0, seasonal, []), null);
+  assert.deepEqual(forecastStock(today, 40, 4, seasonal, []), { runOut: '2031-02-04', gaps: [] });
+  assert.deepEqual(forecastStock(today, 40, 4, seasonal, [arrival('2031-02-01', 16)]), { runOut: '2031-02-06', gaps: [] });
+  assert.deepEqual(forecastStock(today, 40, 0, seasonal, []), { runOut: null, gaps: [] });
 });
 
 test('supplier time and safety weeks move the order-by date, while kits only have a run-out', () => {
@@ -115,4 +118,46 @@ test('older Settings gain planner defaults without writes and planner changes au
   await db.query(migration); await db.query(migration);
   assert.deepEqual(await readSettings(db), { version: 8, values: wanted });
   assert.equal((await db.query("SELECT 1 FROM information_schema.table_privileges WHERE table_schema='pulse' AND table_name='stock_planner_settings' AND grantee='PUBLIC'")).rowCount, 0);
+});
+
+test('a gap across a month end and a second gap resume at the new rate, with order-by from final run-out', () => {
+  const multipliers = [...config.seasonalMultipliers];
+  multipliers[1] = 2;
+  const inboundStock = [arrival('2031-02-06', 160), arrival('2031-02-02', 16)];
+  const rows = planStock([product('Invented Pack', false, 8, 4)], today, {
+    ...config, seasonalMultipliers: multipliers, reorderSafetyWeeks: 1, inboundStock,
+  });
+  const row = rows[0]!;
+  assert.deepEqual(row.gaps, [
+    { from: '2031-01-30', to: '2031-02-02', days: 3 },
+    { from: '2031-02-04', to: '2031-02-06', days: 2 },
+  ]);
+  assert.deepEqual([row.runOut, row.orderBy, row.state], ['2031-02-26', '2031-02-14', 'good']);
+  const html = stockPlannerPage({ today, mode: 'sample', asOf: null, rows });
+  assert.equal((html.match(/<span data-stock-state="alarm">None from /g) ?? []).length, 2);
+  assert.match(html.replace(/<[^>]+>/g, ''), /None from 30 Jan to 2 Feb · 3 days/);
+  assert.match(html, /data-stock-state="good">Good/);
+});
+
+test('an empty shelf starts at zero and groups same-day receipts without carrying lost demand', () => {
+  const factors = config.seasonalMultipliers;
+  assert.deepEqual(forecastStock(today, -6, 4, factors, [arrival(today, 4), arrival(today, 8)]),
+    { runOut: '2031-01-31', gaps: [] });
+  assert.deepEqual(forecastStock(today, 0, 4, factors, [arrival('2031-02-03', 8)]), {
+    runOut: '2031-02-05', gaps: [{ from: today, to: '2031-02-03', days: 6 }],
+  });
+});
+
+test('accessory cover counts arrivals through the last launched kit run-out in its own warehouse', () => {
+  const pack = product('Invented Pack', false, 6, 3);
+  const first = product('Invented Dawn', true, 20, 10);
+  const second = product('Invented Dusk', true, 30, 5);
+  const future = { ...second, name: 'Invented Noon', launch: '2031-03-01' };
+  const other = { ...second, market: 'us' as const, available: 240 };
+  const inboundStock = [arrival('2031-02-06', 25, second.name),
+    arrival('2031-02-08', 3), arrival('2031-02-11', 3), arrival('2031-02-12', 12)];
+  const rows = planStock([pack, first, second, future, other], today, { ...config, inboundStock });
+  assert.deepEqual([rows[2]!.runOut, rows[2]!.orderBy], ['2031-02-11', null]);
+  assert.deepEqual(rows[2]!.gaps, [{ from: '2031-02-03', to: '2031-02-06', days: 3 }]);
+  assert.deepEqual(rows[0]!.coverage, { kits: 75, covered: 60, shortfall: 3 });
 });

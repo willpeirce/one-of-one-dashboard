@@ -64,6 +64,7 @@ interface StockToolRow {
   name: string; market: 'uk' | 'us'; kit: boolean;
   available: number | null; rate: number | null; observedDays: number;
   inbound: { expectedDate: string; quantity: number }[];
+  gaps: { from: string; to: string; days: number }[];
   orderBy: string | null; runOut: string | null; setSupplier: boolean;
   coverage: { kits: number; covered: number; shortfall: number } | null;
 }
@@ -159,6 +160,7 @@ export function dashboardAskTool({ db, settings, env, now, readStock, readDashbo
         return output(view.rows.filter(row => market === 'all' || row.market === market).map(row => ({
           product: label(row.name), market: row.market, kit: row.kit, available: row.available, rate: row.rate, observedDays: row.observedDays,
           inbound: row.inbound.map(({ expectedDate, quantity }) => ({ expectedDate, quantity })), orderBy: row.orderBy,
+          gaps: row.gaps.map(({ from, to, days }) => ({ from, to, days })),
           runOut: row.runOut, setSupplier: row.setSupplier, coverage: row.coverage,
         })), source('Shopify stock planner', view.asOf));
       }

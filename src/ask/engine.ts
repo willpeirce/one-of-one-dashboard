@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { BetaMessage, MessageCreateParamsNonStreaming, BetaMessageParam } from '@anthropic-ai/sdk/resources/beta/messages/messages';
 import {
-  askSystem, askToolSchema, askUnavailable, validateAskTool,
+  askDeadlineMs, askSystem, askToolSchema, askUnavailable, validateAskTool,
   type AskAnswer, type AskModel, type AskSource, type AskTool,
 } from './protocol.js';
 
@@ -32,10 +32,10 @@ export function createAskClient(apiKey: string, model: AskModel, fetcher = fetch
 export const newAskUsage = (): AskUsage => ({ input: 0, output: 0, cacheWrite: 0, cacheRead: 0 });
 
 type Log = (line: string) => void;
-const errorType = (error: unknown) => error instanceof Error && /^[A-Za-z0-9_]{1,64}$/.test(error.name) ? error.name : 'Error';
+export const askErrorType = (error: unknown) => error instanceof Error && /^[A-Za-z0-9_]{1,64}$/.test(error.name) ? error.name : 'Error';
 
 export async function runAsk(question: string, ukDate: string, model: AskModel, client: AskClient, tool: AskTool,
-  log: Log = line => console.warn(line), timeoutMs = 60_000): Promise<AskRun> {
+  log: Log = line => console.warn(line), timeoutMs = askDeadlineMs): Promise<AskRun> {
   const usage = newAskUsage(), calls: AskCall[] = [], sources = new Map<string, AskSource>();
   const abort = new AbortController();
   const deadline = setTimeout(() => abort.abort(), timeoutMs);
@@ -83,7 +83,7 @@ export async function runAsk(question: string, ukDate: string, model: AskModel, 
                 continue;
               } catch (error) {
                 abort.signal.throwIfAborted();
-                log(`Ask tool ${validated.name} failed (${errorType(error)}).`);
+                log(`Ask tool ${validated.name} failed (${askErrorType(error)}).`);
               }
             }
             results.push({ type: 'tool_result' as const, tool_use_id: block.id, content: 'Tool input was invalid or the source is unavailable.', is_error: true });
@@ -105,7 +105,7 @@ export async function runAsk(question: string, ukDate: string, model: AskModel, 
     }, { once: true }));
     return { result: await Promise.race([run(), timedOut]), usage, calls };
   } catch (error) {
-    log(`Ask failed (${errorType(error)}).`);
+    log(`Ask failed (${askErrorType(error)}).`);
     return { result: { ...unavailable, sources: [...sources.values()] }, usage, calls };
   } finally {
     clearTimeout(deadline);

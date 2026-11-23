@@ -1,3 +1,5 @@
+export const askDeadlineMs = 60_000;
+
 export const askModels = ['claude-haiku-5-5', 'claude-sonnet-5-5'] as const;
 export type AskModel = typeof askModels[number];
 

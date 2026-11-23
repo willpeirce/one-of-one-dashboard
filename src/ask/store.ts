@@ -2,12 +2,12 @@ import { randomUUID } from 'node:crypto';
 import type { Database } from '../db.js';
 import { ukToday } from '../hero-range.js';
 import { askCostPence, createAskClient, runAsk, type AskClient } from './engine.js';
-import { askCapped, askExamples, askSample, askUnavailable, type AskAnswer, type AskSettings, type AskTool } from './protocol.js';
+import { askCapped, askDeadlineMs, askExamples, askSample, askUnavailable, type AskAnswer, type AskSettings, type AskTool } from './protocol.js';
 
 export interface AskSourceStatus { lastAt: string | null; spentGbp: number; capGbp: number; model: string }
 export interface AskServiceOptions {
   db: Database; settings: AskSettings & { jjGbpPerUsd: number }; tool: AskTool;
-  mode: 'sample' | 'live'; now: Date; question: string; apiKey?: string; client?: AskClient;
+  mode: 'sample' | 'live'; now: Date; question: string; startedAt?: number; apiKey?: string; client?: AskClient;
 }
 
 export async function readAskStatus(db: Database, settings: AskSettings, now: Date): Promise<AskSourceStatus> {
@@ -33,10 +33,9 @@ const answer = (text: string, outcome: AskAnswer['outcome'] = 'unavailable'): As
 const hourlyLimit = 30;
 export const askHourlyMessage = 'Ask has reached its hourly limit. Try again later.';
 
-export async function askQuestion({ db, settings, tool, mode, now, question, apiKey, client }: AskServiceOptions): Promise<AskAnswer> {
+export async function askQuestion({ db, settings, tool, mode, now, question, apiKey, client, startedAt = performance.now() }: AskServiceOptions): Promise<AskAnswer> {
   if (mode === 'sample') return askSample(question);
   const at = ukToday(now), id = randomUUID();
-  const start = performance.now();
   // Only predefined example text can be retained with certainty. Free-form text can contain names or addresses.
   const logQuestion = askExamples.find(example => example === question) ?? null;
   const access = await db.transaction(async tx => {
@@ -57,10 +56,10 @@ export async function askQuestion({ db, settings, tool, mode, now, question, api
   if (access === 'capped') return answer(askCapped, 'capped');
   if (access === 'hourly') return answer(askHourlyMessage);
   if (access === 'busy') return answer('Ask is already answering a question');
-  const deadline = Math.max(1, 60_000 - (performance.now() - start));
+  const remaining = askDeadlineMs - (performance.now() - startedAt);
   const allowed = !/[@]|https?:\/\/|\b\d[\d ().-]{6,}\d\b/i.test(question);
-  const activeClient = allowed ? client ?? (apiKey?.trim() ? createAskClient(apiKey.trim(), settings.askModel) : undefined) : undefined;
-  const run = activeClient ? await runAsk(question, at, settings.askModel, activeClient, tool, undefined, deadline) : null;
+  const activeClient = allowed && remaining > 0 ? client ?? (apiKey?.trim() ? createAskClient(apiKey.trim(), settings.askModel) : undefined) : undefined;
+  const run = activeClient ? await runAsk(question, at, settings.askModel, activeClient, tool, undefined, remaining) : null;
   const result = run?.result ?? answer(allowed ? askUnavailable : 'Ask about dashboard figures without including contact details');
   const usage = run?.usage;
   // Retain fixed status messages and token/tool accounting. Model answer text can echo arbitrary user input.
@@ -68,6 +67,6 @@ export async function askQuestion({ db, settings, tool, mode, now, question, api
   await db.query(`UPDATE pulse.ask_log SET answer=$2, tools=$3, input_tokens=$4, output_tokens=$5, cache_write_tokens=$6,
       cache_read_tokens=$7, cost_pence=$8, duration_ms=$9, outcome=$10, pending=false WHERE id=$1`,
   [id, logAnswer, JSON.stringify(run?.calls ?? []), usage?.input ?? 0, usage?.output ?? 0, usage?.cacheWrite ?? 0, usage?.cacheRead ?? 0,
-    usage ? askCostPence(settings.askModel, usage, settings.jjGbpPerUsd) : 0, Math.round(performance.now() - start), result.outcome]);
+    usage ? askCostPence(settings.askModel, usage, settings.jjGbpPerUsd) : 0, Math.round(performance.now() - startedAt), result.outcome]);
   return result;
 }

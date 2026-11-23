@@ -163,6 +163,10 @@ test('cap, hourly limit, sample isolation and 90-day cleanup are enforced before
   await db.query("INSERT INTO pulse.ask_log(id,model,outcome,asked_at) VALUES ($1,$2,'unavailable',$3)", [randomUUID(), model, new Date('2032-04-01T00:00:00Z')]);
   await cleanupAsk(db, now);
   assert.equal((await db.query('SELECT id FROM pulse.ask_log')).rowCount, 30);
+  const nextDay = new Date('2032-08-13T09:30:00Z');
+  assert.equal((await askQuestion({ ...options, now: nextDay, startedAt: performance.now() - 60_000 })).answer, askUnavailable);
+  assert.equal(calls, 1, 'A deadline reached before the model call never contacts the provider');
+
 });
 
 test('older Settings get Ask defaults without a write and can save the second model and cap', async t => {

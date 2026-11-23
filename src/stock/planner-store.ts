@@ -17,6 +17,7 @@ export interface StockPlannerView {
 
 const markets = ['uk', 'us'] as const;
 const originalKit = appConfig.shopify.stockProducts.find(product => 'sku' in product)!;
+const plannerBundles = appConfig.shopify.stockProducts.filter(product => 'bundle' in product || product.name === 'REFILL PACK');
 
 type SeriesStockSettings = { sku: string; name: string; productId?: string; UKLaunchDate?: string; USLaunchDate?: string };
 
@@ -48,9 +49,16 @@ export async function readStockPlanner(db: Database, store: ShopifyStore, now: D
   const inventory = dataset(facts, today).inventory;
   // Earlier releases have one kit in config. The planner still works if series editing is rolled back.
   const series = (values as { series?: SeriesStockSettings[] }).series ?? [{ sku: originalKit.sku, name: originalKit.name }];
-  const shared = new Set(sharedSeriesSkus(facts.jobs.find(job => job.name === 'inventory')?.state));
+  const inventoryJob = facts.jobs.find(job => job.name === 'inventory');
+  const shared = new Set(sharedSeriesSkus(inventoryJob?.state));
+  const excludedIds = new Set<string>(inventoryJob?.state.inactiveProductIds ?? []);
+  const excludedSkus = new Set<string>(inventoryJob?.state.inactiveSeriesSkus ?? []);
+  for (const bundle of plannerBundles) {
+    excludedIds.add(`gid://shopify/Product/${bundle.id}`);
+    if ('sku' in bundle) excludedSkus.add(bundle.sku);
+  }
   const skus = new Set(series.map(row => row.sku));
-  const packs = appConfig.shopify.stockProducts.filter(product => !('bundle' in product) && product.id !== originalKit.id);
+  const packs = appConfig.shopify.stockProducts.filter(product => product.id !== originalKit.id);
   const products = markets.flatMap(market => {
     const location = appConfig.shopify.locations[market].id;
     const tracked = [
@@ -60,7 +68,8 @@ export async function readStockPlanner(db: Database, store: ShopifyStore, now: D
         productId: row.sku === originalKit.sku ? `gid://shopify/Product/${originalKit.id}` : row.productId ? `gid://shopify/Product/${row.productId}` : undefined,
       })),
       ...packs.map(row => ({ name: row.name, sku: 'sku' in row ? row.sku : undefined, kit: false, launch: undefined, productId: `gid://shopify/Product/${row.id}` })),
-    ].filter(row => row.kit || !row.sku || !skus.has(row.sku));
+    ].filter(row => row.kit || !row.sku || !skus.has(row.sku))
+      .filter(row => row.productId ? !excludedIds.has(row.productId) : !excludedSkus.has(row.sku!));
 
     return tracked.map(({ productId, ...product }): PlannerProduct => {
       const matches = (row: { locationId: string; productId: string; sku?: string | null }): boolean =>
@@ -83,6 +92,6 @@ export async function readStockPlanner(db: Database, store: ShopifyStore, now: D
         ? available.reduce<number>((sum, value) => sum + value!, 0) : null, daily };
     });
   });
-  const at = facts.jobs.find(job => job.name === 'inventory')?.last_success_at;
+  const at = inventoryJob?.last_success_at;
   return { mode: 'live', today, asOf: at ? new Date(at).toISOString() : null, rows: planStock(products, today, values) };
 }

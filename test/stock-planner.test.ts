@@ -2,6 +2,12 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
+import { appConfig } from '../src/config.js';
+import { ShopifyClient } from '../src/shopify/client.js';
+import { Transport } from '../src/shopify/http.js';
+import { fixture } from '../src/shopify/sample.js';
+import { ShopifyWorker } from '../src/shopify/worker.js';
+import { readStockPlanner } from '../src/stock/planner-store.js';
 import { addDays } from '../src/hero-range.js';
 import { defaultSettings, readSettings, saveSettings, SettingsValidationError, validateSettings } from '../src/settings.js';
 import type { InboundStock } from '../src/shopify/stock-gap.js';
@@ -174,4 +180,50 @@ test('order-by uses each warehouse override and otherwise falls back to the supp
       supplierLeadTimes: [{ ...config.supplierLeadTimes[0]!, ...overrides }] });
     assert.deepEqual(rows.map(row => row.orderBy), expected);
   }
+});
+
+test('the inventory poll filters bundles and inactive products from both planner warehouses, including products with no levels', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const env = { SHOPIFY_CLIENT_ID: randomUUID(), SHOPIFY_CLIENT_SECRET: randomUUID() };
+  const origin = 'https://pulse.example.test';
+  const frame = appConfig.shopify.stockProducts.find(p => p.name === 'THE FRAME')!;
+  const active = appConfig.shopify.stockProducts.find(p => p.name === 'CARDS & HOLO PACK')!;
+  const pageInfo = { hasNextPage: false, endCursor: null };
+  const sku = 'invented-amber', seriesName = 'Invented Amber';
+  let frameStatus = 'DRAFT';
+  const client = new ShopifyClient(new Transport({ fetch: async (url, init) => {
+    if (String(url).endsWith('access_token')) return Response.json({ ...await fixture('token'), access_token: randomUUID() });
+    const { query, variables } = JSON.parse(String(init?.body));
+    if (query.includes('PulseStockBySku')) {
+      assert.match(query, /product \{ id status \}/);
+      return Response.json({ data: { productVariants: { pageInfo, nodes: [{
+        id: 'gid://shopify/ProductVariant/987654', sku, product: { id: 'gid://shopify/Product/987650', status: 'ARCHIVED' },
+        inventoryItem: { id: 'gid://shopify/InventoryItem/987652', unitCost: null },
+      }] } } });
+    }
+    if (query.includes('PulseLevels')) return Response.json({ data: { inventoryItem: { inventoryLevels: { nodes: [], pageInfo } } } });
+    assert.match(query, /product\(id: \$id\) \{ id status /);
+    const status = variables.id === `gid://shopify/Product/${frame.id}` ? frameStatus : 'ACTIVE';
+    return Response.json({ data: { product: { id: variables.id, status, variants: { nodes: [], pageInfo } } } });
+  } }), env, origin);
+  const now = new Date('2034-06-12T11:00:00Z');
+  const worker = new ShopifyWorker(db, env, origin, { reader: client, clock: () => now });
+  await worker.initialize();
+  const settings = await readSettings(db);
+  const series = { ...settings.values.series[0]!, key: 'invented-amber', sku, name: seriesName };
+  await saveSettings(db, { ...settings, values: { ...settings.values, series: [...settings.values.series, series] } }, randomUUID());
+  const poll = async () => {
+    await db.query("UPDATE pulse.shopify_jobs SET next_run_at = CASE WHEN name = 'inventory' THEN $1::timestamptz ELSE '9999-01-01'::timestamptz END", [now]);
+    await worker.tick();
+    return (await readStockPlanner(db, worker.store, now)).rows;
+  };
+  const rows = await poll();
+  for (const market of ['uk', 'us']) {
+    const names = rows.filter(row => row.market === market).map(row => row.name);
+    for (const name of ['REFILL PACK', 'STARTER', 'ULTIMATE', 'DUO PACK', frame.name, seriesName]) assert.ok(!names.includes(name), name);
+    assert.ok(names.includes(active.name));
+  }
+  frameStatus = 'ACTIVE';
+  const refreshed = await poll();
+  assert.deepEqual(refreshed.filter(row => row.name === frame.name).map(row => row.market), ['uk', 'us']);
 });

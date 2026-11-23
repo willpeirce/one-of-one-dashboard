@@ -9,7 +9,7 @@ import { dashboardAskTool, type AskToolContext } from './tools.js';
 import { askPage } from './view.js';
 
 export function registerAsk(app: FastifyInstance, db: Database, auth: Auth, mode: 'sample' | 'live',
-  env: NodeJS.ProcessEnv, clock: () => Date, readStock?: AskToolContext['readStock'], client?: AskClient): void {
+  env: NodeJS.ProcessEnv, clock: () => Date, readDashboard?: AskToolContext['readDashboard'], client?: AskClient): void {
   app.get('/ask', async (request, reply) => {
     if (!await auth.session(request)) return reply.redirect('/login');
     return reply.type('text/html; charset=utf-8').send(askPage(mode));
@@ -27,7 +27,7 @@ export function registerAsk(app: FastifyInstance, db: Database, auth: Auth, mode
         const { values: settings } = await readSettings(db, { seed: false });
         if (performance.now() - startedAt >= askDeadlineMs) return unavailable;
         return askQuestion({ db, settings, mode, now, question, startedAt, apiKey: env.ANTHROPIC_API_KEY, client,
-          tool: dashboardAskTool({ db, settings, env, now, readStock }) });
+          tool: dashboardAskTool({ db, settings, env, now, readDashboard }) });
       };
       return await Promise.race([run(), deadline]);
     } catch (error) {

@@ -4,7 +4,7 @@ import { spendFacts } from '../ad-spend/store.js';
 import { appConfig } from '../config.js';
 import { readCreativeOverview } from '../creatives/routes.js';
 import type { CreativeSelection } from '../creatives/presentation-types.js';
-import type { HeroMarket } from '../dashboard-types.js';
+import type { DashboardSnapshot, HeroMarket } from '../dashboard-types.js';
 import type { Database } from '../db.js';
 import { handoverCount } from '../gorgias/home-count.js';
 import { readGorgiasFacts } from '../gorgias/store.js';
@@ -13,15 +13,11 @@ import { readIssues } from '../issues/store.js';
 import { readReviews } from '../judgeme/store.js';
 import { readKitFacts } from '../kits/store.js';
 import { scorecardCoverage } from '../scorecard/store.js';
-import { seriesPaceDates } from '../series-pace/dates.js';
-import { calculateSeriesPace } from '../series-pace/model.js';
-import { originalSeries, seriesMarket, type Series } from '../series-pace/series.js';
-import { readSeriesPaceFacts, retiredSeriesInMarket } from '../series-pace/store.js';
+import type { SeriesPaceMarketView } from '../series-pace/presentation.js';
 import type { Settings } from '../settings.js';
 import { countedOrder, dailyRows, dataset, kitIds, type Facts } from '../shopify/metrics.js';
 import { ShopifyStore } from '../shopify/store.js';
 import { readSourceHealth } from '../sources.js';
-import type { StockPlannerView } from '../stock/planner-store.js';
 import { readWaitingView } from '../waiting-on/store.js';
 import type { AskSource, AskTool, AskToolOutput } from './protocol.js';
 
@@ -53,7 +49,7 @@ function salesData(facts: Facts, settings: Settings, today: string, from: string
   const salesKnown = currentCovered && history.salesCoverage.length === expected;
   const orders = data.orders.filter(order => countedOrder(order, market) && order.day >= from && order.day <= to);
   const rows = dailyRows(facts, today, market).filter(row => row.date >= from && row.date <= to);
-  const skus = new Set(settings.series.map(row => row.sku));
+  const skus = new Set((settings as { series?: readonly { sku: string }[] }).series?.map(row => row.sku));
   const kitUnits = orders.reduce((sum, order) => sum + order.lines.reduce((units, line) => {
     const productId = line.productId ?? '';
     const kitProduct = appConfig.shopify.stockProducts.find(product => `gid://shopify/Product/${product.id}` === productId);
@@ -64,13 +60,37 @@ function salesData(facts: Facts, settings: Settings, today: string, from: string
     netSalesGbp: salesKnown ? Math.round(rows.reduce((sum, row) => sum + row.net, 0) * 100) / 100 : null };
 }
 
-type ReadStock = (db: Database, store: ShopifyStore, now: Date) => Promise<StockPlannerView>;
+interface StockToolRow {
+  name: string; market: 'uk' | 'us'; kit: boolean;
+  available: number | null; rate: number | null; observedDays: number;
+  inbound: { expectedDate: string; quantity: number }[];
+  orderBy: string | null; runOut: string | null; setSupplier: boolean;
+  coverage: { kits: number; covered: number; shortfall: number } | null;
+}
+type ReadStock = (db: Database, store: ShopifyStore, now: Date) => Promise<{
+  mode: 'sample' | 'live'; rows: StockToolRow[]; asOf: string | null;
+}>;
+
+async function stockReader(): Promise<ReadStock | undefined> {
+  // Ask can stay up during a planner-only rollback. Keep the tool in the stable provider schema.
+  const modulePath = '../stock/planner-store.js';
+  try {
+    const module = await import(modulePath) as { readStockPlanner: ReadStock };
+    return module.readStockPlanner;
+  } catch (error) {
+    if ((error as { code?: string })?.code !== 'ERR_MODULE_NOT_FOUND') throw error;
+    return undefined;
+  }
+}
+
+type PaceToolEntry = { market: 'UK' | 'US'; model: SeriesPaceMarketView & { seriesName?: string; sku?: string } };
 export interface AskToolContext {
-  db: Database; settings: Settings; env: NodeJS.ProcessEnv; now: Date; readStock?: ReadStock;
+  db: Database; settings: Settings; env: NodeJS.ProcessEnv; now: Date;
+  readStock?: ReadStock; readDashboard?: () => Promise<DashboardSnapshot>;
 }
 
 /** Only handlers in this switch receive a SQL connection, in an enforced read-only transaction. */
-export function dashboardAskTool({ db, settings, env, now, readStock }: AskToolContext): AskTool {
+export function dashboardAskTool({ db, settings, env, now, readStock, readDashboard }: AskToolContext): AskTool {
   const today = ukToday(now);
   return (name, input) => db.transaction(async connection => {
     await connection.query('SET TRANSACTION READ ONLY');
@@ -120,27 +140,21 @@ export function dashboardAskTool({ db, settings, env, now, readStock }: AskToolC
         source('Meta creatives', at));
       }
       case 'series_pace': {
-        const facts = await store.facts(now);
-        const series = (settings as { series?: Series[] }).series ?? [originalSeries()];
-        const rows = [];
-        for (const entry of series) {
-          const measurements = await readSeriesPaceFacts(tx, now, entry.sku);
-          for (const marketCode of ['UK', 'US'] as const) {
-            if (market !== 'all' && market !== marketCode.toLowerCase()) continue;
-            const input = seriesMarket(entry, marketCode);
-            const stock = measurements[marketCode];
-            if (input.launchDate > today || retiredSeriesInMarket(stock, input.launchDate, today)) continue;
-            const dates = seriesPaceDates(input.orderDate, input.landingOffsetDays, input.targetDate)!;
-            const pace = calculateSeriesPace({ today, targetDate: dates.targetDate, stock: stock.stock, days: stock.days.filter(row => row.day >= input.launchDate) });
-            rows.push({ product: label(entry.name), sku: entry.sku, market: marketCode, launchDate: input.launchDate, stock: pace.stock,
-              average: pace.average, through: pace.completeThrough, needed: pace.needed, projectedDate: pace.projectedDate, targetDate: pace.targetDate });
-          }
-        }
-        return output(rows, source('Shopify inventory and sell-out pace', facts.jobs.find(job => job.name === 'inventory')?.last_success_at));
+        const dashboard = await readDashboard?.();
+        const widget = dashboard?.widgets.w017;
+        if (widget?.kind !== 'series-pace' || widget.mode !== 'live') return output(null);
+        const entries = (widget.value as { entries?: PaceToolEntry[] }).entries
+          ?? (['UK', 'US'] as const).map(market => ({ market, model: widget.value.markets[market] } satisfies PaceToolEntry));
+        const at = dashboard?.sourceHealth?.find(row => row.source === 'shopify')?.lastSuccessAt;
+        return output(entries.filter(row => market === 'all' || row.market.toLowerCase() === market).map(({ market, model }: PaceToolEntry) => ({
+          product: label(model.seriesName ?? 'Series 1'), sku: model.sku, market, stock: model.stock,
+          average: model.average, through: model.completeThrough, needed: model.needed, projectedDate: model.projectedDate, targetDate: model.targetDate,
+        })), source('Shopify inventory and sell-out pace', at));
       }
       case 'stock': {
-        if (!readStock) return output(null);
-        const view = await readStock(tx, store, now);
+        const reader = readStock ?? await stockReader();
+        if (!reader) return output(null);
+        const view = await reader(tx, store, now);
         if (view.mode !== 'live') return output(null);
         return output(view.rows.filter(row => market === 'all' || row.market === market).map(row => ({
           product: label(row.name), market: row.market, kit: row.kit, available: row.available, rate: row.rate, observedDays: row.observedDays,

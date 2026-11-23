@@ -1,3 +1,4 @@
+import { getSampleDashboard } from '../src/sample-dashboard.js';
 import { addWaitingItem } from '../src/waiting-on/store.js';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -8,7 +9,6 @@ import { askHourlyMessage, askQuestion, cleanupAsk, parseAskQuestion, readAskSta
 import { dashboardAskTool } from '../src/ask/tools.js';
 import { saveReviews } from '../src/judgeme/store.js';
 import { defaultSettings, readSettings, saveSettings, SettingsValidationError } from '../src/settings.js';
-import { readStockPlanner } from '../src/stock/planner-store.js';
 import { createTestDatabase } from './helpers/database.js';
 
 const today = '2032-08-12', now = new Date(`${today}T09:30:00Z`);
@@ -193,8 +193,11 @@ test('all Ask tool outputs use explicit projections and keep review and handover
     published: false, hidden: false, flagged: false, source: null, curated: 'ok',
   }], now);
   await addWaitingItem(db, { contact: 'Invented Works', subject: 'Invented private waiting subject', since: '2032-08-05' }, randomUUID(), now);
+  const settings = defaultSettings(), dashboard = getSampleDashboard(settings);
+  const pace = dashboard.widgets.w017!;
+  pace.mode = 'live'; // An invented observation in the production widget shape.
   const tool = dashboardAskTool({
-    db, settings: defaultSettings(), now, readStock: readStockPlanner,
+    db, settings, now, readDashboard: async () => dashboard,
     env: { JUDGEME_API_TOKEN: randomUUID(), GITHUB_HQ_TOKEN: randomUUID() },
   });
   const denied = /^(customer|customerName|email|phone|address|reviewer|reviewerName|reviewText|body|ticketText|subject|ticketSubject|contact|owner|quote|orderNumber)$/i;
@@ -211,6 +214,8 @@ test('all Ask tool outputs use explicit projections and keep review and handover
     const result = await tool(validated.name, validated.input);
     walk(result);
     assert.doesNotMatch(JSON.stringify(result), /private review|private waiting|Ada Example|Invented Works/);
+    if (definition.name === 'stock') assert.ok(Array.isArray(result.data));
+    if (definition.name === 'series_pace') assert.match(JSON.stringify(result), /Series 1/);
     if (definition.name === 'reviews') assert.match(JSON.stringify(result), /Invented Widget/);
     if (definition.name === 'waiting') assert.match(JSON.stringify(result), /2032-08-05/);
   }

@@ -1,7 +1,6 @@
 import { registerAsk } from './ask/routes.js';
 import { cleanupAsk, readAskStatus } from './ask/store.js';
 import { registerStockPlanner } from './stock/planner-routes.js';
-import { readStockPlanner } from './stock/planner-store.js';
 import { snapshotSkus } from './series-pace/store.js';
 import { registerTicker } from './ticker/routes.js';
 import { readTicker } from './ticker/store.js';
@@ -373,7 +372,7 @@ export async function createApp(db: Database, config: RuntimeConfig, sourceEnv: 
   registerAdSets(app, db, auth, sourceEnv, creativeNow, adOptions, async () => publishObservations());
   registerReviewRoutes(app, db, auth, publishObservations);
   registerStockPlanner(app, db, auth, shopify.store, sourceNow);
-  registerAsk(app, db, auth, shopify.mode, sourceEnv, localNow, readStockPlanner);
+  registerAsk(app, db, auth, shopify.mode, sourceEnv, localNow, async () => (await snapshotCache.read()).dashboard);
   registerScorecard(app, db, auth, shopify.store, sourceEnv, () => shopifyOptions.clock?.() ?? new Date());
   const handover = new HandoverSections();
   registerHandover(app,auth,handover);

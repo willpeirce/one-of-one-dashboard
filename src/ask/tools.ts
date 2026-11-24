@@ -70,6 +70,9 @@ interface StockToolRow {
 }
 
 function stockProduct(row: StockToolRow) {
+  let orderByNote: string | null = null;
+  if (row.kit) orderByNote = 'Kit: run-out date only, not restocked';
+  else if (row.setSupplier) orderByNote = 'No supplier set in Settings, so there is no order-by date';
   return {
     product: label(row.name),
     kit: row.kit,
@@ -80,7 +83,7 @@ function stockProduct(row: StockToolRow) {
     gaps: row.gaps.map(({ from, to, days }) => ({ from, to, days })),
     runOut: row.runOut,
     orderBy: row.orderBy,
-    setSupplier: row.setSupplier,
+    orderByNote,
     coverage: row.coverage && { kits: row.coverage.kits, covered: row.coverage.covered, shortfall: row.coverage.shortfall },
   };
 }

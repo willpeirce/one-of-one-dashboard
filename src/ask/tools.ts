@@ -68,6 +68,23 @@ interface StockToolRow {
   orderBy: string | null; runOut: string | null; setSupplier: boolean;
   coverage: { kits: number; covered: number; shortfall: number } | null;
 }
+
+function stockProduct(row: StockToolRow) {
+  return {
+    product: label(row.name),
+    kit: row.kit,
+    available: row.available,
+    rate: row.rate,
+    observedDays: row.observedDays,
+    inbound: row.inbound.map(({ expectedDate, quantity }) => ({ expectedDate, quantity })),
+    gaps: row.gaps.map(({ from, to, days }) => ({ from, to, days })),
+    runOut: row.runOut,
+    orderBy: row.orderBy,
+    setSupplier: row.setSupplier,
+    coverage: row.coverage && { kits: row.coverage.kits, covered: row.coverage.covered, shortfall: row.coverage.shortfall },
+  };
+}
+
 type ReadStock = (db: Database, store: ShopifyStore, now: Date) => Promise<{
   mode: 'sample' | 'live'; rows: StockToolRow[]; asOf: string | null;
 }>;
@@ -157,12 +174,12 @@ export function dashboardAskTool({ db, settings, env, now, readStock, readDashbo
         if (!reader) return output(null);
         const view = await reader(tx, store, now);
         if (view.mode !== 'live') return output(null);
-        return output(view.rows.filter(row => market === 'all' || row.market === market).map(row => ({
-          product: label(row.name), market: row.market, kit: row.kit, available: row.available, rate: row.rate, observedDays: row.observedDays,
-          inbound: row.inbound.map(({ expectedDate, quantity }) => ({ expectedDate, quantity })), orderBy: row.orderBy,
-          gaps: row.gaps.map(({ from, to, days }) => ({ from, to, days })),
-          runOut: row.runOut, setSupplier: row.setSupplier, coverage: row.coverage,
-        })), source('Shopify stock planner', view.asOf));
+        const markets = market === 'all' ? ['uk', 'us'] : [market];
+        const warehouses = markets.map(region => ({
+          warehouse: region.toUpperCase(),
+          products: view.rows.filter(row => row.market === region).map(stockProduct),
+        }));
+        return output({ warehouses }, source('Shopify stock planner', view.asOf));
       }
       case 'kits': {
         if (!env.GITHUB_HQ_TOKEN?.trim()) return output(null);

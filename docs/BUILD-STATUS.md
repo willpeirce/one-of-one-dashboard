@@ -4,6 +4,9 @@ Updated in every pull request.
 
 | Stage | What | Code | Keys in Replit | Live check ("Done when") |
 |---|---|---|---|---|
+| Ask stock by warehouse · A | General reorder questions cover UK and US. A named warehouse can be requested on its own. | Live Ask stock tool and fixed system prompt | Existing Ask and Shopify access | Check that a general reorder answer names both warehouses |
+| Ask stock by warehouse · B | Each row explains a kit or a missing supplier lead time in plain words | Ask stock output | Existing | Compare the notes and dates with `/stock` |
+| Ask stock by warehouse · C | Invented fixtures cover warehouse selection, empty stock, supplier notes and an earlier US order date with a gap | Ask and planner tests, including the model request | None for tests | Verified on fixtures |
 | Stock fixes · A | Real names replaced with invented ones. | Sample and default Settings | None | Covered by fixture and legacy Settings checks |
 | Stock fixes · B | Stock gaps, final run-out, order-by and timed accessory cover | Sample and live planner and Ask stock tool | Existing | Compare with a listed arrival after stock runs out |
 | Stock fixes · C | Optional UK and US days for each supplier | Settings and live planner | Existing | Will enters warehouse lead times after merge |
@@ -517,3 +520,11 @@ The sample stock planner includes an accessory landing after a gap. The warehous
 **Not done or known gaps**
 
 The existing Ask privacy regression requires the stored answer to be null for generated free text, which can echo personal details. Raw generated answer retention from E2 is therefore omitted. Display cleanup runs after the existing logging step. Live warehouse figures and supplier lead times require owner verification after merge.
+
+## Ask stock by warehouse
+
+The model-facing tool reads the existing stock planner. The invented fixture gives the same pack an earlier US order-by date and a 19-day US gap. The tests check the result sent to the model. Sample-mode Ask still uses its fixed example replies.
+
+**Not done or known gaps**
+
+After merge, Claude asks the live Ask “When do we need to reorder?” and checks that the answer names both the UK and US warehouses. Will only needs to merge.

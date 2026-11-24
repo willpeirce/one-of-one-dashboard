@@ -1415,3 +1415,10 @@ A shared series SKU requires an optional digits-only Shopify product ID in Setti
 | C | Store optional whole-day UK and US overrides on the existing supplier row. Blank fields use the general Days value and are omitted from storage. Home uses the shortest general lead time. The frozen Settings test pins the two keys on legacy supplier rows, and the audit test covers the two new nested field paths. |
 | D | Exclude REFILL PACK in the planner because its components carry the stock. The shared bundle flag also affects Home’s kit and upgrade metrics. Read product status in the existing Shopify inventory queries and keep the inactive IDs and resolved series SKUs in the inventory job state, so a draft or archived product can be excluded even with no inventory levels. |
 | E | Clean the displayed answer at the API response boundary, after usage accounting. Preserve line breaks and literal text rendering. The usage log continues to omit generated answers because they can contain personal details. |
+
+## Ask stock by warehouse
+
+| Part | Decision and reason |
+|---|---|
+| A | The stock tool description asks for `market: "all"` on a general stock question. Ask groups the planner rows under UK and US, in that order. A named warehouse gets its own group even when it has no products. The flat list made it easy to overlook a warehouse with an earlier order date. One fixed system-prompt sentence asks for a named answer for each warehouse or market the tool returns. |
+| B | Ask translates the planner’s kit and missing-lead-time flags into a fixed `orderByNote`. Kits get the run-out explanation first. A missing lead time gets the Settings explanation. Other rows get null, including a product with a supplier whose run-out cannot yet be forecast. This keeps the meaning of `setSupplier` clear in Ask while the Stock page keeps using it for its Settings link. Supplier and contact names have no field in the tool result. |

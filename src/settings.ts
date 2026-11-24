@@ -17,6 +17,13 @@ import {ISSUE_REASONS, ISSUE_TAG_LIMIT, ISSUE_TAG_TEXT_LIMIT, type IssueTagRule}
 export const SETTINGS_KEY_NAMES = Object.freeze(sourceDefinitions.flatMap((source) => [...source.requiredKeys]));
 type KeyName = (typeof SETTINGS_KEY_NAMES)[number];
 
+export interface SupplierLeadTime {
+  supplier: string;
+  days: number | null;
+  ukDays?: number;
+  usDays?: number;
+}
+
 export interface Settings extends PlannerSettings, AskSettings {
   adRules: AdRules;
   goalOrdersPerDay: number;
@@ -34,7 +41,7 @@ export interface Settings extends PlannerSettings, AskSettings {
   flatFulfilmentUsGbp: number | null;
   dispatchCutoffUk: string;
   dispatchCutoffUs: string;
-  supplierLeadTimes: { supplier: string; days: number | null }[];
+  supplierLeadTimes: SupplierLeadTime[];
   inboundStock: InboundStock[];
   keyDates: KeyDate[];
   safetyWeeks: number;
@@ -158,8 +165,8 @@ export function defaultSettings(): Settings {
     dispatchCutoffUk: appConfig.fulfilment.uk.dispatchCutoff,
     dispatchCutoffUs: appConfig.fulfilment.us.dispatchCutoff,
     supplierLeadTimes: [
-      { supplier: 'Rising Games', days: 35 }, { supplier: 'Hedy', days: 2 },
-      { supplier: 'Shanghai Joan', days: null }, { supplier: 'Freight forwarder', days: null },
+      { supplier: 'Invented Cinder', days: 26 }, { supplier: 'Invented Fold', days: 9 },
+      { supplier: 'Invented Inks', days: null }, { supplier: 'Invented Transit', days: null },
     ],
     inboundStock: [],
     keyDates: [],
@@ -374,8 +381,17 @@ function validatedSettings(input: unknown, legacyOverhead = false): Settings {
     dispatchCutoffUk: cutoff(value.dispatchCutoffUk, 'dispatchCutoffUk'),
     dispatchCutoffUs: cutoff(value.dispatchCutoffUs, 'dispatchCutoffUs'),
     supplierLeadTimes: list(value.supplierLeadTimes, 'supplierLeadTimes', (row, path) => {
-      const parsed = object(row, ['supplier', 'days'], path);
-      return { supplier: businessText(parsed.supplier, `${path}.supplier`), days: number(parsed.days, `${path}.days`, 730, true, true) };
+      if (!row || typeof row !== 'object') return invalid(path);
+      const overrides = (['ukDays', 'usDays'] as const).filter(key => Object.hasOwn(row, key));
+      const parsed = object(row, ['supplier', 'days', ...overrides], path);
+      const result: SupplierLeadTime = {
+        supplier: businessText(parsed.supplier, `${path}.supplier`),
+        days: number(parsed.days, `${path}.days`, 730, true, true),
+      };
+      for (const key of overrides) {
+        if (parsed[key] !== null) result[key] = requiredNumber(parsed[key], `${path}.${key}`, 730, true);
+      }
+      return result;
     }, (row) => row.supplier),
     inboundStock: list(value.inboundStock, 'inboundStock', (row, path) => {
       const parsed = object(row, ['product', 'market', 'quantity', 'expectedDate'], path);

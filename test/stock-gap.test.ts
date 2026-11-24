@@ -80,3 +80,9 @@ test('Settings warn about an unmatched product without rejecting a future planne
   assert.match(html, /pack rows are listed but cannot raise a gap until packs have a cover/);
   assert.match(html, /no arrival date is assumed/);
 });
+
+test('Home watches use only general supplier days even with warehouse overrides', () => {
+  const timing = [{ supplier: 'Invented Bindery', days: 11, ukDays: 1, usDays: 24 }];
+  const needs = stockGapNeeds([stock('uk', 4), stock('us', 4)], [], timing, '2031-06-10', 'live');
+  assert.deepEqual(needs.map(need => need.figure?.value), ['7', '7']);
+});

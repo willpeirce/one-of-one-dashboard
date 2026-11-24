@@ -24,12 +24,14 @@ export const orderFields = (address: boolean) => `
   customerJourneySummary { customerOrderIndex firstVisit { landingPage utmParameters { source medium campaign } } lastVisit { landingPage utmParameters { source medium campaign } } }
 `;
 export interface Page<T = any> { nodes: T[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } }
+export type ObserveStockProduct = (product: { id: string; status: string }, seriesSku?: string) => void;
+
 export interface ShopifyReader {
   firstOrderFlags?(ids:string[]): Promise<{id:string;firstOrder:FirstOrder}[]>;
   scopes(): Promise<string[]>;
   orders(query: string, after: string | null, address: boolean): Promise<Page>;
   order(id: string, address: boolean): Promise<any>;
-  inventory(sku?: string, productId?: string): Promise<any[]>;
+  inventory(sku?: string, productId?: string, observeProduct?: ObserveStockProduct): Promise<any[]>;
   report(query: string): Promise<any>;
   subscriptions(after: string | null): Promise<Page>;
   subscribe(topic: string, uri: string): Promise<void>;
@@ -115,26 +117,29 @@ export class ShopifyClient implements ShopifyReader {
       }
     }
   }
-  async inventory(sku?: string, productId?: string): Promise<any[]> {
+  async inventory(sku?: string, productId?: string, observeProduct?: ObserveStockProduct): Promise<any[]> {
     const result: any[] = [];
     if (productId !== undefined && !/^\d+$/.test(productId)) throw new ShopifyError('invalid');
     const selectedId = sku === originalSeriesSku ? originalSeriesProduct.id : productId;
     if (sku && !selectedId) {
       if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(sku)) throw new ShopifyError('invalid');
       const data = await this.#graphql(`query PulseStockBySku($query: String!) {
-        productVariants(first: 20, query: $query) { nodes { id sku product { id } inventoryItem { id unitCost { amount currencyCode } } } ${page} }
+        productVariants(first: 20, query: $query) { nodes { id sku product { id status } inventoryItem { id unitCost { amount currencyCode } } } ${page} }
       }`, { query: `sku:"${sku}"` });
       const exact = data.productVariants.nodes.filter((variant: { sku: string }) => variant.sku === sku);
       if (new Set(exact.map((variant: { product: { id: string } }) => variant.product.id)).size > 1) throw new SharedSeriesSkuError();
       if (data.productVariants.pageInfo.hasNextPage || exact.length > 1) throw new ShopifyError('invalid');
-      return exact.length ? this.#inventoryLevels(exact[0].product.id, exact[0]) : [];
+      if (!exact.length) return [];
+      observeProduct?.(exact[0].product, sku);
+      return this.#inventoryLevels(exact[0].product.id, exact[0]);
     }
     // Variants and levels paginate independently; only configured products/locations are retained.
     for (const product of selectedId ? [{ id: selectedId }] : appConfig.shopify.stockProducts) {
       let after: string | null = null;
       do {
-        const data = await this.#graphql(`query PulseStock($id: ID!, $after: String) { product(id: $id) { id variants(first: 100, after: $after) { nodes { id sku inventoryItem { id unitCost { amount currencyCode } } } ${page} } } }`, { id: `gid://shopify/Product/${product.id}`, after });
+        const data = await this.#graphql(`query PulseStock($id: ID!, $after: String) { product(id: $id) { id status variants(first: 100, after: $after) { nodes { id sku inventoryItem { id unitCost { amount currencyCode } } } ${page} } } }`, { id: `gid://shopify/Product/${product.id}`, after });
         if (!data.product) break;
+        if (!after) observeProduct?.(data.product, sku);
         for (const variant of data.product.variants.nodes) {
           if (sku && variant.sku !== sku) continue;
           result.push(...await this.#inventoryLevels(data.product.id, variant));

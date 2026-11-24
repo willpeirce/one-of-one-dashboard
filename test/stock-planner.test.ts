@@ -2,10 +2,17 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
+import { appConfig } from '../src/config.js';
+import { ShopifyClient } from '../src/shopify/client.js';
+import { Transport } from '../src/shopify/http.js';
+import { fixture } from '../src/shopify/sample.js';
+import { ShopifyWorker } from '../src/shopify/worker.js';
+import { readStockPlanner } from '../src/stock/planner-store.js';
 import { addDays } from '../src/hero-range.js';
 import { defaultSettings, readSettings, saveSettings, SettingsValidationError, validateSettings } from '../src/settings.js';
 import type { InboundStock } from '../src/shopify/stock-gap.js';
-import { orderState, plannerDefaults, planStock, runOutDate, type PlannerProduct } from '../src/stock/planner.js';
+import { stockPlannerPage } from '../src/stock/planner-view.js';
+import { orderState, plannerDefaults, planStock, forecastStock, type PlannerProduct } from '../src/stock/planner.js';
 import { createTestDatabase } from './helpers/database.js';
 
 const today = '2031-01-28';
@@ -25,14 +32,16 @@ const config = {
 
 test('run-out uses stock arriving before exhaustion and applies each month’s multiplier', () => {
   const factors = config.seasonalMultipliers;
-  assert.equal(runOutDate(today, 40, 4, factors, []), '2031-02-07');
-  assert.equal(runOutDate(today, 40, 4, factors, [arrival('2031-02-01', 12)]), '2031-02-10');
-  assert.equal(runOutDate(today, 40, 4, factors, [arrival('2031-02-07', 12)]), '2031-02-07');
-  assert.equal(runOutDate(today, 40, 4, factors, [arrival('2031-02-08', 12)]), '2031-02-07');
+  assert.deepEqual(forecastStock(today, 40, 4, factors, []), { runOut: '2031-02-07', gaps: [] });
+  assert.deepEqual(forecastStock(today, 40, 4, factors, [arrival('2031-02-01', 12)]), { runOut: '2031-02-10', gaps: [] });
+  assert.deepEqual(forecastStock(today, 40, 4, factors, [arrival('2031-02-07', 12)]), { runOut: '2031-02-10', gaps: [] });
+  assert.deepEqual(forecastStock(today, 40, 4, factors, [arrival('2031-02-08', 12)]), {
+    runOut: '2031-02-11', gaps: [{ from: '2031-02-07', to: '2031-02-08', days: 1 }],
+  });
   const seasonal = [...factors]; seasonal[1] = 2;
-  assert.equal(runOutDate(today, 40, 4, seasonal, []), '2031-02-04');
-  assert.equal(runOutDate(today, 40, 4, seasonal, [arrival('2031-02-01', 16)]), '2031-02-06');
-  assert.equal(runOutDate(today, 40, 0, seasonal, []), null);
+  assert.deepEqual(forecastStock(today, 40, 4, seasonal, []), { runOut: '2031-02-04', gaps: [] });
+  assert.deepEqual(forecastStock(today, 40, 4, seasonal, [arrival('2031-02-01', 16)]), { runOut: '2031-02-06', gaps: [] });
+  assert.deepEqual(forecastStock(today, 40, 0, seasonal, []), { runOut: null, gaps: [] });
 });
 
 test('supplier time and safety weeks move the order-by date, while kits only have a run-out', () => {
@@ -115,4 +124,106 @@ test('older Settings gain planner defaults without writes and planner changes au
   await db.query(migration); await db.query(migration);
   assert.deepEqual(await readSettings(db), { version: 8, values: wanted });
   assert.equal((await db.query("SELECT 1 FROM information_schema.table_privileges WHERE table_schema='pulse' AND table_name='stock_planner_settings' AND grantee='PUBLIC'")).rowCount, 0);
+});
+
+test('a gap across a month end and a second gap resume at the new rate, with order-by from final run-out', () => {
+  const multipliers = [...config.seasonalMultipliers];
+  multipliers[1] = 2;
+  const inboundStock = [arrival('2031-02-06', 160), arrival('2031-02-02', 16)];
+  const rows = planStock([product('Invented Pack', false, 8, 4)], today, {
+    ...config, seasonalMultipliers: multipliers, reorderSafetyWeeks: 1, inboundStock,
+  });
+  const row = rows[0]!;
+  assert.deepEqual(row.gaps, [
+    { from: '2031-01-30', to: '2031-02-02', days: 3 },
+    { from: '2031-02-04', to: '2031-02-06', days: 2 },
+  ]);
+  assert.deepEqual([row.runOut, row.orderBy, row.state], ['2031-02-26', '2031-02-14', 'good']);
+  const html = stockPlannerPage({ today, mode: 'sample', asOf: null, rows });
+  assert.equal((html.match(/<span data-stock-state="alarm">None from /g) ?? []).length, 2);
+  assert.match(html.replace(/<[^>]+>/g, ''), /None from 30 Jan to 2 Feb · 3 days/);
+  assert.match(html, /data-stock-state="good">Good/);
+});
+
+test('an empty shelf starts at zero and groups same-day receipts without carrying lost demand', () => {
+  const factors = config.seasonalMultipliers;
+  assert.deepEqual(forecastStock(today, -6, 4, factors, [arrival(today, 4), arrival(today, 8)]),
+    { runOut: '2031-01-31', gaps: [] });
+  assert.deepEqual(forecastStock(today, 0, 4, factors, [arrival('2031-02-03', 8)]), {
+    runOut: '2031-02-05', gaps: [{ from: today, to: '2031-02-03', days: 6 }],
+  });
+});
+
+test('accessory cover counts arrivals through the last launched kit run-out in its own warehouse', () => {
+  const pack = product('Invented Pack', false, 6, 3);
+  const first = product('Invented Dawn', true, 20, 10);
+  const second = product('Invented Dusk', true, 30, 5);
+  const future = { ...second, name: 'Invented Noon', launch: '2031-03-01' };
+  const other = { ...second, market: 'us' as const, available: 240 };
+  const inboundStock = [arrival('2031-02-06', 25, second.name),
+    arrival('2031-02-08', 3), arrival('2031-02-11', 3), arrival('2031-02-12', 12)];
+  const rows = planStock([pack, first, second, future, other], today, { ...config, inboundStock });
+  assert.deepEqual([rows[2]!.runOut, rows[2]!.orderBy], ['2031-02-11', null]);
+  assert.deepEqual(rows[2]!.gaps, [{ from: '2031-02-03', to: '2031-02-06', days: 3 }]);
+  assert.deepEqual(rows[0]!.coverage, { kits: 75, covered: 60, shortfall: 3 });
+});
+
+test('order-by uses each warehouse override and otherwise falls back to the supplier days', () => {
+  const pack = product('Invented Pack', false, 120, 4);
+  const products = [pack, { ...pack, market: 'us' as const }];
+  for (const [overrides, expected] of [
+    [{}, ['2031-02-22', '2031-02-22']],
+    [{ ukDays: 9 }, ['2031-02-18', '2031-02-22']],
+    [{ usDays: 0 }, ['2031-02-22', '2031-02-27']],
+  ] as const) {
+    const rows = planStock(products, today, { ...config, reorderSafetyWeeks: 0,
+      supplierLeadTimes: [{ ...config.supplierLeadTimes[0]!, ...overrides }] });
+    assert.deepEqual(rows.map(row => row.orderBy), expected);
+  }
+});
+
+test('the inventory poll filters bundles and inactive products from both planner warehouses, including products with no levels', async t => {
+  const db = await createTestDatabase(); t.after(() => db.close());
+  const env = { SHOPIFY_CLIENT_ID: randomUUID(), SHOPIFY_CLIENT_SECRET: randomUUID() };
+  const origin = 'https://pulse.example.test';
+  const frame = appConfig.shopify.stockProducts.find(p => p.name === 'THE FRAME')!;
+  const active = appConfig.shopify.stockProducts.find(p => p.name === 'CARDS & HOLO PACK')!;
+  const pageInfo = { hasNextPage: false, endCursor: null };
+  const sku = 'invented-amber', seriesName = 'Invented Amber';
+  let frameStatus = 'DRAFT';
+  const client = new ShopifyClient(new Transport({ fetch: async (url, init) => {
+    if (String(url).endsWith('access_token')) return Response.json({ ...await fixture('token'), access_token: randomUUID() });
+    const { query, variables } = JSON.parse(String(init?.body));
+    if (query.includes('PulseStockBySku')) {
+      assert.match(query, /product \{ id status \}/);
+      return Response.json({ data: { productVariants: { pageInfo, nodes: [{
+        id: 'gid://shopify/ProductVariant/987654', sku, product: { id: 'gid://shopify/Product/987650', status: 'ARCHIVED' },
+        inventoryItem: { id: 'gid://shopify/InventoryItem/987652', unitCost: null },
+      }] } } });
+    }
+    if (query.includes('PulseLevels')) return Response.json({ data: { inventoryItem: { inventoryLevels: { nodes: [], pageInfo } } } });
+    assert.match(query, /product\(id: \$id\) \{ id status /);
+    const status = variables.id === `gid://shopify/Product/${frame.id}` ? frameStatus : 'ACTIVE';
+    return Response.json({ data: { product: { id: variables.id, status, variants: { nodes: [], pageInfo } } } });
+  } }), env, origin);
+  const now = new Date('2034-06-12T11:00:00Z');
+  const worker = new ShopifyWorker(db, env, origin, { reader: client, clock: () => now });
+  await worker.initialize();
+  const settings = await readSettings(db);
+  const series = { ...settings.values.series[0]!, key: 'invented-amber', sku, name: seriesName };
+  await saveSettings(db, { ...settings, values: { ...settings.values, series: [...settings.values.series, series] } }, randomUUID());
+  const poll = async () => {
+    await db.query("UPDATE pulse.shopify_jobs SET next_run_at = CASE WHEN name = 'inventory' THEN $1::timestamptz ELSE '9999-01-01'::timestamptz END", [now]);
+    await worker.tick();
+    return (await readStockPlanner(db, worker.store, now)).rows;
+  };
+  const rows = await poll();
+  for (const market of ['uk', 'us']) {
+    const names = rows.filter(row => row.market === market).map(row => row.name);
+    for (const name of ['REFILL PACK', 'STARTER', 'ULTIMATE', 'DUO PACK', frame.name, seriesName]) assert.ok(!names.includes(name), name);
+    assert.ok(names.includes(active.name));
+  }
+  frameStatus = 'ACTIVE';
+  const refreshed = await poll();
+  assert.deepEqual(refreshed.filter(row => row.name === frame.name).map(row => row.market), ['uk', 'us']);
 });

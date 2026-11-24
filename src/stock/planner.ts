@@ -1,4 +1,5 @@
 import { addDays, dayCount } from '../hero-range.js';
+import type { SupplierLeadTime } from '../settings.js';
 import type { InboundStock } from '../shopify/stock-gap.js';
 import type { State } from '../dashboard-types.js';
 
@@ -18,11 +19,15 @@ export interface PlannerSettings {
   productSuppliers: { product: string; supplier: string }[];
 }
 
-export interface PlannerRow extends Omit<PlannerProduct, 'daily' | 'launch'> {
+interface StockForecast {
+  runOut: string | null;
+  gaps: { from: string; to: string; days: number }[];
+}
+
+export interface PlannerRow extends Omit<PlannerProduct, 'daily' | 'launch'>, StockForecast {
   rate: number | null;
   observedDays: number;
   inbound: InboundStock[];
-  runOut: string | null;
   orderBy: string | null;
   setSupplier: boolean;
   state: State | null;
@@ -37,28 +42,37 @@ export const plannerHistoryDays = 28;
 const normalise = (value: string) => value.trim().toLowerCase();
 const units = (rows: readonly InboundStock[]): number => rows.reduce((sum, row) => sum + row.quantity, 0);
 
-/** Apply demand at the calendar month's rate until the next landing or month boundary. */
-export function runOutDate(today: string, available: number, rate: number, multipliers: readonly number[], inbound: readonly InboundStock[]): string | null {
-  if (rate <= 0) return null;
-  if (available <= 0) return today;
+/** Apply demand at the calendar month’s rate between landings. */
+export function forecastStock(today: string, available: number | null, rate: number | null, multipliers: readonly number[], inbound: readonly InboundStock[]): StockForecast {
+  const gaps: StockForecast['gaps'] = [];
+  if (available === null) return { runOut: null, gaps };
   const arrivals = inbound.filter(row => row.expectedDate >= today).sort((a, b) => a.expectedDate.localeCompare(b.expectedDate));
-  let remaining = available;
+  let remaining = Math.max(0, available);
   let date = today;
   let arrival = 0;
   while (date < '9999-12-01') {
     while (arrivals[arrival]?.expectedDate === date) remaining += arrivals[arrival++]!.quantity;
+    const landing = arrivals[arrival]?.expectedDate;
     const month = Number(date.slice(5, 7));
     const endOfMonth = new Date(Date.UTC(Number(date.slice(0, 4)), month, 1)).toISOString().slice(0, 10);
-    const landing = arrivals[arrival]?.expectedDate;
     const next = landing && landing < endOfMonth ? landing : endOfMonth;
-    const daily = rate * multipliers[month - 1]!;
     const days = dayCount(date, next) - 1;
-    const untilEmpty = remaining / daily;
-    if (untilEmpty <= days) return addDays(date, Math.floor(untilEmpty));
-    remaining -= daily * days;
-    date = next;
+    const daily = (rate ?? 0) * multipliers[month - 1]!;
+    if (remaining > 0 && daily <= 0) return { runOut: null, gaps };
+    const untilEmpty = remaining === 0 ? 0 : remaining / daily;
+    if (untilEmpty <= days) {
+      const empty = addDays(date, Math.floor(untilEmpty));
+      if (!landing) return { runOut: daily > 0 ? empty : null, gaps };
+      if (empty < landing) gaps.push({ from: empty, to: landing, days: dayCount(empty, landing) - 1 });
+      // Demand while the shelf is empty is lost. Resume on the landing date.
+      remaining = 0;
+      date = landing;
+    } else {
+      remaining -= daily * days;
+      date = next;
+    }
   }
-  return null;
+  return { runOut: null, gaps };
 }
 
 export function orderState(today: string, orderBy: string | null): PlannerRow['state'] {
@@ -82,7 +96,7 @@ function dailyUsage(product: PlannerProduct, today: string, inbound: readonly In
 
 export function planStock(products: readonly PlannerProduct[], today: string, settings: PlannerSettings & {
   inboundStock: readonly InboundStock[];
-  supplierLeadTimes: readonly { supplier: string; days: number | null }[];
+  supplierLeadTimes: readonly SupplierLeadTime[];
 }): PlannerRow[] {
   const prepared = products.map(product => {
     const matches = (value: string) => normalise(value) === normalise(product.name) || !!product.sku && normalise(value) === normalise(product.sku);
@@ -90,19 +104,20 @@ export function planStock(products: readonly PlannerProduct[], today: string, se
     const inbound = landings.filter(row => row.expectedDate >= today).sort((a, b) => a.expectedDate.localeCompare(b.expectedDate));
     const usage = dailyUsage(product, today, landings);
     const supplier = settings.productSuppliers.find(row => matches(row.product))?.supplier;
-    const lead = settings.supplierLeadTimes.find(row => row.supplier === supplier)?.days ?? null;
-    return { product, inbound, usage, lead };
-  });
-  return prepared.map(({ product, inbound, usage, lead }) => {
-    const { daily: _daily, launch: _launch, ...display } = product;
+    const timing = settings.supplierLeadTimes.find(row => row.supplier === supplier);
+    const lead = timing?.[product.market === 'uk' ? 'ukDays' : 'usDays'] ?? timing?.days ?? null;
     const observedDays = usage.size;
     const rate = observedDays ? [...usage.values()].reduce((sum, value) => sum + value, 0) / observedDays : null;
-    const runOut = product.available === null || rate === null ? null
-      : runOutDate(today, product.available, rate, settings.seasonalMultipliers, inbound);
+    const forecast = forecastStock(today, product.available, rate, settings.seasonalMultipliers, inbound);
+    return { product, inbound, usage, lead, observedDays, rate, ...forecast };
+  });
+  return prepared.map(({ product, inbound, usage, lead, observedDays, rate, runOut, gaps }) => {
+    const { daily: _daily, launch: _launch, ...display } = product;
     const orderBy = product.kit || runOut === null || lead === null ? null
       : addDays(runOut, -Math.ceil(lead + settings.reorderSafetyWeeks * 7));
     let coverage: PlannerRow['coverage'] = null;
-    const kits = prepared.filter(row => row.product.kit && row.product.market === product.market);
+    const kits = prepared.filter(row => row.product.kit && row.product.market === product.market
+      && (!row.product.launch || row.product.launch <= today));
     if (!product.kit && product.available !== null && kits.length && kits.every(row => row.product.available !== null)) {
       let packUnits = 0, kitUnits = 0;
       for (const [day, sold] of usage) {
@@ -114,12 +129,13 @@ export function planStock(products: readonly PlannerProduct[], today: string, se
       if (kitUnits > 0) {
         const remaining = kits.reduce((sum, row) => sum + Math.max(0, row.product.available!) + units(row.inbound), 0);
         const rate = packUnits / kitUnits, required = Math.ceil(rate * remaining);
-        const available = Math.max(0, product.available) + units(inbound);
+        const lastRunOut = kits.reduce<string>((last, kit) => kit.runOut && kit.runOut > last ? kit.runOut : last, '');
+        const available = Math.max(0, product.available) + units(inbound.filter(row => row.expectedDate <= lastRunOut));
         const covered = rate > 0 ? Math.min(remaining, Math.floor(available / rate)) : remaining;
         coverage = { kits: remaining, covered, shortfall: Math.max(0, required - available) };
       }
     }
-    return { ...display, rate, observedDays, inbound, runOut, orderBy, state: orderState(today, orderBy),
+    return { ...display, rate, observedDays, inbound, runOut, gaps, orderBy, state: orderState(today, orderBy),
       setSupplier: !product.kit && lead === null, coverage };
   });
 }

@@ -8,7 +8,7 @@ import { appConfig } from '../config.js';
 import type { Database } from '../db.js';
 import { addDays, dayCount, ukToday } from '../hero-range.js';
 import type { SourceMode } from '../sources.js';
-import { nextCursor, SharedSeriesSkuError, ShopifyClient, type ShopifyReader } from './client.js';
+import { nextCursor, SharedSeriesSkuError, ShopifyClient, type ShopifyReader, type ObserveStockProduct } from './client.js';
 import { ShopifyError, Transport, type TransportOptions } from './http.js';
 import { SampleShopify } from './sample.js';
 import { ShopifyStore } from './store.js';
@@ -486,18 +486,26 @@ export class ShopifyWorker {
         if (baseline) await this.store.inventory(baseline.rows, baseline.at);
       }
       const { values } = await readSettings(this.db, { seed: false });
-      const rows = await this.client.inventory();
+      const inactiveProductIds = new Set<string>();
+      const inactiveSeriesSkus = new Set<string>();
+      const observeProduct: ObserveStockProduct = ({ id, status }, sku) => {
+        if (status === 'DRAFT' || status === 'ARCHIVED') {
+          inactiveProductIds.add(id);
+          if (sku) inactiveSeriesSkus.add(sku);
+        }
+      };
+      const rows = await this.client.inventory(undefined, undefined, observeProduct);
       const sharedSeriesSkus: string[] = [];
       for (const { sku, productId } of values.series) {
         if (sku === originalSeriesSku) continue;
-        try { rows.push(...await this.client.inventory(sku, productId)); }
+        try { rows.push(...await this.client.inventory(sku, productId, observeProduct)); }
         catch (error) {
           if (!(error instanceof SharedSeriesSkuError)) throw error;
           sharedSeriesSkus.push(sku);
         }
       }
       await this.store.inventory(rows, now, values.series.map(series => series.sku));
-      return { costSeeded: true, sharedSeriesSkus };
+      return { costSeeded: true, sharedSeriesSkus, inactiveProductIds: [...inactiveProductIds], inactiveSeriesSkus: [...inactiveSeriesSkus] };
     }
     if (name === 'sessions') {
       // Re-read yesterday too: late report corrections and geo guard updates must replace previous totals.

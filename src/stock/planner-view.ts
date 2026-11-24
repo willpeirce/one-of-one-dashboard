@@ -1,3 +1,4 @@
+import { shortDate } from '../hero-range.js';
 import { formatNumber } from '../money.js';
 import { scorecardShellStart } from '../scorecard/shell.js';
 import { paceDate } from '../series-pace/model.js';
@@ -7,11 +8,15 @@ import { plannerHistoryDays, type PlannerRow } from './planner.js';
 const escape = (value: string): string => value.replace(/[&<>"']/g, character => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 })[character]!);
-const date = (value: string | null) => value ? `<time datetime="${escape(value)}">${escape(paceDate(value))}</time>` : '—';
+const date = (value: string | null, format = paceDate) => value ? `<time datetime="${escape(value)}">${escape(format(value))}</time>` : '—';
 
 function productRow(row: PlannerRow): string {
   const decision = row.state === 'alarm' ? 'Order now' : row.state === 'warn' ? 'Order soon' : row.state === 'good' ? 'Good' : '';
   const inbound = row.inbound.length ? row.inbound.map(item => `<span>${formatNumber(item.quantity)} · ${date(item.expectedDate)}</span>`).join('') : 'None listed';
+  const gaps = row.gaps.map(({ from, to, days }) => {
+    const format = from.slice(0, 4) === to.slice(0, 4) ? shortDate : paceDate;
+    return `<span data-stock-state="alarm">None from ${date(from, format)} to ${date(to, format)} · ${formatNumber(days)} ${days === 1 ? 'day' : 'days'}</span>`;
+  }).join('');
   const cover = row.coverage;
   const coverage = cover === null ? '' : `<p class="planner-cover">Covers about ${formatNumber(cover.covered)} of ${formatNumber(cover.kits)} kits left${cover.shortfall ? ` · ${formatNumber(cover.shortfall)} units short` : ''}</p>`;
   const rate = row.rate === null ? 'No history' : `${formatNumber(row.rate, 2)} / day${row.observedDays < plannerHistoryDays ? '<small>Short history</small>' : ''}`;
@@ -20,7 +25,7 @@ function productRow(row: PlannerRow): string {
   return `<article class="glass planner-row" data-planner-product><h3>${escape(row.name)}${row.kit ? '<small>Series kit</small>' : ''}</h3><dl>
     <div><dt>Available now</dt><dd>${row.available === null ? 'Unknown' : formatNumber(row.available)}</dd></div>
     <div><dt>Daily rate</dt><dd>${rate}</dd></div>
-    <div><dt>Stock landing</dt><dd>${inbound}</dd></div>
+    <div><dt>Stock landing</dt><dd>${inbound}${gaps}</dd></div>
     <div><dt>Run-out</dt><dd>${date(row.runOut)}</dd></div>
     <div><dt>Order-by</dt><dd>${orderBy}</dd></div>
   </dl>${coverage}</article>`;

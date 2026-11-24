@@ -135,7 +135,7 @@ test('Home without Morning state performs one read, adds no property and retains
     assert.equal(pinned.split(allKits).length, 2);
     pinned = pinned.replace(allKits, allKits.replace('All kits ›', 'All kits'));
     assert.equal(createHash('sha256').update(pinned).digest('hex'),
-      '9c0efec82583a714bf404af8dbdc44e62250a036863206b11da1167548ac82fa');
+      'e12e4adda133a8e40accbfa60febdbc5bd3d2ede3de49a3f73b38fde97e3c4c0');
   });
 });
 

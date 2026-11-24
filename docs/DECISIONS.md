@@ -1405,3 +1405,13 @@ Retain migrations 078–080 on rollback because startup checks the migration led
 ### Part F · Review fixes
 
 A shared series SKU requires an optional digits-only Shopify product ID in Settings. Inventory reads that product and the additional-series ShopifyQL fallback filters by both SKU and the product ID returned by the inventory lookup. Series 1 keeps its pinned title query. Older Settings omit the new field until it is set. The inventory poll records unresolved shared SKUs for Settings and Sources without a migration.
+
+## Stock fixes
+
+| Part | Decision |
+|---|---|
+| A | Real names replaced with invented ones. |
+| B | Hold stock at zero through a gap, then resume demand at the landing month’s rate. Sales during the gap are lost. The final run-out sets the accessory order-by date. Accessory cover includes arrivals through the latest projected kit run-out among series already launched in that warehouse. |
+| C | Store optional whole-day UK and US overrides on the existing supplier row. Blank fields use the general Days value and are omitted from storage. Home uses the shortest general lead time. The frozen Settings test pins the two keys on legacy supplier rows, and the audit test covers the two new nested field paths. |
+| D | Exclude REFILL PACK in the planner because its components carry the stock. The shared bundle flag also affects Home’s kit and upgrade metrics. Read product status in the existing Shopify inventory queries and keep the inactive IDs and resolved series SKUs in the inventory job state, so a draft or archived product can be excluded even with no inventory levels. |
+| E | Clean the displayed answer at the API response boundary, after usage accounting. Preserve line breaks and literal text rendering. The usage log continues to omit generated answers because they can contain personal details. |

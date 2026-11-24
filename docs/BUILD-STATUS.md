@@ -4,6 +4,11 @@ Updated in every pull request.
 
 | Stage | What | Code | Keys in Replit | Live check ("Done when") |
 |---|---|---|---|---|
+| Stock fixes · A | Real names replaced with invented ones. | Sample and default Settings | None | Covered by fixture and legacy Settings checks |
+| Stock fixes · B | Stock gaps, final run-out, order-by and timed accessory cover | Sample and live planner and Ask stock tool | Existing | Compare with a listed arrival after stock runs out |
+| Stock fixes · C | Optional UK and US days for each supplier | Settings and live planner | Existing | Will enters warehouse lead times after merge |
+| Stock fixes · D | Planner excludes bundles and draft or archived products | Live inventory poll and planner | Existing Shopify read access | Check both warehouses after the next successful inventory poll |
+| Stock fixes · E | Plain-text Ask replies | Server response, prompt and browser checks | Existing Ask access | Check a multiline answer after merge |
 | Side feature: email countdown · 20 Nov (not a numbered stage) | Public `GET /e/bf26-countdown.gif?m=uk\|us` for the Black Friday email: live 60-second countdown to Fri 27 Nov 06:00 UK, Apple Mail still, "open" still after the deadline | built on `bf26-email-countdown` from main `9215fef`; own GIF encoder and committed glyph masks; no migration, Setting, dependency, source read or outbound call | none | After merge and Republish: open the live URL in a browser (UK and US) and in one test send to Gmail and Apple Mail before the real send |
 | Kits in plain words · storage | Persist the three optional plain-card fields through explicit SQL columns | built on `kits-plain-store` from main `9215fef`; additive migration 077 and parser version three; no UI or pin changes | none | After merge and deployment, the next eligible HQ read populates the new fields; verify their agreement with the file |
 | Kits in plain words · C | Invented call, move, waiting and sell-out examples; fixed-clock phone/desktop screenshots and records | merged in PR #58; no sample/live mixing; existing Home hash and non-Kits budgets retained | none | The storage follow-up closes the optional-field gap; live file agreement remains the maintainer's check |
@@ -504,3 +509,11 @@ Validation on invented fixtures covers the 1,509-test PostgreSQL suite, typechec
 ### Part F · Review fixes
 
 Series 1 uses its original exact ShopifyQL query. Other series use the product selected by inventory, and a shared SKU without a Shopify product ID stays unresolved with a warning in Settings and Sources. Retirement accepts zero and negative availability. Ask allows ISO dates while continuing to reject phone-like digit runs, emails and links. Tests use invented values and fake source responses. Live Shopify agreement remains a post-merge check.
+
+## Stock fixes
+
+The sample stock planner includes an accessory landing after a gap. The warehouse lead-time form accepts separate UK and US entries through the usual Settings save. The build uses the existing database schema. The four sample screenshots show the gap and lead-time fields at phone and desktop widths.
+
+**Not done or known gaps**
+
+The existing Ask privacy regression requires the stored answer to be null for generated free text, which can echo personal details. Raw generated answer retention from E2 is therefore omitted. Display cleanup runs after the existing logging step. Live warehouse figures and supplier lead times require owner verification after merge.

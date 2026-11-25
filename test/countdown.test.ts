@@ -6,8 +6,9 @@ import { readRuntime } from '../src/runtime.js';
 import { createTestDatabase } from './helpers/database.js';
 import { composite, decodeGif, pixelHex } from './helpers/gif-decode.js';
 import { encodeGif, lzwEncode } from '../src/countdown/gif.js';
+import { GLYPH_SPECS } from '../src/countdown/glyph-specs.js';
 import {
-  BF26_DEADLINE_UNIX, GIF_HEIGHT, GIF_WIDTH, LIVE_FRAMES, chooseVariant, countdownPalette, countdownParts,
+  BF26_DEADLINES_UNIX, GIF_HEIGHT, GIF_WIDTH, LIVE_FRAMES, chooseVariant, countdownPalette, countdownParts,
   firstFramePixels, formatCountdown, renderCountdownGif, type CountdownVariant,
 } from '../src/countdown/render.js';
 import { COUNTDOWN_PATH, isAppleAddress, isAppleProxy, parseMarket, registerCountdown } from '../src/countdown/routes.js';
@@ -15,7 +16,10 @@ import { COUNTDOWN_PATH, isAppleAddress, isAppleProxy, parseMarket, registerCoun
 const BACKGROUND = '#1a1a1d';
 const DIGIT_BLUE = '#52c5d1';
 const LEFT = 20 * 3600 + 41 * 60 + 13; // 20:41:13
-const at = (secondsLeft: number) => new Date((BF26_DEADLINE_UNIX - secondsLeft) * 1000);
+const UK = BF26_DEADLINES_UNIX.uk, US = BF26_DEADLINES_UNIX.us;
+const GAP = US - UK; // the five hours the UK is open while the US still counts down
+/** A clock this many seconds before the UK deadline (the US then has GAP more). */
+const at = (secondsLeft: number) => new Date((UK - secondsLeft) * 1000);
 
 function expectedRgb(variant: CountdownVariant): Uint8Array {
   const palette = countdownPalette(), indices = firstFramePixels(variant), rgb = new Uint8Array(indices.length * 3);
@@ -40,23 +44,52 @@ test('countdown time reads HH:MM:SS, with three-digit hours days ahead and zero 
   assert.deepEqual(countdownParts(100 * 3600), { hours: '100', minutes: '00', seconds: '00' });
 });
 
-test('the deadline is Friday 27 Nov 2026 06:00 UK, 01:00 New York', () => {
-  const deadline = new Date(BF26_DEADLINE_UNIX * 1000);
-  assert.equal(deadline.toISOString(), '2026-11-27T06:00:00.000Z');
-  assert.equal(deadline.toLocaleString('en-GB', { timeZone: 'Europe/London', hour12: false }), '27/11/2026, 06:00:00');
-  assert.equal(deadline.toLocaleString('en-US', { timeZone: 'America/New_York', hour12: false }), '11/27/2026, 01:00:00');
+test('deadlines: UK Friday 27 Nov 2026 07:00 UK; US 07:00 New York, which is 12:00 UK', () => {
+  const uk = new Date(UK * 1000), us = new Date(US * 1000);
+  assert.equal(UK, 1795762800);
+  assert.equal(US, 1795780800);
+  assert.equal(uk.toISOString(), '2026-11-27T07:00:00.000Z');
+  assert.equal(uk.toLocaleString('en-GB', { timeZone: 'Europe/London', hour12: false }), '27/11/2026, 07:00:00');
+  assert.equal(us.toISOString(), '2026-11-27T12:00:00.000Z');
+  assert.equal(us.toLocaleString('en-US', { timeZone: 'America/New_York', hour12: false }), '11/27/2026, 07:00:00');
+  assert.equal(us.toLocaleString('en-GB', { timeZone: 'Europe/London', hour12: false }), '27/11/2026, 12:00:00');
+  assert.equal(GAP, 5 * 3600);
+  // Apple's stills name the same times.
+  const text = (id: string) => GLYPH_SPECS.find(spec => spec.id === id)?.text;
+  assert.equal(text('still-uk'), 'FRIDAY 7AM');
+  assert.equal(text('still-us'), 'FRIDAY 7AM ET');
 });
 
-test('variants: live before the deadline, Apple still by market, open at and after it for everyone', () => {
-  const now = BF26_DEADLINE_UNIX - LEFT;
+test('variants before both deadlines: each market counts to its own, Apple gets its market still', () => {
+  const now = UK - LEFT;
   assert.deepEqual(chooseVariant(now + 0.7, 'uk', false), { kind: 'live', remaining: LEFT });
-  assert.deepEqual(chooseVariant(now, 'us', false), { kind: 'live', remaining: LEFT });
+  assert.deepEqual(chooseVariant(now, 'uk', false), { kind: 'live', remaining: LEFT });
+  assert.deepEqual(chooseVariant(now, 'us', false), { kind: 'live', remaining: LEFT + GAP });
   assert.deepEqual(chooseVariant(now, 'uk', true), { kind: 'still', market: 'uk' });
   assert.deepEqual(chooseVariant(now, 'us', true), { kind: 'still', market: 'us' });
-  assert.deepEqual(chooseVariant(BF26_DEADLINE_UNIX - 1, 'uk', false), { kind: 'live', remaining: 1 });
-  for (const apple of [false, true]) {
-    assert.deepEqual(chooseVariant(BF26_DEADLINE_UNIX, 'uk', apple), { kind: 'open' });
-    assert.deepEqual(chooseVariant(BF26_DEADLINE_UNIX + 86_400, 'us', apple), { kind: 'open' });
+  assert.deepEqual(chooseVariant(UK - 1, 'uk', false), { kind: 'live', remaining: 1 });
+  assert.deepEqual(chooseVariant(UK - 1, 'uk', true), { kind: 'still', market: 'uk' });
+  // The old shared 06:00 UK deadline no longer opens anything.
+  assert.deepEqual(chooseVariant(1795759200, 'uk', false), { kind: 'live', remaining: 3600 });
+  assert.deepEqual(chooseVariant(1795759200, 'us', false), { kind: 'live', remaining: 3600 + GAP });
+  assert.deepEqual(chooseVariant(1795759200, 'us', true), { kind: 'still', market: 'us' });
+});
+
+test('variants between the deadlines: UK open for everyone, US still live, Apple still for the US only', () => {
+  for (const now of [UK, UK + 0.9, UK + 1, UK + 3600, UK + GAP / 2, US - 1]) {
+    for (const apple of [false, true]) assert.deepEqual(chooseVariant(now, 'uk', apple), { kind: 'open' }, `uk ${now} ${apple}`);
+    assert.deepEqual(chooseVariant(now, 'us', false), { kind: 'live', remaining: US - Math.floor(now) }, `us ${now}`);
+    assert.deepEqual(chooseVariant(now, 'us', true), { kind: 'still', market: 'us' }, `us apple ${now}`);
+  }
+  assert.deepEqual(chooseVariant(UK, 'us', false), { kind: 'live', remaining: GAP });
+  assert.deepEqual(chooseVariant(US - 1, 'us', false), { kind: 'live', remaining: 1 });
+});
+
+test('variants at and after the US deadline: open for everyone in both markets', () => {
+  for (const now of [US, US + 0.5, US + 1, US + 86_400]) {
+    for (const market of ['uk', 'us'] as const) {
+      for (const apple of [false, true]) assert.deepEqual(chooseVariant(now, market, apple), { kind: 'open' }, `${market} ${now} ${apple}`);
+    }
   }
 });
 
@@ -168,6 +201,12 @@ test('route: image/gif with no-store headers, Apple still by market, cached once
   assert.equal(live.headers.expires, '0');
   assert.equal(live.headers['set-cookie'], undefined);
   assert.equal(decodeGif(live.rawPayload).frames.length, 60);
+  // No market means the UK; each market counts to its own deadline.
+  assert.deepEqual(composite(decodeGif(live.rawPayload)), expectedRgb({ kind: 'live', remaining: LEFT }));
+  const liveUk = await app.inject(`${COUNTDOWN_PATH}?m=uk`);
+  const liveUs = await app.inject(`${COUNTDOWN_PATH}?m=us`);
+  assert.deepEqual(composite(decodeGif(liveUk.rawPayload)), expectedRgb({ kind: 'live', remaining: LEFT }));
+  assert.deepEqual(composite(decodeGif(liveUs.rawPayload)), expectedRgb({ kind: 'live', remaining: LEFT + GAP }));
 
   const appleUk = await app.inject({ url: `${COUNTDOWN_PATH}?m=uk`, headers: { 'x-forwarded-for': '17.58.1.2, 10.1.1.1' } });
   const appleUs = await app.inject({ url: `${COUNTDOWN_PATH}?m=us`, headers: { 'x-forwarded-for': '17.58.1.2' } });
@@ -177,7 +216,7 @@ test('route: image/gif with no-store headers, Apple still by market, cached once
   const gmail = await app.inject({ url: `${COUNTDOWN_PATH}?m=us`, headers: { 'x-forwarded-for': '17.58.1.2', 'user-agent': 'Mozilla/5.0 GoogleImageProxy' } });
   assert.equal(decodeGif(gmail.rawPayload).frames.length, 60);
 
-  // A burst inside one second renders once; both markets share the live picture.
+  // A burst inside one second renders nothing new: each market's live picture is already cached.
   rendered.length = 0;
   for (let i = 0; i < 5; i++) await app.inject(`${COUNTDOWN_PATH}?m=${i % 2 ? 'us' : 'uk'}`);
   assert.equal(rendered.length, 0);
@@ -185,6 +224,9 @@ test('route: image/gif with no-store headers, Apple still by market, cached once
   const next = await app.inject(COUNTDOWN_PATH);
   assert.equal(rendered.length, 1);
   assert.deepEqual(composite(decodeGif(next.rawPayload)), expectedRgb({ kind: 'live', remaining: LEFT - 1 }));
+  const nextUs = await app.inject(`${COUNTDOWN_PATH}?m=us`);
+  assert.equal(rendered.length, 2, 'the US counts to a different deadline, so it is its own render');
+  assert.deepEqual(composite(decodeGif(nextUs.rawPayload)), expectedRgb({ kind: 'live', remaining: LEFT + GAP - 1 }));
 
   // Bounded: after many seconds the oldest entries are dropped and would be rendered again.
   for (let i = 2; i < 30; i++) { now = at(LEFT - i); await app.inject(COUNTDOWN_PATH); }
@@ -193,10 +235,28 @@ test('route: image/gif with no-store headers, Apple still by market, cached once
   await app.inject(COUNTDOWN_PATH);
   assert.equal(rendered.length, 1);
 
+  // UK deadline (07:00 UK): the UK is open, Apple included; the US keeps counting five more hours.
   now = at(0);
   const open = await app.inject({ url: COUNTDOWN_PATH, headers: { 'x-forwarded-for': '17.58.1.2' } });
   assert.deepEqual(composite(decodeGif(open.rawPayload)), expectedRgb({ kind: 'open' }));
   assert.equal(open.headers['cache-control'], 'no-store, no-cache, must-revalidate, max-age=0');
+  const openUk = await app.inject(`${COUNTDOWN_PATH}?m=uk`);
+  assert.deepEqual(composite(decodeGif(openUk.rawPayload)), expectedRgb({ kind: 'open' }));
+  const gapUs = await app.inject(`${COUNTDOWN_PATH}?m=us`);
+  assert.equal(decodeGif(gapUs.rawPayload).frames.length, 60);
+  assert.deepEqual(composite(decodeGif(gapUs.rawPayload)), expectedRgb({ kind: 'live', remaining: GAP }));
+  const gapAppleUs = await app.inject({ url: `${COUNTDOWN_PATH}?m=us`, headers: { 'x-forwarded-for': '17.58.1.2' } });
+  assert.deepEqual(composite(decodeGif(gapAppleUs.rawPayload)), expectedRgb({ kind: 'still', market: 'us' }));
+
+  // US deadline (07:00 New York = 12:00 UK): open for everyone in both markets.
+  now = new Date(US * 1000);
+  for (const url of [COUNTDOWN_PATH, `${COUNTDOWN_PATH}?m=uk`, `${COUNTDOWN_PATH}?m=us`]) {
+    for (const headers of [{}, { 'x-forwarded-for': '17.58.1.2' }]) {
+      const response = await app.inject({ url, headers });
+      assert.equal(decodeGif(response.rawPayload).frames.length, 1, url);
+      assert.deepEqual(composite(decodeGif(response.rawPayload)), expectedRgb({ kind: 'open' }), url);
+    }
+  }
 });
 
 test('the countdown is public in the full app: no session, no cookie, while pages still need sign-in', async t => {
@@ -207,14 +267,14 @@ test('the countdown is public in the full app: no session, no cookie, while page
   const home = await app.inject('/');
   assert.equal(home.statusCode, 302);
   assert.equal(home.headers.location, '/login');
-  for (const url of [COUNTDOWN_PATH, `${COUNTDOWN_PATH}?m=us`]) {
+  for (const [url, remaining] of [[COUNTDOWN_PATH, LEFT], [`${COUNTDOWN_PATH}?m=us`, LEFT + GAP]] as const) {
     const response = await app.inject(url);
     assert.equal(response.statusCode, 200, url);
     assert.equal(response.headers['content-type'], 'image/gif');
     assert.equal(response.headers['cache-control'], 'no-store, no-cache, must-revalidate, max-age=0');
     assert.equal(response.headers.expires, '0');
     assert.equal(response.headers['set-cookie'], undefined);
-    assert.deepEqual(composite(decodeGif(response.rawPayload)), expectedRgb({ kind: 'live', remaining: LEFT }));
+    assert.deepEqual(composite(decodeGif(response.rawPayload)), expectedRgb({ kind: 'live', remaining }));
   }
   const head = await app.inject({ method: 'HEAD', url: COUNTDOWN_PATH });
   assert.equal(head.statusCode, 200);

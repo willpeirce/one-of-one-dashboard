@@ -5,13 +5,16 @@ import { encodeGif, type GifFrame } from './gif.js';
 import { GLYPHS } from './glyphs.generated.js';
 import type { GlyphId } from './glyph-specs.js';
 
-/** Fri 27 Nov 2026 06:00 UK (GMT, so 06:00 UTC) = 01:00 New York. Both markets end their head start here. */
-export const BF26_DEADLINE_UNIX = 1795759200;
+export type Market = 'uk' | 'us';
+
+/**
+ * When each market's head start ends and Black Friday opens (Will, 25 Nov; was one 06:00 UK deadline for both).
+ * UK: Fri 27 Nov 2026 07:00 UK (GMT, so 07:00 UTC). US: 07:00 New York (EST) = 12:00 UK, five hours later.
+ */
+export const BF26_DEADLINES_UNIX = { uk: 1795762800, us: 1795780800 } as const satisfies Record<Market, number>;
 export const LIVE_FRAMES = 60;
 export const GIF_WIDTH = 1200;
 export const GIF_HEIGHT = 280;
-
-export type Market = 'uk' | 'us';
 export type CountdownVariant =
   | { kind: 'live'; remaining: number }
   | { kind: 'open' }
@@ -43,9 +46,12 @@ export function formatCountdown(remainingSeconds: number): string {
   return `${hours}:${minutes}:${seconds}`;
 }
 
-/** At or after the deadline everyone sees "open"; before it, Apple's prefetching proxy gets a still that cannot go stale. */
+/**
+ * Everything runs on the visitor's market deadline: at or after it everyone sees "open"; before it, Apple's
+ * prefetching proxy gets that market's still, which cannot go stale.
+ */
 export function chooseVariant(nowUnixSeconds: number, market: Market, appleProxy: boolean): CountdownVariant {
-  const remaining = BF26_DEADLINE_UNIX - Math.floor(nowUnixSeconds);
+  const remaining = BF26_DEADLINES_UNIX[market] - Math.floor(nowUnixSeconds);
   if (remaining <= 0) return { kind: 'open' };
   if (appleProxy) return { kind: 'still', market };
   return { kind: 'live', remaining };

@@ -76,7 +76,7 @@ Cards use plain stage names, show the full move sentence, and distinguish **Your
 
 ## Email countdown (Black Friday 2026)
 
-`GET /e/bf26-countdown.gif?m=uk|us` is a public image for the Black Friday email: no sign-in, no cookie, nothing stored or logged. It counts down to Fri 27 Nov 2026 06:00 UK (01:00 New York) as a 60-frame, play-once GIF drawn at 1200 x 280 on the email's `#1a1a1d`; at and after the deadline it is a still "BLACK FRIDAY IS OPEN". Apple Mail's prefetching proxy (17.0.0.0/8) gets a still "YOUR HEAD START ENDS FRIDAY 6AM" (`m=uk`) or "FRIDAY 1AM ET" (`m=us`). Code: `src/countdown/` (own GIF encoder, no new dependency).
+`GET /e/bf26-countdown.gif?m=uk|us` is a public image for the Black Friday email: no sign-in, no cookie, nothing stored or logged. Each market counts down to its own Black Friday opening on Fri 27 Nov 2026: `m=uk` (and anything that is not `us`) to 07:00 UK, `m=us` to 07:00 New York (12:00 UK). It is a 60-frame, play-once GIF drawn at 1200 x 280 on the email's `#1a1a1d`; at and after that market's deadline it is a still "BLACK FRIDAY IS OPEN". Apple Mail's prefetching proxy (17.0.0.0/8) gets a still "YOUR HEAD START ENDS FRIDAY 7AM" (`m=uk`) or "FRIDAY 7AM ET" (`m=us`) until that market opens. Code: `src/countdown/` (own GIF encoder, no new dependency).
 
 The text is drawn from pre-rendered masks in `src/countdown/glyphs.generated.ts`. To change a word or size, edit `src/countdown/glyph-specs.ts` and regenerate (needs network for Google Fonts and a Chromium):
 

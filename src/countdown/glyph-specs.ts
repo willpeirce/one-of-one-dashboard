@@ -23,8 +23,8 @@ export const GLYPH_SPECS = [
   { id: 'label-hrs', text: 'HRS', ...LABEL },
   { id: 'label-min', text: 'MIN', ...LABEL },
   { id: 'label-sec', text: 'SEC', ...LABEL },
-  { id: 'still-uk', text: 'FRIDAY 6AM', ...BIG },
-  { id: 'still-us', text: 'FRIDAY 1AM ET', ...BIG },
+  { id: 'still-uk', text: 'FRIDAY 7AM', ...BIG },
+  { id: 'still-us', text: 'FRIDAY 7AM ET', ...BIG },
   { id: 'open', text: 'BLACK FRIDAY IS OPEN', ...BIG },
 ] as const satisfies readonly GlyphSpec[];
 
